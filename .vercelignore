@@ -1,9 +1,0 @@
-.expo
-node_modules
-.git
-*.md
-!README.md
-app-example
-ios
-android
-.cursor

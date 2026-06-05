@@ -1,0 +1,52 @@
+{
+  "feature_names": [
+    "home_btts_pct",
+    "home_over25_pct",
+    "home_cs_pct",
+    "home_ppg",
+    "home_avg_goals",
+    "away_btts_pct",
+    "away_over25_pct",
+    "away_cs_pct",
+    "away_ppg",
+    "away_avg_goals"
+  ],
+  "mean": [
+    55,
+    52,
+    35,
+    1.6,
+    2.5,
+    55,
+    52,
+    35,
+    1.6,
+    2.5
+  ],
+  "std": [
+    12,
+    14,
+    10,
+    0.4,
+    0.6,
+    12,
+    14,
+    10,
+    0.4,
+    0.6
+  ],
+  "weights": [
+    0.08,
+    0.05,
+    -0.03,
+    0.12,
+    0.06,
+    0.08,
+    0.05,
+    -0.03,
+    0.12,
+    0.06
+  ],
+  "bias": -0.35,
+  "market": "btts"
+}

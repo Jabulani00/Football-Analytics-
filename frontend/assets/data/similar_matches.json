@@ -1,0 +1,4793 @@
+{
+  "meta": {
+    "exported_at": "2026-06-05T11:44:29.768Z",
+    "method": "cosine_similarity"
+  },
+  "fixtures": {
+    "spl_001": {
+      "fixture": "Celtic vs Rangers",
+      "similar_matches": [
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.985
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.981
+        },
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.98
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.976
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.975
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.972
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.966
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.963
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.96
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.944
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "spl_002": {
+      "fixture": "Hearts vs Aberdeen",
+      "similar_matches": [
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.982
+        },
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.982
+        },
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.981
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.977
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.977
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.97
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.967
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.967
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.951
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.947
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "spl_003": {
+      "fixture": "Hibernian vs Kilmarnock",
+      "similar_matches": [
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.984
+        },
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.982
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.978
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.969
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.967
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.957
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.954
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.951
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.934
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.924
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "spl_004": {
+      "fixture": "St Mirren vs Motherwell",
+      "similar_matches": [
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.975
+        },
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.974
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.966
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.956
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.951
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.943
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.94
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.934
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.92
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.904
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "spl_005": {
+      "fixture": "Dundee vs Ross County",
+      "similar_matches": [
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.995
+        },
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.993
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.992
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.985
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.983
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.977
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.973
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.97
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.96
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.948
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "spl_006": {
+      "fixture": "St Johnstone vs Livingston",
+      "similar_matches": [
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.972
+        },
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.971
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.964
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.955
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.951
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.943
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.938
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.935
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.918
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.906
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "epl_001": {
+      "fixture": "Arsenal vs Chelsea",
+      "similar_matches": [
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.978
+        },
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.977
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.974
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.969
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.966
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.961
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.96
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.954
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.95
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.932
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "epl_002": {
+      "fixture": "Liverpool vs Manchester City",
+      "similar_matches": [
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.996
+        },
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.995
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.992
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.982
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.982
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.972
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.971
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.966
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.954
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.941
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "epl_003": {
+      "fixture": "Newcastle vs Aston Villa",
+      "similar_matches": [
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.981
+        },
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.98
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.973
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.963
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.959
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.953
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.952
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.942
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.936
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.915
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "epl_004": {
+      "fixture": "Brighton vs West Ham",
+      "similar_matches": [
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.996
+        },
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.994
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.993
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.987
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.986
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.98
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.975
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.974
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.965
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.952
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "epl_005": {
+      "fixture": "Manchester United vs Tottenham",
+      "similar_matches": [
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.992
+        },
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.987
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.984
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.972
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.97
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.96
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.957
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.951
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.938
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.923
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "epl_006": {
+      "fixture": "Fulham vs Brentford",
+      "similar_matches": [
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.992
+        },
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.99
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.986
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.978
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.976
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.969
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.966
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.962
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.949
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.936
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "epl_007": {
+      "fixture": "Crystal Palace vs Wolves",
+      "similar_matches": [
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.937
+        },
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.928
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.914
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.884
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.884
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.861
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.861
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.847
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.826
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.799
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "epl_008": {
+      "fixture": "Everton vs Nottingham Forest",
+      "similar_matches": [
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.983
+        },
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.983
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.981
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.979
+        },
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.979
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.975
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.972
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.969
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.957
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.954
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "epl_009": {
+      "fixture": "Bournemouth vs Ipswich",
+      "similar_matches": [
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.97
+        },
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.97
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.961
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.951
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.946
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.943
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.938
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.929
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.922
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.901
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "epl_010": {
+      "fixture": "Leicester vs Southampton",
+      "similar_matches": [
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.991
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.99
+        },
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.99
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.985
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.982
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.978
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.976
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.971
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.966
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.952
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "laliga_001": {
+      "fixture": "Real Madrid vs Barcelona",
+      "similar_matches": [
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.972
+        },
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.968
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.963
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.953
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.95
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.947
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.939
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.934
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.924
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.907
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "laliga_002": {
+      "fixture": "Atlético Madrid vs Sevilla",
+      "similar_matches": [
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.989
+        },
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.985
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.983
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.975
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.974
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.969
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.965
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.96
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.953
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.937
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "laliga_003": {
+      "fixture": "Real Sociedad vs Villarreal",
+      "similar_matches": [
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.991
+        },
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.991
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.989
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.982
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.981
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.979
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.974
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.969
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.964
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.948
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "laliga_004": {
+      "fixture": "Athletic Club vs Real Betis",
+      "similar_matches": [
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.975
+        },
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.974
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.968
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.958
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.955
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.954
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.946
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.939
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.934
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.913
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "laliga_005": {
+      "fixture": "Valencia vs Girona",
+      "similar_matches": [
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.989
+        },
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.988
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.982
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.971
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.969
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.961
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.96
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.952
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.941
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.924
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "bundesliga_001": {
+      "fixture": "Bayern Munich vs Borussia Dortmund",
+      "similar_matches": [
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.989
+        },
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.984
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.983
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.971
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.964
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.953
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.951
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.946
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.933
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.918
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "bundesliga_002": {
+      "fixture": "RB Leipzig vs Bayer Leverkusen",
+      "similar_matches": [
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.991
+        },
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.99
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.988
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.981
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.98
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.977
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.971
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.966
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.961
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.945
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "bundesliga_003": {
+      "fixture": "Eintracht Frankfurt vs VfB Stuttgart",
+      "similar_matches": [
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.986
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.984
+        },
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.984
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.977
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.976
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.969
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.963
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.962
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.948
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.94
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "bundesliga_004": {
+      "fixture": "Wolfsburg vs Freiburg",
+      "similar_matches": [
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.994
+        },
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.992
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.989
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.98
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.979
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.974
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.972
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.965
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.959
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.941
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "bundesliga_005": {
+      "fixture": "Hoffenheim vs Mainz",
+      "similar_matches": [
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.992
+        },
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.991
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.987
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.977
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.977
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.972
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.967
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.961
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.954
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.937
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "bundesliga_006": {
+      "fixture": "Werder Bremen vs Augsburg",
+      "similar_matches": [
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.979
+        },
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.976
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.972
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.964
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.961
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.958
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.951
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.946
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.937
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.921
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "bundesliga_007": {
+      "fixture": "Union Berlin vs Bochum",
+      "similar_matches": [
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.973
+        },
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.973
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.965
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.955
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.95
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.943
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.939
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.934
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.92
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.904
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "bundesliga_008": {
+      "fixture": "Heidenheim vs St Pauli",
+      "similar_matches": [
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.988
+        },
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.987
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.985
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.977
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.976
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.974
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.967
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.962
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.957
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.94
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "bundesliga_009": {
+      "fixture": "Holstein Kiel vs Gladbach",
+      "similar_matches": [
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.992
+        },
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.989
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.986
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.974
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.97
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.958
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.958
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.952
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.937
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.924
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "seriea_001": {
+      "fixture": "Inter Milan vs AC Milan",
+      "similar_matches": [
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.978
+        },
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.977
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.972
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.962
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.96
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.951
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.945
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.944
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.926
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.915
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "seriea_002": {
+      "fixture": "Juventus vs Napoli",
+      "similar_matches": [
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.996
+        },
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.996
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.995
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.989
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.987
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.979
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.978
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.974
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.963
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.953
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "seriea_003": {
+      "fixture": "Roma vs Lazio",
+      "similar_matches": [
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.989
+        },
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.985
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.983
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.975
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.974
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.968
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.963
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.96
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.95
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.936
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "seriea_004": {
+      "fixture": "Atalanta vs Fiorentina",
+      "similar_matches": [
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.994
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.993
+        },
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.992
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.987
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.985
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.979
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.977
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.974
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.965
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.953
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "seriea_005": {
+      "fixture": "Bologna vs Torino",
+      "similar_matches": [
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.968
+        },
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.967
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.959
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.949
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.944
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.943
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.937
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.928
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.923
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.901
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "seriea_006": {
+      "fixture": "Udinese vs Empoli",
+      "similar_matches": [
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.988
+        },
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.986
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.981
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.971
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.969
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.961
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.959
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.953
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.94
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.925
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "seriea_007": {
+      "fixture": "Monza vs Cagliari",
+      "similar_matches": [
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.989
+        },
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.989
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.988
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.983
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.981
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.98
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.974
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.97
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.965
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.951
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "seriea_008": {
+      "fixture": "Parma vs Como",
+      "similar_matches": [
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.982
+        },
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.98
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.978
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.969
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.969
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.961
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.955
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.953
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.939
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.93
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "ligue1_001": {
+      "fixture": "Paris Saint-Germain vs Marseille",
+      "similar_matches": [
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.976
+        },
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.974
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.966
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.956
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.952
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.946
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.943
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.935
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.927
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.906
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "ligue1_002": {
+      "fixture": "Monaco vs Lyon",
+      "similar_matches": [
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.982
+        },
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.981
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.974
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.962
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.959
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.949
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.947
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.941
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.926
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.91
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "ligue1_003": {
+      "fixture": "Lille vs Nice",
+      "similar_matches": [
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.978
+        },
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.968
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.964
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.948
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.943
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.927
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.926
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.919
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.902
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.884
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "ligue1_004": {
+      "fixture": "Lens vs Rennes",
+      "similar_matches": [
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.998
+        },
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.997
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.995
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.987
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.986
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.978
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.977
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.971
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.962
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.949
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "ligue1_005": {
+      "fixture": "Brest vs Strasbourg",
+      "similar_matches": [
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.974
+        },
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.964
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.958
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.94
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.935
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.917
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.917
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.909
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.892
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.871
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "ligue1_006": {
+      "fixture": "Toulouse vs Montpellier",
+      "similar_matches": [
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.982
+        },
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.981
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.979
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.971
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.97
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.96
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.956
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.955
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.938
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.931
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "ligue1_007": {
+      "fixture": "Nantes vs Reims",
+      "similar_matches": [
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.987
+        },
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.986
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.98
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.971
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.968
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.961
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.957
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.952
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.94
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.925
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "eredivisie_001": {
+      "fixture": "PSV vs Ajax",
+      "similar_matches": [
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.979
+        },
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.977
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.97
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.961
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.956
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.95
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.949
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.94
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.932
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.912
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "eredivisie_002": {
+      "fixture": "Feyenoord vs AZ Alkmaar",
+      "similar_matches": [
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.998
+        },
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.997
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.996
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.989
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.988
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.982
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.98
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.975
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.968
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.954
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "eredivisie_003": {
+      "fixture": "Twente vs Utrecht",
+      "similar_matches": [
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.968
+        },
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.967
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.964
+        },
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.963
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.962
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.959
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.959
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.957
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.944
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.939
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "eredivisie_004": {
+      "fixture": "Heerenveen vs Groningen",
+      "similar_matches": [
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.988
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.987
+        },
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.985
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.983
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.983
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.98
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.977
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.973
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.973
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.957
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "eredivisie_005": {
+      "fixture": "NEC vs Go Ahead Eagles",
+      "similar_matches": [
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.981
+        },
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.981
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.973
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.963
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.959
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.951
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.951
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.943
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.932
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.914
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "ucl_001": {
+      "fixture": "Real Madrid vs Manchester City",
+      "similar_matches": [
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.992
+        },
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.99
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.987
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.978
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.977
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.973
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.967
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.962
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.955
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.939
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "ucl_002": {
+      "fixture": "Bayern Munich vs Arsenal",
+      "similar_matches": [
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.977
+        },
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.973
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.97
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.961
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.958
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.953
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.944
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.943
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.93
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.917
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "ucl_003": {
+      "fixture": "Barcelona vs Inter Milan",
+      "similar_matches": [
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.987
+        },
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.986
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.984
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.981
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.977
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.974
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.972
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.968
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.956
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.947
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    },
+    "ucl_004": {
+      "fixture": "Paris Saint-Germain vs Liverpool",
+      "similar_matches": [
+        {
+          "home": "Newcastle",
+          "away": "Tottenham",
+          "score": "0-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.98
+        },
+        {
+          "home": "PSG",
+          "away": "Monaco",
+          "score": "1-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.978
+        },
+        {
+          "home": "Real Madrid",
+          "away": "Barcelona",
+          "score": "2-0",
+          "btts": false,
+          "over25": false,
+          "similarity_score": 0.97
+        },
+        {
+          "home": "Lyon",
+          "away": "Marseille",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.96
+        },
+        {
+          "home": "Arsenal",
+          "away": "Chelsea",
+          "score": "1-1",
+          "btts": true,
+          "over25": false,
+          "similarity_score": 0.956
+        },
+        {
+          "home": "Celtic",
+          "away": "Rangers",
+          "score": "2-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.949
+        },
+        {
+          "home": "Inter Milan",
+          "away": "Napoli",
+          "score": "3-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.949
+        },
+        {
+          "home": "Man City",
+          "away": "Liverpool",
+          "score": "2-1",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.939
+        },
+        {
+          "home": "Ajax",
+          "away": "PSV",
+          "score": "1-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.93
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Dortmund",
+          "score": "3-2",
+          "btts": true,
+          "over25": true,
+          "similarity_score": 0.91
+        }
+      ],
+      "btts_hit_rate": 0.7,
+      "over25_hit_rate": 0.6
+    }
+  },
+  "default": {
+    "fixture": "Generic fixture",
+    "similar_matches": [
+      {
+        "home": "Lyon",
+        "away": "Marseille",
+        "score": "2-1",
+        "btts": true,
+        "over25": true,
+        "similarity_score": 1
+      },
+      {
+        "home": "Arsenal",
+        "away": "Chelsea",
+        "score": "1-1",
+        "btts": true,
+        "over25": false,
+        "similarity_score": 0.998
+      },
+      {
+        "home": "Celtic",
+        "away": "Rangers",
+        "score": "2-2",
+        "btts": true,
+        "over25": true,
+        "similarity_score": 0.998
+      },
+      {
+        "home": "Inter Milan",
+        "away": "Napoli",
+        "score": "3-1",
+        "btts": true,
+        "over25": true,
+        "similarity_score": 0.998
+      },
+      {
+        "home": "Man City",
+        "away": "Liverpool",
+        "score": "2-1",
+        "btts": true,
+        "over25": true,
+        "similarity_score": 0.996
+      },
+      {
+        "home": "Real Madrid",
+        "away": "Barcelona",
+        "score": "2-0",
+        "btts": false,
+        "over25": false,
+        "similarity_score": 0.996
+      },
+      {
+        "home": "Newcastle",
+        "away": "Tottenham",
+        "score": "0-0",
+        "btts": false,
+        "over25": false,
+        "similarity_score": 0.994
+      },
+      {
+        "home": "Ajax",
+        "away": "PSV",
+        "score": "1-2",
+        "btts": true,
+        "over25": true,
+        "similarity_score": 0.992
+      },
+      {
+        "home": "PSG",
+        "away": "Monaco",
+        "score": "1-0",
+        "btts": false,
+        "over25": false,
+        "similarity_score": 0.989
+      },
+      {
+        "home": "Bayern Munich",
+        "away": "Dortmund",
+        "score": "3-2",
+        "btts": true,
+        "over25": true,
+        "similarity_score": 0.985
+      }
+    ],
+    "btts_hit_rate": 0.7,
+    "over25_hit_rate": 0.6
+  }
+}

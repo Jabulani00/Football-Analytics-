@@ -1,0 +1,926 @@
+{
+  "meta": {
+    "exported_at": "2026-06-05T11:44:29.761Z",
+    "count": 54
+  },
+  "fixtures": [
+    {
+      "id": "spl_001",
+      "leagueId": "spl",
+      "date": "2026-05-21",
+      "kickoff": "15:00",
+      "status": "FT",
+      "homeTeam": {
+        "name": "Celtic",
+        "shortName": "CEL",
+        "score": 3
+      },
+      "awayTeam": {
+        "name": "Rangers",
+        "shortName": "RAN",
+        "score": 1
+      }
+    },
+    {
+      "id": "spl_002",
+      "leagueId": "spl",
+      "date": "2026-05-21",
+      "kickoff": "15:00",
+      "status": "FT",
+      "homeTeam": {
+        "name": "Hearts",
+        "shortName": "HEA",
+        "score": 2
+      },
+      "awayTeam": {
+        "name": "Aberdeen",
+        "shortName": "ABD",
+        "score": 2
+      }
+    },
+    {
+      "id": "spl_003",
+      "leagueId": "spl",
+      "date": "2026-05-21",
+      "kickoff": "15:00",
+      "status": "LIVE",
+      "homeTeam": {
+        "name": "Hibernian",
+        "shortName": "HIB",
+        "score": 1
+      },
+      "awayTeam": {
+        "name": "Kilmarnock",
+        "shortName": "KIL",
+        "score": 0
+      }
+    },
+    {
+      "id": "spl_004",
+      "leagueId": "spl",
+      "date": "2026-05-21",
+      "kickoff": "17:30",
+      "status": "NS",
+      "homeTeam": {
+        "name": "St Mirren",
+        "shortName": "STM",
+        "score": null
+      },
+      "awayTeam": {
+        "name": "Motherwell",
+        "shortName": "MOT",
+        "score": null
+      }
+    },
+    {
+      "id": "spl_005",
+      "leagueId": "spl",
+      "date": "2026-05-21",
+      "kickoff": "17:30",
+      "status": "NS",
+      "homeTeam": {
+        "name": "Dundee",
+        "shortName": "DUN",
+        "score": null
+      },
+      "awayTeam": {
+        "name": "Ross County",
+        "shortName": "ROS",
+        "score": null
+      }
+    },
+    {
+      "id": "spl_006",
+      "leagueId": "spl",
+      "date": "2026-05-21",
+      "kickoff": "20:00",
+      "status": "NS",
+      "homeTeam": {
+        "name": "St Johnstone",
+        "shortName": "STJ",
+        "score": null
+      },
+      "awayTeam": {
+        "name": "Livingston",
+        "shortName": "LIV",
+        "score": null
+      }
+    },
+    {
+      "id": "epl_001",
+      "leagueId": "epl",
+      "date": "2026-05-21",
+      "kickoff": "12:30",
+      "status": "FT",
+      "homeTeam": {
+        "name": "Arsenal",
+        "shortName": "ARS",
+        "score": 2
+      },
+      "awayTeam": {
+        "name": "Chelsea",
+        "shortName": "CHE",
+        "score": 1
+      }
+    },
+    {
+      "id": "epl_002",
+      "leagueId": "epl",
+      "date": "2026-05-21",
+      "kickoff": "15:00",
+      "status": "LIVE",
+      "homeTeam": {
+        "name": "Liverpool",
+        "shortName": "LIV",
+        "score": 2
+      },
+      "awayTeam": {
+        "name": "Manchester City",
+        "shortName": "MCI",
+        "score": 2
+      }
+    },
+    {
+      "id": "epl_003",
+      "leagueId": "epl",
+      "date": "2026-05-21",
+      "kickoff": "15:00",
+      "status": "LIVE",
+      "homeTeam": {
+        "name": "Newcastle",
+        "shortName": "NEW",
+        "score": 1
+      },
+      "awayTeam": {
+        "name": "Aston Villa",
+        "shortName": "AVL",
+        "score": 0
+      }
+    },
+    {
+      "id": "epl_004",
+      "leagueId": "epl",
+      "date": "2026-05-21",
+      "kickoff": "15:00",
+      "status": "LIVE",
+      "homeTeam": {
+        "name": "Brighton",
+        "shortName": "BHA",
+        "score": 0
+      },
+      "awayTeam": {
+        "name": "West Ham",
+        "shortName": "WHU",
+        "score": 1
+      }
+    },
+    {
+      "id": "epl_005",
+      "leagueId": "epl",
+      "date": "2026-05-21",
+      "kickoff": "15:00",
+      "status": "FT",
+      "homeTeam": {
+        "name": "Manchester United",
+        "shortName": "MUN",
+        "score": 3
+      },
+      "awayTeam": {
+        "name": "Tottenham",
+        "shortName": "TOT",
+        "score": 1
+      }
+    },
+    {
+      "id": "epl_006",
+      "leagueId": "epl",
+      "date": "2026-05-21",
+      "kickoff": "17:30",
+      "status": "NS",
+      "homeTeam": {
+        "name": "Fulham",
+        "shortName": "FUL",
+        "score": null
+      },
+      "awayTeam": {
+        "name": "Brentford",
+        "shortName": "BRE",
+        "score": null
+      }
+    },
+    {
+      "id": "epl_007",
+      "leagueId": "epl",
+      "date": "2026-05-21",
+      "kickoff": "17:30",
+      "status": "NS",
+      "homeTeam": {
+        "name": "Crystal Palace",
+        "shortName": "CRY",
+        "score": null
+      },
+      "awayTeam": {
+        "name": "Wolves",
+        "shortName": "WOL",
+        "score": null
+      }
+    },
+    {
+      "id": "epl_008",
+      "leagueId": "epl",
+      "date": "2026-05-21",
+      "kickoff": "20:00",
+      "status": "NS",
+      "homeTeam": {
+        "name": "Everton",
+        "shortName": "EVE",
+        "score": null
+      },
+      "awayTeam": {
+        "name": "Nottingham Forest",
+        "shortName": "NFO",
+        "score": null
+      }
+    },
+    {
+      "id": "epl_009",
+      "leagueId": "epl",
+      "date": "2026-05-22",
+      "kickoff": "14:00",
+      "status": "NS",
+      "homeTeam": {
+        "name": "Bournemouth",
+        "shortName": "BOU",
+        "score": null
+      },
+      "awayTeam": {
+        "name": "Ipswich",
+        "shortName": "IPS",
+        "score": null
+      }
+    },
+    {
+      "id": "epl_010",
+      "leagueId": "epl",
+      "date": "2026-05-22",
+      "kickoff": "16:30",
+      "status": "NS",
+      "homeTeam": {
+        "name": "Leicester",
+        "shortName": "LEI",
+        "score": null
+      },
+      "awayTeam": {
+        "name": "Southampton",
+        "shortName": "SOU",
+        "score": null
+      }
+    },
+    {
+      "id": "laliga_001",
+      "leagueId": "laliga",
+      "date": "2026-05-21",
+      "kickoff": "13:00",
+      "status": "FT",
+      "homeTeam": {
+        "name": "Real Madrid",
+        "shortName": "RMA",
+        "score": 2
+      },
+      "awayTeam": {
+        "name": "Barcelona",
+        "shortName": "BAR",
+        "score": 2
+      }
+    },
+    {
+      "id": "laliga_002",
+      "leagueId": "laliga",
+      "date": "2026-05-21",
+      "kickoff": "15:15",
+      "status": "FT",
+      "homeTeam": {
+        "name": "Atlético Madrid",
+        "shortName": "ATM",
+        "score": 1
+      },
+      "awayTeam": {
+        "name": "Sevilla",
+        "shortName": "SEV",
+        "score": 0
+      }
+    },
+    {
+      "id": "laliga_003",
+      "leagueId": "laliga",
+      "date": "2026-05-21",
+      "kickoff": "17:30",
+      "status": "NS",
+      "homeTeam": {
+        "name": "Real Sociedad",
+        "shortName": "RSO",
+        "score": null
+      },
+      "awayTeam": {
+        "name": "Villarreal",
+        "shortName": "VIL",
+        "score": null
+      }
+    },
+    {
+      "id": "laliga_004",
+      "leagueId": "laliga",
+      "date": "2026-05-21",
+      "kickoff": "20:00",
+      "status": "NS",
+      "homeTeam": {
+        "name": "Athletic Club",
+        "shortName": "ATH",
+        "score": null
+      },
+      "awayTeam": {
+        "name": "Real Betis",
+        "shortName": "BET",
+        "score": null
+      }
+    },
+    {
+      "id": "laliga_005",
+      "leagueId": "laliga",
+      "date": "2026-05-22",
+      "kickoff": "18:30",
+      "status": "NS",
+      "homeTeam": {
+        "name": "Valencia",
+        "shortName": "VAL",
+        "score": null
+      },
+      "awayTeam": {
+        "name": "Girona",
+        "shortName": "GIR",
+        "score": null
+      }
+    },
+    {
+      "id": "bundesliga_001",
+      "leagueId": "bundesliga",
+      "date": "2026-05-21",
+      "kickoff": "14:30",
+      "status": "FT",
+      "homeTeam": {
+        "name": "Bayern Munich",
+        "shortName": "BAY",
+        "score": 4
+      },
+      "awayTeam": {
+        "name": "Borussia Dortmund",
+        "shortName": "BVB",
+        "score": 2
+      }
+    },
+    {
+      "id": "bundesliga_002",
+      "leagueId": "bundesliga",
+      "date": "2026-05-21",
+      "kickoff": "14:30",
+      "status": "LIVE",
+      "homeTeam": {
+        "name": "RB Leipzig",
+        "shortName": "RBL",
+        "score": 1
+      },
+      "awayTeam": {
+        "name": "Bayer Leverkusen",
+        "shortName": "B04",
+        "score": 1
+      }
+    },
+    {
+      "id": "bundesliga_003",
+      "leagueId": "bundesliga",
+      "date": "2026-05-21",
+      "kickoff": "14:30",
+      "status": "LIVE",
+      "homeTeam": {
+        "name": "Eintracht Frankfurt",
+        "shortName": "SGE",
+        "score": 2
+      },
+      "awayTeam": {
+        "name": "VfB Stuttgart",
+        "shortName": "VFB",
+        "score": 0
+      }
+    },
+    {
+      "id": "bundesliga_004",
+      "leagueId": "bundesliga",
+      "date": "2026-05-21",
+      "kickoff": "17:30",
+      "status": "FT",
+      "homeTeam": {
+        "name": "Wolfsburg",
+        "shortName": "WOB",
+        "score": 0
+      },
+      "awayTeam": {
+        "name": "Freiburg",
+        "shortName": "SCF",
+        "score": 1
+      }
+    },
+    {
+      "id": "bundesliga_005",
+      "leagueId": "bundesliga",
+      "date": "2026-05-21",
+      "kickoff": "17:30",
+      "status": "NS",
+      "homeTeam": {
+        "name": "Hoffenheim",
+        "shortName": "TSG",
+        "score": null
+      },
+      "awayTeam": {
+        "name": "Mainz",
+        "shortName": "M05",
+        "score": null
+      }
+    },
+    {
+      "id": "bundesliga_006",
+      "leagueId": "bundesliga",
+      "date": "2026-05-21",
+      "kickoff": "17:30",
+      "status": "NS",
+      "homeTeam": {
+        "name": "Werder Bremen",
+        "shortName": "SVW",
+        "score": null
+      },
+      "awayTeam": {
+        "name": "Augsburg",
+        "shortName": "FCA",
+        "score": null
+      }
+    },
+    {
+      "id": "bundesliga_007",
+      "leagueId": "bundesliga",
+      "date": "2026-05-21",
+      "kickoff": "20:30",
+      "status": "NS",
+      "homeTeam": {
+        "name": "Union Berlin",
+        "shortName": "FCU",
+        "score": null
+      },
+      "awayTeam": {
+        "name": "Bochum",
+        "shortName": "BOC",
+        "score": null
+      }
+    },
+    {
+      "id": "bundesliga_008",
+      "leagueId": "bundesliga",
+      "date": "2026-05-22",
+      "kickoff": "16:30",
+      "status": "NS",
+      "homeTeam": {
+        "name": "Heidenheim",
+        "shortName": "FCH",
+        "score": null
+      },
+      "awayTeam": {
+        "name": "St Pauli",
+        "shortName": "STP",
+        "score": null
+      }
+    },
+    {
+      "id": "bundesliga_009",
+      "leagueId": "bundesliga",
+      "date": "2026-05-22",
+      "kickoff": "18:30",
+      "status": "NS",
+      "homeTeam": {
+        "name": "Holstein Kiel",
+        "shortName": "KIE",
+        "score": null
+      },
+      "awayTeam": {
+        "name": "Gladbach",
+        "shortName": "BMG",
+        "score": null
+      }
+    },
+    {
+      "id": "seriea_001",
+      "leagueId": "seriea",
+      "date": "2026-05-21",
+      "kickoff": "14:00",
+      "status": "FT",
+      "homeTeam": {
+        "name": "Inter Milan",
+        "shortName": "INT",
+        "score": 3
+      },
+      "awayTeam": {
+        "name": "AC Milan",
+        "shortName": "MIL",
+        "score": 1
+      }
+    },
+    {
+      "id": "seriea_002",
+      "leagueId": "seriea",
+      "date": "2026-05-21",
+      "kickoff": "17:00",
+      "status": "FT",
+      "homeTeam": {
+        "name": "Juventus",
+        "shortName": "JUV",
+        "score": 2
+      },
+      "awayTeam": {
+        "name": "Napoli",
+        "shortName": "NAP",
+        "score": 0
+      }
+    },
+    {
+      "id": "seriea_003",
+      "leagueId": "seriea",
+      "date": "2026-05-21",
+      "kickoff": "17:00",
+      "status": "FT",
+      "homeTeam": {
+        "name": "Roma",
+        "shortName": "ROM",
+        "score": 1
+      },
+      "awayTeam": {
+        "name": "Lazio",
+        "shortName": "LAZ",
+        "score": 1
+      }
+    },
+    {
+      "id": "seriea_004",
+      "leagueId": "seriea",
+      "date": "2026-05-21",
+      "kickoff": "19:45",
+      "status": "NS",
+      "homeTeam": {
+        "name": "Atalanta",
+        "shortName": "ATA",
+        "score": null
+      },
+      "awayTeam": {
+        "name": "Fiorentina",
+        "shortName": "FIO",
+        "score": null
+      }
+    },
+    {
+      "id": "seriea_005",
+      "leagueId": "seriea",
+      "date": "2026-05-21",
+      "kickoff": "19:45",
+      "status": "NS",
+      "homeTeam": {
+        "name": "Bologna",
+        "shortName": "BOL",
+        "score": null
+      },
+      "awayTeam": {
+        "name": "Torino",
+        "shortName": "TOR",
+        "score": null
+      }
+    },
+    {
+      "id": "seriea_006",
+      "leagueId": "seriea",
+      "date": "2026-05-22",
+      "kickoff": "12:30",
+      "status": "NS",
+      "homeTeam": {
+        "name": "Udinese",
+        "shortName": "UDI",
+        "score": null
+      },
+      "awayTeam": {
+        "name": "Empoli",
+        "shortName": "EMP",
+        "score": null
+      }
+    },
+    {
+      "id": "seriea_007",
+      "leagueId": "seriea",
+      "date": "2026-05-22",
+      "kickoff": "15:00",
+      "status": "NS",
+      "homeTeam": {
+        "name": "Monza",
+        "shortName": "MON",
+        "score": null
+      },
+      "awayTeam": {
+        "name": "Cagliari",
+        "shortName": "CAG",
+        "score": null
+      }
+    },
+    {
+      "id": "seriea_008",
+      "leagueId": "seriea",
+      "date": "2026-05-22",
+      "kickoff": "17:30",
+      "status": "NS",
+      "homeTeam": {
+        "name": "Parma",
+        "shortName": "PAR",
+        "score": null
+      },
+      "awayTeam": {
+        "name": "Como",
+        "shortName": "COM",
+        "score": null
+      }
+    },
+    {
+      "id": "ligue1_001",
+      "leagueId": "ligue1",
+      "date": "2026-05-21",
+      "kickoff": "16:00",
+      "status": "FT",
+      "homeTeam": {
+        "name": "Paris Saint-Germain",
+        "shortName": "PSG",
+        "score": 3
+      },
+      "awayTeam": {
+        "name": "Marseille",
+        "shortName": "OM",
+        "score": 0
+      }
+    },
+    {
+      "id": "ligue1_002",
+      "leagueId": "ligue1",
+      "date": "2026-05-21",
+      "kickoff": "18:00",
+      "status": "LIVE",
+      "homeTeam": {
+        "name": "Monaco",
+        "shortName": "MON",
+        "score": 1
+      },
+      "awayTeam": {
+        "name": "Lyon",
+        "shortName": "OL",
+        "score": 1
+      }
+    },
+    {
+      "id": "ligue1_003",
+      "leagueId": "ligue1",
+      "date": "2026-05-21",
+      "kickoff": "20:05",
+      "status": "NS",
+      "homeTeam": {
+        "name": "Lille",
+        "shortName": "LIL",
+        "score": null
+      },
+      "awayTeam": {
+        "name": "Nice",
+        "shortName": "NIC",
+        "score": null
+      }
+    },
+    {
+      "id": "ligue1_004",
+      "leagueId": "ligue1",
+      "date": "2026-05-21",
+      "kickoff": "20:05",
+      "status": "NS",
+      "homeTeam": {
+        "name": "Lens",
+        "shortName": "RCL",
+        "score": null
+      },
+      "awayTeam": {
+        "name": "Rennes",
+        "shortName": "REN",
+        "score": null
+      }
+    },
+    {
+      "id": "ligue1_005",
+      "leagueId": "ligue1",
+      "date": "2026-05-22",
+      "kickoff": "14:00",
+      "status": "NS",
+      "homeTeam": {
+        "name": "Brest",
+        "shortName": "BRE",
+        "score": null
+      },
+      "awayTeam": {
+        "name": "Strasbourg",
+        "shortName": "STR",
+        "score": null
+      }
+    },
+    {
+      "id": "ligue1_006",
+      "leagueId": "ligue1",
+      "date": "2026-05-22",
+      "kickoff": "16:15",
+      "status": "NS",
+      "homeTeam": {
+        "name": "Toulouse",
+        "shortName": "TFC",
+        "score": null
+      },
+      "awayTeam": {
+        "name": "Montpellier",
+        "shortName": "MTP",
+        "score": null
+      }
+    },
+    {
+      "id": "ligue1_007",
+      "leagueId": "ligue1",
+      "date": "2026-05-22",
+      "kickoff": "19:00",
+      "status": "NS",
+      "homeTeam": {
+        "name": "Nantes",
+        "shortName": "NAN",
+        "score": null
+      },
+      "awayTeam": {
+        "name": "Reims",
+        "shortName": "REI",
+        "score": null
+      }
+    },
+    {
+      "id": "eredivisie_001",
+      "leagueId": "eredivisie",
+      "date": "2026-05-21",
+      "kickoff": "16:45",
+      "status": "FT",
+      "homeTeam": {
+        "name": "PSV",
+        "shortName": "PSV",
+        "score": 2
+      },
+      "awayTeam": {
+        "name": "Ajax",
+        "shortName": "AJA",
+        "score": 1
+      }
+    },
+    {
+      "id": "eredivisie_002",
+      "leagueId": "eredivisie",
+      "date": "2026-05-21",
+      "kickoff": "19:00",
+      "status": "FT",
+      "homeTeam": {
+        "name": "Feyenoord",
+        "shortName": "FEY",
+        "score": 3
+      },
+      "awayTeam": {
+        "name": "AZ Alkmaar",
+        "shortName": "AZ",
+        "score": 0
+      }
+    },
+    {
+      "id": "eredivisie_003",
+      "leagueId": "eredivisie",
+      "date": "2026-05-21",
+      "kickoff": "21:00",
+      "status": "NS",
+      "homeTeam": {
+        "name": "Twente",
+        "shortName": "TWE",
+        "score": null
+      },
+      "awayTeam": {
+        "name": "Utrecht",
+        "shortName": "UTR",
+        "score": null
+      }
+    },
+    {
+      "id": "eredivisie_004",
+      "leagueId": "eredivisie",
+      "date": "2026-05-22",
+      "kickoff": "14:30",
+      "status": "NS",
+      "homeTeam": {
+        "name": "Heerenveen",
+        "shortName": "HEE",
+        "score": null
+      },
+      "awayTeam": {
+        "name": "Groningen",
+        "shortName": "GRO",
+        "score": null
+      }
+    },
+    {
+      "id": "eredivisie_005",
+      "leagueId": "eredivisie",
+      "date": "2026-05-22",
+      "kickoff": "16:45",
+      "status": "NS",
+      "homeTeam": {
+        "name": "NEC",
+        "shortName": "NEC",
+        "score": null
+      },
+      "awayTeam": {
+        "name": "Go Ahead Eagles",
+        "shortName": "GAE",
+        "score": null
+      }
+    },
+    {
+      "id": "ucl_001",
+      "leagueId": "ucl",
+      "date": "2026-05-21",
+      "kickoff": "20:00",
+      "status": "FT",
+      "homeTeam": {
+        "name": "Real Madrid",
+        "shortName": "RMA",
+        "score": 1
+      },
+      "awayTeam": {
+        "name": "Manchester City",
+        "shortName": "MCI",
+        "score": 0
+      }
+    },
+    {
+      "id": "ucl_002",
+      "leagueId": "ucl",
+      "date": "2026-05-21",
+      "kickoff": "20:00",
+      "status": "FT",
+      "homeTeam": {
+        "name": "Bayern Munich",
+        "shortName": "BAY",
+        "score": 2
+      },
+      "awayTeam": {
+        "name": "Arsenal",
+        "shortName": "ARS",
+        "score": 2
+      }
+    },
+    {
+      "id": "ucl_003",
+      "leagueId": "ucl",
+      "date": "2026-05-24",
+      "kickoff": "20:00",
+      "status": "NS",
+      "homeTeam": {
+        "name": "Barcelona",
+        "shortName": "BAR",
+        "score": null
+      },
+      "awayTeam": {
+        "name": "Inter Milan",
+        "shortName": "INT",
+        "score": null
+      }
+    },
+    {
+      "id": "ucl_004",
+      "leagueId": "ucl",
+      "date": "2026-05-24",
+      "kickoff": "20:00",
+      "status": "NS",
+      "homeTeam": {
+        "name": "Paris Saint-Germain",
+        "shortName": "PSG",
+        "score": null
+      },
+      "awayTeam": {
+        "name": "Liverpool",
+        "shortName": "LIV",
+        "score": null
+      }
+    }
+  ]
+}

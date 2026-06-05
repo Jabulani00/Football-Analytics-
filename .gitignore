@@ -2,14 +2,20 @@
 
 # dependencies
 node_modules/
+frontend/node_modules/
 
-# Expo
+# Expo / web build
 .expo/
+frontend/.expo/
 dist/
-web-build/
+frontend/dist/
+frontend/web-build/
 expo-env.d.ts
+frontend/expo-env.d.ts
 
-# Native
+# Native (generated)
+frontend/ios/
+frontend/android/
 .kotlin/
 *.orig.*
 *.jks
@@ -37,7 +43,14 @@ yarn-error.*
 *.tsbuildinfo
 
 app-example
+.cursor
 
-# generated native folders
-/ios
-/android
+# Backend — local SQLite (regenerate via npm run db:setup)
+backend/scoreline.db
+backend/__pycache__/
+backend/**/__pycache__/
+*.pyc
+
+# Optional ML artifacts (large)
+backend/.venv/
+venv/

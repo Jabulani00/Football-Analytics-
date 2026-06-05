@@ -1,0 +1,10 @@
+.expo
+node_modules
+.git
+dist
+*.md
+!README.md
+app-example
+ios
+android
+.cursor
