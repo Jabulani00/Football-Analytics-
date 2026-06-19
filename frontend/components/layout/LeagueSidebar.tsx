@@ -1,34 +1,37 @@
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
-import { usePathname, useRouter } from 'expo-router';
 
-import { mockLeagues } from '@/mock/leaguesData';
+import { useScoresFilter } from '@/components/layout/ScoresFilterContext';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
+import { countryFlag } from '@/utils/countryFlags';
 
 export default function LeagueSidebar() {
-  const router = useRouter();
-  const pathname = usePathname();
+  const { competitions, competitionId, setCompetitionId, kind } = useScoresFilter();
   const { width } = useWindowDimensions();
   const isDesktop = width >= 1024;
 
-  const activeLeagueId = pathname?.match(/\/league\/([^/]+)/)?.[1] ?? null;
+  const liveCount = (id: number) =>
+    competitions
+      .find((g) => g.competition.id === id)
+      ?.fixtures.filter((f) => f.status === 'LIVE' || f.status === 'HT').length ?? 0;
 
   if (!isDesktop) {
+    if (competitions.length === 0) return null;
     return (
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         style={styles.mobileScroll}
         contentContainerStyle={styles.mobileStrip}>
-        {mockLeagues.map((league) => {
-          const active = activeLeagueId === league.id;
+        {competitions.map((group) => {
+          const active = competitionId === group.competition.id;
           return (
             <Pressable
-              key={league.id}
-              onPress={() => router.push({ pathname: '/league/[id]', params: { id: league.id } })}
+              key={group.key}
+              onPress={() => setCompetitionId(active ? null : group.competition.id)}
               style={[styles.mobileChip, active && styles.mobileChipActive]}>
-              <Text style={styles.mobileFlag}>{league.flag}</Text>
+              <Text style={styles.mobileFlag}>{countryFlag(group.competition.country)}</Text>
               <Text style={[styles.mobileLabel, active && styles.mobileLabelActive]} numberOfLines={1}>
-                {league.regionCode}
+                {group.competition.name}
               </Text>
             </Pressable>
           );
@@ -39,33 +42,44 @@ export default function LeagueSidebar() {
 
   return (
     <View style={styles.sidebar}>
-      <Text style={styles.sidebarTitle}>LEAGUES</Text>
-      {mockLeagues.map((league) => {
-        const active = activeLeagueId === league.id;
-        return (
-          <Pressable
-            key={league.id}
-            onPress={() => router.push({ pathname: '/league/[id]', params: { id: league.id } })}
-            style={({ hovered }) => [
-              styles.item,
-              active && styles.itemActive,
-              Platform.OS === 'web' && hovered && !active && styles.itemHover,
-            ]}>
-            <Text style={styles.flag}>{league.flag}</Text>
-            <View style={styles.itemText}>
-              <Text style={[styles.name, active && styles.nameActive]} numberOfLines={1}>
-                {league.name}
-              </Text>
-              <Text style={styles.country}>{league.country}</Text>
-            </View>
-            {league.liveCount > 0 ? (
-              <View style={styles.liveBadge}>
-                <Text style={styles.liveBadgeText}>{league.liveCount}</Text>
-              </View>
-            ) : null}
-          </Pressable>
-        );
-      })}
+      <Text style={styles.sidebarTitle}>{kind === 'country' ? 'TOURNAMENTS' : 'COMPETITIONS'}</Text>
+      <ScrollView showsVerticalScrollIndicator={false}>
+        {competitions.length === 0 ? (
+          <Text style={styles.emptyHint}>No competitions loaded.</Text>
+        ) : (
+          competitions.map((group) => {
+            const active = competitionId === group.competition.id;
+            const live = liveCount(group.competition.id);
+            return (
+              <Pressable
+                key={group.key}
+                onPress={() => setCompetitionId(active ? null : group.competition.id)}
+                style={({ hovered }) => [
+                  styles.item,
+                  active && styles.itemActive,
+                  Platform.OS === 'web' && hovered && !active && styles.itemHover,
+                ]}>
+                <Text style={styles.flag}>{countryFlag(group.competition.country)}</Text>
+                <View style={styles.itemText}>
+                  <Text style={[styles.name, active && styles.nameActive]} numberOfLines={1}>
+                    {group.competition.name}
+                  </Text>
+                  <Text style={styles.country} numberOfLines={1}>
+                    {group.competition.country}
+                  </Text>
+                </View>
+                {live > 0 ? (
+                  <View style={styles.liveBadge}>
+                    <Text style={styles.liveBadgeText}>{live}</Text>
+                  </View>
+                ) : (
+                  <Text style={styles.count}>{group.fixtures.length}</Text>
+                )}
+              </Pressable>
+            );
+          })
+        )}
+      </ScrollView>
     </View>
   );
 }
@@ -86,6 +100,12 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
+  },
+  emptyHint: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: theme.textFaint,
+    paddingHorizontal: spacing.md,
   },
   item: {
     flexDirection: 'row',
@@ -122,6 +142,11 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body,
     fontSize: 10,
     color: theme.textMuted,
+  },
+  count: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 11,
+    color: theme.textFaint,
   },
   liveBadge: {
     backgroundColor: theme.live,
@@ -163,6 +188,7 @@ const styles = StyleSheet.create({
     borderColor: theme.border,
     backgroundColor: theme.bg,
     flexShrink: 0,
+    maxWidth: 160,
   },
   mobileChipActive: {
     borderColor: theme.live,

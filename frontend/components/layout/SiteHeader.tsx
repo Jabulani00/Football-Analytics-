@@ -2,14 +2,25 @@ import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
 import { useScoresFilter, type StatusFilter } from '@/components/layout/ScoresFilterContext';
+import type { FixtureKind, Gender } from '@/services/oddAlerts';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
-import { formatTopBarDate, parseDateKey } from '@/utils/dates';
+import { formatTopBarDate } from '@/utils/dates';
 
 const FILTERS: { id: StatusFilter; label: string }[] = [
-  { id: 'all', label: 'All' },
+  { id: 'ft', label: 'Results' },
   { id: 'live', label: 'LIVE' },
-  { id: 'ft', label: 'Finished' },
-  { id: 'ns', label: 'Scheduled' },
+  { id: 'ns', label: 'Fixtures' },
+  { id: 'all', label: 'All' },
+];
+
+const KINDS: { id: FixtureKind; label: string }[] = [
+  { id: 'club', label: 'Clubs' },
+  { id: 'country', label: 'Countries' },
+];
+
+const GENDERS: { id: Gender; label: string }[] = [
+  { id: 'men', label: 'Men' },
+  { id: 'women', label: 'Women' },
 ];
 
 type SiteHeaderProps = {
@@ -18,7 +29,8 @@ type SiteHeaderProps = {
 
 export default function SiteHeader({ showFilters = true }: SiteHeaderProps) {
   const router = useRouter();
-  const { selectedDate, statusFilter, setStatusFilter } = useScoresFilter();
+  const { statusFilter, setStatusFilter, kind, setKind, gender, setGender, setCompetitionId } =
+    useScoresFilter();
 
   return (
     <View style={styles.wrap}>
@@ -27,27 +39,70 @@ export default function SiteHeader({ showFilters = true }: SiteHeaderProps) {
           <View style={styles.logoDot} />
           <Text style={styles.logo}>SCORELINE</Text>
         </Pressable>
-        <Text style={styles.date}>{formatTopBarDate(parseDateKey(selectedDate))}</Text>
+        <Text style={styles.date}>{formatTopBarDate(new Date())}</Text>
         <Pressable onPress={() => router.push('/analytics')} style={styles.analyticsLink}>
           <Text style={styles.analyticsText}>Analytics</Text>
         </Pressable>
       </View>
+
       {showFilters ? (
-        <View style={styles.filters}>
-          {FILTERS.map((f) => {
-            const active = statusFilter === f.id;
-            return (
-              <Pressable
-                key={f.id}
-                onPress={() => setStatusFilter(f.id)}
-                style={[styles.filterChip, active && styles.filterActive]}>
-                <Text style={[styles.filterText, active && styles.filterTextActive, f.id === 'live' && styles.liveText]}>
-                  {f.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
+        <>
+          <View style={styles.filters}>
+            {FILTERS.map((f) => {
+              const active = statusFilter === f.id;
+              return (
+                <Pressable
+                  key={f.id}
+                  onPress={() => setStatusFilter(f.id)}
+                  style={[styles.filterChip, active && styles.filterActive]}>
+                  <Text
+                    style={[
+                      styles.filterText,
+                      active && styles.filterTextActive,
+                      f.id === 'live' && styles.liveText,
+                    ]}>
+                    {f.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <View style={styles.segments}>
+            <View style={styles.segment}>
+              {KINDS.map((k) => {
+                const active = kind === k.id;
+                return (
+                  <Pressable
+                    key={k.id}
+                    onPress={() => {
+                      setKind(k.id);
+                      setCompetitionId(null);
+                    }}
+                    style={[styles.segBtn, active && styles.segBtnActive]}>
+                    <Text style={[styles.segText, active && styles.segTextActive]}>{k.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <View style={styles.segment}>
+              {GENDERS.map((g) => {
+                const active = gender === g.id;
+                return (
+                  <Pressable
+                    key={g.id}
+                    onPress={() => {
+                      setGender(g.id);
+                      setCompetitionId(null);
+                    }}
+                    style={[styles.segBtn, active && styles.segBtnActive]}>
+                    <Text style={[styles.segText, active && styles.segTextActive]}>{g.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        </>
       ) : null}
     </View>
   );
@@ -126,5 +181,37 @@ const styles = StyleSheet.create({
   },
   liveText: {
     color: theme.live,
+  },
+  segments: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.sm,
+    flexWrap: 'wrap',
+  },
+  segment: {
+    flexDirection: 'row',
+    borderWidth: layout.borderWidth,
+    borderColor: theme.border,
+    borderRadius: layout.borderRadius,
+    overflow: 'hidden',
+  },
+  segBtn: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 5,
+    backgroundColor: theme.surface,
+    ...(Platform.OS === 'web' ? ({ cursor: 'pointer' } as object) : {}),
+  },
+  segBtnActive: {
+    backgroundColor: theme.accentGreen,
+  },
+  segText: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 12,
+    color: theme.textMuted,
+  },
+  segTextActive: {
+    color: theme.surface,
+    fontFamily: fonts.bodySemiBold,
   },
 });

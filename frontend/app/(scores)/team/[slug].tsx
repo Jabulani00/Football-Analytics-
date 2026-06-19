@@ -1,37 +1,16 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { StyleSheet, Text, View } from 'react-native';
 
-import StickyBack from '@/components/shared/StickyBack';
-import TeamScreen from '@/components/team/TeamScreen';
-import { getAllTeamSlugs, getTeamBySlug } from '@/mock/teamData';
-import { fonts, spacing, theme } from '@/styles/theme';
-
-export function generateStaticParams() {
-  return getAllTeamSlugs();
-}
+import TeamUpcomingScreen from '@/components/match-detail/TeamUpcomingScreen';
 
 export default function TeamRoute() {
-  const { slug } = useLocalSearchParams<{ slug: string }>();
+  const { slug, name } = useLocalSearchParams<{ slug: string; name?: string }>();
   const router = useRouter();
-  const team = getTeamBySlug(slug ?? '');
 
-  if (!team) {
-    return (
-      <View style={styles.error}>
-        <StickyBack label="← BACK" onPress={() => router.back()} />
-        <Text style={styles.errorText}>Team not found.</Text>
-      </View>
-    );
-  }
-
-  return <TeamScreen team={team} onBack={() => router.back()} />;
+  return (
+    <TeamUpcomingScreen
+      teamId={slug ?? ''}
+      teamName={name ?? 'Team'}
+      onBack={() => (router.canGoBack() ? router.back() : router.push('/'))}
+    />
+  );
 }
-
-const styles = StyleSheet.create({
-  error: { paddingVertical: spacing.md },
-  errorText: {
-    fontFamily: fonts.body,
-    fontSize: 16,
-    color: theme.textMuted,
-  },
-});

@@ -1,30 +1,15 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
-import MatchScreen from '@/components/match/MatchScreen';
-import { getLeagueIdFromMatchId, mockFixtures } from '@/mock/fixturesData';
-
-export function generateStaticParams() {
-  const params: { id: string }[] = [];
-  for (const fixtures of Object.values(mockFixtures)) {
-    for (const fixture of fixtures) {
-      params.push({ id: fixture.id });
-    }
-  }
-  return params;
-}
+import MatchDetailScreen from '@/components/match-detail/MatchDetailScreen';
 
 export default function MatchRoute() {
-  const { id, leagueId } = useLocalSearchParams<{ id: string; leagueId?: string }>();
+  const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const resolvedLeagueId = leagueId ?? getLeagueIdFromMatchId(id ?? '');
 
   return (
-    <MatchScreen
+    <MatchDetailScreen
       matchId={id ?? ''}
-      leagueId={resolvedLeagueId}
-      onBack={() =>
-        router.push({ pathname: '/league/[id]', params: { id: resolvedLeagueId } })
-      }
+      onBack={() => (router.canGoBack() ? router.back() : router.push('/'))}
     />
   );
 }

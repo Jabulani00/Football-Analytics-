@@ -2,7 +2,7 @@
   "meta": {
     "tables": 7,
     "statsPerTable": 34,
-    "exported_at": "2026-06-05T11:44:29.739Z",
+    "exported_at": "2026-06-19T19:48:52.980Z",
     "note": "Bundled subset for app; run backend db:export for all 72 tables"
   },
   "tables": {

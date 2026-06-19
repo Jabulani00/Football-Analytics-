@@ -1,25 +1,47 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
 
-import { getReferenceDateKey } from '@/utils/dates';
+import type { CompetitionGroup, FixtureKind, Gender } from '@/services/oddAlerts';
 
 export type StatusFilter = 'all' | 'live' | 'ft' | 'ns';
 
 type ScoresFilterContextValue = {
-  selectedDate: string;
-  setSelectedDate: (d: string) => void;
   statusFilter: StatusFilter;
   setStatusFilter: (f: StatusFilter) => void;
+  gender: Gender;
+  setGender: (g: Gender) => void;
+  kind: FixtureKind;
+  setKind: (k: FixtureKind) => void;
+  /** Competition the user drilled into from the sidebar, or null for all. */
+  competitionId: number | null;
+  setCompetitionId: (id: number | null) => void;
+  /** Competition groups currently loaded in the feed (powers the sidebar). */
+  competitions: CompetitionGroup[];
+  setCompetitions: (groups: CompetitionGroup[]) => void;
 };
 
 const ScoresFilterContext = createContext<ScoresFilterContextValue | null>(null);
 
 export function ScoresFilterProvider({ children }: { children: ReactNode }) {
-  const [selectedDate, setSelectedDate] = useState(getReferenceDateKey());
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('ft');
+  const [gender, setGender] = useState<Gender>('men');
+  const [kind, setKind] = useState<FixtureKind>('club');
+  const [competitionId, setCompetitionId] = useState<number | null>(null);
+  const [competitions, setCompetitions] = useState<CompetitionGroup[]>([]);
 
   const value = useMemo(
-    () => ({ selectedDate, setSelectedDate, statusFilter, setStatusFilter }),
-    [selectedDate, statusFilter],
+    () => ({
+      statusFilter,
+      setStatusFilter,
+      gender,
+      setGender,
+      kind,
+      setKind,
+      competitionId,
+      setCompetitionId,
+      competitions,
+      setCompetitions,
+    }),
+    [statusFilter, gender, kind, competitionId, competitions],
   );
 
   return <ScoresFilterContext.Provider value={value}>{children}</ScoresFilterContext.Provider>;

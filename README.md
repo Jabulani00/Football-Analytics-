@@ -76,24 +76,55 @@ npm run build
 
 ---
 
+## Live data (OddAlerts)
+
+The scores feed, match detail (summary, lineups, H2H, standings) and team
+fixtures are powered by the **OddAlerts Football Data API**. The API sends no
+CORS headers, so web requests go through a server-side proxy
+(`frontend/app/oddalerts+api.ts`, served at `/oddalerts`) that injects the token
+— the token is never exposed to the browser.
+
+### Configure the token
+
+```bash
+cp frontend/.env.example frontend/.env
+# then edit frontend/.env and set your token
+```
+
+| Variable | Where | Purpose |
+|----------|-------|---------|
+| `ODDALERTS_TOKEN` | server (proxy) | Web requests. **Secret.** |
+| `EXPO_PUBLIC_ODDALERTS_TOKEN` | client | Direct calls on native (iOS/Android) dev only |
+
+`frontend/.env` is git-ignored. See [`docs/ODDALERTS_INTEGRATION.md`](docs/ODDALERTS_INTEGRATION.md).
+
+---
+
 ## Deploy (Vercel)
 
-Root `vercel.json` builds from `frontend/`:
+Root `vercel.json` builds the Expo **server** output from `frontend/`:
 
-- **Install:** `cd frontend && npm install`
-- **Build:** `cd frontend && npm run build`
-- **Output:** `frontend/dist`
+- **Install:** `npm install && cd frontend && npm install`
+- **Build:** `cd frontend && npm run vercel-build`
+- **Static output:** `frontend/dist/client`
+- **Serverless function:** `api/index.js` boots the Expo server bundle (`frontend/dist/server`), which serves the `/oddalerts` proxy and SSR routes.
 
-Import the repo in [Vercel](https://vercel.com/new) — no env vars required for mock-data builds.
+Steps:
+
+1. Push to GitHub and import the repo in [Vercel](https://vercel.com/new).
+2. In **Project Settings → Environment Variables**, add `ODDALERTS_TOKEN` (your token) for Production + Preview.
+3. Deploy. Vercel picks up `vercel.json` automatically (framework preset: *Other*).
+
+> Without `ODDALERTS_TOKEN`, the proxy returns HTTP 500 and the feed will be empty.
 
 ### Routes
 
 | URL | Screen |
 |-----|--------|
-| `/` | Live scores feed |
-| `/league/:id` | League (results, standings, …) |
-| `/match/:id` | Match detail + ML predictions |
-| `/team/:slug` | Team profile |
+| `/` | Live scores feed (Live / Results / Fixtures, club/country, men/women) |
+| `/match/:id` | Match detail — Summary, Lineups (pitch), H2H, Standings |
+| `/team/:slug` | Team's upcoming fixtures |
+| `/league/:id` | League view |
 | `/analytics` | Analytics hub |
 
 ---
@@ -108,7 +139,7 @@ backend/train_btts.py ──export──►  frontend/assets/models/btts/
                               Expo app (useStats, useModel, useSimilarMatches)
 ```
 
-During Phase 1 development there are **no live API calls**. Mock fixtures live in `frontend/mock/`; SQLite exports mirror them for training.
+Live fixtures/results/standings come from the **OddAlerts API** (via the `/oddalerts` proxy). The bundled `assets/data/*.json` (from `mock/` or the backend export) still powers the analytics/stats and ML screens.
 
 ---
 
