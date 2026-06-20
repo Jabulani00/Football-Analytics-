@@ -467,6 +467,9 @@ export async function fetchSquads(
 
 // ----- Standings ----------------------------------------------------------
 
+/** Table zone for the green/yellow/red colouring (top/middle/bottom third). */
+export type StandingZone = 'top' | 'mid' | 'bottom';
+
 export type StandingRow = {
   rank: number;
   teamId: number;
@@ -479,6 +482,9 @@ export type StandingRow = {
   goalsAgainst: number;
   goalDiff: number;
   points: number;
+  homePoints: number;
+  awayPoints: number;
+  zone: StandingZone;
 };
 
 type RawSeasonStat = {
@@ -488,11 +494,33 @@ type RawSeasonStat = {
   won?: { total?: number };
   drawn?: { total?: number };
   lost?: { total?: number };
-  points?: { total?: number };
+  points?: { total?: number; home?: number; away?: number };
   goals_for?: { total?: number };
   goals_against?: { total?: number };
   goals_difference?: { total?: number };
 };
+
+/** Standings comparator: points, then goal difference, then goals for, then name. */
+function compareStandings(
+  a: { points: number; goalDiff: number; goalsFor: number; name: string },
+  b: { points: number; goalDiff: number; goalsFor: number; name: string },
+): number {
+  if (b.points !== a.points) return b.points - a.points;
+  if (b.goalDiff !== a.goalDiff) return b.goalDiff - a.goalDiff;
+  if (b.goalsFor !== a.goalsFor) return b.goalsFor - a.goalsFor;
+  return a.name.localeCompare(b.name);
+}
+
+/** Assigns green/middle/red zones by splitting the table into thirds. */
+export function assignZones<T>(rows: T[]): (T & { zone: StandingZone })[] {
+  const n = rows.length;
+  const topCut = Math.ceil(n / 3);
+  const bottomCut = n - Math.ceil(n / 3);
+  return rows.map((row, i) => ({
+    ...row,
+    zone: (i < topCut ? 'top' : i >= bottomCut ? 'bottom' : 'mid') as StandingZone,
+  }));
+}
 
 /** League table built from a season's team stats, sorted like a standings table. */
 export async function fetchSeasonStandings(
@@ -511,14 +539,291 @@ export async function fetchSeasonStandings(
     goalsAgainst: s.goals_against?.total ?? 0,
     goalDiff: s.goals_difference?.total ?? (s.goals_for?.total ?? 0) - (s.goals_against?.total ?? 0),
     points: s.points?.total ?? 0,
+    homePoints: s.points?.home ?? 0,
+    awayPoints: s.points?.away ?? 0,
   }));
 
-  rows.sort((a, b) => {
-    if (b.points !== a.points) return b.points - a.points;
-    if (b.goalDiff !== a.goalDiff) return b.goalDiff - a.goalDiff;
-    if (b.goalsFor !== a.goalsFor) return b.goalsFor - a.goalsFor;
-    return a.name.localeCompare(b.name);
-  });
+  rows.sort(compareStandings);
 
-  return rows.map((row, i) => ({ rank: i + 1, ...row }));
+  return assignZones(rows).map((row, i) => ({ rank: i + 1, ...row }));
+}
+
+// ----- Standings movement (after a match) ---------------------------------
+
+export type Movement = { position: number | null; delta: number | null };
+
+const POINTS_FOR = { win: 3, draw: 1, loss: 0 } as const;
+
+function rankOf(rows: { teamId: number }[], teamId: number): number | null {
+  const i = rows.findIndex((r) => r.teamId === teamId);
+  return i === -1 ? null : i + 1;
+}
+
+/**
+ * Movement for the two teams in a finished/live match: compares the current
+ * table with one recomputed as if this match had not been played. A positive
+ * delta means the team climbed because of this result.
+ */
+export function standingsMovement(
+  standings: StandingRow[],
+  match: { homeId: number | null; awayId: number | null; homeGoals: number | null; awayGoals: number | null },
+): { home: Movement; away: Movement } {
+  const { homeId, awayId, homeGoals, awayGoals } = match;
+  const blank: Movement = { position: null, delta: null };
+  if (homeId == null || awayId == null || homeGoals == null || awayGoals == null) {
+    return {
+      home: { position: homeId != null ? rankOf(standings, homeId) : null, delta: null },
+      away: { position: awayId != null ? rankOf(standings, awayId) : null, delta: null },
+    };
+  }
+
+  const homePts = homeGoals > awayGoals ? POINTS_FOR.win : homeGoals === awayGoals ? POINTS_FOR.draw : POINTS_FOR.loss;
+  const awayPts = awayGoals > homeGoals ? POINTS_FOR.win : homeGoals === awayGoals ? POINTS_FOR.draw : POINTS_FOR.loss;
+
+  // Rebuild the table as it stood *before* this match.
+  const before = standings
+    .map((r) => {
+      if (r.teamId === homeId) {
+        return { ...r, points: r.points - homePts, goalsFor: r.goalsFor - homeGoals, goalDiff: r.goalDiff - (homeGoals - awayGoals) };
+      }
+      if (r.teamId === awayId) {
+        return { ...r, points: r.points - awayPts, goalsFor: r.goalsFor - awayGoals, goalDiff: r.goalDiff - (awayGoals - homeGoals) };
+      }
+      return r;
+    })
+    .sort(compareStandings);
+
+  const curHome = rankOf(standings, homeId);
+  const curAway = rankOf(standings, awayId);
+  const preHome = rankOf(before, homeId);
+  const preAway = rankOf(before, awayId);
+
+  return {
+    home: { position: curHome, delta: preHome != null && curHome != null ? preHome - curHome : null },
+    away: { position: curAway, delta: preAway != null && curAway != null ? preAway - curAway : null },
+  };
+}
+
+// ----- Countries & competitions (browse) ----------------------------------
+
+export type Country = { id: number; name: string; code: string | null; slug: string };
+
+export type Season = {
+  seasonId: number;
+  seasonName: string;
+  played: number | null;
+  progress: number | null;
+  isCurrent: boolean;
+};
+
+export type Competition = {
+  id: number;
+  name: string;
+  slug: string;
+  country: string;
+  countryId: number;
+  type: string;
+  isCup: boolean;
+  currentSeason: number | null;
+  seasons: Season[];
+};
+
+type RawCompetition = {
+  id: number;
+  name: string;
+  slug: string;
+  country: string;
+  country_id: number;
+  type: string;
+  current_season: number | null;
+  seasons?: { season_id: number; season_name: string; played: number | null; progress: number | null }[];
+};
+
+let countriesCache: Country[] | null = null;
+let countryCodeByName: Map<string, string> | null = null;
+
+export async function fetchCountries(signal?: AbortSignal): Promise<Country[]> {
+  if (countriesCache) return countriesCache;
+  const env = await getJson<Country>('countries', {}, signal);
+  countriesCache = env.data;
+  countryCodeByName = new Map(
+    env.data.filter((c) => c.code).map((c) => [c.name.toLowerCase(), c.code as string]),
+  );
+  return env.data;
+}
+
+/** ISO code for a country name (from the cached `/countries` list), if known. */
+export function countryCodeForName(name: string | null | undefined): string | null {
+  if (!name) return null;
+  return countryCodeByName?.get(name.toLowerCase()) ?? null;
+}
+
+let competitionsCache: Competition[] | null = null;
+let competitionsPromise: Promise<Competition[]> | null = null;
+
+function mapCompetition(raw: RawCompetition): Competition {
+  const seasons: Season[] = (raw.seasons ?? [])
+    .map((s) => ({
+      seasonId: s.season_id,
+      seasonName: s.season_name,
+      played: s.played,
+      progress: s.progress,
+      isCurrent: s.season_id === raw.current_season,
+    }))
+    .sort((a, b) => b.seasonId - a.seasonId); // newest first
+  return {
+    id: raw.id,
+    name: raw.name,
+    slug: raw.slug,
+    country: raw.country,
+    countryId: raw.country_id,
+    type: raw.type,
+    isCup: /cup/i.test(raw.type),
+    currentSeason: raw.current_season,
+    seasons,
+  };
+}
+
+/**
+ * All competitions with their season history. The API ignores `country_id`
+ * filtering, so we fetch every page once and cache the result in-module.
+ */
+export async function fetchAllCompetitions(signal?: AbortSignal): Promise<Competition[]> {
+  if (competitionsCache) return competitionsCache;
+  if (competitionsPromise) return competitionsPromise;
+
+  competitionsPromise = (async () => {
+    const all: Competition[] = [];
+    for (let page = 1; page <= 12; page += 1) {
+      const env = await getJson<RawCompetition>(
+        'competitions',
+        { include: 'seasons', per_page: 250, page },
+        signal,
+      );
+      all.push(...env.data.map(mapCompetition));
+      if (!env.info?.next_page_url) break;
+    }
+    competitionsCache = all;
+    competitionsPromise = null;
+    return all;
+  })();
+
+  return competitionsPromise;
+}
+
+/** Club competitions only (excludes national-team tournaments), by country. */
+export function clubCompetitionsByCountry(
+  comps: Competition[],
+): Map<number, { country: string; leagues: Competition[]; cups: Competition[] }> {
+  const map = new Map<number, { country: string; leagues: Competition[]; cups: Competition[] }>();
+  for (const c of comps) {
+    if (detectKind(c.name) !== 'club') continue;
+    let entry = map.get(c.countryId);
+    if (!entry) {
+      entry = { country: c.country, leagues: [], cups: [] };
+      map.set(c.countryId, entry);
+    }
+    (c.isCup ? entry.cups : entry.leagues).push(c);
+  }
+  for (const entry of map.values()) {
+    entry.leagues.sort((a, b) => a.name.localeCompare(b.name));
+    entry.cups.sort((a, b) => a.name.localeCompare(b.name));
+  }
+  return map;
+}
+
+export function findCompetition(comps: Competition[], id: number): Competition | undefined {
+  return comps.find((c) => c.id === id);
+}
+
+// ----- Points by opponent tier (computed from season results) -------------
+
+export type TierKey = StandingZone;
+export type TierPoints = Record<TierKey, { points: number; played: number }>;
+
+/** Derive a unix [from,to] window from a season name like "2024/2025" or "2024". */
+export function seasonWindowUnix(seasonName: string): { fromUnix: number; toUnix: number } {
+  const years = seasonName.match(/\d{4}/g)?.map(Number) ?? [];
+  if (years.length >= 2) {
+    // Split season, e.g. Aug 2024 -> Jul 2025.
+    return {
+      fromUnix: Math.floor(Date.UTC(years[0], 6, 1) / 1000), // Jul 1 start year
+      toUnix: Math.floor(Date.UTC(years[1], 6, 15) / 1000), // Jul 15 end year
+    };
+  }
+  if (years.length === 1) {
+    return {
+      fromUnix: Math.floor(Date.UTC(years[0], 0, 1) / 1000),
+      toUnix: Math.floor(Date.UTC(years[0], 11, 31, 23, 59) / 1000),
+    };
+  }
+  // Fallback: last ~13 months.
+  const now = Math.floor(Date.now() / 1000);
+  return { fromUnix: now - 400 * 86400, toUnix: now };
+}
+
+const tierCache = new Map<number, Map<number, TierPoints>>();
+
+const emptyTier = (): TierPoints => ({
+  top: { points: 0, played: 0 },
+  mid: { points: 0, played: 0 },
+  bottom: { points: 0, played: 0 },
+});
+
+/**
+ * Points each team earned against top / middle / bottom-zone opponents, computed
+ * from the season's finished results. Cached per season id.
+ */
+export async function computeTierPoints(
+  opts: { competitionId: number; season: Season; standings: StandingRow[] },
+  signal?: AbortSignal,
+): Promise<Map<number, TierPoints>> {
+  const cached = tierCache.get(opts.season.seasonId);
+  if (cached) return cached;
+
+  const zoneByTeam = new Map<number, StandingZone>();
+  for (const r of opts.standings) zoneByTeam.set(r.teamId, r.zone);
+
+  const { fromUnix, toUnix } = seasonWindowUnix(opts.season.seasonName);
+  const raw = await fetchAllFixturesBetween(
+    { fromUnix, toUnix, competitions: String(opts.competitionId), maxPages: 8 },
+    signal,
+  );
+
+  const result = new Map<number, TierPoints>();
+  const ensure = (id: number) => {
+    let t = result.get(id);
+    if (!t) {
+      t = emptyTier();
+      result.set(id, t);
+    }
+    return t;
+  };
+
+  for (const f of raw) {
+    if (normaliseStatus(f.status) !== 'FT') continue;
+    if (f.season_id != null && f.season_id !== opts.season.seasonId) continue;
+    if (f.home_id == null || f.away_id == null || f.home_goals == null || f.away_goals == null) continue;
+
+    const hg = f.home_goals;
+    const ag = f.away_goals;
+    const hPts = hg > ag ? 3 : hg === ag ? 1 : 0;
+    const aPts = ag > hg ? 3 : hg === ag ? 1 : 0;
+    const homeZone = zoneByTeam.get(f.home_id);
+    const awayZone = zoneByTeam.get(f.away_id);
+
+    if (awayZone) {
+      const t = ensure(f.home_id);
+      t[awayZone].points += hPts;
+      t[awayZone].played += 1;
+    }
+    if (homeZone) {
+      const t = ensure(f.away_id);
+      t[homeZone].points += aPts;
+      t[homeZone].played += 1;
+    }
+  }
+
+  tierCache.set(opts.season.seasonId, result);
+  return result;
 }

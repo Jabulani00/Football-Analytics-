@@ -26,7 +26,7 @@ dimensions on top of the status tabs:
 | ------------- | -------------------------------------------- | -------------------------------------- |
 | **Results** (default) | `GET /fixtures/between?from=&to=`     | Finished games over a 1–7 day window   |
 | **LIVE**      | `GET /fixtures/live`                          | In-play + half-time (auto-refresh 25s) |
-| **Scheduled** | `GET /fixtures/upcoming?days=2`               | Upcoming (not-started) fixtures        |
+| **Fixtures**  | `GET /fixtures/upcoming?days=2`               | Upcoming (not-started) fixtures        |
 | **All**       | `live` + `upcoming?days=1`                    | Live/finished now, then soonest upcoming |
 
 **Section toggles** (applied to every tab):
@@ -34,8 +34,9 @@ dimensions on top of the status tabs:
 - **Clubs / Countries** — club football vs national-team (international) competitions.
 - **Men / Women** — men's vs women's competitions.
 
-Tapping a competition in the left **sidebar** filters the feed to that single
-league/tournament; "clear" returns to the full list.
+On the **Countries** side the left **sidebar** lists the loaded tournaments and
+filters the feed to one. On the **Clubs** side the sidebar becomes a
+**Country → Leagues/Cups** browser that opens a full standings table (see §8).
 
 ### Results day-window
 
@@ -107,9 +108,51 @@ server bundle via `@expo/server/adapter/vercel`.
 | `EXPO_PUBLIC_ODDALERTS_TOKEN`     | client          | Token for direct native calls (optional override) |
 | `EXPO_PUBLIC_ODDALERTS_PROXY`     | client          | Proxy URL override (default `/oddalerts`)          |
 | `EXPO_PUBLIC_ODDALERTS_BASE_URL`  | client          | Direct base URL override                           |
+| `THESPORTSDB_KEY`                 | server (Vercel) | TheSportsDB key for the `/teamlogo` route (default `123`) |
+| `EXPO_PUBLIC_THESPORTSDB_KEY`     | client          | TheSportsDB key for direct native logo lookups     |
 
-The token also has a hardcoded development fallback in `app/oddalerts+api.ts` and
-`services/oddAlerts.ts` so the app runs out of the box.
+There is **no hardcoded token fallback** — copy `frontend/.env.example` →
+`frontend/.env` and set `ODDALERTS_TOKEN` (and `EXPO_PUBLIC_ODDALERTS_TOKEN` for
+native) before running. The logo key defaults to the public test key `123`.
+
+### Setup walkthrough
+
+**1. Local development**
+
+```bash
+cd frontend
+cp .env.example .env          # Windows: copy .env.example .env
+```
+
+Edit `frontend/.env`:
+
+```bash
+# OddAlerts (required)
+ODDALERTS_TOKEN=your_oddalerts_token            # used by the web proxy (server-side)
+EXPO_PUBLIC_ODDALERTS_TOKEN=your_oddalerts_token # used by native (direct calls)
+
+# Club logos via TheSportsDB (optional — defaults to the shared test key "123")
+THESPORTSDB_KEY=123
+EXPO_PUBLIC_THESPORTSDB_KEY=123
+```
+
+Then `npm run web` (or `npm run start` for native). `.env` is git-ignored.
+
+> After changing `.env` **or** adding/editing an `+api.ts` route, **restart**
+> the dev server — env vars and API routes are only read on boot, not hot-reloaded.
+
+**2. Production (Vercel)**
+
+In **Project Settings → Environment Variables** add (Production + Preview):
+
+| Name              | Value                | Notes                              |
+| ----------------- | -------------------- | ---------------------------------- |
+| `ODDALERTS_TOKEN` | your token           | required; used by `/oddalerts`     |
+| `THESPORTSDB_KEY` | your key (or `123`)  | optional; used by `/teamlogo`      |
+
+`EXPO_PUBLIC_*` vars are only needed for native builds, not the Vercel web build.
+After adding/changing a variable you must **redeploy** — Vercel injects env vars
+at build time, so an existing deployment won't pick them up until rebuilt.
 
 ---
 
@@ -132,15 +175,17 @@ The token also has a hardcoded development fallback in `app/oddalerts+api.ts` an
 
 - **Web is now server output** (`web.output: "server"`) instead of a pure static
   SPA. Production must run the Expo server bundle (Vercel config provided).
-- **Native ships a fallback token** for convenience; rotate / proxy it for a
-  public release.
+- **Token must be configured** (no hardcoded fallback) — set it in `.env` / Vercel.
 - **Gender / club-vs-country are heuristic** (no API field) — rare mislabels are
   possible and tuned via regex.
-- **No season-list endpoint** — full-season results are assembled from
-  `/fixtures/between` over a window, not one call.
-- **Result volume is paginated** (250/page; client fetches up to 3 pages).
-- **Match detail / older mock pages** (`/league/[id]`, `/match/[id]`, analytics)
-  are not yet wired to the API; the main scores flow no longer links to them.
+- **`/competitions` ignores `country_ids`** — the whole list (~2.4k) is fetched
+  once and grouped client-side; points-vs-tier / movement need a season's full
+  results over a derived window (paginated, cached, approximate for old seasons).
+- **Result volume is paginated** (250/page; client fetches up to 3–8 pages).
+- **Lineups are best-effort** — the feed has no confirmed starting XI or events
+  (goals/cards/subs), so the pitch is arranged by squad position.
+- **Logos are crowd-sourced** (TheSportsDB) — sparse for lower leagues; initials
+  fallback covers the gaps.
 
 ---
 
@@ -152,18 +197,75 @@ GET /api/fixtures/upcoming?days=N               # scheduled (paginated)
 GET /api/fixtures/between?from=UNIX&to=UNIX      # results / any window (paginated)
         &competitions=ID                         #   optional competition filter
 GET /api/fixtures/:id?include=probability,stats  # single fixture detail
-GET /api/countries                               # all countries
-GET /api/competitions?country_ids=1&include=seasons   # leagues + current/last seasons
+GET /api/countries                               # all countries (id, name, code, slug)
+GET /api/competitions?include=seasons            # ALL competitions + season history
+GET /api/stats/season/:id                        # season standings (points home/away)
 GET /api/bookmakers | /api/value/upcoming | /api/trends/:TREND | /api/odds/latest
+
+# App-local proxy route (not OddAlerts):
+GET /teamlogo?name=Arsenal                       # → { badge } from TheSportsDB
 ```
 
 `from`/`to` are **unix seconds**. `competitions` accepts comma-separated IDs.
+
 Live statuses seen: `NS`, `LIVE`, `1H`, `2H`, `HT`, `FT`, `AET`, `FT_PEN`,
 `AWARDED`, `POSTPONED`, `CANCELLED`, `AWAITING_UPDATES`.
 
+> **Note:** the API **ignores `country_ids` on `/competitions`**, so the app
+> fetches every page once (`include=seasons`, ~10 pages) and groups by country
+> **client-side** (cached in-module in `services/oddAlerts.ts`).
+
 ---
 
-## 6. File structure (integration-relevant)
+## 6. Usage limits & how to avoid throttling
+
+### OddAlerts limits (verified from response headers)
+
+Every response carries rate-limit headers:
+
+```
+X-RateLimit-Limit: 300
+X-RateLimit-Remaining: 299
+```
+
+- **Budget:** ~**300 requests per window** per token. When exceeded the API
+  returns **HTTP 429** (Too Many Requests).
+- Pagination is **250 items/page**; each page is one request.
+
+### TheSportsDB limits (club logos)
+
+- The free shared test key **`123` is aggressively rate-limited** by Cloudflare
+  and frequently returns `error code: 1015`. When that happens the `/teamlogo`
+  route returns `{ "badge": null }` and the UI falls back to **team initials** —
+  nothing breaks, logos just don't show.
+- For reliable logos, get your own key and set `THESPORTSDB_KEY`.
+
+### How the app stays under the limits
+
+| Technique | Where | Effect |
+| --------- | ----- | ------ |
+| **Edge cache** on the proxy | `app/oddalerts+api.ts` (`s-maxage=10, stale-while-revalidate=30`) | Repeated identical requests within ~10s are served from cache, not the API |
+| **Competitions fetched once + cached** | `fetchAllCompetitions()` in-module cache | ~10 requests total per session for the whole 2.4k-competition list |
+| **Countries cached once** | `fetchCountries()` in-module cache | One request per session |
+| **Points-vs-tier cached per season** | `computeTierPoints()` (`tierCache`) | A season's results window is fetched once, then reused |
+| **Pagination caps** | `fetchAllFixturesBetween({ maxPages })` | Hard stop at 3–8 pages so one view can't spend the whole budget |
+| **Single-flight de-dup** | logo + competitions caches | Concurrent requests for the same key share one in-flight promise |
+| **Polling only when needed** | `useLiveFixtures` (25s) | Live views refresh every 25s; non-live views don't poll |
+| **`AbortController`** | fetch hooks | Stale requests are cancelled on navigation/filter change |
+
+### If you still hit 429 / 1015
+
+- Increase the proxy `s-maxage` in `app/oddalerts+api.ts` (e.g. `30`–`60`) to
+  serve more from the edge cache.
+- Raise the live-poll interval above 25s in `useLiveFixtures.ts`.
+- Lower `maxPages` for `fetchAllFixturesBetween` (fewer result pages per view).
+- Avoid rapid season-switching on the standings panel (each new season can
+  trigger a paginated results fetch the first time).
+- For logos, use a real `THESPORTSDB_KEY` instead of the shared `123`.
+
+---
+
+## 7. File structure (integration-relevant)
 
 ```
 Odds-APP/
@@ -172,20 +274,30 @@ Odds-APP/
 ├─ frontend/
 │  ├─ app/
 │  │  ├─ oddalerts+api.ts          # Expo API route = the OddAlerts proxy
+│  │  ├─ teamlogo+api.ts           # Expo API route = TheSportsDB logo proxy
 │  │  └─ (scores)/
 │  │     ├─ _layout.tsx            # FlashscoreShell wrapper
-│  │     └─ index.tsx              # renders <LiveScoresFeed />
+│  │     └─ index.tsx              # LiveScoresFeed OR StandingsPanel (by panel mode)
 │  ├─ components/
 │  │  ├─ home/LiveScoresFeed.tsx   # feed: filters, results window, grouping
 │  │  ├─ scores/
 │  │  │  ├─ CompetitionHeader.tsx  # country/league group header
-│  │  │  └─ ScoresMatchRow.tsx     # one match row (live min / FT / kickoff)
+│  │  │  └─ ScoresMatchRow.tsx     # one match row (logo + live min / FT / kickoff)
+│  │  ├─ standings/
+│  │  │  ├─ StandingsPanel.tsx     # competition header + season selector + table/cup
+│  │  │  └─ StandingsTable.tsx     # zoned table, home/away pts, tier breakdown
+│  │  ├─ match-detail/MatchDetailScreen.tsx  # summary/lineups/H2H/standings + movement
+│  │  ├─ shared/TeamLogo.tsx       # badge (TheSportsDB) with initials fallback
 │  │  └─ layout/
 │  │     ├─ SiteHeader.tsx         # status tabs + Clubs/Countries + Men/Women
-│  │     ├─ LeagueSidebar.tsx      # API-driven competition list (filters feed)
-│  │     └─ ScoresFilterContext.tsx# shared filter + competition state
-│  ├─ hooks/useLiveFixtures.ts     # fetch + poll + map per view
-│  ├─ services/oddAlerts.ts        # API client, types, status & gender/kind logic
+│  │     ├─ LeagueSidebar.tsx      # Country → Leagues/Cups browser (Clubs) / feed list
+│  │     └─ ScoresFilterContext.tsx# shared filter + competition + panel state
+│  ├─ hooks/
+│  │  ├─ useLiveFixtures.ts        # fetch + poll + map per view
+│  │  └─ useStandings.ts           # season standings + points-vs-tier
+│  ├─ services/
+│  │  ├─ oddAlerts.ts              # API client, types, standings/zone/tier/movement
+│  │  └─ logos.ts                  # cached club-badge lookup (proxy/native)
 │  └─ utils/countryFlags.ts        # country name → emoji flag
 ├─ docs/ODDALERTS_INTEGRATION.md   # (this file)
 ├─ app.json                        # web.output: "server" (frontend)
@@ -194,7 +306,7 @@ Odds-APP/
 
 ---
 
-## 7. How to run the project
+## 8. How to run the project
 
 ### Prerequisites
 
@@ -229,7 +341,8 @@ npm run start      # press i / a, or scan the QR with Expo Go
    `frontend/dist/client` (static assets) + `frontend/dist/server` (server bundle).
 2. `api/index.js` serves the app + the `/oddalerts` route via
    `@expo/server/adapter/vercel`.
-3. Add the env var **`ODDALERTS_TOKEN`** in the Vercel project settings.
+3. Add the env var **`ODDALERTS_TOKEN`** in the Vercel project settings (and
+   optionally **`THESPORTSDB_KEY`** for higher logo rate limits).
 
 ### Quick API sanity check (optional)
 
@@ -240,13 +353,42 @@ curl "https://data.oddalerts.com/api/fixtures/between?from=1781000000&to=1781600
 
 ---
 
-## 8. Next step: full league/season browser
+## 9. League/season standings browser (Clubs side)
 
-The data is exposed; only UI remains:
+On the **Clubs** segment the left sidebar is a **Country → Leagues/Cups** drill-down:
 
-1. `GET /api/countries` → choose a country.
-2. `GET /api/competitions?country_ids=<id>&include=seasons` → each competition has
-   `current_season` + a `seasons[]` list (`season_id`, `season_name`, `played`,
-   `progress`).
-3. `GET /api/fixtures/between?competitions=<id>&from=<season_start>&to=<now>` →
-   that competition's results, grouped by matchday/date.
+1. `GET /api/competitions?include=seasons` is fetched once and cached, then grouped
+   by country client-side (`clubCompetitionsByCountry`). Each country expands into
+   its **Leagues** and **Cups & Tournaments**.
+2. Picking a competition opens `StandingsPanel` with a **season selector** (current
+   season first, then the full `seasons[]` history).
+3. **League** type → `GET /api/stats/season/:id` builds the table
+   (`fetchSeasonStandings`):
+   - **Three zones** coloured by table thirds — **green** (top), **yellow** (middle),
+     **red** (bottom) — via `assignZones`.
+   - **Home Pts / Away Pts** columns come straight from `points.home` / `points.away`.
+   - Expanding a row shows **points by opponent zone** (vs Top / Mid / Bottom),
+     computed from the season's finished results (`computeTierPoints`, cached per
+     season — derives the date window from the season name and tallies points each
+     team took off top/mid/bottom opponents).
+4. **Cup** type has no league table → `StandingsPanel` lists that season's
+   fixtures/results grouped by date instead.
+
+### Post-match standings movement
+
+`MatchDetailScreen` (live **or** finished) rebuilds the table *without* the current
+result (`standingsMovement`) and shows each team's **current position + arrow**
+(▲ up / ▼ down / = same) on the scoreboard and beside the team in the Standings tab.
+
+### Club logos
+
+`TeamLogo` resolves a badge from **TheSportsDB** (`services/logos.ts`, cached) —
+through the `/teamlogo` proxy on web, directly on native — and falls back to an
+initials monogram (or the country flag for national teams). Badges render in match
+rows, the standings table and the match header.
+
+> **Trade-offs:** the competition list (~2.4k items) is fetched once and cached;
+> points-vs-tier and old-season movement need a season's full results over a
+> derived date window (paginated, cached), so old-season windows are approximate
+> from the season name. TheSportsDB is crowd-sourced — great for major clubs,
+> sparse for lower leagues, where the initials/flag fallback keeps the UI clean.

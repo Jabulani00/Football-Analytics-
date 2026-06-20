@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { ActivityIndicator, Platform, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { usePathname } from 'expo-router';
 
@@ -5,6 +6,7 @@ import LeagueSidebar from '@/components/layout/LeagueSidebar';
 import { ScoresFilterProvider } from '@/components/layout/ScoresFilterContext';
 import SiteHeader from '@/components/layout/SiteHeader';
 import { useAppFonts } from '@/hooks/use-app-fonts';
+import { fetchCountries } from '@/services/oddAlerts';
 import { layout, theme } from '@/styles/theme';
 
 type FlashscoreShellProps = {
@@ -20,6 +22,11 @@ export default function FlashscoreShell({ children }: FlashscoreShellProps) {
   const { width } = useWindowDimensions();
   const isDesktop = width >= 1024;
   const isHome = pathname === '/' || pathname === '';
+
+  // Warm the country code cache so flag images resolve by name anywhere.
+  useEffect(() => {
+    fetchCountries().catch(() => {});
+  }, []);
 
   if (!fontsLoaded) {
     return (

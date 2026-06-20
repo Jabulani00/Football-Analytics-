@@ -1,7 +1,9 @@
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import CountryFlag from '@/components/shared/CountryFlag';
 import LivePulse from '@/components/shared/LivePulse';
-import type { Fixture } from '@/services/oddAlerts';
+import TeamLogo from '@/components/shared/TeamLogo';
+import type { Fixture, FixtureKind } from '@/services/oddAlerts';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
 type ScoresMatchRowProps = {
@@ -54,11 +56,14 @@ export default function ScoresMatchRow({ fixture, onPress }: ScoresMatchRowProps
       <View style={styles.statusCol}>
         <StatusColumn fixture={fixture} />
       </View>
-      <Text
-        style={[styles.team, styles.homeTeam, started && !homeWins && !isDraw && styles.teamMuted]}
-        numberOfLines={1}>
-        {fixture.home.name}
-      </Text>
+      <View style={[styles.teamCell, styles.homeCell]}>
+        <Text
+          style={[styles.team, styles.homeTeam, started && !homeWins && !isDraw && styles.teamMuted]}
+          numberOfLines={1}>
+          {fixture.home.name}
+        </Text>
+        <TeamSide name={fixture.home.name} kind={fixture.kind} />
+      </View>
       <View style={styles.scoreCol}>
         {started ? (
           <Text style={[styles.score, isLive && styles.scoreLive]}>
@@ -70,13 +75,23 @@ export default function ScoresMatchRow({ fixture, onPress }: ScoresMatchRowProps
           <Text style={styles.vs}>-</Text>
         )}
       </View>
-      <Text
-        style={[styles.team, styles.awayTeam, started && !awayWins && !isDraw && styles.teamMuted]}
-        numberOfLines={1}>
-        {fixture.away.name}
-      </Text>
+      <View style={[styles.teamCell, styles.awayCell]}>
+        <TeamSide name={fixture.away.name} kind={fixture.kind} />
+        <Text
+          style={[styles.team, styles.awayTeam, started && !awayWins && !isDraw && styles.teamMuted]}
+          numberOfLines={1}>
+          {fixture.away.name}
+        </Text>
+      </View>
     </Pressable>
   );
+}
+
+function TeamSide({ name, kind }: { name: string; kind: FixtureKind }) {
+  if (kind === 'country') {
+    return <CountryFlag name={name} size={14} />;
+  }
+  return <TeamLogo name={name} size={18} />;
 }
 
 const styles = StyleSheet.create({
@@ -124,6 +139,22 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodySemiBold,
     fontSize: 11,
     color: theme.accentOrange,
+  },
+  teamCell: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minWidth: 0,
+  },
+  homeCell: {
+    justifyContent: 'flex-end',
+  },
+  awayCell: {
+    justifyContent: 'flex-start',
+  },
+  sideFlag: {
+    fontSize: 16,
   },
   team: {
     flex: 1,

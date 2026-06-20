@@ -2,13 +2,20 @@ import { useMemo, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
+import CountryFlag from '@/components/shared/CountryFlag';
 import LivePulse from '@/components/shared/LivePulse';
 import PageContainer from '@/components/shared/PageContainer';
+import TeamLogo from '@/components/shared/TeamLogo';
 import PitchLineup from '@/components/match-detail/PitchLineup';
 import { useMatchDetail } from '@/hooks/useMatchDetail';
-import { mapFixture, type SquadPlayer, type StandingRow } from '@/services/oddAlerts';
+import {
+  mapFixture,
+  standingsMovement,
+  type Movement,
+  type SquadPlayer,
+  type StandingRow,
+} from '@/services/oddAlerts';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
-import { countryFlag, hasCountryFlag } from '@/utils/countryFlags';
 
 type MatchDetailScreenProps = {
   matchId: string;
@@ -70,6 +77,16 @@ export default function MatchDetailScreen({ matchId, onBack }: MatchDetailScreen
 
   const isLive = fixture.status === 'LIVE' || fixture.status === 'HT';
   const started = isLive || fixture.status === 'FT';
+
+  const movement =
+    started && standings.length > 0
+      ? standingsMovement(standings, {
+          homeId: fixture.home.id,
+          awayId: fixture.away.id,
+          homeGoals: fixture.home.goals,
+          awayGoals: fixture.away.goals,
+        })
+      : null;
   const statusLabel =
     fixture.status === 'NS'
       ? fixture.kickoff
@@ -85,7 +102,7 @@ export default function MatchDetailScreen({ matchId, onBack }: MatchDetailScreen
 
       {/* Competition */}
       <View style={styles.compRow}>
-        <Text style={styles.flag}>{countryFlag(detail.competition_country)}</Text>
+        <CountryFlag name={detail.competition_country} size={13} />
         <Text style={styles.compText} numberOfLines={1}>
           {detail.competition_country} · {detail.competition_name}
         </Text>
@@ -96,10 +113,13 @@ export default function MatchDetailScreen({ matchId, onBack }: MatchDetailScreen
         <Pressable
           style={styles.teamCol}
           onPress={() => openTeam(fixture.home.id, fixture.home.name)}>
-          {hasCountryFlag(fixture.home.name) ? (
-            <Text style={styles.teamFlag}>{countryFlag(fixture.home.name)}</Text>
-          ) : null}
+          {fixture.kind === 'country' ? (
+            <CountryFlag name={fixture.home.name} size={26} />
+          ) : (
+            <TeamLogo name={fixture.home.name} size={34} />
+          )}
           <Text style={styles.teamName}>{fixture.home.name}</Text>
+          <MovementBadge m={movement?.home} />
         </Pressable>
         <View style={styles.scoreCol}>
           {started ? (
@@ -120,10 +140,13 @@ export default function MatchDetailScreen({ matchId, onBack }: MatchDetailScreen
         <Pressable
           style={styles.teamCol}
           onPress={() => openTeam(fixture.away.id, fixture.away.name)}>
-          {hasCountryFlag(fixture.away.name) ? (
-            <Text style={styles.teamFlag}>{countryFlag(fixture.away.name)}</Text>
-          ) : null}
+          {fixture.kind === 'country' ? (
+            <CountryFlag name={fixture.away.name} size={26} />
+          ) : (
+            <TeamLogo name={fixture.away.name} size={34} />
+          )}
           <Text style={styles.teamName}>{fixture.away.name}</Text>
+          <MovementBadge m={movement?.away} />
         </Pressable>
       </View>
 
@@ -163,6 +186,7 @@ export default function MatchDetailScreen({ matchId, onBack }: MatchDetailScreen
           standings={standings}
           homeId={fixture.home.id}
           awayId={fixture.away.id}
+          movement={movement}
           onTeamPress={openTeam}
         />
       )}
@@ -175,6 +199,19 @@ function BackLink({ onPress }: { onPress: () => void }) {
     <Pressable onPress={onPress} style={styles.back}>
       <Text style={styles.backText}>← BACK</Text>
     </Pressable>
+  );
+}
+
+/** "#7 ▲1 / ▼2 / =" — current league position and movement from this result. */
+function MovementBadge({ m }: { m?: Movement }) {
+  if (!m || m.position == null) return null;
+  const d = m.delta;
+  const arrow = d == null || d === 0 ? '=' : d > 0 ? `▲${d}` : `▼${Math.abs(d)}`;
+  const color = d == null || d === 0 ? theme.textFaint : d > 0 ? theme.win : theme.loss;
+  return (
+    <Text style={[styles.moveBadge, { color }]}>
+      #{m.position} {arrow}
+    </Text>
   );
 }
 
@@ -372,11 +409,13 @@ function StandingsTab({
   standings,
   homeId,
   awayId,
+  movement,
   onTeamPress,
 }: {
   standings: StandingRow[];
   homeId: number | null;
   awayId: number | null;
+  movement: { home: Movement; away: Movement } | null;
   onTeamPress: (teamId: number | null, name: string) => void;
 }) {
   if (standings.length === 0) {
@@ -393,6 +432,8 @@ function StandingsTab({
       </View>
       {standings.map((row) => {
         const highlight = row.teamId === homeId || row.teamId === awayId;
+        const m =
+          row.teamId === homeId ? movement?.home : row.teamId === awayId ? movement?.away : undefined;
         return (
           <Pressable
             key={row.teamId}
@@ -403,9 +444,21 @@ function StandingsTab({
               Platform.OS === 'web' && hovered ? styles.tableRowHover : null,
             ]}>
             <Text style={[styles.cPos, styles.tdText]}>{row.rank}</Text>
-            <Text style={[styles.cTeam, styles.tdText, highlight && styles.tdBold]} numberOfLines={1}>
-              {row.name}
-            </Text>
+            <View style={styles.cTeam}>
+              <TeamLogo name={row.name} size={16} />
+              <Text style={[styles.tdText, highlight && styles.tdBold]} numberOfLines={1}>
+                {row.name}
+              </Text>
+              {m && m.delta != null && m.delta !== 0 ? (
+                <Text
+                  style={[
+                    styles.rowMove,
+                    { color: m.delta > 0 ? theme.win : theme.loss },
+                  ]}>
+                  {m.delta > 0 ? `▲${m.delta}` : `▼${Math.abs(m.delta)}`}
+                </Text>
+              ) : null}
+            </View>
             <Text style={[styles.cNum, styles.tdText]}>{row.played}</Text>
             <Text style={[styles.cNum, styles.tdText]}>
               {row.goalDiff > 0 ? `+${row.goalDiff}` : row.goalDiff}
@@ -480,6 +533,8 @@ const styles = StyleSheet.create({
   tdText: { fontFamily: fonts.body, fontSize: 12, color: theme.textPrimary },
   tdBold: { fontFamily: fonts.bodySemiBold },
   cPos: { width: 26, textAlign: 'center' },
-  cTeam: { flex: 1 },
+  cTeam: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minWidth: 0 },
   cNum: { width: 34, textAlign: 'center' },
+  moveBadge: { fontFamily: fonts.bodySemiBold, fontSize: 10, marginTop: 1 },
+  rowMove: { fontFamily: fonts.bodySemiBold, fontSize: 10 },
 });

@@ -29,8 +29,16 @@ type SiteHeaderProps = {
 
 export default function SiteHeader({ showFilters = true }: SiteHeaderProps) {
   const router = useRouter();
-  const { statusFilter, setStatusFilter, kind, setKind, gender, setGender, setCompetitionId } =
-    useScoresFilter();
+  const {
+    statusFilter,
+    setStatusFilter,
+    kind,
+    setKind,
+    gender,
+    setGender,
+    setCompetitionId,
+    setPanelMode,
+  } = useScoresFilter();
 
   return (
     <View style={styles.wrap}>
@@ -53,7 +61,10 @@ export default function SiteHeader({ showFilters = true }: SiteHeaderProps) {
               return (
                 <Pressable
                   key={f.id}
-                  onPress={() => setStatusFilter(f.id)}
+                  onPress={() => {
+                    setStatusFilter(f.id);
+                    setPanelMode('scores');
+                  }}
                   style={[styles.filterChip, active && styles.filterActive]}>
                   <Text
                     style={[
@@ -78,6 +89,7 @@ export default function SiteHeader({ showFilters = true }: SiteHeaderProps) {
                     onPress={() => {
                       setKind(k.id);
                       setCompetitionId(null);
+                      setPanelMode('scores');
                     }}
                     style={[styles.segBtn, active && styles.segBtnActive]}>
                     <Text style={[styles.segText, active && styles.segTextActive]}>{k.label}</Text>

@@ -78,11 +78,12 @@ npm run build
 
 ## Live data (OddAlerts)
 
-The scores feed, match detail (summary, lineups, H2H, standings) and team
-fixtures are powered by the **OddAlerts Football Data API**. The API sends no
-CORS headers, so web requests go through a server-side proxy
-(`frontend/app/oddalerts+api.ts`, served at `/oddalerts`) that injects the token
-— the token is never exposed to the browser.
+The scores feed, match detail (summary, lineups, H2H, standings), the
+Country → League/Cup → standings browser and team fixtures are powered by the
+**OddAlerts Football Data API**. The API sends no CORS headers, so web requests
+go through a server-side proxy (`frontend/app/oddalerts+api.ts`, served at
+`/oddalerts`) that injects the token — the token is never exposed to the browser.
+Club logos come from **TheSportsDB** via a second proxy (`/teamlogo`).
 
 ### Configure the token
 
@@ -93,10 +94,26 @@ cp frontend/.env.example frontend/.env
 
 | Variable | Where | Purpose |
 |----------|-------|---------|
-| `ODDALERTS_TOKEN` | server (proxy) | Web requests. **Secret.** |
+| `ODDALERTS_TOKEN` | server (proxy) | Web requests. **Secret.** Required. |
 | `EXPO_PUBLIC_ODDALERTS_TOKEN` | client | Direct calls on native (iOS/Android) dev only |
+| `THESPORTSDB_KEY` | server (proxy) | Club logos via `/teamlogo` (optional; defaults to `123`) |
+| `EXPO_PUBLIC_THESPORTSDB_KEY` | client | Logo lookups on native (optional) |
 
-`frontend/.env` is git-ignored. See [`docs/ODDALERTS_INTEGRATION.md`](docs/ODDALERTS_INTEGRATION.md).
+> Restart the dev server after editing `.env` or adding an `+api.ts` route — env
+> vars and API routes are only read on boot.
+
+### Usage limits
+
+- **OddAlerts:** ~**300 requests/window** per token (`X-RateLimit-Limit: 300`);
+  over-limit returns HTTP 429. The app stays well under this with edge caching,
+  one-time competition/country caches, paginated caps, 25s live polling and
+  request de-duplication.
+- **TheSportsDB:** the shared test key `123` is heavily rate-limited (`error
+  1015`); when it fails, logos fall back to team initials. Set your own
+  `THESPORTSDB_KEY` for reliable badges.
+
+`frontend/.env` is git-ignored. Full details (endpoints, limits, how to avoid
+throttling): [`docs/ODDALERTS_INTEGRATION.md`](docs/ODDALERTS_INTEGRATION.md).
 
 ---
 
@@ -112,10 +129,11 @@ Root `vercel.json` builds the Expo **server** output from `frontend/`:
 Steps:
 
 1. Push to GitHub and import the repo in [Vercel](https://vercel.com/new).
-2. In **Project Settings → Environment Variables**, add `ODDALERTS_TOKEN` (your token) for Production + Preview.
+2. In **Project Settings → Environment Variables**, add `ODDALERTS_TOKEN` (your token) for Production + Preview. Optionally add `THESPORTSDB_KEY` for club logos.
 3. Deploy. Vercel picks up `vercel.json` automatically (framework preset: *Other*).
 
 > Without `ODDALERTS_TOKEN`, the proxy returns HTTP 500 and the feed will be empty.
+> After adding/changing an env var on Vercel, **redeploy** — vars are injected at build time.
 
 ### Routes
 
