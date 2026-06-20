@@ -177,7 +177,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   rowEmpty: { height: 1 },
-  player: { alignItems: 'center', width: 58 },
+  // Fluid width so a line of 5 never overflows narrow phones.
+  player: { flex: 1, alignItems: 'center', paddingHorizontal: 2, maxWidth: 72 },
   jersey: {
     width: 30,
     height: 30,

@@ -48,6 +48,8 @@ function CountryBrowser() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [query, setQuery] = useState('');
+  // Mobile starts on the countries list; collapsing it reveals the scores feed.
+  const [mobileOpen, setMobileOpen] = useState(true);
 
   useEffect(() => {
     let active = true;
@@ -86,6 +88,11 @@ function CountryBrowser() {
     if (!q) return countries;
     return countries.filter((c) => c.country.toLowerCase().includes(q));
   }, [countries, query]);
+
+  const pickCompetition = (c: Competition) => {
+    openStandings(c);
+    setMobileOpen(false); // collapse the mobile browser so the table is visible
+  };
 
   const body = (
     <>
@@ -131,13 +138,13 @@ function CountryBrowser() {
                     label="Leagues"
                     comps={entry.leagues}
                     selectedId={selectedCompetition?.id ?? null}
-                    onPick={openStandings}
+                    onPick={pickCompetition}
                   />
                   <CompGroup
                     label="Cups"
                     comps={entry.cups}
                     selectedId={selectedCompetition?.id ?? null}
-                    onPick={openStandings}
+                    onPick={pickCompetition}
                   />
                 </View>
               ) : null}
@@ -149,9 +156,24 @@ function CountryBrowser() {
   );
 
   if (!isDesktop) {
+    const selectedLabel = selectedCompetition?.name;
     return (
       <View style={styles.mobileWrap}>
-        <ScrollView showsVerticalScrollIndicator={false}>{body}</ScrollView>
+        <Pressable onPress={() => setMobileOpen((v) => !v)} style={styles.mobileToggle}>
+          <Text style={styles.mobileToggleText} numberOfLines={1}>
+            {mobileOpen
+              ? 'Hide countries · show results'
+              : selectedLabel
+                ? `Standings · ${selectedLabel}`
+                : 'Browse countries & leagues'}
+          </Text>
+          <Text style={styles.chevron}>{mobileOpen ? '▾' : '▸'}</Text>
+        </Pressable>
+        {mobileOpen ? (
+          <ScrollView style={styles.mobileScrollBox} showsVerticalScrollIndicator={false}>
+            {body}
+          </ScrollView>
+        ) : null}
       </View>
     );
   }
@@ -293,10 +315,27 @@ const styles = StyleSheet.create({
   },
   mobileWrap: {
     width: '100%',
-    maxHeight: 260,
     backgroundColor: theme.surface,
     borderBottomWidth: layout.borderWidth,
     borderBottomColor: theme.border,
+  },
+  mobileToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  mobileToggleText: {
+    flex: 1,
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 12,
+    color: theme.textPrimary,
+  },
+  mobileScrollBox: {
+    maxHeight: 460,
+    borderTopWidth: layout.borderWidth,
+    borderTopColor: theme.border,
   },
   sidebarTitle: {
     fontFamily: fonts.bodySemiBold,

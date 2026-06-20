@@ -41,7 +41,9 @@ export default function FlashscoreShell({ children }: FlashscoreShellProps) {
       <View style={[styles.root, WEB_SHELL_HEIGHT]}>
         <SiteHeader showFilters={isHome} />
         <View style={[styles.body, !isDesktop && styles.bodyMobile]}>
-          <LeagueSidebar />
+          {/* On mobile the sidebar only makes sense on the scores/home screen;
+              detail pages (match, team) get the full width. */}
+          {isDesktop || isHome ? <LeagueSidebar /> : null}
           <View style={[styles.main, isDesktop && styles.mainDesktop]}>
             <View style={styles.mainInner}>
               <View style={styles.stack}>{children}</View>

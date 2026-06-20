@@ -693,16 +693,29 @@ export async function fetchAllCompetitions(signal?: AbortSignal): Promise<Compet
   if (competitionsPromise) return competitionsPromise;
 
   competitionsPromise = (async () => {
-    const all: Competition[] = [];
-    for (let page = 1; page <= 12; page += 1) {
-      const env = await getJson<RawCompetition>(
-        'competitions',
-        { include: 'seasons', per_page: 250, page },
-        signal,
+    // Fetch page 1, learn the page count, then fetch the rest in parallel
+    // (sequential paging of ~10 pages was the main "countries load slowly" cause).
+    const first = await getJson<RawCompetition>(
+      'competitions',
+      { include: 'seasons', per_page: 250, page: 1 },
+      signal,
+    );
+    const all: Competition[] = first.data.map(mapCompetition);
+
+    const totalPages = Math.min(Number(first.info?.total_pages ?? 1) || 1, 16);
+    if (totalPages > 1) {
+      const rest = await Promise.all(
+        Array.from({ length: totalPages - 1 }, (_, i) =>
+          getJson<RawCompetition>(
+            'competitions',
+            { include: 'seasons', per_page: 250, page: i + 2 },
+            signal,
+          ),
+        ),
       );
-      all.push(...env.data.map(mapCompetition));
-      if (!env.info?.next_page_url) break;
+      for (const env of rest) all.push(...env.data.map(mapCompetition));
     }
+
     competitionsCache = all;
     competitionsPromise = null;
     return all;
