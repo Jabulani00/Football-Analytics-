@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { fetchMatchGoals, type MatchGoalEvent } from '@/services/apiFootball';
 import {
   fetchFixtureDetail,
   fetchSeasonStandings,
@@ -13,6 +14,10 @@ type State = {
   detail: RawFixtureDetail | null;
   squads: SquadPlayer[];
   standings: StandingRow[];
+  goals: MatchGoalEvent[];
+  goalsConfigured: boolean;
+  goalsMatched: boolean;
+  goalsLoading: boolean;
   loading: boolean;
   error: string | null;
 };
@@ -24,6 +29,10 @@ export function useMatchDetail(id: string | number): State & { refresh: () => vo
     detail: null,
     squads: [],
     standings: [],
+    goals: [],
+    goalsConfigured: false,
+    goalsMatched: false,
+    goalsLoading: false,
     loading: true,
     error: null,
   });
@@ -35,7 +44,11 @@ export function useMatchDetail(id: string | number): State & { refresh: () => vo
       const controller = new AbortController();
       abortRef.current = controller;
 
-      if (initial) setState((s) => ({ ...s, loading: true, error: null }));
+      if (initial) {
+        setState((s) => ({ ...s, loading: true, goalsLoading: true, error: null }));
+      } else {
+        setState((s) => ({ ...s, goalsLoading: true }));
+      }
 
       try {
         const detail = await fetchFixtureDetail(id, controller.signal);
@@ -45,16 +58,31 @@ export function useMatchDetail(id: string | number): State & { refresh: () => vo
         }
 
         // Squads and standings are best-effort; failures shouldn't blank the page.
-        const [squads, standings] = await Promise.all([
+        const [squads, standings, events] = await Promise.all([
           fetchSquads(id, controller.signal).catch(() => [] as SquadPlayer[]),
           detail.season_id
             ? fetchSeasonStandings(detail.season_id, controller.signal).catch(
                 () => [] as StandingRow[],
               )
             : Promise.resolve([] as StandingRow[]),
+          fetchMatchGoals(detail, controller.signal).catch(() => ({
+            goals: [] as MatchGoalEvent[],
+            configured: false,
+            matched: false,
+          })),
         ]);
 
-        setState({ detail, squads, standings, loading: false, error: null });
+        setState({
+          detail,
+          squads,
+          standings,
+          goals: events.goals,
+          goalsConfigured: events.configured,
+          goalsMatched: events.matched,
+          goalsLoading: false,
+          loading: false,
+          error: null,
+        });
       } catch (err) {
         if (controller.signal.aborted) return;
         setState((s) => ({

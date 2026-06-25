@@ -15,12 +15,14 @@ import { useScoresFilter } from '@/components/layout/ScoresFilterContext';
 import CountryFlag from '@/components/shared/CountryFlag';
 import {
   clubCompetitionsByCountry,
+  detectKind,
   fetchAllCompetitions,
   fetchCountries,
   type Competition,
 } from '@/services/oddAlerts';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 import { countryFlag } from '@/utils/countryFlags';
+import { isGroupStageTournament } from '@/utils/groupStandings';
 
 export default function LeagueSidebar() {
   const { kind } = useScoresFilter();
@@ -225,9 +227,25 @@ function CompGroup({
 // ===== Feed-driven competition list (national teams) ======================
 
 function FeedCompetitionList() {
-  const { competitions, competitionId, setCompetitionId, kind } = useScoresFilter();
+  const { competitions, competitionId, setCompetitionId, kind, openStandings } = useScoresFilter();
   const { width } = useWindowDimensions();
   const isDesktop = width >= 1024;
+
+  const [allComps, setAllComps] = useState<Competition[]>([]);
+  useEffect(() => {
+    if (kind !== 'country') return;
+    fetchAllCompetitions()
+      .then(setAllComps)
+      .catch(() => {});
+  }, [kind]);
+
+  const groupTournaments = useMemo(
+    () =>
+      allComps
+        .filter((c) => isGroupStageTournament(c.name) && detectKind(c.name) === 'country')
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [allComps],
+  );
 
   const liveCount = (id: number) =>
     competitions
@@ -235,13 +253,26 @@ function FeedCompetitionList() {
       ?.fixtures.filter((f) => f.status === 'LIVE' || f.status === 'HT').length ?? 0;
 
   if (!isDesktop) {
-    if (competitions.length === 0) return null;
+    if (competitions.length === 0 && groupTournaments.length === 0) return null;
     return (
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         style={styles.mobileScroll}
         contentContainerStyle={styles.mobileStrip}>
+        {kind === 'country'
+          ? groupTournaments.map((c) => (
+              <Pressable
+                key={`grp-${c.id}`}
+                onPress={() => openStandings(c)}
+                style={[styles.mobileChip, styles.mobileChipGroups]}>
+                <Text style={styles.mobileGrpTag}>TBL</Text>
+                <Text style={styles.mobileLabel} numberOfLines={1}>
+                  {c.name} groups
+                </Text>
+              </Pressable>
+            ))
+          : null}
         {competitions.map((group) => {
           const active = competitionId === group.competition.id;
           return (
@@ -264,6 +295,27 @@ function FeedCompetitionList() {
     <View style={styles.sidebar}>
       <Text style={styles.sidebarTitle}>{kind === 'country' ? 'TOURNAMENTS' : 'COMPETITIONS'}</Text>
       <ScrollView showsVerticalScrollIndicator={false}>
+        {kind === 'country' && groupTournaments.length > 0 ? (
+          <View style={styles.group}>
+            <Text style={styles.groupLabel}>GROUP TABLES</Text>
+            {groupTournaments.map((c) => (
+              <Pressable
+                key={c.id}
+                onPress={() => openStandings(c)}
+                style={({ hovered }) => [
+                  styles.compItem,
+                  Platform.OS === 'web' && hovered && styles.itemHover,
+                ]}>
+                <Text style={styles.compName} numberOfLines={1}>
+                  {c.name}
+                </Text>
+                <Text style={styles.compMeta} numberOfLines={1}>
+                  Group stage
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
         {competitions.length === 0 ? (
           <Text style={styles.emptyHint}>No competitions loaded.</Text>
         ) : (
@@ -415,6 +467,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: theme.textMuted,
   },
+  compMeta: {
+    fontFamily: fonts.body,
+    fontSize: 10,
+    color: theme.textFaint,
+    marginTop: 1,
+  },
   compNameActive: {
     fontFamily: fonts.bodySemiBold,
     color: theme.textPrimary,
@@ -505,6 +563,16 @@ const styles = StyleSheet.create({
   mobileChipActive: {
     borderColor: theme.live,
     backgroundColor: theme.surfaceMuted,
+  },
+  mobileChipGroups: {
+    borderColor: theme.accentGreen,
+    backgroundColor: 'rgba(5, 150, 105, 0.08)',
+  },
+  mobileGrpTag: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 9,
+    color: theme.accentGreen,
+    letterSpacing: 0.5,
   },
   mobileFlag: {
     fontSize: 14,

@@ -6,6 +6,7 @@ import { useScoresFilter } from '@/components/layout/ScoresFilterContext';
 import ScoresMatchRow from '@/components/scores/ScoresMatchRow';
 import CountryFlag from '@/components/shared/CountryFlag';
 import PageContainer from '@/components/shared/PageContainer';
+import GroupStandingsView from '@/components/standings/GroupStandingsView';
 import StandingsTable from '@/components/standings/StandingsTable';
 import { useStandings } from '@/hooks/useStandings';
 import {
@@ -14,6 +15,7 @@ import {
   seasonWindowUnix,
   type Fixture,
 } from '@/services/oddAlerts';
+import { isGroupStageTournament } from '@/utils/groupStandings';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
 export default function StandingsPanel() {
@@ -22,7 +24,11 @@ export default function StandingsPanel() {
     useScoresFilter();
 
   const competition = selectedCompetition;
-  const { standings, tier, loading, error } = useStandings(competition, selectedSeasonId);
+  const isGroups = isGroupStageTournament(competition?.name ?? '');
+  const { standings, tier, loading, error } = useStandings(
+    isGroups ? null : competition,
+    isGroups ? null : selectedSeasonId,
+  );
 
   if (!competition) return null;
 
@@ -39,7 +45,7 @@ export default function StandingsPanel() {
         <View style={styles.headerText}>
           <Text style={styles.title}>{competition.name}</Text>
           <Text style={styles.subtitle}>
-            {competition.country} · {competition.isCup ? 'Cup' : 'League'}
+            {competition.country} · {isGroups ? 'Group stage' : competition.isCup ? 'Cup' : 'League'}
           </Text>
         </View>
       </View>
@@ -65,7 +71,9 @@ export default function StandingsPanel() {
         })}
       </ScrollView>
 
-      {competition.isCup ? (
+      {isGroups ? (
+        <GroupStandingsView competition={competition} seasonId={selectedSeasonId} />
+      ) : competition.isCup ? (
         <CupResults
           competitionId={competition.id}
           seasonId={selectedSeasonId}

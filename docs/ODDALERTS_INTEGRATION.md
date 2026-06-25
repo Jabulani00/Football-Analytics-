@@ -196,7 +196,7 @@ GET /api/fixtures/live                          # in-play + HT + recently finish
 GET /api/fixtures/upcoming?days=N               # scheduled (paginated)
 GET /api/fixtures/between?from=UNIX&to=UNIX      # results / any window (paginated)
         &competitions=ID                         #   optional competition filter
-GET /api/fixtures/:id?include=probability,stats  # single fixture detail
+GET /api/fixtures/:id?include=probability,stats,odds,h2h,referee  # single fixture detail
 GET /api/countries                               # all countries (id, name, code, slug)
 GET /api/competitions?include=seasons            # ALL competitions + season history
 GET /api/stats/season/:id                        # season standings (points home/away)
@@ -217,7 +217,32 @@ Live statuses seen: `NS`, `LIVE`, `1H`, `2H`, `HT`, `FT`, `AET`, `FT_PEN`,
 
 ---
 
-## 6. Usage limits & how to avoid throttling
+> **Full field catalogue:** see [ODDALERTS_API_DATA_CATALOG.md](./ODDALERTS_API_DATA_CATALOG.md)
+> for every fixture/H2H/stats/odds/probability key, what is **not** available
+> (goal scorers, events), and how each match-detail tab maps to API data.
+
+---
+
+## 6. Match detail (six tabs)
+
+`MatchDetailScreen` loads `GET /fixtures/:id?include=probability,stats,odds,h2h,referee`
+plus `GET /players/fixture/:id` (squads) and `GET /stats/season/:seasonId` (table).
+
+| Tab | Data shown |
+| --- | ---------- |
+| **Summary** | Match info, FT/HT/2H score breakdown, win-probability snapshot |
+| **Stats** | All `stats` home/away pairs (possession, shots, xG, corners, cards, …) |
+| **Odds** | Full `probability` model + every `odds` market returned |
+| **H2H** | Past meetings with HT, BTTS/O2.5 tags, possession/corners/cards |
+| **Lineups** | Squad by position on pitch (formations when available) |
+| **Table** | Season standings + position movement from this result |
+
+Half-time score comes from `ht_score`; second half is **derived** (FT − HT). The API
+does not expose per-minute goals, assists, cards or substitutions.
+
+---
+
+## 7. Usage limits & how to avoid throttling
 
 ### OddAlerts limits (verified from response headers)
 
@@ -265,7 +290,7 @@ X-RateLimit-Remaining: 299
 
 ---
 
-## 7. File structure (integration-relevant)
+## 8. File structure (integration-relevant)
 
 ```
 Odds-APP/
@@ -286,7 +311,8 @@ Odds-APP/
 │  │  ├─ standings/
 │  │  │  ├─ StandingsPanel.tsx     # competition header + season selector + table/cup
 │  │  │  └─ StandingsTable.tsx     # zoned table, home/away pts, tier breakdown
-│  │  ├─ match-detail/MatchDetailScreen.tsx  # summary/lineups/H2H/standings + movement
+│  │  ├─ match-detail/MatchDetailScreen.tsx  # summary/stats/odds/H2H/lineups/table
+│  │  ├─ utils/matchDetailDisplay.ts         # stat rows, odds labels, HT/2H parsing
 │  │  ├─ shared/TeamLogo.tsx       # badge (TheSportsDB) with initials fallback
 │  │  └─ layout/
 │  │     ├─ SiteHeader.tsx         # status tabs + Clubs/Countries + Men/Women
@@ -299,14 +325,16 @@ Odds-APP/
 │  │  ├─ oddAlerts.ts              # API client, types, standings/zone/tier/movement
 │  │  └─ logos.ts                  # cached club-badge lookup (proxy/native)
 │  └─ utils/countryFlags.ts        # country name → emoji flag
-├─ docs/ODDALERTS_INTEGRATION.md   # (this file)
+├─ docs/
+│  ├─ ODDALERTS_INTEGRATION.md      # (this file)
+│  └─ ODDALERTS_API_DATA_CATALOG.md # full API field reference
 ├─ app.json                        # web.output: "server" (frontend)
 └─ vercel.json                     # Expo server hosting config
 ```
 
 ---
 
-## 8. How to run the project
+## 9. How to run the project
 
 ### Prerequisites
 
@@ -353,7 +381,7 @@ curl "https://data.oddalerts.com/api/fixtures/between?from=1781000000&to=1781600
 
 ---
 
-## 9. League/season standings browser (Clubs side)
+## 10. League/season standings browser (Clubs side)
 
 On the **Clubs** segment the left sidebar is a **Country → Leagues/Cups** drill-down:
 

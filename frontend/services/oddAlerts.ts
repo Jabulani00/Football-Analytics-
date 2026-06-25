@@ -98,8 +98,22 @@ export type H2HMatch = {
   ht_score: string | null;
   total_goals: number;
   btts: boolean;
+  over_05?: boolean;
+  over_15?: boolean;
+  over_25?: boolean;
+  over_35?: boolean;
+  home_win?: boolean;
+  away_win?: boolean;
+  draw?: boolean;
+  team1_win?: boolean;
+  team2_win?: boolean;
   date: string;
   league: string;
+  stats?: {
+    possession?: { home: number; away: number };
+    cards?: { home: number; away: number };
+    corners?: { home: number; away: number };
+  };
 };
 
 export type RefereeInfo = {
@@ -108,8 +122,10 @@ export type RefereeInfo = {
   [key: string]: unknown;
 };
 
-/** A single fixture with optional included blocks. */
+/** Extra fields on fixture detail beyond the base fixture row. */
 export type RawFixtureDetail = RawFixture & {
+  season_progress?: number | null;
+  winning_team?: number | null;
   probability?: Probability;
   stats?: MatchStats;
   odds?: OddsByMarket;
