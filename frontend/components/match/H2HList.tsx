@@ -78,7 +78,7 @@ function H2HRow({
         : styles.scoreDraw;
   const form = homeTeamResult(result, currentHome);
   const formColor =
-    form === 'W' ? theme.win : form === 'L' ? theme.loss : theme.textMuted;
+    form === 'W' ? theme.win : form === 'L' ? theme.loss : theme.yellow;
 
   return (
     <View style={styles.row}>
@@ -190,7 +190,7 @@ const styles = StyleSheet.create({
     color: theme.accentOrange,
   },
   scoreDraw: {
-    color: theme.textMuted,
+    color: theme.yellow,
   },
   formLabel: {
     fontFamily: fonts.display,

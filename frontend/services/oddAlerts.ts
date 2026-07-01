@@ -390,6 +390,428 @@ export async function fetchFixtureDetail(
   return env.data[0] ?? null;
 }
 
+// ----- Goal timing (stats/fixture) ----------------------------------------
+
+const GOAL_PERIOD_ORDER = ['m0_15', 'm15_30', 'm30_45', 'm45_60', 'm60_75', 'm75_90'] as const;
+
+const GOAL_PERIOD_LABEL: Record<(typeof GOAL_PERIOD_ORDER)[number], string> = {
+  m0_15: "1–15'",
+  m15_30: "16–30'",
+  m30_45: "31–45'",
+  m45_60: "46–60'",
+  m60_75: "61–75'",
+  m75_90: "76–90'",
+};
+
+/** Sort key for ordering period-only goals (mid-period minute). */
+const GOAL_PERIOD_SORT: Record<(typeof GOAL_PERIOD_ORDER)[number], number> = {
+  m0_15: 8,
+  m15_30: 23,
+  m30_45: 38,
+  m45_60: 53,
+  m60_75: 68,
+  m75_90: 83,
+};
+
+type RawTimingCell = { total?: number; home?: number; away?: number };
+type RawTimingBuckets = Partial<Record<(typeof GOAL_PERIOD_ORDER)[number], RawTimingCell>>;
+
+type HalfVenueCell = { total?: number; home?: number; away?: number };
+
+type RawFixtureStatsRow = {
+  team_id?: number;
+  fixture_id?: number | null;
+  name?: string;
+  goal_timing?: RawTimingBuckets;
+  goal_timing_for?: RawTimingBuckets;
+  goal_timings?: RawTimingBuckets | unknown[];
+  first_goal_time?: { total?: number; home?: number; away?: number };
+  goals_for_1h?: HalfVenueCell;
+  goals_for_2h?: HalfVenueCell;
+  cards_1h_for?: HalfVenueCell;
+  cards_2h_for?: HalfVenueCell;
+};
+
+/** Goal / card markers for the pressure chart from OddAlerts `stats/fixture`. */
+export type OddAlertsChartMarker = {
+  kind: 'goal' | 'yellow';
+  side: 'home' | 'away';
+  minute: number;
+  sortKey: number;
+};
+
+export type GoalTimingBucket = {
+  key: (typeof GOAL_PERIOD_ORDER)[number];
+  label: string;
+  home: number;
+  away: number;
+};
+
+/** One goal slot when only 15-minute buckets are available (no exact minute). */
+export type GoalPeriodEvent = {
+  side: 'home' | 'away';
+  periodKey: (typeof GOAL_PERIOD_ORDER)[number];
+  periodLabel: string;
+  sortMinute: number;
+};
+
+export type FixtureGoalTiming = {
+  buckets: GoalTimingBucket[];
+  periodGoals: GoalPeriodEvent[];
+  /** Average first-goal minute when the API returns a plausible value (< 120). */
+  avgFirstGoalMinute: number | null;
+  available: boolean;
+  /** True when buckets were estimated from FT/HT score (frozen rows failed validation). */
+  approximate?: boolean;
+  /** Goals + cards for the pressure monitor chart (OddAlerts `stats/fixture`). */
+  chartMarkers: OddAlertsChartMarker[];
+};
+
+const FIRST_HALF_PERIODS = ['m0_15', 'm15_30', 'm30_45'] as const;
+const SECOND_HALF_PERIODS = ['m45_60', 'm60_75', 'm75_90'] as const;
+
+function venueGoalsFromRow(
+  buckets: RawTimingBuckets | undefined,
+  side: 'home' | 'away',
+): Partial<Record<(typeof GOAL_PERIOD_ORDER)[number], number>> {
+  const out: Partial<Record<(typeof GOAL_PERIOD_ORDER)[number], number>> = {};
+  if (!buckets) return out;
+  for (const key of GOAL_PERIOD_ORDER) {
+    const n = buckets[key]?.[side] ?? 0;
+    if (n > 0) out[key] = n;
+  }
+  return out;
+}
+
+function sumVenueGoals(
+  map: Partial<Record<(typeof GOAL_PERIOD_ORDER)[number], number>>,
+): number {
+  return Object.values(map).reduce((s, n) => s + (n ?? 0), 0);
+}
+
+function mergeBuckets(
+  homeMap: Partial<Record<(typeof GOAL_PERIOD_ORDER)[number], number>>,
+  awayMap: Partial<Record<(typeof GOAL_PERIOD_ORDER)[number], number>>,
+): GoalTimingBucket[] {
+  return GOAL_PERIOD_ORDER.map((key) => ({
+    key,
+    label: GOAL_PERIOD_LABEL[key],
+    home: homeMap[key] ?? 0,
+    away: awayMap[key] ?? 0,
+  })).filter((b) => b.home > 0 || b.away > 0);
+}
+
+function parseHtScoreForGoals(ht: string | null | undefined): { home: number; away: number } | null {
+  if (!ht) return null;
+  const m = ht.match(/(\d+)\s*[-–]\s*(\d+)/);
+  if (!m) return null;
+  return { home: Number(m[1]), away: Number(m[2]) };
+}
+
+/** Spread goals across periods — later periods first within each half. */
+function spreadGoalsAcrossPeriods(
+  count: number,
+  periods: readonly (typeof GOAL_PERIOD_ORDER)[number][],
+): Partial<Record<(typeof GOAL_PERIOD_ORDER)[number], number>> {
+  const out: Partial<Record<(typeof GOAL_PERIOD_ORDER)[number], number>> = {};
+  if (count <= 0) return out;
+  const order = [...periods].reverse();
+  for (let i = 0; i < count; i++) {
+    const key = order[i % order.length];
+    out[key] = (out[key] ?? 0) + 1;
+  }
+  return out;
+}
+
+function mergeGoalPeriodMaps(
+  ...maps: Partial<Record<(typeof GOAL_PERIOD_ORDER)[number], number>>[]
+): Partial<Record<(typeof GOAL_PERIOD_ORDER)[number], number>> {
+  const out: Partial<Record<(typeof GOAL_PERIOD_ORDER)[number], number>> = {};
+  for (const map of maps) {
+    for (const key of GOAL_PERIOD_ORDER) {
+      const n = map[key] ?? 0;
+      if (n > 0) out[key] = (out[key] ?? 0) + n;
+    }
+  }
+  return out;
+}
+
+/**
+ * When frozen `stats/fixture` buckets fail score validation (common on big comps),
+ * estimate 15-min periods from FT and HT scores so goals still appear on Summary.
+ */
+function synthesizeGoalTimingFromScore(
+  homeGoals: number,
+  awayGoals: number,
+  htScore: string | null | undefined,
+): FixtureGoalTiming {
+  const ht = parseHtScoreForGoals(htScore);
+  let homeHt = Math.min(ht?.home ?? 0, homeGoals);
+  let awayHt = Math.min(ht?.away ?? 0, awayGoals);
+  const home2h = homeGoals - homeHt;
+  const away2h = awayGoals - awayHt;
+
+  const homeMap = mergeGoalPeriodMaps(
+    spreadGoalsAcrossPeriods(homeHt, FIRST_HALF_PERIODS),
+    spreadGoalsAcrossPeriods(home2h, SECOND_HALF_PERIODS),
+  );
+  const awayMap = mergeGoalPeriodMaps(
+    spreadGoalsAcrossPeriods(awayHt, FIRST_HALF_PERIODS),
+    spreadGoalsAcrossPeriods(away2h, SECOND_HALF_PERIODS),
+  );
+
+  const buckets = mergeBuckets(homeMap, awayMap);
+  const periodGoals = expandPeriodGoals(homeMap, awayMap);
+
+  return {
+    buckets,
+    periodGoals,
+    avgFirstGoalMinute: null,
+    available: buckets.length > 0,
+    approximate: true,
+    chartMarkers: periodGoalsToChartMarkers(periodGoals),
+  };
+}
+
+function expandPeriodGoals(
+  homeMap: Partial<Record<(typeof GOAL_PERIOD_ORDER)[number], number>>,
+  awayMap: Partial<Record<(typeof GOAL_PERIOD_ORDER)[number], number>>,
+): GoalPeriodEvent[] {
+  const events: GoalPeriodEvent[] = [];
+  for (const key of GOAL_PERIOD_ORDER) {
+    const sortMinute = GOAL_PERIOD_SORT[key];
+    const label = GOAL_PERIOD_LABEL[key];
+    for (let i = 0; i < (homeMap[key] ?? 0); i++) {
+      events.push({ side: 'home', periodKey: key, periodLabel: label, sortMinute });
+    }
+    for (let i = 0; i < (awayMap[key] ?? 0); i++) {
+      events.push({ side: 'away', periodKey: key, periodLabel: label, sortMinute: sortMinute + 0.5 });
+    }
+  }
+  events.sort((a, b) => a.sortMinute - b.sortMinute || (a.side === 'home' ? -1 : 1));
+  return events;
+}
+
+function buildFixtureGoalTiming(
+  homeMap: Partial<Record<(typeof GOAL_PERIOD_ORDER)[number], number>>,
+  awayMap: Partial<Record<(typeof GOAL_PERIOD_ORDER)[number], number>>,
+  approximate: boolean,
+  avgFirstGoalMinute: number | null = null,
+): FixtureGoalTiming {
+  const buckets = mergeBuckets(homeMap, awayMap);
+  const periodGoals = expandPeriodGoals(homeMap, awayMap);
+  return {
+    buckets,
+    periodGoals,
+    avgFirstGoalMinute,
+    available: buckets.length > 0,
+    approximate,
+    chartMarkers: periodGoalsToChartMarkers(periodGoals),
+  };
+}
+
+/** Frozen half stats — venue `home` / `away` keys match HT when OddAlerts frozen rows are fixture-scoped. */
+function parseFixtureGoalTimingFromHalfStats(
+  rows: RawFixtureStatsRow[],
+  fixtureId: number,
+  homeTeamId: number | null,
+  awayTeamId: number | null,
+  htScore: string | null | undefined,
+  homeGoals: number,
+  awayGoals: number,
+  stats?: MatchStats,
+): FixtureGoalTiming | null {
+  const frozen = rows.filter((r) => r.fixture_id === fixtureId);
+  if (!frozen.length) return null;
+
+  const homeRow = frozen.find((r) => homeTeamId != null && r.team_id === homeTeamId);
+  const awayRow = frozen.find((r) => awayTeamId != null && r.team_id === awayTeamId);
+  if (!homeRow || !awayRow) return null;
+
+  const ht = parseHtScoreForGoals(htScore);
+  if (!ht) return null;
+
+  const homeHt = homeRow.goals_for_1h?.home;
+  const awayHt = awayRow.goals_for_1h?.away;
+  if (typeof homeHt !== 'number' || typeof awayHt !== 'number') return null;
+  if (homeHt !== ht.home || awayHt !== ht.away) return null;
+
+  const home2h = homeGoals - homeHt;
+  const away2h = awayGoals - awayHt;
+  if (home2h < 0 || away2h < 0) return null;
+
+  const homeMap = mergeGoalPeriodMaps(
+    spreadGoalsAcrossPeriods(homeHt, FIRST_HALF_PERIODS),
+    spreadGoalsAcrossPeriods(home2h, SECOND_HALF_PERIODS),
+  );
+  const awayMap = mergeGoalPeriodMaps(
+    spreadGoalsAcrossPeriods(awayHt, FIRST_HALF_PERIODS),
+    spreadGoalsAcrossPeriods(away2h, SECOND_HALF_PERIODS),
+  );
+
+  const timing = buildFixtureGoalTiming(homeMap, awayMap, false);
+  timing.chartMarkers = mergeChartMarkers(
+    timing.chartMarkers,
+    parseOddAlertsCardMarkers(homeRow, awayRow, stats),
+  );
+  return timing;
+}
+
+function spreadHalfCards(
+  count: number,
+  half: 1 | 2,
+  side: 'home' | 'away',
+): OddAlertsChartMarker[] {
+  if (count <= 0) return [];
+  const base = half === 1 ? 18 : 58;
+  const step = half === 1 ? 12 : 10;
+  const out: OddAlertsChartMarker[] = [];
+  for (let i = 0; i < count; i++) {
+    const minute = base + i * step;
+    out.push({ kind: 'yellow', side, minute, sortKey: minute + (side === 'away' ? 0.01 : 0) });
+  }
+  return out;
+}
+
+function parseOddAlertsCardMarkers(
+  homeRow: RawFixtureStatsRow,
+  awayRow: RawFixtureStatsRow,
+  stats?: MatchStats,
+): OddAlertsChartMarker[] {
+  const totalCards = stats?.cards;
+  if (totalCards === 0) return [];
+
+  const markers: OddAlertsChartMarker[] = [];
+  markers.push(
+    ...spreadHalfCards(homeRow.cards_1h_for?.home ?? 0, 1, 'home'),
+    ...spreadHalfCards(awayRow.cards_1h_for?.away ?? 0, 1, 'away'),
+    ...spreadHalfCards(homeRow.cards_2h_for?.home ?? 0, 2, 'home'),
+    ...spreadHalfCards(awayRow.cards_2h_for?.away ?? 0, 2, 'away'),
+  );
+
+  if (typeof totalCards === 'number' && totalCards > 0 && markers.length > totalCards) {
+    return markers.slice(0, totalCards);
+  }
+  return markers;
+}
+
+function periodGoalsToChartMarkers(periodGoals: GoalPeriodEvent[]): OddAlertsChartMarker[] {
+  return periodGoals.map((g, i) => ({
+    kind: 'goal' as const,
+    side: g.side,
+    minute: Math.round(g.sortMinute),
+    sortKey: g.sortMinute + i * 0.001,
+  }));
+}
+
+function mergeChartMarkers(...groups: OddAlertsChartMarker[][]): OddAlertsChartMarker[] {
+  return groups
+    .flat()
+    .sort((a, b) => a.sortKey - b.sortKey);
+}
+
+function parseFixtureGoalTimingRows(
+  rows: RawFixtureStatsRow[],
+  fixtureId: number,
+  homeTeamId: number | null,
+  awayTeamId: number | null,
+  homeGoals: number,
+  awayGoals: number,
+  stats?: MatchStats,
+): FixtureGoalTiming | null {
+  const frozen = rows.filter((r) => r.fixture_id === fixtureId);
+  if (!frozen.length) return null;
+
+  const homeRow = frozen.find((r) => homeTeamId != null && r.team_id === homeTeamId);
+  const awayRow = frozen.find((r) => awayTeamId != null && r.team_id === awayTeamId);
+
+  if (!homeRow && !awayRow) return null;
+
+  const homeMap = venueGoalsFromRow(homeRow?.goal_timing_for ?? homeRow?.goal_timing, 'home');
+  const awayMap = venueGoalsFromRow(awayRow?.goal_timing_for ?? awayRow?.goal_timing, 'away');
+
+  const homeSum = sumVenueGoals(homeMap);
+  const awaySum = sumVenueGoals(awayMap);
+
+  if (homeGoals > 0 && homeSum !== homeGoals) return null;
+  if (awayGoals > 0 && awaySum !== awayGoals) return null;
+  if (homeGoals === 0 && awayGoals === 0) return null;
+
+  let avgFirstGoalMinute: number | null = null;
+  const fg = homeRow?.first_goal_time?.total ?? awayRow?.first_goal_time?.total;
+  if (typeof fg === 'number' && fg > 0 && fg < 120) avgFirstGoalMinute = fg;
+
+  const timing = buildFixtureGoalTiming(homeMap, awayMap, false, avgFirstGoalMinute);
+  if (homeRow && awayRow) {
+    timing.chartMarkers = mergeChartMarkers(
+      timing.chartMarkers,
+      parseOddAlertsCardMarkers(homeRow, awayRow, stats),
+    );
+  }
+  return timing;
+}
+
+/**
+ * Goal timing from OddAlerts `stats/fixture` (15-minute buckets).
+ * Per-minute scorers are not in this feed — use API-Football when configured.
+ */
+export async function fetchFixtureGoalTiming(
+  detail: Pick<
+    RawFixtureDetail,
+    'id' | 'home_id' | 'away_id' | 'home_goals' | 'away_goals' | 'ht_score' | 'stats'
+  >,
+  signal?: AbortSignal,
+): Promise<FixtureGoalTiming> {
+  const empty: FixtureGoalTiming = {
+    buckets: [],
+    periodGoals: [],
+    avgFirstGoalMinute: null,
+    available: false,
+    chartMarkers: [],
+  };
+
+  const homeGoals = detail.home_goals ?? 0;
+  const awayGoals = detail.away_goals ?? 0;
+  if (homeGoals + awayGoals === 0) return empty;
+
+  const scoreFallback = () => {
+    const timing = synthesizeGoalTimingFromScore(homeGoals, awayGoals, detail.ht_score);
+    return { ...timing, chartMarkers: periodGoalsToChartMarkers(timing.periodGoals) };
+  };
+
+  try {
+    const env = await getJson<RawFixtureStatsRow>(`stats/fixture/${detail.id}`, {
+      include_frozen: 'true',
+      include: 'goal_timing,goal_timings,card_data',
+    }, signal);
+
+    const rows = env.data ?? [];
+    const parsed =
+      parseFixtureGoalTimingRows(
+        rows,
+        detail.id,
+        detail.home_id,
+        detail.away_id,
+        homeGoals,
+        awayGoals,
+        detail.stats,
+      ) ??
+      parseFixtureGoalTimingFromHalfStats(
+        rows,
+        detail.id,
+        detail.home_id,
+        detail.away_id,
+        detail.ht_score,
+        homeGoals,
+        awayGoals,
+        detail.stats,
+      );
+    return parsed ?? scoreFallback();
+  } catch {
+    return scoreFallback();
+  }
+}
+
 /** Upcoming fixtures for a single team. */
 export async function fetchTeamUpcoming(
   teamId: number | string,

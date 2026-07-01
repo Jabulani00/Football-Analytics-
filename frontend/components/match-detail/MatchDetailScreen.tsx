@@ -7,19 +7,23 @@ import LivePulse from '@/components/shared/LivePulse';
 import PageContainer from '@/components/shared/PageContainer';
 import TeamLogo from '@/components/shared/TeamLogo';
 import GroupStandingsView from '@/components/standings/GroupStandingsView';
-import GoalScorersPanel from '@/components/match-detail/GoalScorersPanel';
+import GoalTimingPanel from '@/components/match-detail/GoalTimingPanel';
+import H2HPanel from '@/components/match-detail/H2HPanel';
+import PressureMonitorPanel from '@/components/match-detail/PressureMonitorPanel';
 import PitchLineup from '@/components/match-detail/PitchLineup';
 import { useMatchDetail } from '@/hooks/useMatchDetail';
 import {
   mapFixture,
   standingsMovement,
   type Competition,
+  type FixtureGoalTiming,
   type Movement,
   type RawFixtureDetail,
   type SquadPlayer,
   type StandingRow,
 } from '@/services/oddAlerts';
-import type { MatchGoalEvent } from '@/services/apiFootball';
+import type { MatchGoalEvent, MatchTimelineEvent } from '@/services/apiFootball';
+import type { PressureReading, PressureSnapshot } from '@/utils/pressureMonitor';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 import {
   formatOutcome,
@@ -48,8 +52,23 @@ const TABS: { id: TabId; label: string }[] = [
 
 export default function MatchDetailScreen({ matchId, onBack }: MatchDetailScreenProps) {
   const router = useRouter();
-  const { detail, squads, standings, goals, goalsConfigured, goalsMatched, goalsLoading, loading, error, refresh } =
-    useMatchDetail(matchId);
+  const {
+    detail,
+    squads,
+    standings,
+    goals,
+    timeline,
+    goalsConfigured,
+    goalsMatched,
+    goalsLoading,
+    goalTiming,
+    timingLoading,
+    pressureHistory,
+    pressureReading,
+    loading,
+    error,
+    refresh,
+  } = useMatchDetail(matchId);
   const [tab, setTab] = useState<TabId>('summary');
 
   const fixture = useMemo(() => (detail ? mapFixture(detail) : null), [detail]);
@@ -217,9 +236,14 @@ export default function MatchDetailScreen({ matchId, onBack }: MatchDetailScreen
           homeName={fixture.home.name}
           awayName={fixture.away.name}
           goals={goals}
+          timeline={timeline}
           goalsConfigured={goalsConfigured}
           goalsMatched={goalsMatched}
           goalsLoading={goalsLoading}
+          goalTiming={goalTiming}
+          timingLoading={timingLoading}
+          pressureHistory={pressureHistory}
+          pressureReading={pressureReading}
         />
       ) : tab === 'stats' ? (
         <StatsTab detail={detail} homeName={fixture.home.name} awayName={fixture.away.name} />
@@ -236,7 +260,11 @@ export default function MatchDetailScreen({ matchId, onBack }: MatchDetailScreen
           awayFormation={detail.away_formation}
         />
       ) : tab === 'h2h' ? (
-        <H2HTab detail={detail} />
+        <H2HPanel
+          matches={detail.h2h ?? []}
+          homeName={fixture.home.name}
+          awayName={fixture.away.name}
+        />
       ) : (
         <StandingsTab
           standings={standings}
@@ -281,17 +309,27 @@ function SummaryTab({
   homeName,
   awayName,
   goals,
+  timeline,
   goalsConfigured,
   goalsMatched,
   goalsLoading,
+  goalTiming,
+  timingLoading,
+  pressureHistory,
+  pressureReading,
 }: {
   detail: RawFixtureDetail;
   homeName: string;
   awayName: string;
   goals: MatchGoalEvent[];
+  timeline: MatchTimelineEvent[];
   goalsConfigured: boolean;
   goalsMatched: boolean;
   goalsLoading: boolean;
+  goalTiming: FixtureGoalTiming;
+  timingLoading: boolean;
+  pressureHistory: PressureSnapshot[];
+  pressureReading: PressureReading | null;
 }) {
   const prob = detail.probability;
   const scores = scoreBreakdown(detail);
@@ -300,13 +338,30 @@ function SummaryTab({
     <View>
       <MatchInfoCard detail={detail} homeName={homeName} awayName={awayName} />
 
-      <GoalScorersPanel
+      <PressureMonitorPanel
         homeName={homeName}
         awayName={awayName}
+        status={detail.status}
+        reading={pressureReading}
+        history={pressureHistory}
+        stats={detail.stats}
+        apiTimeline={timeline}
+        periodGoals={goalTiming.periodGoals}
+        oddAlertsMarkers={goalTiming.chartMarkers}
+        eventsConfigured={goalsConfigured}
+        timingApproximate={goalTiming.approximate}
+      />
+
+      <GoalTimingPanel
+        homeName={homeName}
+        awayName={awayName}
+        htScore={detail.ht_score}
         goals={goals}
-        configured={goalsConfigured}
-        matched={goalsMatched}
-        loading={goalsLoading}
+        goalsConfigured={goalsConfigured}
+        goalsMatched={goalsMatched}
+        goalsLoading={goalsLoading}
+        oddAlertsTiming={goalTiming}
+        timingLoading={timingLoading}
       />
 
       {scores.ft ? (
@@ -605,77 +660,6 @@ function LineupsTab({
   );
 }
 
-// ----- H2H ----------------------------------------------------------------
-
-function H2HTab({ detail }: { detail: RawFixtureDetail }) {
-  const h2h = detail.h2h ?? [];
-  if (h2h.length === 0) {
-    return <Text style={styles.muted}>No head-to-head history available.</Text>;
-  }
-  return (
-    <View>
-      <Text style={styles.statsHeader}>{h2h.length} previous meetings</Text>
-      {h2h.map((m) => (
-        <View key={m.id} style={styles.card}>
-          <View style={styles.h2hHead}>
-            <Text style={styles.h2hDate}>{m.date}</Text>
-            <Text style={styles.h2hLeague}>{m.league}</Text>
-          </View>
-          <View style={styles.h2hMain}>
-            <Text style={styles.h2hTeams} numberOfLines={2}>
-              {m.home_name}
-            </Text>
-            <View style={styles.h2hScoreCol}>
-              <Text style={styles.h2hScore}>
-                {m.home_goals ?? 0} - {m.away_goals ?? 0}
-              </Text>
-              {m.ht_score ? <Text style={styles.h2hHt}>HT {m.ht_score}</Text> : null}
-            </View>
-            <Text style={[styles.h2hTeams, styles.h2hAway]} numberOfLines={2}>
-              {m.away_name}
-            </Text>
-          </View>
-          <View style={styles.h2hTags}>
-            {m.btts ? <H2HTag label="BTTS" /> : <H2HTag label="No BTTS" muted />}
-            {m.over_25 ? <H2HTag label="O2.5" /> : null}
-            {m.home_win ? <H2HTag label="Home win" /> : null}
-            {m.away_win ? <H2HTag label="Away win" /> : null}
-            {m.draw ? <H2HTag label="Draw" /> : null}
-            <H2HTag label={`${m.total_goals} goals`} muted />
-          </View>
-          {m.stats ? (
-            <View style={styles.h2hMiniStats}>
-              {m.stats.possession ? (
-                <Text style={styles.h2hMiniLine}>
-                  Possession {m.stats.possession.home}% - {m.stats.possession.away}%
-                </Text>
-              ) : null}
-              {m.stats.corners ? (
-                <Text style={styles.h2hMiniLine}>
-                  Corners {m.stats.corners.home} - {m.stats.corners.away}
-                </Text>
-              ) : null}
-              {m.stats.cards ? (
-                <Text style={styles.h2hMiniLine}>
-                  Cards {m.stats.cards.home} - {m.stats.cards.away}
-                </Text>
-              ) : null}
-            </View>
-          ) : null}
-        </View>
-      ))}
-    </View>
-  );
-}
-
-function H2HTag({ label, muted }: { label: string; muted?: boolean }) {
-  return (
-    <View style={[styles.h2hTag, muted && styles.h2hTagMuted]}>
-      <Text style={styles.h2hTagText}>{label}</Text>
-    </View>
-  );
-}
-
 // ----- Standings ----------------------------------------------------------
 
 function StandingsTab({
@@ -833,21 +817,6 @@ const styles = StyleSheet.create({
   oddsChip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: theme.surfaceMuted, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 },
   oddsChipKey: { fontFamily: fonts.body, fontSize: 10, color: theme.textMuted },
   oddsChipVal: { fontFamily: fonts.bodySemiBold, fontSize: 11, color: theme.textPrimary },
-  h2hHead: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: spacing.xs },
-  h2hLeague: { fontFamily: fonts.body, fontSize: 10, color: theme.textFaint },
-  h2hMain: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  h2hScoreCol: { alignItems: 'center', minWidth: 56 },
-  h2hHt: { fontFamily: fonts.body, fontSize: 10, color: theme.textFaint },
-  h2hTags: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: spacing.sm },
-  h2hTag: { backgroundColor: 'rgba(5, 150, 105, 0.12)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 3 },
-  h2hTagMuted: { backgroundColor: theme.surfaceMuted },
-  h2hTagText: { fontFamily: fonts.body, fontSize: 10, color: theme.textMuted },
-  h2hMiniStats: { marginTop: spacing.sm, gap: 2 },
-  h2hMiniLine: { fontFamily: fonts.body, fontSize: 10, color: theme.textFaint },
-  h2hDate: { fontFamily: fonts.body, fontSize: 10, color: theme.textFaint },
-  h2hTeams: { flex: 1, fontFamily: fonts.bodyMedium, fontSize: 12, color: theme.textPrimary, textAlign: 'right' },
-  h2hAway: { textAlign: 'left' },
-  h2hScore: { fontFamily: fonts.bodySemiBold, fontSize: 14, color: theme.textPrimary, textAlign: 'center' },
   tableRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, gap: spacing.xs },
   tableHead: { borderBottomWidth: layout.borderWidth, borderBottomColor: theme.border },
   tableRowActive: { backgroundColor: 'rgba(5, 150, 105, 0.08)' },

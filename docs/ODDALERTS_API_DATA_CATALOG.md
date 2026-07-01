@@ -11,19 +11,24 @@ Complete reference of **what the API returns** (verified June 2026 against
 
 ## 1. What the API does **not** provide
 
-These were tested with `include=events|goals|cards|substitutions|lineups|timeline|incidents|commentary` on fixture detail — **no extra fields** are returned:
+**Full gap analysis (Flashscore comparison, workarounds, add-ons):**
+[ODDALERTS_API_GAPS.md](./ODDALERTS_API_GAPS.md)
+
+These were tested with `include=events|goals|cards|substitutions|lineups|timeline|incidents|commentary|goal_timing` on fixture detail — **no extra fields** are returned:
 
 | Missing data | Notes |
 | ------------ | ----- |
-| Goal scorers / assists | No per-goal timeline |
-| Bookings with minute | Only aggregate card counts in `stats` |
+| Goal scorers / assists | No per-goal timeline on `fixtures/:id` |
+| Exact goal minute | Only 15‑min **buckets** via `stats/fixture` (see gaps doc) |
+| Bookings with minute & player | Only aggregate card counts in `stats` |
 | Substitutions | Not exposed |
 | Confirmed starting XI | Use `GET /players/fixture/:id` (full squad by position) |
 | Live stats split by half | Only **full-match** stats + `ht_score` string |
 | Player-level match events | No Flashscore-style incident feed |
+| Cup bracket / WC group letters | Not in API — groups inferred client-side |
 
 The app derives **2nd-half score** as `FT − HT` when both are known. For **goal
-scorers and minutes**, use the optional **API-Football** add-on
+scorers and exact minutes**, use the optional **API-Football** add-on
 (`API_FOOTBALL_KEY` — see `frontend/.env.example` and `services/apiFootball.ts`).
 
 ---
@@ -275,7 +280,7 @@ object, `odds[]` (bookmaker lines with opening/peak/latest/value %), `probabilit
 
 | Tab | API sources |
 | --- | ----------- |
-| **Summary** | Base fixture + `season_progress` + `probability` (snapshot) + score breakdown |
+| **Summary** | Base fixture + `season_progress` + `probability` (snapshot) + score breakdown + goals (API-Football / OddAlerts periods — see [gaps](./ODDALERTS_API_GAPS.md)) |
 | **Stats** | `stats` (all home/away pairs) |
 | **Odds** | `probability` (full) + `odds` (all markets) |
 | **H2H** | `h2h` (full objects) |

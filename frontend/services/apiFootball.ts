@@ -20,10 +20,25 @@ export type MatchGoalEvent = {
   player: string;
   assist: string | null;
   detail: string;
+  /** Score after this goal (Flashscore-style running score). */
+  scoreHome: number;
+  scoreAway: number;
+};
+
+export type MatchTimelineEvent = {
+  kind: 'goal' | 'yellow' | 'red' | 'sub';
+  side: 'home' | 'away';
+  minute: number;
+  extra: number | null;
+  player: string;
+  detail: string;
+  /** Substitution: player coming off. */
+  relatedPlayer: string | null;
 };
 
 export type MatchEventsResult = {
   goals: MatchGoalEvent[];
+  timeline: MatchTimelineEvent[];
   /** API key present (proxy env or native public key). */
   configured: boolean;
   /** Matched an API-Football fixture for this OddAlerts game. */
@@ -47,7 +62,7 @@ type RawEvent = {
 };
 
 const fixtureIdCache = new Map<string, number>();
-const eventsCache = new Map<string, MatchGoalEvent[]>();
+const eventsCache = new Map<string, MatchEventsResult>();
 
 function isConfigured(): boolean {
   return USE_PROXY || Boolean(NATIVE_KEY);
@@ -117,38 +132,161 @@ async function findApiFixtureId(
   const cached = fixtureIdCache.get(cacheKey);
   if (cached) return cached;
 
-  const date = kickoffDate(opts.unix);
-  const env = await getJson<ApiEnvelope<RawFixture>>('fixtures', { date, timezone: 'UTC' });
-  if (signal?.aborted) return null;
+  const dates = new Set<string>();
+  dates.add(kickoffDate(opts.unix));
+  // Kick-off may fall on adjacent UTC dates vs local fixture calendars.
+  dates.add(kickoffDate(opts.unix - 86400));
+  dates.add(kickoffDate(opts.unix + 86400));
 
-  const hit = env.response?.find(
-    (f) => namesMatch(f.teams.home.name, opts.homeName) && namesMatch(f.teams.away.name, opts.awayName),
-  );
-  if (!hit) return null;
+  for (const date of dates) {
+    const env = await getJson<ApiEnvelope<RawFixture>>('fixtures', { date, timezone: 'UTC' });
+    if (signal?.aborted) return null;
 
-  fixtureIdCache.set(cacheKey, hit.fixture.id);
-  return hit.fixture.id;
+    const hit = env.response?.find(
+      (f) => namesMatch(f.teams.home.name, opts.homeName) && namesMatch(f.teams.away.name, opts.awayName),
+    );
+    if (hit) {
+      fixtureIdCache.set(cacheKey, hit.fixture.id);
+      return hit.fixture.id;
+    }
+  }
+
+  return null;
 }
 
-function mapGoals(
+function goalSortKey(g: Pick<MatchGoalEvent, 'minute' | 'extra'>): number {
+  return g.minute + (g.extra ?? 0) * 0.01;
+}
+
+function mapTimelineEvents(
   events: RawEvent[],
   homeName: string,
   awayName: string,
-): MatchGoalEvent[] {
-  return events
-    .filter((e) => e.type === 'Goal')
-    .map((e) => {
-      const isHome = namesMatch(e.team.name, homeName);
-      const isAway = namesMatch(e.team.name, awayName);
-      return {
-        side: isHome ? 'home' : isAway ? 'away' : 'home',
-        minute: e.time.elapsed,
-        extra: e.time.extra,
-        player: e.player?.name?.trim() || 'Unknown',
-        assist: e.assist?.name?.trim() || null,
+): MatchTimelineEvent[] {
+  const out: MatchTimelineEvent[] = [];
+
+  for (const e of events) {
+    const isHome = namesMatch(e.team.name, homeName);
+    const isAway = namesMatch(e.team.name, awayName);
+    const side = (isHome ? 'home' : isAway ? 'away' : 'home') as 'home' | 'away';
+    const minute = e.time.elapsed;
+    const extra = e.time.extra;
+    const player = e.player?.name?.trim() || 'Unknown';
+
+    if (e.type === 'Goal' && !/missed/i.test(e.detail)) {
+      out.push({
+        kind: 'goal',
+        side,
+        minute,
+        extra,
+        player,
         detail: e.detail || 'Goal',
-      } satisfies MatchGoalEvent;
-    });
+        relatedPlayer: e.assist?.name?.trim() || null,
+      });
+      continue;
+    }
+
+    if (e.type === 'Card') {
+      const isRed = /red/i.test(e.detail);
+      out.push({
+        kind: isRed ? 'red' : 'yellow',
+        side,
+        minute,
+        extra,
+        player,
+        detail: e.detail || 'Card',
+        relatedPlayer: null,
+      });
+      continue;
+    }
+
+    if (e.type === 'subst') {
+      out.push({
+        kind: 'sub',
+        side,
+        minute,
+        extra,
+        player,
+        detail: e.detail || 'Substitution',
+        relatedPlayer: e.assist?.name?.trim() || null,
+      });
+    }
+  }
+
+  return out.sort((a, b) => a.minute + (a.extra ?? 0) * 0.01 - (b.minute + (b.extra ?? 0) * 0.01));
+}
+
+function buildGoalsFromTimeline(
+  timeline: MatchTimelineEvent[],
+  homeName: string,
+  awayName: string,
+): MatchGoalEvent[] {
+  const raw = timeline
+    .filter((e) => e.kind === 'goal')
+    .map((e) => ({
+      side: e.side,
+      minute: e.minute,
+      extra: e.extra,
+      player: e.player,
+      assist: e.relatedPlayer,
+      detail: e.detail,
+      scoreHome: 0,
+      scoreAway: 0,
+    }))
+    .sort((a, b) => goalSortKey(a) - goalSortKey(b));
+
+  let home = 0;
+  let away = 0;
+  for (const g of raw) {
+    if (g.side === 'home') home += 1;
+    else away += 1;
+    g.scoreHome = home;
+    g.scoreAway = away;
+  }
+
+  return raw;
+}
+
+/**
+ * Load goals, cards and substitutions for an OddAlerts fixture.
+ */
+export async function fetchMatchEvents(
+  detail: { id: number; home_name: string; away_name: string; unix: number },
+  signal?: AbortSignal,
+): Promise<MatchEventsResult> {
+  if (!isConfigured()) {
+    return { goals: [], timeline: [], configured: false, matched: false };
+  }
+
+  try {
+    const cacheKey = String(detail.id);
+    const cached = eventsCache.get(cacheKey);
+    if (cached) return cached;
+
+    const fixtureId = await findApiFixtureId(
+      { homeName: detail.home_name, awayName: detail.away_name, unix: detail.unix },
+      signal,
+    );
+    if (!fixtureId) {
+      return { goals: [], timeline: [], configured: true, matched: false };
+    }
+
+    const env = await getJson<ApiEnvelope<RawEvent>>('fixtures/events', { fixture: fixtureId });
+    if (signal?.aborted) {
+      return { goals: [], timeline: [], configured: true, matched: true };
+    }
+
+    const timeline = mapTimelineEvents(env.response ?? [], detail.home_name, detail.away_name);
+    const goals = buildGoalsFromTimeline(timeline, detail.home_name, detail.away_name);
+    const result: MatchEventsResult = { goals, timeline, configured: true, matched: true };
+    eventsCache.set(cacheKey, result);
+    return result;
+  } catch (err) {
+    if (err instanceof Error && err.message === 'NOT_CONFIGURED') {
+      return { goals: [], timeline: [], configured: false, matched: false };
+    }
+    throw err;
+  }
 }
 
 /**
@@ -158,37 +296,5 @@ export async function fetchMatchGoals(
   detail: { id: number; home_name: string; away_name: string; unix: number },
   signal?: AbortSignal,
 ): Promise<MatchEventsResult> {
-  if (!isConfigured()) {
-    return { goals: [], configured: false, matched: false };
-  }
-
-  try {
-    const cacheKey = String(detail.id);
-    const cached = eventsCache.get(cacheKey);
-    if (cached) {
-      return { goals: cached, configured: true, matched: true };
-    }
-
-    const fixtureId = await findApiFixtureId(
-      { homeName: detail.home_name, awayName: detail.away_name, unix: detail.unix },
-      signal,
-    );
-    if (!fixtureId) {
-      return { goals: [], configured: true, matched: false };
-    }
-
-    const env = await getJson<ApiEnvelope<RawEvent>>('fixtures/events', { fixture: fixtureId });
-    if (signal?.aborted) {
-      return { goals: [], configured: true, matched: true };
-    }
-
-    const goals = mapGoals(env.response ?? [], detail.home_name, detail.away_name);
-    eventsCache.set(cacheKey, goals);
-    return { goals, configured: true, matched: true };
-  } catch (err) {
-    if (err instanceof Error && err.message === 'NOT_CONFIGURED') {
-      return { goals: [], configured: false, matched: false };
-    }
-    throw err;
-  }
+  return fetchMatchEvents(detail, signal);
 }

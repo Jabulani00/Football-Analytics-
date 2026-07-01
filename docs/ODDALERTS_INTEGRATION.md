@@ -230,7 +230,7 @@ plus `GET /players/fixture/:id` (squads) and `GET /stats/season/:seasonId` (tabl
 
 | Tab | Data shown |
 | --- | ---------- |
-| **Summary** | Match info, FT/HT/2H score breakdown, win-probability snapshot |
+| **Summary** | Match info, **pressure monitor** (`stats` pressure + live trace), goals timeline, FT/HT/2H, win-probability snapshot |
 | **Stats** | All `stats` home/away pairs (possession, shots, xG, corners, cards, …) |
 | **Odds** | Full `probability` model + every `odds` market returned |
 | **H2H** | Past meetings with HT, BTTS/O2.5 tags, possession/corners/cards |
@@ -239,6 +239,33 @@ plus `GET /players/fixture/:id` (squads) and `GET /stats/season/:seasonId` (tabl
 
 Half-time score comes from `ht_score`; second half is **derived** (FT − HT). The API
 does not expose per-minute goals, assists, cards or substitutions.
+
+### Pressure monitor (match summary)
+
+OddAlerts does **not** ship a dedicated “match summary” endpoint. The **pressure
+monitor** is part of fixture `stats` — request any fixture with `include=stats`
+(same call as match detail today).
+
+| Stat field | Meaning |
+| ---------- | ------- |
+| `home_pressure` / `away_pressure` | Current pressure index (% — sums to ~100) |
+| `home_pressure_avg` / `away_pressure_avg` | Match-average pressure split |
+| `home_possession` / `away_possession` | Often published alongside pressure |
+
+There is **no historical pressure series** in the API. Per **Joe @ OddAlerts**:
+
+> The pressure monitor is available by including `&include=stats` on any fixture
+> endpoint. For live tracking, save the values every minute (or however often you like).
+
+The app **polls every 60 seconds** during `LIVE` / `1H` / `2H` / `HT`, appends each
+`home_pressure` / `away_pressure` sample client-side, and persists the trace in
+**sessionStorage** while you stay on the match page (`useMatchDetail` +
+`PressureMonitorPanel` on the **Summary** tab).
+
+Goal and card markers on the chart come from OddAlerts `stats/fixture` frozen rows
+(half-time goal splits + `cards_1h_for` / `cards_2h_for`). Exact scorer names are
+not in the OddAlerts feed.
+
 
 ---
 
