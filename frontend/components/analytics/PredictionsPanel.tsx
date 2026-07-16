@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
+import CompetitionPicker from '@/components/shared/CompetitionPicker';
 import { useLiveCompetitions } from '@/hooks/useLiveCompetitions';
 import { useLiveFixturePredictions, type PredictedFixture } from '@/hooks/useLiveFixturePredictions';
 import type { FixturePrediction } from '@/services/predictionEngine';
@@ -38,27 +39,11 @@ export default function PredictionsPanel() {
         refresh, then run through the Dixon-Coles model.
       </Text>
 
-      {competitions.length > 0 ? (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={Platform.OS === 'web'}
-          contentContainerStyle={styles.picker}>
-          {competitions.map((c) => (
-            <Pressable
-              key={c.id}
-              onPress={() => setCompetitionId(c.id)}
-              style={({ pressed, hovered }) => [
-                styles.chip,
-                c.id === competitionId && styles.chipActive,
-                (pressed || (Platform.OS === 'web' && hovered)) && styles.chipHover,
-              ]}>
-              <Text style={[styles.chipText, c.id === competitionId && styles.chipTextActive]}>
-                {c.name}
-              </Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-      ) : null}
+      <CompetitionPicker
+        competitions={competitions}
+        selectedId={competitionId}
+        onSelect={setCompetitionId}
+      />
 
       <View style={styles.statusRow}>
         {loading ? (
@@ -149,15 +134,6 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body, fontSize: 13, color: theme.textMuted,
     textAlign: 'center', marginBottom: spacing.lg, maxWidth: 640,
   },
-  picker: { justifyContent: 'center', gap: spacing.sm, paddingBottom: spacing.md, flexGrow: 1 },
-  chip: {
-    paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderWidth: layout.borderWidth,
-    borderColor: theme.border, borderRadius: layout.borderRadius, backgroundColor: theme.surface,
-  },
-  chipActive: { borderColor: theme.accentGreen },
-  chipHover: { borderColor: theme.textMuted },
-  chipText: { fontFamily: fonts.body, fontSize: 12, color: theme.textMuted },
-  chipTextActive: { color: theme.accentGreen, fontFamily: fonts.bodyMedium },
   statusRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: spacing.sm, marginBottom: spacing.md, minHeight: 18,

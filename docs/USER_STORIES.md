@@ -150,8 +150,17 @@ the live stat tables.
   predicted** (e.g. St. Louis City v Sporting KC 70/19/11, xG 2.5-0.9, 2-0,
   conf 93%). `tsc` + lint clean.
 - Substantially delivers **J1** (predictions on fixtures) for upcoming games.
-- **Follow-up:** the competition picker lists all active competitions (100+);
-  add search/grouping so it reads well (polish).
+
+### A15. Searchable competition picker + smart default ✅ DONE
+As a user, I want to quickly find a competition and see a sensible one by default.
+- `components/shared/CompetitionPicker.tsx` — reusable search box + chips
+  (name + country), shared by the Predictions and Stats Tables panels.
+- `useLiveCompetitions` now sorts **leagues → cups → friendlies**, by activity
+  within each tier, so the default is a domestic league with self-contained
+  results (cups/friendlies predict weakly since team form lives elsewhere).
+- **Verified (LIVE):** default now lands on a real league (e.g. Azadegan League,
+  18 teams) with **varied** predictions; search filters all ~80 competitions;
+  both panels render live. `tsc` + lint clean.
 
 ---
 

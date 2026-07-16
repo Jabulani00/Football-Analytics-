@@ -1,48 +1,26 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import CompetitionPicker from '@/components/shared/CompetitionPicker';
 import SectionLabel from '@/components/shared/SectionLabel';
+import { useLiveCompetitions } from '@/hooks/useLiveCompetitions';
 import { useLiveStatsTables } from '@/hooks/useLiveStatsTables';
 import { STATS_TABLES, getTeamStatsForTable } from '@/mock/analyticsData';
-import { fetchUpcomingFixtures, type RawFixture } from '@/services/oddAlerts';
 import type { StatsTableMeta } from '@/types/analytics';
 import { complianceColor } from '@/utils/compliance';
 import { liveRowsToDisplay, metaToLiveTableName, sortByWinPct } from '@/utils/statsTableAdapter';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
-type Competition = { id: number; name: string; season: string };
-
 export default function StatsTablesPanel() {
   const [selectedId, setSelectedId] = useState(STATS_TABLES[0].id);
   const selected = STATS_TABLES.find((t) => t.id === selectedId) ?? STATS_TABLES[0];
 
-  // Live competitions sourced from upcoming fixtures (guaranteed to be active).
-  const [competitions, setCompetitions] = useState<Competition[]>([]);
+  // Live competitions (sorted by activity) sourced from upcoming fixtures.
+  const competitions = useLiveCompetitions(3);
   const [competitionId, setCompetitionId] = useState<number | null>(null);
-
   useEffect(() => {
-    const ctrl = new AbortController();
-    fetchUpcomingFixtures({ days: 3 }, ctrl.signal)
-      .then((env) => {
-        const seen = new Map<number, Competition>();
-        for (const fx of env.data as RawFixture[]) {
-          if (fx.competition_id && fx.competition_name && !seen.has(fx.competition_id)) {
-            seen.set(fx.competition_id, {
-              id: fx.competition_id,
-              name: fx.competition_name,
-              season: fx.season,
-            });
-          }
-        }
-        const list = Array.from(seen.values()).slice(0, 20);
-        setCompetitions(list);
-        setCompetitionId((prev) => prev ?? list[0]?.id ?? null);
-      })
-      .catch(() => {
-        /* leave empty → falls back to sample data */
-      });
-    return () => ctrl.abort();
-  }, []);
+    if (competitionId == null && competitions.length > 0) setCompetitionId(competitions[0].id);
+  }, [competitions, competitionId]);
 
   const activeComp = competitions.find((c) => c.id === competitionId) ?? null;
   const live = useLiveStatsTables({
@@ -67,27 +45,11 @@ export default function StatsTablesPanel() {
       </Text>
 
       {/* Live competition selector */}
-      {competitions.length > 0 ? (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={Platform.OS === 'web'}
-          contentContainerStyle={styles.tablePicker}>
-          {competitions.map((c) => (
-            <Pressable
-              key={c.id}
-              onPress={() => setCompetitionId(c.id)}
-              style={({ pressed, hovered }) => [
-                styles.chip,
-                c.id === competitionId && styles.chipActive,
-                (pressed || (Platform.OS === 'web' && hovered)) && styles.chipHover,
-              ]}>
-              <Text style={[styles.chipText, c.id === competitionId && styles.chipTextActive]}>
-                {c.name}
-              </Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-      ) : null}
+      <CompetitionPicker
+        competitions={competitions}
+        selectedId={competitionId}
+        onSelect={setCompetitionId}
+      />
 
       {/* Data-source status */}
       <View style={styles.statusRow}>
