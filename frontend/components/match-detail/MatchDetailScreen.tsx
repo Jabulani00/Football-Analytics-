@@ -73,6 +73,33 @@ export default function MatchDetailScreen({ matchId, onBack }: MatchDetailScreen
 
   const fixture = useMemo(() => (detail ? mapFixture(detail) : null), [detail]);
 
+  // Must run on every render (before the early returns below) so the hook order
+  // stays stable between the loading and loaded states — React rules of hooks.
+  const groupCompetition = useMemo((): Competition | null => {
+    if (!detail || !isGroupStageTournament(detail.competition_name) || !detail.season_id) {
+      return null;
+    }
+    return {
+      id: detail.competition_id,
+      name: detail.competition_name,
+      slug: '',
+      country: detail.competition_country,
+      countryId: 0,
+      type: detail.competition_type,
+      isCup: true,
+      currentSeason: detail.season_id,
+      seasons: [
+        {
+          seasonId: detail.season_id,
+          seasonName: detail.season,
+          played: null,
+          progress: detail.season_progress ?? null,
+          isCurrent: true,
+        },
+      ],
+    };
+  }, [detail]);
+
   const openTeam = (teamId: number | null, name: string) => {
     if (!teamId) return;
     router.push({ pathname: '/team/[slug]', params: { slug: String(teamId), name } });
@@ -121,29 +148,6 @@ export default function MatchDetailScreen({ matchId, onBack }: MatchDetailScreen
           : `${fixture.minute ?? 0}${fixture.addedTime ? `+${fixture.addedTime}` : ''}'`;
 
   const scores = scoreBreakdown(detail);
-
-  const groupCompetition = useMemo((): Competition | null => {
-    if (!isGroupStageTournament(detail.competition_name) || !detail.season_id) return null;
-    return {
-      id: detail.competition_id,
-      name: detail.competition_name,
-      slug: '',
-      country: detail.competition_country,
-      countryId: 0,
-      type: detail.competition_type,
-      isCup: true,
-      currentSeason: detail.season_id,
-      seasons: [
-        {
-          seasonId: detail.season_id,
-          seasonName: detail.season,
-          played: null,
-          progress: detail.season_progress ?? null,
-          isCurrent: true,
-        },
-      ],
-    };
-  }, [detail]);
 
   return (
     <PageContainer contentContainerStyle={styles.scroll}>

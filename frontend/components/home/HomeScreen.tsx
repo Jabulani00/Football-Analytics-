@@ -1,4 +1,4 @@
-import { Platform, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import LeagueCard from '@/components/home/LeagueCard';
 import PageContainer from '@/components/shared/PageContainer';

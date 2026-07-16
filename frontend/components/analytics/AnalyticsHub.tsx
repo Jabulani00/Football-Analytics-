@@ -11,7 +11,7 @@ import StreamsPanel from '@/components/analytics/StreamsPanel';
 import AppShell from '@/components/shared/AppShell';
 import StickyBack from '@/components/shared/StickyBack';
 import type { AnalyticsTab } from '@/types/analytics';
-import { fonts, layout, spacing, theme } from '@/styles/theme';
+import { fonts, spacing, theme } from '@/styles/theme';
 import { formatTopBarDate } from '@/utils/dates';
 
 type AnalyticsHubProps = {

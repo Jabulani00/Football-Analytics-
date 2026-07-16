@@ -3,7 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import type { ComplianceLevel } from '@/types/analytics';
 import type { StatDisplayUnit } from '@/types/stats';
 import { complianceColor } from '@/utils/compliance';
-import { fonts, theme } from '@/styles/theme';
+import { fonts } from '@/styles/theme';
 
 type StatValueCellProps = {
   value: number;

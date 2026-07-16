@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import type { PredictionResult } from '@/hooks/useModel';
-import { fonts, layout, spacing, theme } from '@/styles/theme';
+import { fonts, spacing, theme } from '@/styles/theme';
 
 type PredictionBarProps = {
   label: string;

@@ -2,7 +2,7 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import type { ComplianceLevel } from '@/types/analytics';
 import { complianceColor, complianceLabel } from '@/utils/compliance';
-import { fonts, layout, spacing, theme } from '@/styles/theme';
+import { fonts, layout, spacing } from '@/styles/theme';
 
 type ComplianceBadgeProps = {
   level: ComplianceLevel;

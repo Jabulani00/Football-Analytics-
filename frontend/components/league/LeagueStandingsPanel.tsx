@@ -4,7 +4,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import StandingsTable from '@/components/match/StandingsTable';
 import SubTabBar from '@/components/shared/SubTabBar';
 import { getStandingsBundle } from '@/mock/leagueFeedData';
-import { fonts, layout, spacing, theme } from '@/styles/theme';
+import { fonts, spacing, theme } from '@/styles/theme';
 
 type LeagueStandingsPanelProps = {
   leagueId: string;

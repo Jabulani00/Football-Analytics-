@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import ComplianceBadge from '@/components/analytics/ComplianceBadge';
 import SectionLabel from '@/components/shared/SectionLabel';
 import { STATS_TABLES, getTeamStatsForTable } from '@/mock/analyticsData';
 import type { StatsTableMeta } from '@/types/analytics';
