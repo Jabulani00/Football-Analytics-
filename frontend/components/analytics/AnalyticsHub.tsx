@@ -5,6 +5,7 @@ import AnalyticsNav from '@/components/analytics/AnalyticsNav';
 import BetSlipPanel from '@/components/analytics/BetSlipPanel';
 import OddsFusionPanel from '@/components/analytics/OddsFusionPanel';
 import OverviewPanel from '@/components/analytics/OverviewPanel';
+import PredictionsPanel from '@/components/analytics/PredictionsPanel';
 import StatsTablesPanel from '@/components/analytics/StatsTablesPanel';
 import StrategiesPanel from '@/components/analytics/StrategiesPanel';
 import StreamsPanel from '@/components/analytics/StreamsPanel';
@@ -24,6 +25,8 @@ function PanelForTab({ tab }: { tab: AnalyticsTab }) {
       return <OverviewPanel />;
     case 'tables':
       return <StatsTablesPanel />;
+    case 'predictions':
+      return <PredictionsPanel />;
     case 'streams':
       return <StreamsPanel />;
     case 'strategies':

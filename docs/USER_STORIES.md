@@ -135,6 +135,24 @@ database.
 - **Verified (LIVE):** built 36 real tables from 28 live Kazakhstan Cup results
   fetched through the deployed Vercel proxy — real per-team stats + signals.
 
+### A14. Live prediction engine + Predictions screen ✅ DONE
+As a user, I want predictions on upcoming fixtures, generated continuously from
+the live stat tables.
+- `services/predictionEngine.ts` — TS port of the Dixon-Coles Poisson + ensemble
+  core (1X2, BTTS, O/U, correct score, xG, confidence); `hooks/useLiveFixture
+  Predictions.ts` builds the tables live and predicts a competition's upcoming
+  fixtures, refreshing on a 5-min interval ("always running").
+- `components/analytics/PredictionsPanel.tsx` — new **Predictions** tab: live
+  competition selector + a card per upcoming fixture (1X2 with the pick, BTTS,
+  O2.5, xG, likely score, confidence).
+- **Verified (offline):** 17/17 engine checks (`scripts/test-prediction-engine.ts`).
+- **Verified (LIVE, in-app):** Major League Soccer → **4/4 upcoming fixtures
+  predicted** (e.g. St. Louis City v Sporting KC 70/19/11, xG 2.5-0.9, 2-0,
+  conf 93%). `tsc` + lint clean.
+- Substantially delivers **J1** (predictions on fixtures) for upcoming games.
+- **Follow-up:** the competition picker lists all active competitions (100+);
+  add search/grouping so it reads well (polish).
+
 ---
 
 ## PART B — Remaining work (3 parallel streams)
