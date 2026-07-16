@@ -258,19 +258,19 @@ the tables mean what their names say.
   updated accordingly.
 **Dependencies:** independent of network. ⚡ Unblocks C2 (strategy compliance).
 
-#### C1b. Wire the real-time builder into the UI ⚡
-**Context:** The real-time builder + hook exist and are **verified on live data**
-(**A13**). Live access is solved via the deployed proxy, so this is no longer
-network-blocked — it's pure UI wiring.
+#### C1b. Wire the real-time builder into the UI ✅ DONE
 **Story:** As an analyst, I want the Stats Tables screen to show tables built live
 from the API so I see real numbers, not samples.
-**Acceptance criteria:**
-- `StatsTablesPanel` (and/or Team profile) consumes `useLiveStatsTables` and
-  renders live rows; sample data used only as a fallback while loading/offline.
-- Adapter maps `TeamStatsExport` rows → the panel's `{team, metrics}` shape.
-- Colour signals render correctly; loading + empty states handled.
-**Dependencies:** 🔗 A13 (done). ⚡ Unblocks J3 live values and C2. No longer
-network-blocked (proxy resolves it).
+- `StatsTablesPanel` now has a **live competition selector** (sourced from live
+  upcoming fixtures) and consumes `useLiveStatsTables`; `utils/statsTableAdapter.ts`
+  maps `TeamStatsExport` rows → the panel's `{team, metrics}` shape (using the
+  builder's colour signals), sorted by win%. Sample data is the fallback while
+  loading / when a competition has no results.
+- **Verified (LIVE, in the app):** selecting `Esiliiga A` rendered 10 real teams
+  with live stats (Tartu Welco 74% win / 63% BTTS / 74% O2.5…); the `● LIVE`
+  badge shows, and switching period/window (FT → 1H, last-N) re-maps to the right
+  live table. `tsc` + lint clean.
+- ⚡ Unblocks J3 (Team-profile live stats — reuse the same adapter/hook).
 
 #### C1c. Extend the real-time builder to the remaining families
 **Story:** As an analyst, I want `ppg`, `series`, `ft_only`, `league_avg` and the

@@ -1,22 +1,111 @@
-import { useMemo, useState } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import SectionLabel from '@/components/shared/SectionLabel';
+import { useLiveStatsTables } from '@/hooks/useLiveStatsTables';
 import { STATS_TABLES, getTeamStatsForTable } from '@/mock/analyticsData';
+import { fetchUpcomingFixtures, type RawFixture } from '@/services/oddAlerts';
 import type { StatsTableMeta } from '@/types/analytics';
 import { complianceColor } from '@/utils/compliance';
+import { liveRowsToDisplay, metaToLiveTableName, sortByWinPct } from '@/utils/statsTableAdapter';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
+
+type Competition = { id: number; name: string; season: string };
 
 export default function StatsTablesPanel() {
   const [selectedId, setSelectedId] = useState(STATS_TABLES[0].id);
   const selected = STATS_TABLES.find((t) => t.id === selectedId) ?? STATS_TABLES[0];
-  const teams = useMemo(() => getTeamStatsForTable(selectedId), [selectedId]);
+
+  // Live competitions sourced from upcoming fixtures (guaranteed to be active).
+  const [competitions, setCompetitions] = useState<Competition[]>([]);
+  const [competitionId, setCompetitionId] = useState<number | null>(null);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    fetchUpcomingFixtures({ days: 3 }, ctrl.signal)
+      .then((env) => {
+        const seen = new Map<number, Competition>();
+        for (const fx of env.data as RawFixture[]) {
+          if (fx.competition_id && fx.competition_name && !seen.has(fx.competition_id)) {
+            seen.set(fx.competition_id, {
+              id: fx.competition_id,
+              name: fx.competition_name,
+              season: fx.season,
+            });
+          }
+        }
+        const list = Array.from(seen.values()).slice(0, 20);
+        setCompetitions(list);
+        setCompetitionId((prev) => prev ?? list[0]?.id ?? null);
+      })
+      .catch(() => {
+        /* leave empty → falls back to sample data */
+      });
+    return () => ctrl.abort();
+  }, []);
+
+  const activeComp = competitions.find((c) => c.id === competitionId) ?? null;
+  const live = useLiveStatsTables({
+    competitionId: competitionId ?? undefined,
+    seasonName: activeComp?.season,
+  });
+
+  const liveTable =
+    competitionId != null ? live.data?.tables[metaToLiveTableName(selected)] : undefined;
+  const isLive = !!(liveTable && liveTable.length);
+
+  const teams = useMemo(
+    () =>
+      isLive ? sortByWinPct(liveRowsToDisplay(liveTable!)) : getTeamStatsForTable(selectedId),
+    [isLive, liveTable, selectedId],
+  );
 
   return (
     <View style={styles.container}>
       <Text style={styles.hint}>
         72 tables total (45 base + 27 last-N) · 100+ metrics · Overall / Home / Away
       </Text>
+
+      {/* Live competition selector */}
+      {competitions.length > 0 ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={Platform.OS === 'web'}
+          contentContainerStyle={styles.tablePicker}>
+          {competitions.map((c) => (
+            <Pressable
+              key={c.id}
+              onPress={() => setCompetitionId(c.id)}
+              style={({ pressed, hovered }) => [
+                styles.chip,
+                c.id === competitionId && styles.chipActive,
+                (pressed || (Platform.OS === 'web' && hovered)) && styles.chipHover,
+              ]}>
+              <Text style={[styles.chipText, c.id === competitionId && styles.chipTextActive]}>
+                {c.name}
+              </Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      ) : null}
+
+      {/* Data-source status */}
+      <View style={styles.statusRow}>
+        {live.loading ? (
+          <>
+            <ActivityIndicator size="small" color={theme.accentGreen} />
+            <Text style={styles.statusMuted}>Building tables live…</Text>
+          </>
+        ) : isLive ? (
+          <Text style={[styles.statusText, styles.statusLive]}>
+            ● LIVE · {activeComp?.name ?? ''} ({liveTable!.length} teams)
+          </Text>
+        ) : (
+          <Text style={styles.statusMuted}>
+            {live.error ? `Live unavailable — showing sample` : 'Sample data'}
+          </Text>
+        )}
+      </View>
 
       <ScrollView
         horizontal
@@ -45,7 +134,9 @@ export default function StatsTablesPanel() {
         </View>
       </View>
 
-      <SectionLabel style={styles.section}>Ordinary Team Stats (sample)</SectionLabel>
+      <SectionLabel style={styles.section}>
+        {isLive ? 'Ordinary Team Stats (live)' : 'Ordinary Team Stats (sample)'}
+      </SectionLabel>
 
       <ScrollView
         horizontal
@@ -146,6 +237,26 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingBottom: spacing.md,
     flexGrow: 1,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+    minHeight: 18,
+  },
+  statusText: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 12,
+  },
+  statusLive: {
+    color: theme.accentGreen,
+  },
+  statusMuted: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: theme.textMuted,
   },
   chip: {
     paddingHorizontal: spacing.md,
