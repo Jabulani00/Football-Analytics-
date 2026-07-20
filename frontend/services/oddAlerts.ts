@@ -192,19 +192,29 @@ export function fetchUpcomingFixtures(
  * Flashscore "Results" source. Optionally scope to one or more competitions.
  */
 export function fetchFixturesBetween(
-  opts: { fromUnix: number; toUnix: number; competitions?: string; page?: number },
+  opts: { fromUnix: number; toUnix: number; competitions?: string; teams?: string; page?: number },
   signal?: AbortSignal,
 ): Promise<ApiEnvelope<RawFixture>> {
   return getJson<RawFixture>(
     'fixtures/between',
-    { from: opts.fromUnix, to: opts.toUnix, competitions: opts.competitions, page: opts.page },
+    {
+      from: opts.fromUnix,
+      to: opts.toUnix,
+      competitions: opts.competitions,
+      teams: opts.teams,
+      page: opts.page,
+    },
     signal,
   );
 }
 
-/** Fetches every page of `/fixtures/between` up to `maxPages` (rate-limit guard). */
+/**
+ * Fetches every page of `/fixtures/between` up to `maxPages` (rate-limit guard).
+ * `teams` (comma-separated ids) returns those teams' matches across ALL
+ * competitions — used for cross-competition form (e.g. cup fixtures).
+ */
 export async function fetchAllFixturesBetween(
-  opts: { fromUnix: number; toUnix: number; competitions?: string; maxPages?: number },
+  opts: { fromUnix: number; toUnix: number; competitions?: string; teams?: string; maxPages?: number },
   signal?: AbortSignal,
 ): Promise<RawFixture[]> {
   const maxPages = opts.maxPages ?? 3;

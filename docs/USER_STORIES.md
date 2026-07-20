@@ -162,6 +162,24 @@ As a user, I want to quickly find a competition and see a sensible one by defaul
   18 teams) with **varied** predictions; search filters all ~80 competitions;
   both panels render live. `tsc` + lint clean.
 
+### A16. Cross-competition form for cup/international predictions ✅ DONE
+As a user, I want cup and international fixtures to predict as well as league
+games, using each team's real recent form.
+- **Problem:** cup fixtures have no results *in that competition*, so
+  competition-scoped tables were empty and every tie predicted the league mean
+  (identical 31/31/38).
+- `services/teamForm.ts` derives venue-split strengths from each team's recent
+  matches **across all competitions**; `useLiveFixturePredictions` now batch-
+  fetches those (via `fixtures/between?teams=` — verified multi-team + cross-comp)
+  and predicts from them. Added a `teams` param to the client fetch.
+- **Verified (offline):** 11/11 checks (`scripts/test-team-form.ts`).
+- **Verified (LIVE, in-app):** Europa Conference League now shows **varied**
+  predictions (IFK Göteborg v Levadia 10/19/71 xG 0.9-2.4; Floriana v Drita
+  56/27/17) from 168 pooled cross-competition matches — was all identical before.
+- **Follow-up:** blend per-fixture market odds / API probability into the list
+  view to temper extreme pure-model leans (fits the ensemble already in the
+  Python engine).
+
 ---
 
 ## PART B — Remaining work (3 parallel streams)
