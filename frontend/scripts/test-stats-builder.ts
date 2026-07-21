@@ -25,10 +25,14 @@ const eq = (name: string, got: unknown, want: unknown) => {
 
 const exp = buildStatsTables({ fixtures, season: '2025/2026' });
 
-// 36 ordinary tables (4 windows × 3 periods × 3 scopes).
-eq('table count', exp.meta.tables, 36);
+// 72 tables: 5 base families × 3 periods × 3 scopes (45) + last-10/8/6 × 9 (27).
+eq('table count', exp.meta.tables, 72);
 eq('has ordinary_ft_overall', !!exp.tables['ordinary_ft_overall'], true);
 eq('has last6_2h_away', !!exp.tables['last6_2h_away'], true);
+eq('has ppg_ft_overall', !!exp.tables['ppg_ft_overall'], true);
+eq('has series_ft_overall', !!exp.tables['series_ft_overall'], true);
+eq('has ft_only_ft_overall', !!exp.tables['ft_only_ft_overall'], true);
+eq('has league_avg_ft_overall', !!exp.tables['league_avg_ft_overall'], true);
 
 const A = exp.tables['ordinary_ft_overall'].find((r) => r.team_name === 'A')!;
 // FT overall for A over its 3 matches: (gf,ga) = (2,1),(0,0),(3,3)
@@ -67,6 +71,18 @@ eq('A home w_pct', Ahome.w_pct, 50); // won 1 of 2 home (2-1 win, 3-3 draw)
 const Aaway = exp.tables['ordinary_ft_away'].find((r) => r.team_name === 'A')!;
 eq('A away sample', (Aaway as any).sample_size, 1);
 eq('A away cs_pct', Aaway.cs_pct, 100);
+
+// Family: series streaks (newest-first FT: (2-1),(0-0),(3-3)).
+const Aser = exp.tables['series_ft_overall'].find((r) => r.team_name === 'A')!;
+eq('A win_streak', Aser.win_streak, 1);   // won last, then drew
+eq('A btts_streak', Aser.btts_streak, 1); // BTTS last, then 0-0
+eq('A unbeaten_streak', Aser.unbeaten_streak, 3); // W,D,D all unbeaten
+// Family: ppg = (3 + 1 + 1) / 3
+const Appg = exp.tables['ppg_ft_overall'].find((r) => r.team_name === 'A')!;
+eq('A ppg', Appg.ppg, 1.67);
+// Family: league_avg is a single "League" row
+eq('league_avg single row', exp.tables['league_avg_ft_overall'].length, 1);
+eq('league_avg named League', exp.tables['league_avg_ft_overall'][0].team_name, 'League');
 
 console.log(`\n${pass}/${pass + fail} checks passed`);
 if (fail === 0) {

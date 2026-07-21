@@ -6,6 +6,7 @@ import type {
   ProjectPhase,
   RecencyWindow,
   SplitType,
+  StatFamily,
   StatsTableMeta,
   StreamSignal,
   StrategyMatch,
@@ -152,29 +153,50 @@ function mockMetric(key: string, label: string, seed: number) {
   return { key, label, value, compliance: complianceFromPercent(value) };
 }
 
-// All 36 stat-table variants: window (season/last-10/8/6) × period (FT/1H/2H) ×
-// split (overall/home/away). Ids/periods/splits map to the live builder's table
-// names via utils/statsTableAdapter.metaToLiveTableName.
+// All 72 stat-table variants. Base = 5 families × period × split (45);
+// last-N = 3 windows × period × split (27). Ids/family/period/split map to the
+// live builder's table names via utils/statsTableAdapter.metaToLiveTableName.
 const TABLE_PERIODS: { p: TimePeriod; label: string }[] = [
   { p: 'fulltime', label: 'FT' },
   { p: 'firsthalf', label: '1H' },
   { p: 'secondhalf', label: '2H' },
 ];
 const TABLE_SPLITS: SplitType[] = ['overall', 'home', 'away'];
-const TABLE_WINDOWS: { r?: RecencyWindow; label: string; group: StatsTableMeta['group'] }[] = [
-  { r: undefined, label: 'Season', group: 'base' },
-  { r: 'last10', label: 'Last 10', group: 'lastN' },
-  { r: 'last8', label: 'Last 8', group: 'lastN' },
-  { r: 'last6', label: 'Last 6', group: 'lastN' },
+const BASE_FAMILIES: { f: StatFamily; label: string }[] = [
+  { f: 'ordinary', label: 'Ordinary' },
+  { f: 'ppg', label: 'PPG' },
+  { f: 'series', label: 'Series' },
+  { f: 'ft_only', label: 'FT-Only' },
+  { f: 'league_avg', label: 'League Avg' },
+];
+const LASTN_WINDOWS: { r: RecencyWindow; label: string }[] = [
+  { r: 'last10', label: 'Last 10' },
+  { r: 'last8', label: 'Last 8' },
+  { r: 'last6', label: 'Last 6' },
 ];
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-export const STATS_TABLES: StatsTableMeta[] = TABLE_WINDOWS.flatMap((w) =>
+const BASE_TABLES: StatsTableMeta[] = BASE_FAMILIES.flatMap((fam) =>
   TABLE_PERIODS.flatMap((pr) =>
     TABLE_SPLITS.map<StatsTableMeta>((split) => ({
-      id: `${w.r ?? 'season'}-${pr.label.toLowerCase()}-${split}`,
+      id: `${fam.f}-${pr.label.toLowerCase()}-${split}`,
+      name: `${fam.label} · ${pr.label} ${cap(split)}`,
+      group: 'base',
+      family: fam.f,
+      split,
+      period: pr.p,
+      statCount: 34,
+    })),
+  ),
+);
+
+const LASTN_TABLES: StatsTableMeta[] = LASTN_WINDOWS.flatMap((w) =>
+  TABLE_PERIODS.flatMap((pr) =>
+    TABLE_SPLITS.map<StatsTableMeta>((split) => ({
+      id: `${w.r}-${pr.label.toLowerCase()}-${split}`,
       name: `${w.label} · ${pr.label} ${cap(split)}`,
-      group: w.group,
+      group: 'lastN',
+      family: 'ordinary',
       recency: w.r,
       split,
       period: pr.p,
@@ -182,6 +204,8 @@ export const STATS_TABLES: StatsTableMeta[] = TABLE_WINDOWS.flatMap((w) =>
     })),
   ),
 );
+
+export const STATS_TABLES: StatsTableMeta[] = [...BASE_TABLES, ...LASTN_TABLES];
 
 export function getTeamStatsForTable(_tableId: string): TeamStatsRow[] {
   return [

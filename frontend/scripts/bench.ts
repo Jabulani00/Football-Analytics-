@@ -41,7 +41,7 @@ let predictBig = 0;
 for (const [teams, rounds] of [[20, 2], [24, 4], [40, 6]] as [number, number][]) {
   const fx = makeLeague(teams, rounds);
   console.log(`\nLeague: ${teams} teams, ${fx.length} finished matches`);
-  const b = time('buildStatsTables (36 tables)', () => buildStatsTables({ fixtures: fx, season: '2026' }), 5);
+  const b = time('buildStatsTables (72 tables)', () => buildStatsTables({ fixtures: fx, season: '2026' }), 5);
   const base = baselineFromResults(fx);
   time('computeTeamStrengths x all teams', () => {
     for (let i = 1; i <= teams; i += 1) computeTeamStrengths(fx, i);
@@ -65,7 +65,7 @@ const assert = (name: string, ms: number, limit: number) => {
   if (!okp) failed += 1;
 };
 console.log('\nPerf gates (largest league):');
-assert('buildStatsTables (36 tables)', buildBig, BUILD_LIMIT);
+assert('buildStatsTables (72 tables)', buildBig, BUILD_LIMIT);
 assert('predictFromStats x100', predictBig, PREDICT_LIMIT);
 console.log(failed === 0 ? '\nall perf gates passed' : `\n${failed} perf gate(s) failed`);
 process.exit(failed === 0 ? 0 : 1);

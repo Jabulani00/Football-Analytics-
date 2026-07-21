@@ -6,11 +6,10 @@
  * it results, get back the same `TeamStatsExport` shape the app already consumes
  * (`data/teamStatsLoader.ts`) — a drop-in, computed live, no database.
  *
- * Tables produced: the `ordinary` family across period (FT/HT/2H) × scope
- * (overall/home/away) × window (season/last-10/last-8/last-6) = 36 tables, named
- * exactly like the SQLite schema (`ordinary_ft_overall`, `last10_ht_away`, …).
- * The other families (ppg/series/ft_only/league_avg) are the remaining
- * representation work — see USER_STORIES.md C1a.
+ * Tables produced: the full 72 — 5 base families (ordinary/ppg/series/ft_only/
+ * league_avg) × period (FT/HT/2H) × scope (overall/home/away) = 45, plus
+ * last-10/8/6 ordinary windows × period × scope = 27. Named exactly like the
+ * SQLite schema (`ordinary_ft_overall`, `series_ht_away`, `last10_2h_home`, …).
  *
  * Pure + dependency-injected: no React Native imports, so it unit-tests under
  * plain Node/tsx and plugs into the live client via `buildLeagueStatsLive`.
@@ -143,6 +142,73 @@ function computeStats(matches: TeamMatch[], period: Period): {
   return { values, sampleSize: n };
 }
 
+// ---- Additional stat families (ppg / series / ft_only / league_avg) --------
+/** Streak keys (current consecutive run lengths — raw counts, no signal). */
+export const SERIES_STATS = [
+  'win_streak', 'unbeaten_streak', 'loss_streak', 'btts_streak',
+  'over25_streak', 'cs_streak', 'fts_streak', 'scoring_streak',
+] as const;
+
+/** Full-time-only outcome patterns (percentages). */
+export const FT_ONLY_STATS = [
+  'won_both_halves', 'win_to_nil', 'scored_both_halves', 'conceded_both_halves', 'led_ht',
+] as const;
+
+/** Points-per-game family adds `ppg`/`avg_pts` on top of the ordinary stats. */
+export const PPG_STATS = ['ppg', 'avg_pts'] as const;
+
+const RAW_KEYS = new Set<string>([...SERIES_STATS, ...PPG_STATS, ...AVERAGE_STATS]);
+
+/** Current consecutive run of matches (newest-first) satisfying `pred`. */
+function streak(matches: TeamMatch[], period: Period, pred: (g: { gf: number; ga: number }) => boolean): number {
+  let n = 0;
+  for (const m of matches) {
+    if (pred(periodGoals(m, period))) n += 1;
+    else break;
+  }
+  return n;
+}
+
+function computeSeries(matches: TeamMatch[], period: Period): Record<string, number> {
+  const s = (p: (g: { gf: number; ga: number }) => boolean) => streak(matches, period, p);
+  return {
+    win_streak: s((g) => g.gf > g.ga),
+    unbeaten_streak: s((g) => g.gf >= g.ga),
+    loss_streak: s((g) => g.gf < g.ga),
+    btts_streak: s((g) => g.gf > 0 && g.ga > 0),
+    over25_streak: s((g) => g.gf + g.ga > 2),
+    cs_streak: s((g) => g.ga === 0),
+    fts_streak: s((g) => g.gf === 0),
+    scoring_streak: s((g) => g.gf > 0),
+  };
+}
+
+function computePpg(matches: TeamMatch[], period: Period): number {
+  if (matches.length === 0) return 0;
+  let pts = 0;
+  for (const m of matches) {
+    const g = periodGoals(m, period);
+    pts += g.gf > g.ga ? 3 : g.gf === g.ga ? 1 : 0;
+  }
+  return Math.round((pts / matches.length) * 100) / 100;
+}
+
+function computeFtOnly(matches: TeamMatch[]): Record<string, number | null> {
+  const n = matches.length;
+  if (n === 0) {
+    return Object.fromEntries(FT_ONLY_STATS.map((k) => [k, null]));
+  }
+  const secondHalf = (m: TeamMatch) => ({ gf: m.gfFt - m.gfHt, ga: m.gaFt - m.gaHt });
+  const pct = (p: (m: TeamMatch) => boolean) => Math.round((100 * matches.filter(p).length) / n);
+  return {
+    won_both_halves: pct((m) => m.gfHt > m.gaHt && secondHalf(m).gf > secondHalf(m).ga),
+    win_to_nil: pct((m) => m.gfFt > m.gaFt && m.gaFt === 0),
+    scored_both_halves: pct((m) => m.gfHt > 0 && secondHalf(m).gf > 0),
+    conceded_both_halves: pct((m) => m.gaHt > 0 && secondHalf(m).ga > 0),
+    led_ht: pct((m) => m.gfHt > m.gaHt),
+  };
+}
+
 // ---- Build the representation ------------------------------------------------
 type TeamKey = string; // `${leagueId}::${teamName}`
 
@@ -153,9 +219,27 @@ export type BuildOptions = {
   leagueKey?: (fx: RawFixture) => string;
 };
 
+function makeRow(
+  name: string,
+  league: string,
+  season: string,
+  values: Record<string, number | null>,
+  sample: number,
+): TeamStatRow {
+  const row: TeamStatRow = { team_name: name, league_id: league, season };
+  for (const [key, v] of Object.entries(values)) {
+    row[key] = v ?? Number.NaN; // NaN → JSON null; keeps the column present
+    row[`${key}_signal`] =
+      v == null || RAW_KEYS.has(key) || NOT_DERIVABLE.has(key) ? '' : statSignal(v);
+  }
+  (row as Record<string, unknown>).sample_size = sample;
+  return row;
+}
+
 /**
- * Build the `TeamStatsExport` representation live from finished fixtures.
- * Groups every team's matches, then emits 36 ordinary tables.
+ * Build the full 72-table `TeamStatsExport` live from finished fixtures:
+ * 5 base families (ordinary/ppg/series/ft_only/league_avg) × period × scope (45)
+ * + last-10/8/6 ordinary windows × period × scope (27).
  */
 export function buildStatsTables(opts: BuildOptions): TeamStatsExport {
   const leagueKey = opts.leagueKey ?? ((fx) => String(fx.competition_id));
@@ -181,40 +265,70 @@ export function buildStatsTables(opts: BuildOptions): TeamStatsExport {
     add(fx.away_name, league, { isHome: false, unix: fx.unix, gfFt: ag, gaFt: hg, gfHt: aHt, gaHt: hHt });
   }
 
-  // 2) For every team × period × scope × window → a row in the matching table.
   const tables: Record<string, TeamStatRow[]> = {};
   const ensure = (t: string) => (tables[t] ??= []);
 
+  const ordinaryValues = (windowed: TeamMatch[], period: Period): Record<string, number | null> => {
+    const { values } = computeStats(windowed, period);
+    return values;
+  };
+
+  // 2) Per team: base families (season window) + last-N ordinary windows.
   for (const { name, league, matches } of teamMatches.values()) {
     const sorted = [...matches].sort((a, b) => b.unix - a.unix); // newest first
     for (const scope of SCOPES) {
       const scoped = sorted.filter(
         (m) => scope === 'overall' || (scope === 'home' ? m.isHome : !m.isHome),
       );
-      for (const [winPrefix, winSize] of Object.entries(WINDOWS)) {
-        const windowed = Number.isFinite(winSize) ? scoped.slice(0, winSize) : scoped;
-        for (const period of PERIODS) {
-          const { values, sampleSize } = computeStats(windowed, period);
-          const row: TeamStatRow = { team_name: name, league_id: league, season };
-          for (const key of ORDINARY_STATS) {
-            const v = values[key];
-            row[key] = v ?? Number.NaN; // NaN → JSON null; keeps the column present
-            row[`${key}_signal`] =
-              v == null || AVERAGE_STATS.has(key) || NOT_DERIVABLE.has(key)
-                ? ''
-                : statSignal(v);
-          }
-          (row as Record<string, unknown>).sample_size = sampleSize;
-          ensure(`${winPrefix}_${period}_${scope}`).push(row);
+      for (const period of PERIODS) {
+        const ord = ordinaryValues(scoped, period);
+        const sample = scoped.length;
+        // ordinary
+        ensure(`ordinary_${period}_${scope}`).push(makeRow(name, league, season, ord, sample));
+        // ppg = ordinary + points-per-game
+        const ppg = computePpg(scoped, period);
+        ensure(`ppg_${period}_${scope}`).push(
+          makeRow(name, league, season, { ppg, avg_pts: ppg, ...ord }, sample),
+        );
+        // series = streaks
+        ensure(`series_${period}_${scope}`).push(
+          makeRow(name, league, season, computeSeries(scoped, period), sample),
+        );
+        // ft_only = ordinary + full-time outcome patterns
+        ensure(`ft_only_${period}_${scope}`).push(
+          makeRow(name, league, season, { ...computeFtOnly(scoped), ...ord }, sample),
+        );
+        // last-N ordinary windows
+        for (const [winPrefix, winSize] of Object.entries(WINDOWS)) {
+          if (winPrefix === 'ordinary') continue; // season already emitted above
+          const windowed = scoped.slice(0, winSize);
+          ensure(`${winPrefix}_${period}_${scope}`).push(
+            makeRow(name, league, season, ordinaryValues(windowed, period), windowed.length),
+          );
         }
       }
     }
   }
 
-  const tableNames = Object.keys(tables);
+  // 3) league_avg_* = one "League" row per period/scope, averaging team ordinary rows.
+  for (const scope of SCOPES) {
+    for (const period of PERIODS) {
+      const rows = tables[`ordinary_${period}_${scope}`] ?? [];
+      const avg: Record<string, number | null> = {};
+      for (const key of ORDINARY_STATS) {
+        if (NOT_DERIVABLE.has(key)) { avg[key] = null; continue; }
+        const vals = rows
+          .map((r) => r[key])
+          .filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
+        avg[key] = vals.length ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10 : null;
+      }
+      ensure(`league_avg_${period}_${scope}`).push(makeRow('League', String(scope), season, avg, rows.length));
+    }
+  }
+
   return {
     meta: {
-      tables: tableNames.length,
+      tables: Object.keys(tables).length,
       statsPerTable: ORDINARY_STATS.length,
       exported_at: new Date().toISOString(),
     },

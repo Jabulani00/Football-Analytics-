@@ -16,7 +16,7 @@ Measured by building `backend/scoreline.db` and inspecting it directly.
 | **Stat tables physically created** | **72 / 72** (45 base + 27 last-N) — full skeleton done |
 | Tables carrying their **correct distinct metrics** | **36 / 72** — the `ordinary` family (9) + all last-N windows (27) |
 | Tables that are **structural placeholders** (need real metrics) | **36 / 72** — `ppg`, `series`, `ft_only`, `league_avg` families reuse the 34 "ordinary" columns |
-| Tables **built live from the API** (real-time) | **36 / 36** ordinary tables — **verified on LIVE data** (28 Kazakhstan Cup results → 36 tables with real stats, via the deployed proxy) |
+| Tables **built live from the API** (real-time) | **72 / 72** — all families (ordinary/ppg/series/ft_only/league_avg × period × scope + last-10/8/6), **verified on LIVE data** (K League 1: Series shows Seoul 5-game unbeaten streak, etc.); builds in ~57ms |
 
 **Plain summary: the 72-table frame is 100% built; the 36 ordinary tables are now
 built in real time from the live API (no database), and the remaining 36
@@ -287,7 +287,14 @@ layout shift on load. **Dependencies:** none — can proceed anytime.
 
 ### STREAM 3 — Nkazimulo (Analytics, Strategy & Platform)
 
-#### C1a. Implement real metrics for the 36 placeholder tables ⚡
+#### C1a. Implement real metrics for the remaining families ✅ DONE
+The `ppg`, `series`, `ft_only`, `league_avg` families now compute distinct live
+metrics — points-per-game, current streak run-lengths, full-time outcome
+patterns (won-both-halves, win-to-nil, led-HT), and per-league average rows. The
+builder emits all **72 tables**; the panel shows family-aware columns (streaks as
+raw counts). Verified live (K League 1); 36/36 builder checks + perf gate pass.
+
+#### C1a-legacy. (superseded) Implement real metrics for the 36 placeholder tables ⚡
 **Context:** All 72 tables exist, but only the `ordinary` family (+ last-N) carry
 correct metrics. The `ppg`, `series`, `ft_only`, `league_avg` families
 (**36 tables**) currently reuse the 34 "ordinary" columns as a scaffold.

@@ -19,17 +19,22 @@ export type ProjectPhase = {
   status: 'complete' | 'in_progress' | 'planned';
 };
 
+export type StatFamily = 'ordinary' | 'ppg' | 'series' | 'ft_only' | 'league_avg';
+
 export type StatMetric = {
   key: string;
   label: string;
   value: number;
   compliance: ComplianceLevel;
+  /** Raw count/average (e.g. PPG, streak length) — rendered without a % suffix. */
+  raw?: boolean;
 };
 
 export type StatsTableMeta = {
   id: string;
   name: string;
   group: 'base' | 'lastN';
+  family?: StatFamily;
   recency?: RecencyWindow;
   split: SplitType;
   period: TimePeriod;

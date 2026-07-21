@@ -8,7 +8,7 @@ import { useLiveStatsTables } from '@/hooks/useLiveStatsTables';
 import { STATS_TABLES, getTeamStatsForTable } from '@/mock/analyticsData';
 import type { StatsTableMeta } from '@/types/analytics';
 import { complianceColor } from '@/utils/compliance';
-import { liveRowsToDisplay, metaToLiveTableName, sortByWinPct } from '@/utils/statsTableAdapter';
+import { liveRowsToDisplay, metaToLiveTableName, sortByPrimary } from '@/utils/statsTableAdapter';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
 export default function StatsTablesPanel() {
@@ -34,8 +34,10 @@ export default function StatsTablesPanel() {
 
   const teams = useMemo(
     () =>
-      isLive ? sortByWinPct(liveRowsToDisplay(liveTable!)) : getTeamStatsForTable(selectedId),
-    [isLive, liveTable, selectedId],
+      isLive
+        ? sortByPrimary(liveRowsToDisplay(liveTable!, selected.family))
+        : getTeamStatsForTable(selectedId),
+    [isLive, liveTable, selectedId, selected.family],
   );
 
   return (
@@ -119,7 +121,8 @@ export default function StatsTablesPanel() {
               {row.metrics.map((m) => (
                 <View key={m.key} style={styles.cell}>
                   <Text style={[styles.cellValue, { color: complianceColor(m.compliance) }]}>
-                    {m.value}%
+                    {m.value}
+                    {m.raw ? '' : '%'}
                   </Text>
                 </View>
               ))}
