@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 
+import { cachedFetch } from '@/services/fixtureCache';
 import { fetchAllFixturesBetween, seasonWindowUnix } from '@/services/oddAlerts';
 import { buildLeagueStatsLive } from '@/services/statsBuilder';
 import type { TeamStatsExport } from '@/types/data';
@@ -9,6 +10,8 @@ export type UseLiveStatsTables = {
   loading: boolean;
   error: string | null;
 };
+
+const STATS_TTL_MS = 60_000; // re-selecting a competition within 60s is instant
 
 /**
  * Build the 72-style stat tables in real time from the OddAlerts API — no
@@ -36,9 +39,17 @@ export function useLiveStatsTables(opts: {
     setError(null);
 
     const { fromUnix, toUnix } = seasonWindowUnix(seasonName ?? '');
-    buildLeagueStatsLive(
-      (o) => fetchAllFixturesBetween(o, ctrl.signal),
-      { competitionId, fromUnix, toUnix, season: seasonName, maxPages },
+    const key = `stats:${competitionId}:${seasonName ?? ''}:${maxPages ?? ''}`;
+    // No abort signal inside the cached fetch: let it finish + cache so a shared/
+    // repeat selection reuses it. We just ignore the result if this effect aborted.
+    cachedFetch(key, STATS_TTL_MS, () =>
+      buildLeagueStatsLive((o) => fetchAllFixturesBetween(o), {
+        competitionId,
+        fromUnix,
+        toUnix,
+        season: seasonName,
+        maxPages,
+      }),
     )
       .then((res) => {
         if (!ctrl.signal.aborted) setData(res);

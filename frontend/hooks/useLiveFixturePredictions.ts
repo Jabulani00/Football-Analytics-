@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 
+import { cachedFetch } from '@/services/fixtureCache';
 import { fetchAllFixturesBetween, fetchUpcomingFixtures, type RawFixture } from '@/services/oddAlerts';
 import { predictFromStats, type FixturePrediction } from '@/services/predictionEngine';
 import {
@@ -17,6 +18,7 @@ const DEFAULT_POLL_MS = 5 * 60_000; // keep predictions running on live data
 const FORM_LOOKBACK_DAYS = 250; // recent cross-competition form window
 const MAX_FIXTURES = 30; // cap fixtures predicted per competition
 const TEAMS_PER_REQUEST = 25; // batch team ids into one /fixtures/between call
+const FETCH_TTL_MS = 60_000; // reuse fetched fixtures within 60s (instant re-select)
 
 /**
  * Predicts a competition's upcoming fixtures using each team's CROSS-COMPETITION
@@ -44,7 +46,10 @@ export function useLiveFixturePredictions(opts: {
       setLoading(true);
       setError(null);
       try {
-        const upcomingEnv = await fetchUpcomingFixtures({ days }, ctrl.signal);
+        // Cached so a repeat/shared selection within the TTL is instant.
+        const upcomingEnv = await cachedFetch(`upcoming:${days}`, FETCH_TTL_MS, () =>
+          fetchUpcomingFixtures({ days }),
+        );
         const upcoming = upcomingEnv.data
           .filter((f) => f.competition_id === competitionId && f.home_id && f.away_id)
           .sort((a, b) => a.unix - b.unix)
@@ -61,16 +66,16 @@ export function useLiveFixturePredictions(opts: {
         );
 
         // Batch-fetch each team's cross-competition results — chunks run in
-        // parallel so many-team cup rounds don't fetch serially.
+        // parallel so many-team cup rounds don't fetch serially; cached per chunk.
         const now = Math.floor(Date.now() / 1000);
         const fromUnix = now - FORM_LOOKBACK_DAYS * 86_400;
         const chunkResults = await Promise.all(
-          chunk(teamIds, TEAMS_PER_REQUEST).map((ids) =>
-            fetchAllFixturesBetween(
-              { fromUnix, toUnix: now, teams: ids.join(','), maxPages: 5 },
-              ctrl.signal,
-            ),
-          ),
+          chunk(teamIds, TEAMS_PER_REQUEST).map((ids) => {
+            const key = `teams:${ids.slice().sort((a, b) => a - b).join(',')}:${FORM_LOOKBACK_DAYS}`;
+            return cachedFetch(key, FETCH_TTL_MS, () =>
+              fetchAllFixturesBetween({ fromUnix, toUnix: now, teams: ids.join(','), maxPages: 5 }),
+            );
+          }),
         );
         const byId = new Map<number, RawFixture>();
         for (const rows of chunkResults) for (const f of rows) byId.set(f.id, f); // dedupe
