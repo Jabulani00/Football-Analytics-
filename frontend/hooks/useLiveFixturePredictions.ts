@@ -60,17 +60,20 @@ export function useLiveFixturePredictions(opts: {
           new Set(upcoming.flatMap((f) => [f.home_id as number, f.away_id as number])),
         );
 
-        // Batch-fetch each team's cross-competition results.
+        // Batch-fetch each team's cross-competition results — chunks run in
+        // parallel so many-team cup rounds don't fetch serially.
         const now = Math.floor(Date.now() / 1000);
         const fromUnix = now - FORM_LOOKBACK_DAYS * 86_400;
+        const chunkResults = await Promise.all(
+          chunk(teamIds, TEAMS_PER_REQUEST).map((ids) =>
+            fetchAllFixturesBetween(
+              { fromUnix, toUnix: now, teams: ids.join(','), maxPages: 5 },
+              ctrl.signal,
+            ),
+          ),
+        );
         const byId = new Map<number, RawFixture>();
-        for (const ids of chunk(teamIds, TEAMS_PER_REQUEST)) {
-          const rows = await fetchAllFixturesBetween(
-            { fromUnix, toUnix: now, teams: ids.join(','), maxPages: 5 },
-            ctrl.signal,
-          );
-          for (const f of rows) byId.set(f.id, f); // dedupe by fixture id
-        }
+        for (const rows of chunkResults) for (const f of rows) byId.set(f.id, f); // dedupe
         const results = Array.from(byId.values());
 
         // Index each team's own finished matches once.
