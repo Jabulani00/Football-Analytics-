@@ -524,22 +524,53 @@ function OddsTab({
   homeName: string;
   awayName: string;
 }) {
-  const probGroups = probabilityGroups(detail.probability);
+  const prob = detail.probability;
+  const ft = detail.odds?.ft_result as Record<string, number> | undefined;
+  const probGroups = probabilityGroups(prob);
   const markets = oddsMarkets(detail.odds);
 
   if (probGroups.length === 0 && markets.length === 0) {
     return <Text style={styles.muted}>No odds or model probabilities for this fixture.</Text>;
   }
 
+  const hasResult = prob != null && prob.home_win != null;
+  const top =
+    hasResult
+      ? Math.max(prob!.home_win ?? 0, prob!.draw ?? 0, prob!.away_win ?? 0)
+      : 0;
+  // Skip the FT-result group below (shown as the headline instead).
+  const restGroups = probGroups.filter((g) => g.title !== 'Full-time result');
+
   return (
     <View>
-      {probGroups.map((g) => (
+      <Text style={styles.oddsIntro}>
+        <Text style={styles.oddsIntroStrong}>%</Text> = our model’s estimated chance ·{' '}
+        <Text style={styles.oddsIntroStrong}>odds</Text> = the bookmaker price (lower = more likely).
+      </Text>
+
+      {/* Headline: match result */}
+      {hasResult ? (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Match result</Text>
+          <View style={styles.resultRow}>
+            <ResultCol name={homeName} pct={prob!.home_win} odds={ft?.home} best={prob!.home_win === top} />
+            <ResultCol name="Draw" pct={prob!.draw} odds={ft?.draw} best={prob!.draw === top} />
+            <ResultCol name={awayName} pct={prob!.away_win} odds={ft?.away} best={prob!.away_win === top} />
+          </View>
+        </View>
+      ) : null}
+
+      {/* Probability groups with bars */}
+      {restGroups.map((g) => (
         <View key={g.title} style={styles.card}>
           <Text style={styles.cardTitle}>{g.title}</Text>
           {g.rows.map((r) => (
-            <View key={r.label} style={styles.oddsProbRow}>
-              <Text style={styles.oddsProbLabel}>{r.label}</Text>
-              <Text style={styles.oddsProbVal}>{Math.round(r.value)}%</Text>
+            <View key={r.label} style={styles.probBarRow}>
+              <Text style={styles.probBarLabel} numberOfLines={1}>{r.label}</Text>
+              <View style={styles.probBarTrack2}>
+                <View style={[styles.probBarFill2, { width: `${Math.min(100, r.value)}%` }]} />
+              </View>
+              <Text style={styles.probBarVal}>{Math.round(r.value)}%</Text>
             </View>
           ))}
         </View>
@@ -547,9 +578,10 @@ function OddsTab({
 
       {markets.length > 0 ? (
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Bookmaker odds</Text>
+          <Text style={styles.cardTitle}>Bookmaker odds — all markets</Text>
           <Text style={styles.apiNote}>
-            All markets returned by the API for this fixture ({homeName} vs {awayName}).
+            Decimal prices for {homeName} vs {awayName}. A £1 bet returns the shown
+            amount if it wins.
           </Text>
           {markets.map((m) => (
             <View key={m.market} style={styles.oddsMarket}>
@@ -566,6 +598,31 @@ function OddsTab({
           ))}
         </View>
       ) : null}
+    </View>
+  );
+}
+
+function ResultCol({
+  name,
+  pct,
+  odds,
+  best,
+}: {
+  name: string;
+  pct?: number;
+  odds?: number;
+  best: boolean;
+}) {
+  return (
+    <View style={[styles.resultCol, best && styles.resultColBest]}>
+      <Text style={styles.resultName} numberOfLines={1}>{name}</Text>
+      <Text style={[styles.resultPct, best && styles.resultPctBest]}>
+        {pct != null ? `${Math.round(pct)}%` : '—'}
+      </Text>
+      <View style={styles.resultBarTrack}>
+        <View style={[styles.resultBarFill, best && styles.resultBarFillBest, { width: `${Math.min(100, pct ?? 0)}%` }]} />
+      </View>
+      <Text style={styles.resultOdds}>{odds != null ? `@ ${odds}` : '—'}</Text>
     </View>
   );
 }
@@ -821,6 +878,24 @@ const styles = StyleSheet.create({
   oddsChip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: theme.surfaceMuted, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 },
   oddsChipKey: { fontFamily: fonts.body, fontSize: 10, color: theme.textMuted },
   oddsChipVal: { fontFamily: fonts.bodySemiBold, fontSize: 11, color: theme.textPrimary },
+  // Odds tab — explainer + headline result + probability bars
+  oddsIntro: { fontFamily: fonts.body, fontSize: 12, color: theme.textMuted, marginBottom: spacing.md, lineHeight: 18 },
+  oddsIntroStrong: { fontFamily: fonts.bodySemiBold, color: theme.textPrimary },
+  resultRow: { flexDirection: 'row', gap: spacing.sm },
+  resultCol: { flex: 1, alignItems: 'center', paddingVertical: spacing.sm, paddingHorizontal: spacing.xs, borderWidth: layout.borderWidth, borderColor: theme.border, borderRadius: layout.borderRadius },
+  resultColBest: { borderColor: theme.accentGreen, backgroundColor: 'rgba(5,150,105,0.06)' },
+  resultName: { fontFamily: fonts.bodyMedium, fontSize: 12, color: theme.textMuted, marginBottom: 2 },
+  resultPct: { fontFamily: fonts.display, fontSize: 22, color: theme.textPrimary },
+  resultPctBest: { color: theme.accentGreen },
+  resultBarTrack: { width: '80%', height: 4, borderRadius: 2, backgroundColor: theme.surfaceMuted, marginVertical: 6, overflow: 'hidden' },
+  resultBarFill: { height: 4, borderRadius: 2, backgroundColor: theme.textMuted },
+  resultBarFillBest: { backgroundColor: theme.accentGreen },
+  resultOdds: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: theme.textPrimary },
+  probBarRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 4 },
+  probBarLabel: { fontFamily: fonts.body, fontSize: 12, color: theme.textPrimary, width: 140 },
+  probBarTrack2: { flex: 1, height: 6, borderRadius: 3, backgroundColor: theme.surfaceMuted, overflow: 'hidden' },
+  probBarFill2: { height: 6, borderRadius: 3, backgroundColor: theme.accentGreen },
+  probBarVal: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: theme.textPrimary, width: 40, textAlign: 'right' },
   tableRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, gap: spacing.xs },
   tableHead: { borderBottomWidth: layout.borderWidth, borderBottomColor: theme.border },
   tableRowActive: { backgroundColor: 'rgba(5, 150, 105, 0.08)' },
