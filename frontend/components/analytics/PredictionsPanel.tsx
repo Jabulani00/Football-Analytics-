@@ -11,8 +11,28 @@ function pct(n: number) {
   return `${Math.round(n * 100)}%`;
 }
 
-function outcomeColor(p: number) {
-  return p >= 0.5 ? theme.accentGreen : p >= 0.34 ? theme.yellow : theme.textMuted;
+function pickLabel(pick: '1' | 'X' | '2'): string {
+  return pick === '1' ? 'HOME' : pick === '2' ? 'AWAY' : 'DRAW';
+}
+
+function confidenceTier(c: number): { label: string; color: string } {
+  if (c >= 70) return { label: 'High', color: theme.accentGreen };
+  if (c >= 45) return { label: 'Medium', color: theme.yellow };
+  return { label: 'Low', color: theme.loss };
+}
+
+/** Plain-English one-line read of the prediction. */
+function verdict(p: FixturePrediction, home: string, away: string): string {
+  const top = Math.max(p.homeWin, p.draw, p.awayWin);
+  const strength = top >= 0.6 ? 'strongly favoured' : 'favoured';
+  const parts: string[] = [];
+  if (p.pick === '1') parts.push(top >= 0.45 ? `${home} ${strength}` : `slight edge to ${home}`);
+  else if (p.pick === '2') parts.push(top >= 0.45 ? `${away} ${strength}` : `slight edge to ${away}`);
+  else parts.push('honours even — draw');
+  if (p.over25 >= 0.6) parts.push('goals expected');
+  else if (p.over25 <= 0.38) parts.push('low-scoring lean');
+  if (p.btts >= 0.62) parts.push('both to score');
+  return parts.join(' · ');
 }
 
 export default function PredictionsPanel() {
@@ -80,6 +100,7 @@ function FixtureCard({ item }: { item: PredictedFixture }) {
   const { fixture, prediction } = item;
   const p = prediction as FixturePrediction;
   const kickoff = fixture.ko_human || fixture.date || '';
+  const tier = confidenceTier(p.confidence);
 
   return (
     <View style={styles.card}>
@@ -87,34 +108,50 @@ function FixtureCard({ item }: { item: PredictedFixture }) {
         <Text style={styles.teams} numberOfLines={1}>
           {fixture.home_name} <Text style={styles.vs}>v</Text> {fixture.away_name}
         </Text>
-        <Text style={styles.kickoff}>{kickoff}</Text>
+        <View style={[styles.pickBadge, { borderColor: tier.color }]}>
+          <Text style={[styles.pickBadgeText, { color: tier.color }]}>{pickLabel(p.pick)}</Text>
+        </View>
       </View>
+      <Text style={styles.kickoff}>{kickoff}</Text>
 
-      {/* 1X2 */}
-      <View style={styles.oneXtwo}>
-        <Outcome label="1" value={p.homeWin} active={p.pick === '1'} />
-        <Outcome label="X" value={p.draw} active={p.pick === 'X'} />
-        <Outcome label="2" value={p.awayWin} active={p.pick === '2'} />
+      {/* Plain-English read */}
+      <Text style={styles.verdict}>{verdict(p, fixture.home_name, fixture.away_name)}</Text>
+
+      {/* Stacked 1X2 probability bar */}
+      <View style={styles.stack}>
+        <View style={[styles.stackSeg, { flex: Math.max(0.001, p.homeWin), backgroundColor: theme.accentGreen }]} />
+        <View style={[styles.stackSeg, { flex: Math.max(0.001, p.draw), backgroundColor: theme.textMuted }]} />
+        <View style={[styles.stackSeg, { flex: Math.max(0.001, p.awayWin), backgroundColor: theme.accentBlue }]} />
+      </View>
+      <View style={styles.stackLabels}>
+        <Text style={[styles.stackLabel, p.pick === '1' && styles.stackLabelActive]}>1 · {pct(p.homeWin)}</Text>
+        <Text style={[styles.stackLabel, styles.stackLabelMid, p.pick === 'X' && styles.stackLabelActive]}>
+          X · {pct(p.draw)}
+        </Text>
+        <Text style={[styles.stackLabel, styles.stackLabelRight, p.pick === '2' && styles.stackLabelActive]}>
+          2 · {pct(p.awayWin)}
+        </Text>
       </View>
 
       {/* Markets */}
       <View style={styles.markets}>
         <Market label="BTTS" value={pct(p.btts)} />
-        <Market label="O2.5" value={pct(p.over25)} />
-        <Market label="xG" value={`${p.expectedHome.toFixed(1)}-${p.expectedAway.toFixed(1)}`} />
-        <Market label="Score" value={p.topScore} />
-        <Market label="Conf" value={`${p.confidence}%`} />
+        <Market label="Over 2.5" value={pct(p.over25)} />
+        <Market label="Exp. goals" value={`${p.expectedHome.toFixed(1)}–${p.expectedAway.toFixed(1)}`} />
+        <Market label="Scoreline" value={p.topScore} />
       </View>
-      {p.lowData ? <Text style={styles.lowData}>· limited sample</Text> : null}
-    </View>
-  );
-}
 
-function Outcome({ label, value, active }: { label: string; value: number; active: boolean }) {
-  return (
-    <View style={[styles.outcome, active && styles.outcomeActive]}>
-      <Text style={[styles.outcomeLabel, active && styles.outcomeLabelActive]}>{label}</Text>
-      <Text style={[styles.outcomePct, { color: outcomeColor(value) }]}>{pct(value)}</Text>
+      {/* Confidence meter */}
+      <View style={styles.confRow}>
+        <Text style={styles.confLabel}>Confidence</Text>
+        <View style={styles.confTrack}>
+          <View style={[styles.confFill, { width: `${p.confidence}%`, backgroundColor: tier.color }]} />
+        </View>
+        <Text style={[styles.confVal, { color: tier.color }]}>
+          {tier.label} · {p.confidence}%
+        </Text>
+      </View>
+      {p.lowData ? <Text style={styles.lowData}>Limited sample — treat with caution</Text> : null}
     </View>
   );
 }
@@ -156,19 +193,30 @@ const styles = StyleSheet.create({
   },
   teams: { fontFamily: fonts.bodyMedium, fontSize: 14, color: theme.textPrimary, flexShrink: 1 },
   vs: { color: theme.textMuted },
-  kickoff: { fontFamily: fonts.body, fontSize: 12, color: theme.textMuted },
-  oneXtwo: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
-  outcome: {
-    flex: 1, alignItems: 'center', paddingVertical: spacing.sm,
-    borderWidth: layout.borderWidth, borderColor: theme.border, borderRadius: layout.borderRadius,
+  kickoff: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted, marginBottom: spacing.sm },
+  pickBadge: {
+    borderWidth: 1, borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: 2,
   },
-  outcomeActive: { borderColor: theme.accentGreen, backgroundColor: 'rgba(0,180,120,0.06)' },
-  outcomeLabel: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted },
-  outcomeLabelActive: { color: theme.accentGreen, fontFamily: fonts.bodyMedium },
-  outcomePct: { fontFamily: fonts.bodyMedium, fontSize: 15 },
-  markets: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, alignItems: 'center' },
+  pickBadgeText: { fontFamily: fonts.bodyMedium, fontSize: 10, letterSpacing: 0.5 },
+  verdict: { fontFamily: fonts.bodyMedium, fontSize: 13, color: theme.textPrimary, marginBottom: spacing.sm },
+  stack: {
+    flexDirection: 'row', height: 8, borderRadius: 4, overflow: 'hidden',
+    backgroundColor: theme.surfaceMuted ?? theme.border, gap: 1,
+  },
+  stackSeg: { height: 8 },
+  stackLabels: { flexDirection: 'row', marginTop: 4, marginBottom: spacing.sm },
+  stackLabel: { flex: 1, fontFamily: fonts.body, fontSize: 11, color: theme.textMuted },
+  stackLabelMid: { textAlign: 'center' },
+  stackLabelRight: { textAlign: 'right' },
+  stackLabelActive: { color: theme.textPrimary, fontFamily: fonts.bodyMedium },
+  markets: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, alignItems: 'center', marginBottom: spacing.sm },
   market: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
   marketLabel: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted },
   marketValue: { fontFamily: fonts.bodyMedium, fontSize: 13, color: theme.textPrimary },
-  lowData: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted, marginTop: spacing.xs },
+  confRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  confLabel: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted, width: 70 },
+  confTrack: { flex: 1, height: 6, borderRadius: 3, backgroundColor: theme.surfaceMuted ?? theme.border, overflow: 'hidden' },
+  confFill: { height: 6, borderRadius: 3 },
+  confVal: { fontFamily: fonts.bodyMedium, fontSize: 11, width: 96, textAlign: 'right' },
+  lowData: { fontFamily: fonts.body, fontSize: 11, color: theme.yellow, marginTop: spacing.sm },
 });
