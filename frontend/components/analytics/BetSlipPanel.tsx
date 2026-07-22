@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import SectionLabel from '@/components/shared/SectionLabel';
+import { useHollywoodExport } from '@/hooks/useHollywoodExport';
 import { DEFAULT_BET_SLIP } from '@/mock/analyticsData';
 import type { BetSlipLeg } from '@/types/analytics';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
@@ -9,6 +10,11 @@ import { fonts, layout, spacing, theme } from '@/styles/theme';
 export default function BetSlipPanel() {
   const [legs, setLegs] = useState<BetSlipLeg[]>(DEFAULT_BET_SLIP);
   const [stakePerLeg, setStakePerLeg] = useState('50');
+  const { state: exportState, exportSlip } = useHollywoodExport();
+
+  // Only Hollywoodbets-sourced legs carry the metadata a booking code needs.
+  const hbLegs = useMemo(() => legs.map((l) => l.hbLeg).filter((l): l is NonNullable<typeof l> => l != null), [legs]);
+  const canExport = legs.length > 0 && hbLegs.length === legs.length;
 
   const combinedOdds = useMemo(
     () => legs.reduce((acc, leg) => acc * leg.odds, 1),
@@ -73,14 +79,31 @@ export default function BetSlipPanel() {
         </View>
 
         <Pressable
+          onPress={() => canExport && exportSlip(hbLegs)}
           style={({ pressed, hovered }) => [
             styles.generateBtn,
             (pressed || (Platform.OS === 'web' && hovered)) && styles.generateBtnHover,
-            legs.length === 0 && styles.generateBtnDisabled,
+            (!canExport || exportState.status === 'loading') && styles.generateBtnDisabled,
           ]}
-          disabled={legs.length === 0}>
-          <Text style={styles.generateText}>EXPORT TO HOLLYWOODBETS</Text>
+          disabled={!canExport || exportState.status === 'loading'}>
+          <Text style={styles.generateText}>
+            {exportState.status === 'loading' ? 'GENERATING…' : 'EXPORT TO HOLLYWOODBETS'}
+          </Text>
         </Pressable>
+
+        {legs.length > 0 && !canExport ? (
+          <Text style={styles.exportHint}>
+            Add selections from live Hollywoodbets odds to generate a booking code.
+          </Text>
+        ) : null}
+        {exportState.status === 'done' ? (
+          <Text style={styles.exportOk}>
+            Booking code {exportState.code} — opening Hollywoodbets…
+          </Text>
+        ) : null}
+        {exportState.status === 'error' ? (
+          <Text style={styles.exportErr}>{exportState.message}</Text>
+        ) : null}
       </View>
 
       <View style={styles.tracking}>
@@ -290,6 +313,27 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: theme.bg,
     letterSpacing: 1,
+  },
+  exportHint: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: theme.textMuted,
+    textAlign: 'center',
+    marginTop: spacing.sm,
+  },
+  exportOk: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 13,
+    color: theme.accentGreen,
+    textAlign: 'center',
+    marginTop: spacing.sm,
+  },
+  exportErr: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: theme.loss,
+    textAlign: 'center',
+    marginTop: spacing.sm,
   },
   tracking: {
     marginTop: spacing.xl,

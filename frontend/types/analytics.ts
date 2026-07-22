@@ -75,6 +75,12 @@ export type BetSlipLeg = {
   selection: string;
   odds: number;
   stake?: number;
+  /**
+   * Hollywoodbets Share-A-Bet leg metadata. Present when the selection came
+   * from live Hollywoodbets odds — required to generate a booking code. Typed
+   * as ShareLeg in services/hollywoodbets.ts.
+   */
+  hbLeg?: import('@/services/hollywoodbets').ShareLeg;
 };
 
 export type OddsFusionRow = {
