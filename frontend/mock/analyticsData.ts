@@ -22,6 +22,7 @@ export const ANALYTICS_TABS: { id: AnalyticsTab; label: string }[] = [
   { id: 'streams', label: 'Streams' },
   { id: 'strategies', label: 'Strategies' },
   { id: 'odds', label: 'Odds Fusion' },
+  { id: 'hollywood', label: 'Hollywoodbets' },
   { id: 'betslip', label: 'Bet Slip' },
 ];
 

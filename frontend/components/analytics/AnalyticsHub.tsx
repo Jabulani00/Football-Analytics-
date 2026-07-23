@@ -3,6 +3,7 @@ import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import AnalyticsNav from '@/components/analytics/AnalyticsNav';
 import BetSlipPanel from '@/components/analytics/BetSlipPanel';
+import HollywoodOddsPanel from '@/components/analytics/HollywoodOddsPanel';
 import OddsFusionPanel from '@/components/analytics/OddsFusionPanel';
 import OverviewPanel from '@/components/analytics/OverviewPanel';
 import PredictionsPanel from '@/components/analytics/PredictionsPanel';
@@ -33,6 +34,8 @@ function PanelForTab({ tab }: { tab: AnalyticsTab }) {
       return <StrategiesPanel />;
     case 'odds':
       return <OddsFusionPanel />;
+    case 'hollywood':
+      return <HollywoodOddsPanel />;
     case 'betslip':
       return <BetSlipPanel />;
   }

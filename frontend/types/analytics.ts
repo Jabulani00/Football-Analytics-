@@ -101,4 +101,5 @@ export type AnalyticsTab =
   | 'streams'
   | 'strategies'
   | 'odds'
+  | 'hollywood'
   | 'betslip';
