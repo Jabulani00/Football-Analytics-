@@ -180,15 +180,57 @@ export function oddsMarketLabel(key: string): string {
   return ODDS_MARKET_LABELS[key] ?? key.replace(/_/g, ' ');
 }
 
+/** "05" -> "0.5", "25" -> "2.5", "125" -> "1.25", "025" -> "0.25". */
+function decimalLine(s: string): string {
+  if (/^\d{2,3}$/.test(s)) return String(parseInt(s, 10) / (s.length === 3 ? 100 : 10));
+  return s;
+}
+
+/** Human outcome label: `over_25` -> "Over 2.5", `away_m025` -> "Away −0.25". */
 export function formatOutcome(key: string): string {
   return key
-    .replace(/_/g, ' ')
-    .replace(/\bm\b/g, '−')
-    .replace(/\bp\b/g, '+')
-    .replace(/over /gi, 'Over ')
-    .replace(/under /gi, 'Under ')
-    .replace(/\bht\b/gi, 'HT')
-    .replace(/\bft\b/gi, 'FT');
+    .split('_')
+    .map((p) => {
+      switch (p) {
+        case 'over': return 'Over';
+        case 'under': return 'Under';
+        case 'home': return 'Home';
+        case 'away': return 'Away';
+        case 'draw': return 'Draw';
+        case 'yes': return 'Yes';
+        case 'no': return 'No';
+        case 'ht': return 'HT';
+        case 'ft': return 'FT';
+        default:
+          if (/^p\d+$/.test(p)) return `+${decimalLine(p.slice(1))}`;
+          if (/^m\d+$/.test(p)) return `−${decimalLine(p.slice(1))}`;
+          if (/^\d+$/.test(p)) return decimalLine(p);
+          return p;
+      }
+    })
+    .join(' ');
+}
+
+/** Bookmaker markets grouped into professional categories, in display order. */
+export function groupOddsMarkets(
+  markets: { market: string; label: string; outcomes: { key: string; value: number }[] }[],
+): { category: string; markets: typeof markets }[] {
+  const categoryOf = (m: string): string => {
+    if (['ft_result', 'ht_result', 'double_chance', 'dnb', 'btts', 'btts_1h', 'btts_2h', 'btts_o25'].includes(m))
+      return 'Match & BTTS';
+    if (['total_goals', 'total_goals_1h', 'total_goals_2h', 'goal_line_1h', 'home_goals', 'away_goals'].includes(m))
+      return 'Goals';
+    if (m === 'asian_handicap') return 'Handicap';
+    if (['total_corners', 'asian_corners', 'asian_corners_1h'].includes(m)) return 'Corners';
+    return 'Other';
+  };
+  const order = ['Match & BTTS', 'Goals', 'Handicap', 'Corners', 'Other'];
+  const groups = new Map<string, typeof markets>();
+  for (const m of markets) {
+    const c = categoryOf(m.market);
+    (groups.get(c) ?? groups.set(c, []).get(c)!).push(m);
+  }
+  return order.filter((o) => groups.has(o)).map((o) => ({ category: o, markets: groups.get(o)! }));
 }
 
 export function probabilityGroups(prob: Probability | undefined): { title: string; rows: { label: string; value: number }[] }[] {

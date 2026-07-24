@@ -27,6 +27,7 @@ import type { PressureReading, PressureSnapshot } from '@/utils/pressureMonitor'
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 import {
   formatOutcome,
+  groupOddsMarkets,
   oddsMarkets,
   oddsVerdict,
   probabilityGroups,
@@ -582,22 +583,33 @@ function OddsTab({
 
       {markets.length > 0 ? (
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Bookmaker odds — all markets</Text>
+          <Text style={styles.cardTitle}>Bookmaker odds</Text>
           <Text style={styles.apiNote}>
-            Decimal prices for {homeName} vs {awayName}. A £1 bet returns the shown
-            amount if it wins.
+            Decimal price for {homeName} vs {awayName} — a winning £1 returns this
+            much. The shortest price in each market (the favourite) is highlighted.
           </Text>
-          {markets.map((m) => (
-            <View key={m.market} style={styles.oddsMarket}>
-              <Text style={styles.oddsMarketTitle}>{m.label}</Text>
-              <View style={styles.oddsOutcomes}>
-                {m.outcomes.map((o) => (
-                  <View key={o.key} style={styles.oddsChip}>
-                    <Text style={styles.oddsChipKey}>{formatOutcome(o.key)}</Text>
-                    <Text style={styles.oddsChipVal}>{o.value}</Text>
+          {groupOddsMarkets(markets).map((grp) => (
+            <View key={grp.category} style={styles.oddsGroup}>
+              <Text style={styles.oddsGroupLabel}>{grp.category}</Text>
+              {grp.markets.map((m) => {
+                const best = m.outcomes.reduce((lo, o) => (o.value < lo.value ? o : lo), m.outcomes[0]);
+                return (
+                  <View key={m.market} style={styles.oddsMarketRow}>
+                    <Text style={styles.oddsMarketName}>{m.label}</Text>
+                    <View style={styles.quoteGrid}>
+                      {m.outcomes.map((o) => {
+                        const isBest = o.key === best.key && m.outcomes.length > 1;
+                        return (
+                          <View key={o.key} style={[styles.quote, isBest && styles.quoteBest]}>
+                            <Text style={styles.quoteKey} numberOfLines={1}>{formatOutcome(o.key)}</Text>
+                            <Text style={[styles.quoteVal, isBest && styles.quoteValBest]}>{o.value}</Text>
+                          </View>
+                        );
+                      })}
+                    </View>
                   </View>
-                ))}
-              </View>
+                );
+              })}
             </View>
           ))}
         </View>
@@ -882,6 +894,25 @@ const styles = StyleSheet.create({
   oddsChip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: theme.surfaceMuted, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 },
   oddsChipKey: { fontFamily: fonts.body, fontSize: 10, color: theme.textMuted },
   oddsChipVal: { fontFamily: fonts.bodySemiBold, fontSize: 11, color: theme.textPrimary },
+  // Bookmaker odds board — grouped, with favourite highlight
+  oddsGroup: { marginTop: spacing.md },
+  oddsGroupLabel: {
+    fontFamily: fonts.bodySemiBold, fontSize: 11, color: theme.accentGreen,
+    textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: spacing.xs,
+    paddingBottom: 4, borderBottomWidth: layout.borderWidth, borderBottomColor: theme.border,
+  },
+  oddsMarketRow: { marginTop: spacing.sm },
+  oddsMarketName: { fontFamily: fonts.bodyMedium, fontSize: 12, color: theme.textPrimary, marginBottom: spacing.xs },
+  quoteGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  quote: {
+    minWidth: 68, alignItems: 'center', paddingHorizontal: spacing.sm, paddingVertical: 6,
+    borderWidth: layout.borderWidth, borderColor: theme.border, borderRadius: layout.borderRadius,
+    backgroundColor: theme.surface,
+  },
+  quoteBest: { borderColor: theme.accentGreen, backgroundColor: 'rgba(5,150,105,0.06)' },
+  quoteKey: { fontFamily: fonts.body, fontSize: 10, color: theme.textMuted, marginBottom: 2 },
+  quoteVal: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: theme.textPrimary },
+  quoteValBest: { color: theme.accentGreen },
   // Odds tab — explainer + headline result + probability bars
   oddsIntro: { fontFamily: fonts.body, fontSize: 12, color: theme.textMuted, marginBottom: spacing.sm, lineHeight: 18 },
   oddsVerdict: { fontFamily: fonts.bodySemiBold, fontSize: 14, color: theme.textPrimary, marginBottom: spacing.md },
