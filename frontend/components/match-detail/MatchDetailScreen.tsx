@@ -28,6 +28,7 @@ import { fonts, layout, spacing, theme } from '@/styles/theme';
 import {
   formatOutcome,
   oddsMarkets,
+  oddsVerdict,
   probabilityGroups,
   scoreBreakdown,
   statsByCategory,
@@ -533,6 +534,7 @@ function OddsTab({
     return <Text style={styles.muted}>No odds or model probabilities for this fixture.</Text>;
   }
 
+  const verdict = oddsVerdict(prob, homeName, awayName);
   const hasResult = prob != null && prob.home_win != null;
   const top =
     hasResult
@@ -547,6 +549,8 @@ function OddsTab({
         <Text style={styles.oddsIntroStrong}>%</Text> = our model’s estimated chance ·{' '}
         <Text style={styles.oddsIntroStrong}>odds</Text> = the bookmaker price (lower = more likely).
       </Text>
+
+      {verdict ? <Text style={styles.oddsVerdict}>{verdict}</Text> : null}
 
       {/* Headline: match result */}
       {hasResult ? (
@@ -879,7 +883,8 @@ const styles = StyleSheet.create({
   oddsChipKey: { fontFamily: fonts.body, fontSize: 10, color: theme.textMuted },
   oddsChipVal: { fontFamily: fonts.bodySemiBold, fontSize: 11, color: theme.textPrimary },
   // Odds tab — explainer + headline result + probability bars
-  oddsIntro: { fontFamily: fonts.body, fontSize: 12, color: theme.textMuted, marginBottom: spacing.md, lineHeight: 18 },
+  oddsIntro: { fontFamily: fonts.body, fontSize: 12, color: theme.textMuted, marginBottom: spacing.sm, lineHeight: 18 },
+  oddsVerdict: { fontFamily: fonts.bodySemiBold, fontSize: 14, color: theme.textPrimary, marginBottom: spacing.md },
   oddsIntroStrong: { fontFamily: fonts.bodySemiBold, color: theme.textPrimary },
   resultRow: { flexDirection: 'row', gap: spacing.sm },
   resultCol: { flex: 1, alignItems: 'center', paddingVertical: spacing.sm, paddingHorizontal: spacing.xs, borderWidth: layout.borderWidth, borderColor: theme.border, borderRadius: layout.borderRadius },

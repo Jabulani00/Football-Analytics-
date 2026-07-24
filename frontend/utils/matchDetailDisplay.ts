@@ -201,6 +201,34 @@ export function probabilityGroups(prob: Probability | undefined): { title: strin
   })).filter((g) => g.rows.length > 0);
 }
 
+/**
+ * Plain-English one-line read of the model's probabilities (values are 0–100).
+ * e.g. "Arsenal favoured · goals expected · both to score". Null when the model
+ * has no full-time result probability.
+ */
+export function oddsVerdict(
+  prob: Probability | undefined,
+  home: string,
+  away: string,
+): string | null {
+  if (!prob || prob.home_win == null) return null;
+  const h = prob.home_win;
+  const d = prob.draw ?? 0;
+  const a = prob.away_win ?? 0;
+  const top = Math.max(h, d, a);
+  const parts: string[] = [];
+  const word = top >= 60 ? 'strongly fancied' : 'favoured';
+  if (h === top) parts.push(top >= 45 ? `${home} ${word}` : `slight edge to ${home}`);
+  else if (a === top) parts.push(top >= 45 ? `${away} ${word}` : `slight edge to ${away}`);
+  else parts.push('evenly matched — draw in play');
+  if (prob.o25 != null) {
+    if (prob.o25 >= 60) parts.push('goals expected');
+    else if (prob.o25 <= 40) parts.push('low-scoring lean');
+  }
+  if (prob.btts != null && prob.btts >= 60) parts.push('both to score');
+  return parts.join(' · ');
+}
+
 export function oddsMarkets(odds: OddsByMarket | undefined): { market: string; label: string; outcomes: { key: string; value: number }[] }[] {
   if (!odds) return [];
   return Object.entries(odds)
