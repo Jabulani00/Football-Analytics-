@@ -3,19 +3,38 @@ import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import SectionLabel from '@/components/shared/SectionLabel';
 import type { StandingRow } from '@/mock/matchData';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
+import { getPosZone, type PosZone } from '@/utils/standingsAnalytics';
+
+type ZoneSeparatorSpec = { afterPos: number; label: string };
 
 type StandingsTableProps = {
   standings: StandingRow[];
   highlightTeams?: string[];
   seasonLabel?: string;
+  /**
+   * Zone separators drawn after given positions. Defaults to the European
+   * qualification/relegation set; pass `[]` to disable (e.g. analytics views).
+   */
+  zoneSeparators?: ZoneSeparatorSpec[];
+  /** Colour the rank number by promotion/relegation/cup-qualification zone. */
+  colorRank?: boolean;
+  /** Draw a band divider after this many rows (color-band analytics tables). */
+  bandDivideAfter?: number;
 };
 
-const ZONE_SEPARATORS: { afterPos: number; label: string }[] = [
+const DEFAULT_ZONE_SEPARATORS: ZoneSeparatorSpec[] = [
   { afterPos: 3, label: '─── Champions League ───' },
   { afterPos: 6, label: '─── Europa League ───' },
   { afterPos: 9, label: '─── Relegation Play-off ───' },
   { afterPos: 11, label: '─── Relegation ───' },
 ];
+
+const ZONE_COLOR: Record<Exclude<PosZone, null>, string> = {
+  promotion: theme.accentGreen,
+  championsLeague: theme.accentBlue,
+  europaLeague: theme.accentPurple,
+  relegation: theme.loss,
+};
 
 function FormPills({ form }: { form: StandingRow['form'] | undefined }) {
   const results = form ?? [];
@@ -51,14 +70,30 @@ function ZoneSeparator({ label }: { label: string }) {
   );
 }
 
+function BandDivider() {
+  return (
+    <View style={styles.bandDivider}>
+      <Text style={styles.bandDividerLabel}>─── ranked by results vs the band ───</Text>
+    </View>
+  );
+}
+
 function TableRow({
   row,
   highlighted,
+  separators,
+  colorRank,
+  total,
 }: {
   row: StandingRow;
   highlighted: boolean;
+  separators: ZoneSeparatorSpec[];
+  colorRank: boolean;
+  total: number;
 }) {
-  const separator = ZONE_SEPARATORS.find((z) => z.afterPos === row.pos);
+  const separator = separators.find((z) => z.afterPos === row.pos);
+  const zone = colorRank ? getPosZone(row.pos, total) : null;
+  const posColor = zone ? ZONE_COLOR[zone] : undefined;
 
   return (
     <>
@@ -68,7 +103,9 @@ function TableRow({
           highlighted && styles.rowHighlighted,
           (pressed || (Platform.OS === 'web' && hovered)) && styles.rowHover,
         ]}>
-        <Text style={[styles.cell, styles.colPos]}>{row.pos}</Text>
+        <Text style={[styles.cell, styles.colPos, posColor ? { color: posColor, fontFamily: fonts.bodySemiBold } : null]}>
+          {row.pos}
+        </Text>
         <Text style={[styles.cell, styles.colTeam]} numberOfLines={1}>
           {row.team}
         </Text>
@@ -93,6 +130,9 @@ export default function StandingsTable({
   standings,
   highlightTeams = [],
   seasonLabel = 'SCOTTISH PREMIERSHIP — 2024/25',
+  zoneSeparators = DEFAULT_ZONE_SEPARATORS,
+  colorRank = false,
+  bandDivideAfter,
 }: StandingsTableProps) {
   const highlights = highlightTeams ?? [];
 
@@ -112,8 +152,17 @@ export default function StandingsTable({
         <Text style={[styles.headerCell, styles.colPts]}>Pts</Text>
         <Text style={[styles.headerCell, styles.colForm]}>Form</Text>
       </View>
-      {standings.map((row) => (
-        <TableRow key={row.team} row={row} highlighted={highlights.includes(row.team)} />
+      {standings.map((row, i) => (
+        <View key={row.team}>
+          <TableRow
+            row={row}
+            highlighted={highlights.includes(row.team)}
+            separators={zoneSeparators}
+            colorRank={colorRank}
+            total={standings.length}
+          />
+          {bandDivideAfter != null && i + 1 === bandDivideAfter ? <BandDivider /> : null}
+        </View>
       ))}
     </View>
   );
@@ -233,5 +282,19 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: theme.textMuted,
     letterSpacing: 0.5,
+  },
+  bandDivider: {
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+    backgroundColor: theme.surfaceMuted,
+    borderBottomWidth: layout.borderWidth,
+    borderBottomColor: theme.borderStrong,
+  },
+  bandDividerLabel: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 10,
+    color: theme.textMuted,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
   },
 });

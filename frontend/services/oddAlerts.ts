@@ -155,6 +155,22 @@ function buildUrl(path: string, params: Record<string, string | number | undefin
   return `${DIRECT_BASE_URL}/${path}?${search.toString()}`;
 }
 
+/**
+ * Thrown when the API answers 200 but the body isn't JSON. The upstream
+ * returns a plain-text banner (e.g. "OddAlerts Data Engine") for unknown or
+ * malformed resource ids, so callers can treat this as "no such resource"
+ * rather than surfacing a raw `JSON.parse` SyntaxError to the user.
+ */
+export class OddAlertsNonJsonError extends Error {
+  constructor(
+    readonly path: string,
+    readonly body: string,
+  ) {
+    super(`OddAlerts API returned a non-JSON response for "${path}"`);
+    this.name = 'OddAlertsNonJsonError';
+  }
+}
+
 async function getJson<T>(
   path: string,
   params: Record<string, string | number | undefined> = {},
@@ -164,10 +180,15 @@ async function getJson<T>(
     headers: { Accept: 'application/json' },
     signal,
   });
+  const text = await res.text();
   if (!res.ok) {
     throw new Error(`OddAlerts API ${res.status}: ${path}`);
   }
-  return (await res.json()) as ApiEnvelope<T>;
+  try {
+    return JSON.parse(text) as ApiEnvelope<T>;
+  } catch {
+    throw new OddAlertsNonJsonError(path, text.slice(0, 120));
+  }
 }
 
 /** Live + in-play + recently finished fixtures (single page, ~30 games). */
@@ -392,12 +413,19 @@ export async function fetchFixtureDetail(
   id: number | string,
   signal?: AbortSignal,
 ): Promise<RawFixtureDetail | null> {
-  const env = await getJson<RawFixtureDetail>(
-    `fixtures/${id}`,
-    { include: 'probability,stats,odds,h2h,referee' },
-    signal,
-  );
-  return env.data[0] ?? null;
+  try {
+    const env = await getJson<RawFixtureDetail>(
+      `fixtures/${id}`,
+      { include: 'probability,stats,odds,h2h,referee' },
+      signal,
+    );
+    return env.data[0] ?? null;
+  } catch (err) {
+    // Unknown/non-numeric ids (e.g. sample fixtures) make the API answer with a
+    // plain-text banner instead of JSON — treat that as "fixture not found".
+    if (err instanceof OddAlertsNonJsonError) return null;
+    throw err;
+  }
 }
 
 // ----- Goal timing (stats/fixture) ----------------------------------------
