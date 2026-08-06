@@ -7,6 +7,7 @@ import LivePulse from '@/components/shared/LivePulse';
 import PageContainer from '@/components/shared/PageContainer';
 import TeamLogo from '@/components/shared/TeamLogo';
 import GroupStandingsView from '@/components/standings/GroupStandingsView';
+import StandingsAnalyticsView from '@/components/league/StandingsAnalyticsView';
 import GoalTimingPanel from '@/components/match-detail/GoalTimingPanel';
 import H2HPanel from '@/components/match-detail/H2HPanel';
 import PressureMonitorPanel from '@/components/match-detail/PressureMonitorPanel';
@@ -23,6 +24,7 @@ import {
   type StandingRow,
 } from '@/services/oddAlerts';
 import type { MatchGoalEvent, MatchTimelineEvent } from '@/services/apiFootball';
+import type { StandingRow as BaseStandingRow } from '@/mock/matchData';
 import type { PressureReading, PressureSnapshot } from '@/utils/pressureMonitor';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 import {
@@ -773,53 +775,32 @@ function StandingsTab({
   if (standings.length === 0) {
     return <Text style={styles.muted}>No standings available for this competition.</Text>;
   }
+
+  // Adapt the live API rows to the shape the standings-analytics engine expects,
+  // so the full filter suite (PPG, bands, recent form, 34 probability metrics)
+  // is available here — including for upcoming fixtures.
+  const base: BaseStandingRow[] = standings.map((row) => ({
+    pos: row.rank,
+    team: row.name,
+    played: row.played,
+    won: row.won,
+    drawn: row.drawn,
+    lost: row.lost,
+    gf: row.goalsFor,
+    ga: row.goalsAgainst,
+    gd: row.goalDiff,
+    points: row.points,
+    form: [],
+  }));
+  const idByName = new Map(standings.map((row) => [row.name, row.teamId]));
+
   return (
-    <View style={styles.card}>
-      <View style={[styles.tableRow, styles.tableHead]}>
-        <Text style={[styles.cPos, styles.thText]}>#</Text>
-        <Text style={[styles.cTeam, styles.thText]}>Team</Text>
-        <Text style={[styles.cNum, styles.thText]}>P</Text>
-        <Text style={[styles.cNum, styles.thText]}>GD</Text>
-        <Text style={[styles.cNum, styles.thText]}>Pts</Text>
-      </View>
-      {standings.map((row) => {
-        const highlight = row.teamId === homeId || row.teamId === awayId;
-        const m =
-          row.teamId === homeId ? movement?.home : row.teamId === awayId ? movement?.away : undefined;
-        return (
-          <Pressable
-            key={row.teamId}
-            onPress={() => onTeamPress(row.teamId, row.name)}
-            style={({ hovered }) => [
-              styles.tableRow,
-              highlight && styles.tableRowActive,
-              Platform.OS === 'web' && hovered ? styles.tableRowHover : null,
-            ]}>
-            <Text style={[styles.cPos, styles.tdText]}>{row.rank}</Text>
-            <View style={styles.cTeam}>
-              <TeamLogo name={row.name} size={16} />
-              <Text style={[styles.tdText, highlight && styles.tdBold]} numberOfLines={1}>
-                {row.name}
-              </Text>
-              {m && m.delta != null && m.delta !== 0 ? (
-                <Text
-                  style={[
-                    styles.rowMove,
-                    { color: m.delta > 0 ? theme.win : theme.loss },
-                  ]}>
-                  {m.delta > 0 ? `▲${m.delta}` : `▼${Math.abs(m.delta)}`}
-                </Text>
-              ) : null}
-            </View>
-            <Text style={[styles.cNum, styles.tdText]}>{row.played}</Text>
-            <Text style={[styles.cNum, styles.tdText]}>
-              {row.goalDiff > 0 ? `+${row.goalDiff}` : row.goalDiff}
-            </Text>
-            <Text style={[styles.cNum, styles.tdText, styles.tdBold]}>{row.points}</Text>
-          </Pressable>
-        );
-      })}
-    </View>
+    <StandingsAnalyticsView
+      base={base}
+      seasonLabel="LEAGUE TABLE"
+      highlightTeams={[homeName, awayName]}
+      onTeamPress={(team) => onTeamPress(idByName.get(team) ?? null, team)}
+    />
   );
 }
 

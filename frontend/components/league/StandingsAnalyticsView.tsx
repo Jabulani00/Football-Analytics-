@@ -56,9 +56,18 @@ const METRIC_TABS = PROB_METRICS.map((m) => ({ id: m.key, label: m.short }));
 type Props = {
   base: StandingRow[];
   seasonLabel: string;
+  /** Team names to highlight (e.g. the two teams of a fixture). */
+  highlightTeams?: string[];
+  /** Make table rows tappable, receiving the row's team name. */
+  onTeamPress?: (team: string) => void;
 };
 
-export default function StandingsAnalyticsView({ base, seasonLabel }: Props) {
+export default function StandingsAnalyticsView({
+  base,
+  seasonLabel,
+  highlightTeams,
+  onTeamPress,
+}: Props) {
   const [group, setGroup] = useState<Group>('standard');
   const [period, setPeriod] = useState<Period>('ft');
   const [scope, setScope] = useState<Split>('overall');
@@ -125,6 +134,8 @@ export default function StandingsAnalyticsView({ base, seasonLabel }: Props) {
       <StandingsTable
         standings={view.rows}
         seasonLabel={seasonLabel}
+        highlightTeams={highlightTeams}
+        onRowPress={onTeamPress}
         colorRank={group === 'standard'}
         zoneSeparators={group === 'standard' ? undefined : []}
         bandDivideAfter={view.bandDivideAfter}

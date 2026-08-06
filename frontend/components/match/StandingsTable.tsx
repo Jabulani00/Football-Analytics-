@@ -20,6 +20,8 @@ type StandingsTableProps = {
   colorRank?: boolean;
   /** Draw a band divider after this many rows (color-band analytics tables). */
   bandDivideAfter?: number;
+  /** Make rows tappable (e.g. open a team). Receives the row's team name. */
+  onRowPress?: (team: string) => void;
 };
 
 const DEFAULT_ZONE_SEPARATORS: ZoneSeparatorSpec[] = [
@@ -84,12 +86,14 @@ function TableRow({
   separators,
   colorRank,
   total,
+  onPress,
 }: {
   row: StandingRow;
   highlighted: boolean;
   separators: ZoneSeparatorSpec[];
   colorRank: boolean;
   total: number;
+  onPress?: () => void;
 }) {
   const separator = separators.find((z) => z.afterPos === row.pos);
   const zone = colorRank ? getPosZone(row.pos, total) : null;
@@ -98,10 +102,12 @@ function TableRow({
   return (
     <>
       <Pressable
+        onPress={onPress}
         style={({ pressed, hovered }) => [
           styles.row,
           highlighted && styles.rowHighlighted,
           (pressed || (Platform.OS === 'web' && hovered)) && styles.rowHover,
+          onPress && Platform.OS === 'web' ? ({ cursor: 'pointer' } as object) : null,
         ]}>
         <Text style={[styles.cell, styles.colPos, posColor ? { color: posColor, fontFamily: fonts.bodySemiBold } : null]}>
           {row.pos}
@@ -133,6 +139,7 @@ export default function StandingsTable({
   zoneSeparators = DEFAULT_ZONE_SEPARATORS,
   colorRank = false,
   bandDivideAfter,
+  onRowPress,
 }: StandingsTableProps) {
   const highlights = highlightTeams ?? [];
 
@@ -160,6 +167,7 @@ export default function StandingsTable({
             separators={zoneSeparators}
             colorRank={colorRank}
             total={standings.length}
+            onPress={onRowPress ? () => onRowPress(row.team) : undefined}
           />
           {bandDivideAfter != null && i + 1 === bandDivideAfter ? <BandDivider /> : null}
         </View>
