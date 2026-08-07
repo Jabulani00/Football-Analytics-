@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 import CompetitionPicker from '@/components/shared/CompetitionPicker';
+import SubTabBar from '@/components/shared/SubTabBar';
 import { useLiveCompetitions } from '@/hooks/useLiveCompetitions';
 import { useLiveFixturePredictions, type PredictedFixture } from '@/hooks/useLiveFixturePredictions';
 import type { FixturePrediction } from '@/services/predictionEngine';
@@ -10,6 +11,40 @@ import { fonts, layout, spacing, theme } from '@/styles/theme';
 function pct(n: number) {
   return `${Math.round(n * 100)}%`;
 }
+
+// Bet-type screener: each maps to a probability on the model prediction, so
+// filtering the fixtures list returns exactly the games worth that bet.
+type BetTypeId =
+  | 'all'
+  | 'home'
+  | 'away'
+  | 'draw'
+  | 'btts'
+  | 'o15'
+  | 'o25'
+  | 'o35'
+  | 'u25'
+  | 'banker';
+
+const BET_TYPES: { id: BetTypeId; label: string; value?: (p: FixturePrediction) => number }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'home', label: 'Home Win', value: (p) => p.homeWin },
+  { id: 'away', label: 'Away Win', value: (p) => p.awayWin },
+  { id: 'draw', label: 'Draw', value: (p) => p.draw },
+  { id: 'btts', label: 'BTTS', value: (p) => p.btts },
+  { id: 'o15', label: 'Over 1.5', value: (p) => p.over15 },
+  { id: 'o25', label: 'Over 2.5', value: (p) => p.over25 },
+  { id: 'o35', label: 'Over 3.5', value: (p) => p.over35 },
+  { id: 'u25', label: 'Under 2.5', value: (p) => 1 - p.over25 },
+  { id: 'banker', label: '🔒 Bankers', value: (p) => p.confidence / 100 },
+];
+
+const PROB_MINS: { id: string; label: string }[] = [
+  { id: '0', label: 'Any' },
+  { id: '55', label: '55%+' },
+  { id: '65', label: '65%+' },
+  { id: '75', label: '75%+' },
+];
 
 function pickLabel(pick: '1' | 'X' | '2'): string {
   return pick === '1' ? 'HOME' : pick === '2' ? 'AWAY' : 'DRAW';
@@ -52,6 +87,18 @@ export default function PredictionsPanel() {
 
   const withPred = useMemo(() => items.filter((i) => i.prediction), [items]);
 
+  const [betType, setBetType] = useState<BetTypeId>('all');
+  const [minProb, setMinProb] = useState(0);
+  const activeBet = BET_TYPES.find((b) => b.id === betType) ?? BET_TYPES[0];
+
+  const filtered = useMemo(() => {
+    const getVal = activeBet.value;
+    if (!getVal) return withPred;
+    return withPred
+      .filter((i) => i.prediction && getVal(i.prediction) >= minProb / 100)
+      .sort((a, b) => getVal(b.prediction!) - getVal(a.prediction!));
+  }, [withPred, activeBet, minProb]);
+
   return (
     <View style={styles.container}>
       <Text style={styles.hint}>
@@ -80,6 +127,19 @@ export default function PredictionsPanel() {
         )}
       </View>
 
+      {/* Bet-type screener — filter the fixtures down to the bets you want. */}
+      <View style={styles.screener}>
+        <Text style={styles.screenerLabel}>SHOW FIXTURES FOR</Text>
+        <SubTabBar tabs={BET_TYPES} active={betType} onChange={setBetType} />
+        {activeBet.value ? (
+          <SubTabBar
+            tabs={PROB_MINS}
+            active={String(minProb)}
+            onChange={(id) => setMinProb(Number(id))}
+          />
+        ) : null}
+      </View>
+
       {!loading && withPred.length === 0 ? (
         <Text style={styles.empty}>
           No predictable upcoming fixtures for this competition yet (teams need
@@ -87,16 +147,43 @@ export default function PredictionsPanel() {
         </Text>
       ) : null}
 
+      {!loading && withPred.length > 0 ? (
+        <Text style={styles.resultCount}>
+          {filtered.length} of {withPred.length} fixtures
+          {activeBet.value ? ` · ${activeBet.label}${minProb > 0 ? ` ${minProb}%+` : ''}` : ''}
+        </Text>
+      ) : null}
+
+      {!loading && withPred.length > 0 && filtered.length === 0 ? (
+        <Text style={styles.empty}>
+          No fixtures clear this filter — lower the probability or pick another market.
+        </Text>
+      ) : null}
+
       <View style={styles.list}>
-        {withPred.slice(0, 40).map((item) => (
-          <FixtureCard key={item.fixture.id} item={item} />
+        {filtered.slice(0, 40).map((item) => (
+          <FixtureCard
+            key={item.fixture.id}
+            item={item}
+            highlight={
+              activeBet.value
+                ? { label: activeBet.label, value: pct(activeBet.value(item.prediction!)) }
+                : undefined
+            }
+          />
         ))}
       </View>
     </View>
   );
 }
 
-function FixtureCard({ item }: { item: PredictedFixture }) {
+function FixtureCard({
+  item,
+  highlight,
+}: {
+  item: PredictedFixture;
+  highlight?: { label: string; value: string };
+}) {
   const { fixture, prediction } = item;
   const p = prediction as FixturePrediction;
   const kickoff = fixture.ko_human || fixture.date || '';
@@ -112,7 +199,16 @@ function FixtureCard({ item }: { item: PredictedFixture }) {
           <Text style={[styles.pickBadgeText, { color: tier.color }]}>{pickLabel(p.pick)}</Text>
         </View>
       </View>
-      <Text style={styles.kickoff}>{kickoff}</Text>
+      <View style={styles.kickoffRow}>
+        <Text style={styles.kickoff}>{kickoff}</Text>
+        {highlight ? (
+          <View style={styles.matchBadge}>
+            <Text style={styles.matchBadgeText}>
+              {highlight.label} {highlight.value}
+            </Text>
+          </View>
+        ) : null}
+      </View>
 
       {/* Plain-English read */}
       <Text style={styles.verdict}>{verdict(p, fixture.home_name, fixture.away_name)}</Text>
@@ -182,6 +278,24 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body, fontSize: 13, color: theme.textMuted,
     textAlign: 'center', maxWidth: 480, marginTop: spacing.md,
   },
+  screener: { width: '100%', maxWidth: 640, marginBottom: spacing.sm },
+  screenerLabel: {
+    fontFamily: fonts.bodySemiBold, fontSize: 10, letterSpacing: 1,
+    color: theme.textMuted, marginBottom: spacing.xs,
+  },
+  resultCount: {
+    width: '100%', maxWidth: 640, fontFamily: fonts.bodyMedium, fontSize: 12,
+    color: theme.textPrimary, marginBottom: spacing.sm,
+  },
+  kickoffRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    gap: spacing.sm, marginBottom: spacing.sm,
+  },
+  matchBadge: {
+    backgroundColor: 'rgba(5,150,105,0.10)', borderRadius: 4,
+    paddingHorizontal: spacing.sm, paddingVertical: 2,
+  },
+  matchBadgeText: { fontFamily: fonts.bodySemiBold, fontSize: 11, color: theme.accentGreen },
   list: { width: '100%', maxWidth: 640, gap: spacing.md },
   card: {
     backgroundColor: theme.surface, borderWidth: layout.borderWidth, borderColor: theme.border,

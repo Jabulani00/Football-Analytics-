@@ -62,6 +62,18 @@ function makeRng(seed: number): () => number {
   };
 }
 
+/** Deterministic Poisson draw (Knuth), capped so scorelines stay sane. */
+function samplePoisson(rng: () => number, lambda: number): number {
+  const L = Math.exp(-Math.max(0.05, lambda));
+  let k = 0;
+  let p = 1;
+  do {
+    k++;
+    p *= rng();
+  } while (p > L && k < 8);
+  return k - 1;
+}
+
 // ---------------------------------------------------------------------------
 // Synthetic match history
 // ---------------------------------------------------------------------------
@@ -96,17 +108,23 @@ function genGames(row: StandingRow): Game[] {
   const games: Game[] = results.map((res) => {
     let gf = 0;
     let ga = 0;
+    // Poisson draws let 0-goal games (clean sheets, 0-0s, failed-to-score)
+    // occur at realistic rates, so BTTS/CS/FTS markets are meaningful.
     if (res === 'W') {
-      gf = Math.max(1, Math.round(avgFor + rng() * 1.2));
-      ga = Math.max(0, Math.min(gf - 1, Math.round(avgAgainst * 0.5 + rng())));
+      gf = Math.max(1, samplePoisson(rng, Math.max(1.1, avgFor)));
+      ga = samplePoisson(rng, Math.max(0.5, avgAgainst * 0.7));
+      if (ga >= gf) ga = gf - 1;
     } else if (res === 'L') {
-      ga = Math.max(1, Math.round(avgAgainst + rng() * 1.2));
-      gf = Math.max(0, Math.min(ga - 1, Math.round(avgFor * 0.5 + rng())));
+      ga = Math.max(1, samplePoisson(rng, Math.max(1.1, avgAgainst)));
+      gf = samplePoisson(rng, Math.max(0.5, avgFor * 0.7));
+      if (gf >= ga) gf = ga - 1;
     } else {
-      const g = Math.min(3, Math.max(0, Math.round(((avgFor + avgAgainst) / 2) * 0.8 + rng() * 0.7)));
+      const g = samplePoisson(rng, Math.max(0.4, ((avgFor + avgAgainst) / 2) * 0.85));
       gf = g;
       ga = g;
     }
+    gf = Math.max(0, gf);
+    ga = Math.max(0, ga);
     const gf1 = Math.min(gf, Math.round(gf * (0.35 + rng() * 0.3)));
     const ga1 = Math.min(ga, Math.round(ga * (0.35 + rng() * 0.3)));
     return { home: false, gf, ga, gf1, ga1 };
@@ -542,6 +560,72 @@ function buildProbTable(
     .map((r) => ({ row: r, v: probValue(r, games.get(r.team)!, metric) }))
     .sort((a, b) => b.v - a.v)
     .map(({ row }, i) => ({ ...row, pos: i + 1 }));
+}
+
+// ---------------------------------------------------------------------------
+// Insights — a betting "scout": which teams hit a market often, by scope.
+// e.g. "teams that hit Home BTTS 60%+ in this league".
+// ---------------------------------------------------------------------------
+
+export type InsightMarket =
+  | 'btts'
+  | 'o15'
+  | 'o25'
+  | 'o35'
+  | 'sc'
+  | 'cs'
+  | 'win'
+  | 'fts';
+
+export const INSIGHT_MARKETS: { key: InsightMarket; label: string; short: string }[] = [
+  { key: 'btts', label: 'Both Teams To Score', short: 'BTTS' },
+  { key: 'o15', label: 'Over 1.5 Goals', short: 'Over 1.5' },
+  { key: 'o25', label: 'Over 2.5 Goals', short: 'Over 2.5' },
+  { key: 'o35', label: 'Over 3.5 Goals', short: 'Over 3.5' },
+  { key: 'sc', label: 'Team Scores', short: 'Scores' },
+  { key: 'cs', label: 'Clean Sheet', short: 'Clean Sheet' },
+  { key: 'win', label: 'Wins', short: 'Wins' },
+  { key: 'fts', label: 'Fails To Score', short: 'Fails to Score' },
+];
+
+function marketValue(games: Game[], market: InsightMarket): number {
+  const total = (g: Game) => g.gf + g.ga;
+  switch (market) {
+    case 'btts':
+      return pct(games, (g) => g.gf >= 1 && g.ga >= 1);
+    case 'o15':
+      return pct(games, (g) => total(g) >= 2);
+    case 'o25':
+      return pct(games, (g) => total(g) >= 3);
+    case 'o35':
+      return pct(games, (g) => total(g) >= 4);
+    case 'sc':
+      return pct(games, (g) => g.gf >= 1);
+    case 'cs':
+      return pct(games, (g) => g.ga === 0);
+    case 'win':
+      return pct(games, (g) => g.gf > g.ga);
+    case 'fts':
+      return pct(games, (g) => g.gf === 0);
+    default:
+      return 0;
+  }
+}
+
+export type InsightRow = { team: string; value: number; played: number };
+
+/** Every team's hit-rate for a market within a scope, ranked high → low. */
+export function buildInsights(
+  base: StandingRow[],
+  opts: { market: InsightMarket; scope: Split },
+): InsightRow[] {
+  const games = gamesMap(base);
+  return base
+    .map((r) => {
+      const g = filterSplit(games.get(r.team)!, opts.scope);
+      return { team: r.team, value: marketValue(g, opts.market), played: g.length };
+    })
+    .sort((a, b) => b.value - a.value);
 }
 
 // ---------------------------------------------------------------------------
