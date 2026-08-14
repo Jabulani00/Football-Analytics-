@@ -100,7 +100,7 @@ export default function StandingsAnalyticsView({
       case 'form':
         return { kind: 'form', window, split: scope, period };
       case 'prob':
-        return { kind: 'prob', metric };
+        return { kind: 'prob', metric, period };
       default:
         return { kind: 'standard' };
     }
@@ -138,7 +138,10 @@ export default function StandingsAnalyticsView({
       {group === 'ppg' ? <SubTabBar tabs={BANDS} active={band} onChange={setBand} /> : null}
 
       {group === 'prob' ? (
-        <SubTabBar tabs={METRIC_TABS} active={metric} onChange={setMetric} />
+        <>
+          <SubTabBar tabs={PERIODS} active={period} onChange={setPeriod} />
+          <SubTabBar tabs={METRIC_TABS} active={metric} onChange={setMetric} />
+        </>
       ) : null}
 
       {isInsights ? (

@@ -31,7 +31,7 @@ export type Selection =
   | { kind: 'ppg'; split: Split; period: Period; band: Band }
   | { kind: 'last6ppg'; split: Split; period: Period }
   | { kind: 'form'; window: FormWindow; split: Split; period: Period }
-  | { kind: 'prob'; metric: ProbMetricKey };
+  | { kind: 'prob'; metric: ProbMetricKey; period: Period };
 
 export type StandingsView = {
   rows: StandingRow[];
@@ -156,6 +156,19 @@ function resultOf(gf: number, ga: number): Result {
   return gf > ga ? 'W' : gf < ga ? 'L' : 'D';
 }
 
+/**
+ * Re-express each game so its full-time goals become the chosen period's goals
+ * (e.g. 1st-half only). Lets the probability metrics be computed for Full-time,
+ * 1st Half or 2nd Half.
+ */
+function projectPeriod(games: Game[], period: Period): Game[] {
+  if (period === 'ft') return games;
+  return games.map((g) => {
+    const p = periodGoals(g, period);
+    return { home: g.home, gf: p.gf, ga: p.ga, gf1: Math.round(p.gf * 0.5), ga1: Math.round(p.ga * 0.5) };
+  });
+}
+
 function filterSplit(games: Game[], split: Split): Game[] {
   if (split === 'home') return games.filter((g) => g.home);
   if (split === 'away') return games.filter((g) => !g.home);
@@ -278,42 +291,53 @@ function buildPPGTable(
 // Color-band tables (perform-against-band)
 // ---------------------------------------------------------------------------
 
-/** Two-legged synthetic head-to-head; points/goals earned by A vs B. */
-function h2h(
-  aStrength: number,
-  bStrength: number,
-  seedA: number,
-  seedB: number,
-): { pts: number; w: number; d: number; l: number; gf: number; ga: number } {
-  let pts = 0;
-  let w = 0;
-  let d = 0;
-  let l = 0;
-  let gf = 0;
-  let ga = 0;
-  for (let leg = 0; leg < 2; leg++) {
-    const home = leg === 0;
-    const rng = makeRng(seedA * 131 + seedB * 17 + leg * 7 + 3);
-    const diff = aStrength - bStrength + (home ? 0.35 : -0.15) + (rng() - 0.5) * 1.4;
-    const r: Result = diff > 0.4 ? 'W' : diff < -0.4 ? 'L' : 'D';
-    let agf = Math.max(0, Math.round(1 + aStrength * 0.7 + (r === 'W' ? 1 : 0) + (rng() - 0.5)));
-    let aga = Math.max(0, Math.round(1 + bStrength * 0.7 + (r === 'L' ? 1 : 0) + (rng() - 0.5)));
-    if (r === 'W' && agf <= aga) agf = aga + 1;
-    if (r === 'L' && aga <= agf) aga = agf + 1;
-    if (r === 'D') aga = agf;
-    gf += agf;
-    ga += aga;
-    if (r === 'W') {
-      pts += 3;
-      w++;
-    } else if (r === 'D') {
-      pts += 1;
-      d++;
+type BandRecord = { pts: number; w: number; d: number; l: number; gf: number; ga: number; games: number };
+
+/**
+ * A team's record against a colour band, bounded by the games it has actually
+ * played. We can't exceed `played` real matches — a side that has played 2
+ * games can't have 10 results (or 18 points) versus a band. So we estimate how
+ * many of those games fell against the band (proportional to the band's size)
+ * and simulate only that many, seeded deterministically.
+ */
+function recordVsBand(
+  team: StandingRow,
+  bandTeams: string[],
+  strength: Map<string, number>,
+  totalTeams: number,
+): BandRecord {
+  const nOpponents = Math.max(1, totalTeams - 1);
+  const estimate = Math.round((team.played * bandTeams.length) / nOpponents);
+  const games = Math.max(0, Math.min(team.played, estimate));
+
+  const me = strength.get(team.team) ?? 0;
+  const rng = makeRng(hash(team.team) * 71 + bandTeams.length * 13 + 5);
+  const rec: BandRecord = { pts: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, games };
+
+  for (let i = 0; i < games; i++) {
+    const opp = bandTeams[i % bandTeams.length];
+    const so = strength.get(opp) ?? 0;
+    const home = i % 2 === 0;
+    const diff = me - so + (home ? 0.3 : -0.15) + (rng() - 0.5) * 1.3;
+    const res: Result = diff > 0.4 ? 'W' : diff < -0.4 ? 'L' : 'D';
+    let mg = Math.max(0, Math.round(1 + me * 0.6 + (res === 'W' ? 1 : 0) + (rng() - 0.5)));
+    let og = Math.max(0, Math.round(1 + so * 0.6 + (res === 'L' ? 1 : 0) + (rng() - 0.5)));
+    if (res === 'W' && mg <= og) mg = og + 1;
+    if (res === 'L' && og <= mg) og = mg + 1;
+    if (res === 'D') og = mg;
+    rec.gf += mg;
+    rec.ga += og;
+    if (res === 'W') {
+      rec.pts += 3;
+      rec.w++;
+    } else if (res === 'D') {
+      rec.pts += 1;
+      rec.d++;
     } else {
-      l++;
+      rec.l++;
     }
   }
-  return { pts, w, d, l, gf, ga };
+  return rec;
 }
 
 function bandGroups(plain: StandingRow[]): { green: string[]; yellow: string[]; red: string[] } {
@@ -348,35 +372,22 @@ function buildBandTable(
     .map((t) => plainByTeam.get(t)!)
     .map((r, i) => ({ ...r, pos: i + 1 }));
 
-  // Everyone else ranked purely by points earned against the band.
+  // Everyone else ranked purely by points earned against the band — bounded by
+  // the number of games each team has actually played.
   const others = base.filter((r) => !bandSet.has(r.team));
   const scored = others.map((r) => {
-    let pts = 0;
-    let w = 0;
-    let d = 0;
-    let l = 0;
-    let gf = 0;
-    let ga = 0;
-    for (const opp of bandTeams) {
-      const res = h2h(strength.get(r.team) ?? 0, strength.get(opp) ?? 0, hash(r.team), hash(opp));
-      pts += res.pts;
-      w += res.w;
-      d += res.d;
-      l += res.l;
-      gf += res.gf;
-      ga += res.ga;
-    }
+    const rec = recordVsBand(r, bandTeams, strength, base.length);
     return {
       pos: 0,
       team: r.team,
-      played: bandTeams.length * 2,
-      won: w,
-      drawn: d,
-      lost: l,
-      gf,
-      ga,
-      gd: gf - ga,
-      points: pts,
+      played: rec.games,
+      won: rec.w,
+      drawn: rec.d,
+      lost: rec.l,
+      gf: rec.gf,
+      ga: rec.ga,
+      gd: rec.gf - rec.ga,
+      points: rec.pts,
       form: r.form,
     } satisfies StandingRow;
   });
@@ -555,9 +566,10 @@ function buildProbTable(
   base: StandingRow[],
   games: Map<string, Game[]>,
   metric: ProbMetricKey,
+  period: Period,
 ): StandingRow[] {
   return [...base]
-    .map((r) => ({ row: r, v: probValue(r, games.get(r.team)!, metric) }))
+    .map((r) => ({ row: r, v: probValue(r, projectPeriod(games.get(r.team)!, period), metric) }))
     .sort((a, b) => b.v - a.v)
     .map(({ row }, i) => ({ ...row, pos: i + 1 }));
 }
@@ -682,8 +694,8 @@ export function buildStandingsView(base: StandingRow[], sel: Selection): Standin
   // prob
   const metric = PROB_METRICS.find((m) => m.key === sel.metric) ?? PROB_METRICS[0];
   return {
-    rows: buildProbTable(base, games, sel.metric),
-    caption: `Ranked by ${metric.label} (${metric.short})`,
+    rows: buildProbTable(base, games, sel.metric, sel.period),
+    caption: `${PERIOD_LABEL[sel.period]} · ranked by ${metric.label} (${metric.short})`,
   };
 }
 

@@ -7,8 +7,9 @@ import ScoresMatchRow from '@/components/scores/ScoresMatchRow';
 import CountryFlag from '@/components/shared/CountryFlag';
 import PageContainer from '@/components/shared/PageContainer';
 import GroupStandingsView from '@/components/standings/GroupStandingsView';
-import StandingsTable from '@/components/standings/StandingsTable';
+import StandingsAnalyticsView from '@/components/league/StandingsAnalyticsView';
 import { useStandings } from '@/hooks/useStandings';
+import { apiStandingsToBase, teamIdByName } from '@/utils/standingsAdapter';
 import {
   fetchAllFixturesBetween,
   mapFixture,
@@ -25,7 +26,7 @@ export default function StandingsPanel() {
 
   const competition = selectedCompetition;
   const isGroups = isGroupStageTournament(competition?.name ?? '');
-  const { standings, tier, loading, error } = useStandings(
+  const { standings, loading, error } = useStandings(
     isGroups ? null : competition,
     isGroups ? null : selectedSeasonId,
   );
@@ -90,7 +91,14 @@ export default function StandingsPanel() {
       ) : standings.length === 0 ? (
         <Text style={styles.muted}>No standings available for this season.</Text>
       ) : (
-        <StandingsTable rows={standings} tier={tier} />
+        <StandingsAnalyticsView
+          base={apiStandingsToBase(standings)}
+          seasonLabel={competition.name}
+          onTeamPress={(team) => {
+            const id = teamIdByName(standings).get(team);
+            if (id != null) router.push({ pathname: '/team/[slug]', params: { slug: String(id), name: team } });
+          }}
+        />
       )}
     </PageContainer>
   );
