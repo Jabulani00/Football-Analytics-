@@ -9,6 +9,7 @@ import TeamLogo from '@/components/shared/TeamLogo';
 import GroupStandingsView from '@/components/standings/GroupStandingsView';
 import StandingsAnalyticsView from '@/components/league/StandingsAnalyticsView';
 import GoalTimingPanel from '@/components/match-detail/GoalTimingPanel';
+import OddsValuePanel from '@/components/match-detail/OddsValuePanel';
 import H2HPanel from '@/components/match-detail/H2HPanel';
 import PressureMonitorPanel from '@/components/match-detail/PressureMonitorPanel';
 import PitchLineup from '@/components/match-detail/PitchLineup';
@@ -19,6 +20,8 @@ import {
   type Competition,
   type FixtureGoalTiming,
   type Movement,
+  type OddsByMarket,
+  type Probability,
   type RawFixtureDetail,
   type SquadPlayer,
   type StandingRow,
@@ -283,6 +286,8 @@ export default function MatchDetailScreen({ matchId, onBack }: MatchDetailScreen
           awayName={fixture.away.name}
           movement={movement}
           onTeamPress={openTeam}
+          odds={detail.odds}
+          probability={detail.probability}
         />
       )}
     </PageContainer>
@@ -750,6 +755,8 @@ function StandingsTab({
   awayName,
   movement,
   onTeamPress,
+  odds,
+  probability,
 }: {
   standings: StandingRow[];
   groupCompetition: Competition | null;
@@ -759,21 +766,31 @@ function StandingsTab({
   awayName: string;
   movement: { home: Movement; away: Movement } | null;
   onTeamPress: (teamId: number | null, name: string) => void;
+  odds: OddsByMarket | undefined;
+  probability: Probability | undefined;
 }) {
   if (groupCompetition) {
     return (
-      <GroupStandingsView
-        competition={groupCompetition}
-        seasonId={groupCompetition.currentSeason}
-        highlightTeamIds={[homeId, awayId].filter((id): id is number => id != null)}
-        highlightNames={[homeName, awayName]}
-        onTeamPress={(row) => onTeamPress(row.teamId, row.name)}
-      />
+      <>
+        <OddsValuePanel odds={odds} probability={probability} />
+        <GroupStandingsView
+          competition={groupCompetition}
+          seasonId={groupCompetition.currentSeason}
+          highlightTeamIds={[homeId, awayId].filter((id): id is number => id != null)}
+          highlightNames={[homeName, awayName]}
+          onTeamPress={(row) => onTeamPress(row.teamId, row.name)}
+        />
+      </>
     );
   }
 
   if (standings.length === 0) {
-    return <Text style={styles.muted}>No standings available for this competition.</Text>;
+    return (
+      <>
+        <OddsValuePanel odds={odds} probability={probability} />
+        <Text style={styles.muted}>No standings available for this competition.</Text>
+      </>
+    );
   }
 
   // Adapt the live API rows to the shape the standings-analytics engine expects,
@@ -795,12 +812,15 @@ function StandingsTab({
   const idByName = new Map(standings.map((row) => [row.name, row.teamId]));
 
   return (
-    <StandingsAnalyticsView
-      base={base}
-      seasonLabel="LEAGUE TABLE"
-      highlightTeams={[homeName, awayName]}
-      onTeamPress={(team) => onTeamPress(idByName.get(team) ?? null, team)}
-    />
+    <>
+      <OddsValuePanel odds={odds} probability={probability} />
+      <StandingsAnalyticsView
+        base={base}
+        seasonLabel="LEAGUE TABLE"
+        highlightTeams={[homeName, awayName]}
+        onTeamPress={(team) => onTeamPress(idByName.get(team) ?? null, team)}
+      />
+    </>
   );
 }
 
