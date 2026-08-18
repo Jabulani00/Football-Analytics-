@@ -7,6 +7,7 @@ import HollywoodOddsPanel from '@/components/analytics/HollywoodOddsPanel';
 import OddsFusionPanel from '@/components/analytics/OddsFusionPanel';
 import OverviewPanel from '@/components/analytics/OverviewPanel';
 import PredictionsPanel from '@/components/analytics/PredictionsPanel';
+import SmartFinderPanel from '@/components/analytics/SmartFinderPanel';
 import StatsTablesPanel from '@/components/analytics/StatsTablesPanel';
 import StrategiesPanel from '@/components/analytics/StrategiesPanel';
 import StreamsPanel from '@/components/analytics/StreamsPanel';
@@ -28,6 +29,8 @@ function PanelForTab({ tab }: { tab: AnalyticsTab }) {
       return <StatsTablesPanel />;
     case 'predictions':
       return <PredictionsPanel />;
+    case 'finder':
+      return <SmartFinderPanel />;
     case 'streams':
       return <StreamsPanel />;
     case 'strategies':

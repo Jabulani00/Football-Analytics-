@@ -1,5 +1,12 @@
 import { Platform } from 'react-native';
 
+import {
+  buildTieredTables,
+  type TierFixture,
+  type TierTeamRow,
+  type TieredTables,
+} from '@/utils/tieredTables';
+
 /**
  * Client for the OddAlerts Football Data API (https://data.oddalerts.com/api).
  *
@@ -1315,4 +1322,70 @@ export async function computeTierPoints(
 
   tierCache.set(opts.season.seasonId, result);
   return result;
+}
+
+// ----- Tiered tables (Green head-to-head, Yellow/Red vs Green) -------------
+//
+// The spec: three colour tables built from a team's *current* zone.
+//   • 🟢 Green (top zone)    — ranked by a head-to-head mini-league among the
+//                              green teams (green-vs-green results only), NOT by
+//                              overall league points.
+//   • 🟡 Yellow (mid zone)   — ranked by results against the Green table.
+//   • 🔴 Red (bottom zone)   — ranked by results against the Green table.
+//
+// Zones come from the live standings, so — exactly like computeTierPoints — a
+// past result is judged by the opponent's tier *today*, not when it was played.
+
+export type { TierTeamRow, TieredTables };
+
+const tieredCache = new Map<number, TieredTables>();
+
+/**
+ * The three colour tables, ranked per the spec, computed from the season's
+ * finished results. Fetches the season's fixtures, keeps only this
+ * competition's finished matches, then delegates the ranking to the pure
+ * `buildTieredTables`. Cached per season id.
+ */
+export async function computeTieredTables(
+  opts: { competitionId: number; season: Season; standings: StandingRow[] },
+  signal?: AbortSignal,
+): Promise<TieredTables> {
+  const cached = tieredCache.get(opts.season.seasonId);
+  if (cached) return cached;
+
+  const { fromUnix, toUnix } = seasonWindowUnix(opts.season.seasonName);
+  const raw = await fetchAllFixturesBetween(
+    { fromUnix, toUnix, competitions: String(opts.competitionId), maxPages: 8 },
+    signal,
+  );
+
+  const fixtures: TierFixture[] = [];
+  for (const f of raw) {
+    if (normaliseStatus(f.status) !== 'FT') continue;
+    if (f.home_id == null || f.away_id == null || f.home_goals == null || f.away_goals == null) {
+      continue;
+    }
+    fixtures.push({
+      competitionId: f.competition_id,
+      seasonId: f.season_id ?? null,
+      homeId: f.home_id,
+      awayId: f.away_id,
+      homeGoals: f.home_goals,
+      awayGoals: f.away_goals,
+    });
+  }
+
+  const tables = buildTieredTables({
+    competitionId: opts.competitionId,
+    seasonId: opts.season.seasonId,
+    standings: opts.standings.map((r) => ({
+      teamId: r.teamId,
+      name: r.name,
+      rank: r.rank,
+      zone: r.zone,
+    })),
+    fixtures,
+  });
+  tieredCache.set(opts.season.seasonId, tables);
+  return tables;
 }

@@ -12,11 +12,22 @@ import { useRouter } from 'expo-router';
 
 import { useScoresFilter } from '@/components/layout/ScoresFilterContext';
 import CompetitionHeader from '@/components/scores/CompetitionHeader';
-import ScoresMatchRow from '@/components/scores/ScoresMatchRow';
+import FeedFixtureRow from '@/components/scores/FeedFixtureRow';
 import PageContainer from '@/components/shared/PageContainer';
+import SubTabBar from '@/components/shared/SubTabBar';
 import { useLiveFixtures } from '@/hooks/useLiveFixtures';
 import { groupByCompetition } from '@/services/oddAlerts';
+import type { MarketModule } from '@/utils/fixtureRecommendation';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
+
+type ModuleFilter = 'all' | MarketModule;
+
+const MODULE_TABS: { id: ModuleFilter; label: string }[] = [
+  { id: 'all', label: 'All markets' },
+  { id: 'result', label: 'Result' },
+  { id: 'goals', label: 'Goals' },
+  { id: 'btts', label: 'BTTS' },
+];
 
 const VIEW_LABEL: Record<string, string> = {
   all: 'All matches',
@@ -37,10 +48,14 @@ export default function LiveScoresFeed() {
   const { statusFilter, gender, kind, competitionId, setCompetitionId, setCompetitions } =
     useScoresFilter();
   const [resultsDays, setResultsDays] = useState(2);
+  const [recModule, setRecModule] = useState<ModuleFilter>('all');
   const { fixtures, loading, refreshing, error, lastUpdated, refresh } = useLiveFixtures(
     statusFilter,
     { resultsDays },
   );
+
+  // Best-bet recommendations only make sense where a game hasn't finished.
+  const showRecommendations = statusFilter !== 'ft';
 
   const scoped = useMemo(
     () => fixtures.filter((f) => f.gender === gender && f.kind === kind),
@@ -121,6 +136,13 @@ export default function LiveScoresFeed() {
         </View>
       ) : null}
 
+      {showRecommendations && !loading && !error && groups.length > 0 ? (
+        <View style={styles.recFilter}>
+          <Text style={styles.recFilterLabel}>⚡ BEST BET MARKET</Text>
+          <SubTabBar tabs={MODULE_TABS} active={recModule} onChange={setRecModule} />
+        </View>
+      ) : null}
+
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator color={theme.accentGreen} />
@@ -145,10 +167,11 @@ export default function LiveScoresFeed() {
             <CompetitionHeader group={group} />
             <View style={styles.list}>
               {group.fixtures.map((fixture) => (
-                <ScoresMatchRow
+                <FeedFixtureRow
                   key={fixture.id}
                   fixture={fixture}
-                  onPress={() =>
+                  module={recModule}
+                  onOpen={() =>
                     router.push({ pathname: '/match/[id]', params: { id: String(fixture.id) } })
                   }
                 />
@@ -274,6 +297,17 @@ const styles = StyleSheet.create({
   windowTextActive: {
     fontFamily: fonts.bodySemiBold,
     color: theme.textPrimary,
+  },
+  recFilter: {
+    marginBottom: spacing.md,
+    width: '100%',
+  },
+  recFilterLabel: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 10,
+    letterSpacing: 1,
+    color: theme.textMuted,
+    marginBottom: spacing.xs,
   },
   section: {
     marginBottom: spacing.md,

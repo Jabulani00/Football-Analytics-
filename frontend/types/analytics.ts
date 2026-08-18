@@ -98,6 +98,7 @@ export type AnalyticsTab =
   | 'overview'
   | 'tables'
   | 'predictions'
+  | 'finder'
   | 'streams'
   | 'strategies'
   | 'odds'

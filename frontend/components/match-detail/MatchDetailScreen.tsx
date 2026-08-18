@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
@@ -7,14 +7,18 @@ import LivePulse from '@/components/shared/LivePulse';
 import PageContainer from '@/components/shared/PageContainer';
 import TeamLogo from '@/components/shared/TeamLogo';
 import GroupStandingsView from '@/components/standings/GroupStandingsView';
+import TieredStandingsView from '@/components/standings/TieredStandingsView';
 import StandingsAnalyticsView from '@/components/league/StandingsAnalyticsView';
 import GoalTimingPanel from '@/components/match-detail/GoalTimingPanel';
+import FixtureRecommendationSection from '@/components/match-detail/FixtureRecommendationSection';
 import OddsValuePanel from '@/components/match-detail/OddsValuePanel';
 import H2HPanel from '@/components/match-detail/H2HPanel';
 import PressureMonitorPanel from '@/components/match-detail/PressureMonitorPanel';
 import PitchLineup from '@/components/match-detail/PitchLineup';
+import SubTabBar from '@/components/shared/SubTabBar';
 import { useMatchDetail } from '@/hooks/useMatchDetail';
 import {
+  computeTieredTables,
   mapFixture,
   standingsMovement,
   type Competition,
@@ -23,8 +27,10 @@ import {
   type OddsByMarket,
   type Probability,
   type RawFixtureDetail,
+  type Season,
   type SquadPlayer,
   type StandingRow,
+  type TieredTables,
 } from '@/services/oddAlerts';
 import type { MatchGoalEvent, MatchTimelineEvent } from '@/services/apiFootball';
 import type { StandingRow as BaseStandingRow } from '@/mock/matchData';
@@ -46,15 +52,22 @@ type MatchDetailScreenProps = {
   onBack: () => void;
 };
 
-type TabId = 'summary' | 'stats' | 'odds' | 'h2h' | 'lineups' | 'standings';
+type TabId = 'summary' | 'stats' | 'tableodds' | 'h2h' | 'lineups';
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'summary', label: 'Summary' },
   { id: 'stats', label: 'Stats' },
-  { id: 'odds', label: 'Odds' },
+  { id: 'tableodds', label: 'Table/Odds' },
   { id: 'h2h', label: 'H2H' },
   { id: 'lineups', label: 'Lineups' },
-  { id: 'standings', label: 'Table' },
+];
+
+type TableOddsView = 'table' | 'tiers' | 'odds';
+
+const TABLE_ODDS_VIEWS: { id: TableOddsView; label: string }[] = [
+  { id: 'table', label: 'League Table' },
+  { id: 'tiers', label: '🟢🟡🔴 Tiers' },
+  { id: 'odds', label: 'Odds & Value' },
 ];
 
 export default function MatchDetailScreen({ matchId, onBack }: MatchDetailScreenProps) {
@@ -258,8 +271,18 @@ export default function MatchDetailScreen({ matchId, onBack }: MatchDetailScreen
         />
       ) : tab === 'stats' ? (
         <StatsTab detail={detail} homeName={fixture.home.name} awayName={fixture.away.name} />
-      ) : tab === 'odds' ? (
-        <OddsTab detail={detail} homeName={fixture.home.name} awayName={fixture.away.name} />
+      ) : tab === 'tableodds' ? (
+        <TableOddsTab
+          detail={detail}
+          standings={standings}
+          groupCompetition={groupCompetition}
+          homeId={fixture.home.id}
+          awayId={fixture.away.id}
+          homeName={fixture.home.name}
+          awayName={fixture.away.name}
+          movement={movement}
+          onTeamPress={openTeam}
+        />
       ) : tab === 'lineups' ? (
         <LineupsTab
           squads={squads}
@@ -270,24 +293,11 @@ export default function MatchDetailScreen({ matchId, onBack }: MatchDetailScreen
           homeFormation={detail.home_formation}
           awayFormation={detail.away_formation}
         />
-      ) : tab === 'h2h' ? (
+      ) : (
         <H2HPanel
           matches={detail.h2h ?? []}
           homeName={fixture.home.name}
           awayName={fixture.away.name}
-        />
-      ) : (
-        <StandingsTab
-          standings={standings}
-          groupCompetition={groupCompetition}
-          homeId={fixture.home.id}
-          awayId={fixture.away.id}
-          homeName={fixture.home.name}
-          awayName={fixture.away.name}
-          movement={movement}
-          onTeamPress={openTeam}
-          odds={detail.odds}
-          probability={detail.probability}
         />
       )}
     </PageContainer>
@@ -346,9 +356,20 @@ function SummaryTab({
 }) {
   const prob = detail.probability;
   const scores = scoreBreakdown(detail);
+  const isLive = ['LIVE', 'HT', '1H', '2H', 'ET', 'BT', 'P', 'INT'].includes(detail.status);
 
   return (
     <View>
+      <FixtureRecommendationSection
+        probability={detail.probability}
+        odds={detail.odds}
+        homeName={homeName}
+        awayName={awayName}
+        homePosition={detail.home_position}
+        awayPosition={detail.away_position}
+        isLive={isLive}
+      />
+
       <MatchInfoCard detail={detail} homeName={homeName} awayName={awayName} />
 
       <PressureMonitorPanel
@@ -740,6 +761,106 @@ function LineupsTab({
         accent={theme.accentBlue}
         formation={awayFormation}
       />
+    </View>
+  );
+}
+
+// ----- Combined Table / Odds ----------------------------------------------
+
+/**
+ * One tab that fuses the league table, the colour-tier tables and the odds/value
+ * board into a single "intelligent" view, switched by an internal sub-nav.
+ * Nothing is lost — it reuses the existing StandingsTab (table + odds-value +
+ * bet finder) and OddsTab, and adds the green/yellow/red tiers.
+ */
+function TableOddsTab({
+  detail,
+  standings,
+  groupCompetition,
+  homeId,
+  awayId,
+  homeName,
+  awayName,
+  movement,
+  onTeamPress,
+}: {
+  detail: RawFixtureDetail;
+  standings: StandingRow[];
+  groupCompetition: Competition | null;
+  homeId: number | null;
+  awayId: number | null;
+  homeName: string;
+  awayName: string;
+  movement: { home: Movement; away: Movement } | null;
+  onTeamPress: (teamId: number | null, name: string) => void;
+}) {
+  const [view, setView] = useState<TableOddsView>('table');
+  const [tiered, setTiered] = useState<TieredTables | null>(null);
+  const [tiersLoading, setTiersLoading] = useState(false);
+
+  const seasonId = detail.season_id;
+  const canTier = !groupCompetition && seasonId != null && standings.length > 0;
+
+  useEffect(() => {
+    if (!canTier || seasonId == null) {
+      setTiered(null);
+      return;
+    }
+    const controller = new AbortController();
+    setTiersLoading(true);
+    const season: Season = {
+      seasonId,
+      seasonName: detail.season,
+      played: null,
+      progress: detail.season_progress ?? null,
+      isCurrent: true,
+    };
+    computeTieredTables(
+      { competitionId: detail.competition_id, season, standings },
+      controller.signal,
+    )
+      .then((t) => {
+        if (!controller.signal.aborted) setTiered(t);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!controller.signal.aborted) setTiersLoading(false);
+      });
+    return () => controller.abort();
+  }, [canTier, seasonId, detail.competition_id, detail.season, detail.season_progress, standings]);
+
+  return (
+    <View>
+      <SubTabBar tabs={TABLE_ODDS_VIEWS} active={view} onChange={setView} />
+
+      {view === 'table' ? (
+        <StandingsTab
+          standings={standings}
+          groupCompetition={groupCompetition}
+          homeId={homeId}
+          awayId={awayId}
+          homeName={homeName}
+          awayName={awayName}
+          movement={movement}
+          onTeamPress={onTeamPress}
+          odds={detail.odds}
+          probability={detail.probability}
+        />
+      ) : view === 'tiers' ? (
+        canTier ? (
+          <TieredStandingsView
+            tiered={tiered}
+            loading={tiersLoading}
+            onTeamPress={(row) => onTeamPress(row.teamId, row.name)}
+          />
+        ) : (
+          <Text style={styles.muted}>
+            Colour tiers need a league table for this season — not available here.
+          </Text>
+        )
+      ) : (
+        <OddsTab detail={detail} homeName={homeName} awayName={awayName} />
+      )}
     </View>
   );
 }

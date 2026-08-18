@@ -2,11 +2,55 @@ import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 import CompetitionPicker from '@/components/shared/CompetitionPicker';
+import RecommendationCard from '@/components/analytics/RecommendationCard';
 import SubTabBar from '@/components/shared/SubTabBar';
 import { useLiveCompetitions } from '@/hooks/useLiveCompetitions';
 import { useLiveFixturePredictions, type PredictedFixture } from '@/hooks/useLiveFixturePredictions';
 import type { FixturePrediction } from '@/services/predictionEngine';
+import {
+  buildRecommendation,
+  type FixtureRecommendation,
+  type MarketModule,
+} from '@/utils/fixtureRecommendation';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
+
+const IN_PLAY = new Set(['LIVE', 'HT', '1H', '2H', 'ET', 'BT', 'P', 'INT']);
+
+/** Build the recommendation for a predicted fixture, live-adjusted when in-play. */
+function recFor(item: PredictedFixture, modules?: MarketModule[]): FixtureRecommendation | null {
+  if (!item.prediction) return null;
+  const f = item.fixture;
+  const inPlay = IN_PLAY.has(f.status);
+  const live =
+    inPlay && f.home_goals != null && f.away_goals != null
+      ? { minute: f.elapsed ?? 0, homeGoals: f.home_goals, awayGoals: f.away_goals }
+      : null;
+  return buildRecommendation({
+    prediction: item.prediction,
+    homeName: f.home_name,
+    awayName: f.away_name,
+    homePosition: f.home_position,
+    awayPosition: f.away_position,
+    live,
+    modules,
+  });
+}
+
+type ModuleFilter = 'all' | MarketModule;
+type RiskFilter = 'all' | 'low' | 'medium';
+
+const MODULE_TABS: { id: ModuleFilter; label: string }[] = [
+  { id: 'all', label: 'All markets' },
+  { id: 'result', label: 'Result' },
+  { id: 'goals', label: 'Goals' },
+  { id: 'btts', label: 'BTTS' },
+];
+
+const RISK_TABS: { id: RiskFilter; label: string }[] = [
+  { id: 'all', label: 'Any risk' },
+  { id: 'medium', label: '≤ Medium' },
+  { id: 'low', label: '🟢 Low only' },
+];
 
 function pct(n: number) {
   return `${Math.round(n * 100)}%`;
@@ -99,6 +143,26 @@ export default function PredictionsPanel() {
       .sort((a, b) => getVal(b.prediction!) - getVal(a.prediction!));
   }, [withPred, activeBet, minProb]);
 
+  // Recommendation layer: module filter + risk screen over the fixtures above.
+  const [recModule, setRecModule] = useState<ModuleFilter>('all');
+  const [maxRisk, setMaxRisk] = useState<RiskFilter>('all');
+
+  const withRec = useMemo(() => {
+    const modulesParam = recModule === 'all' ? undefined : [recModule];
+    return filtered.map((item) => ({ item, rec: recFor(item, modulesParam) }));
+  }, [filtered, recModule]);
+
+  const riskFiltered = useMemo(
+    () =>
+      withRec.filter(({ rec }) => {
+        if (!rec) return true;
+        if (maxRisk === 'low') return rec.riskLevel === 'low';
+        if (maxRisk === 'medium') return rec.riskLevel !== 'high';
+        return true;
+      }),
+    [withRec, maxRisk],
+  );
+
   return (
     <View style={styles.container}>
       <Text style={styles.hint}>
@@ -140,6 +204,13 @@ export default function PredictionsPanel() {
         ) : null}
       </View>
 
+      {/* Best-bet screener — which market the recommendation draws from + a risk gate. */}
+      <View style={styles.screener}>
+        <Text style={styles.screenerLabel}>BEST BET · MODULE &amp; RISK</Text>
+        <SubTabBar tabs={MODULE_TABS} active={recModule} onChange={setRecModule} />
+        <SubTabBar tabs={RISK_TABS} active={maxRisk} onChange={setMaxRisk} />
+      </View>
+
       {!loading && withPred.length === 0 ? (
         <Text style={styles.empty}>
           No predictable upcoming fixtures for this competition yet (teams need
@@ -149,22 +220,24 @@ export default function PredictionsPanel() {
 
       {!loading && withPred.length > 0 ? (
         <Text style={styles.resultCount}>
-          {filtered.length} of {withPred.length} fixtures
+          {riskFiltered.length} of {withPred.length} fixtures
           {activeBet.value ? ` · ${activeBet.label}${minProb > 0 ? ` ${minProb}%+` : ''}` : ''}
+          {maxRisk !== 'all' ? ` · ${maxRisk === 'low' ? 'low risk' : '≤ medium risk'}` : ''}
         </Text>
       ) : null}
 
-      {!loading && withPred.length > 0 && filtered.length === 0 ? (
+      {!loading && withPred.length > 0 && riskFiltered.length === 0 ? (
         <Text style={styles.empty}>
-          No fixtures clear this filter — lower the probability or pick another market.
+          No fixtures clear this filter — loosen the risk gate, lower the probability, or pick another market.
         </Text>
       ) : null}
 
       <View style={styles.list}>
-        {filtered.slice(0, 40).map((item) => (
+        {riskFiltered.slice(0, 40).map(({ item, rec }) => (
           <FixtureCard
             key={item.fixture.id}
             item={item}
+            rec={rec}
             highlight={
               activeBet.value
                 ? { label: activeBet.label, value: pct(activeBet.value(item.prediction!)) }
@@ -179,15 +252,18 @@ export default function PredictionsPanel() {
 
 function FixtureCard({
   item,
+  rec,
   highlight,
 }: {
   item: PredictedFixture;
+  rec: FixtureRecommendation | null;
   highlight?: { label: string; value: string };
 }) {
   const { fixture, prediction } = item;
   const p = prediction as FixturePrediction;
   const kickoff = fixture.ko_human || fixture.date || '';
   const tier = confidenceTier(p.confidence);
+  const isLive = IN_PLAY.has(fixture.status);
 
   return (
     <View style={styles.card}>
@@ -248,6 +324,16 @@ function FixtureCard({
         </Text>
       </View>
       {p.lowData ? <Text style={styles.lowData}>Limited sample — treat with caution</Text> : null}
+
+      {/* Fused recommendation + risk read (live-adjusted when in-play). */}
+      {rec ? (
+        <RecommendationCard
+          rec={rec}
+          homePosition={fixture.home_position}
+          awayPosition={fixture.away_position}
+          isLive={isLive}
+        />
+      ) : null}
     </View>
   );
 }

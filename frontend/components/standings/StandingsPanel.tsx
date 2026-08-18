@@ -7,7 +7,9 @@ import ScoresMatchRow from '@/components/scores/ScoresMatchRow';
 import CountryFlag from '@/components/shared/CountryFlag';
 import PageContainer from '@/components/shared/PageContainer';
 import GroupStandingsView from '@/components/standings/GroupStandingsView';
+import TieredStandingsView from '@/components/standings/TieredStandingsView';
 import StandingsAnalyticsView from '@/components/league/StandingsAnalyticsView';
+import SubTabBar from '@/components/shared/SubTabBar';
 import { useStandings } from '@/hooks/useStandings';
 import { apiStandingsToBase, teamIdByName } from '@/utils/standingsAdapter';
 import {
@@ -26,10 +28,11 @@ export default function StandingsPanel() {
 
   const competition = selectedCompetition;
   const isGroups = isGroupStageTournament(competition?.name ?? '');
-  const { standings, loading, error } = useStandings(
+  const { standings, tiered, loading, error } = useStandings(
     isGroups ? null : competition,
     isGroups ? null : selectedSeasonId,
   );
+  const [view, setView] = useState<'league' | 'tiers'>('league');
 
   if (!competition) return null;
 
@@ -91,14 +94,38 @@ export default function StandingsPanel() {
       ) : standings.length === 0 ? (
         <Text style={styles.muted}>No standings available for this season.</Text>
       ) : (
-        <StandingsAnalyticsView
-          base={apiStandingsToBase(standings)}
-          seasonLabel={competition.name}
-          onTeamPress={(team) => {
-            const id = teamIdByName(standings).get(team);
-            if (id != null) router.push({ pathname: '/team/[slug]', params: { slug: String(id), name: team } });
-          }}
-        />
+        <>
+          <SubTabBar
+            tabs={[
+              { id: 'league', label: 'League table' },
+              { id: 'tiers', label: '🟢🟡🔴 Tier tables' },
+            ]}
+            active={view}
+            onChange={(id) => setView(id as 'league' | 'tiers')}
+          />
+          {view === 'league' ? (
+            <StandingsAnalyticsView
+              base={apiStandingsToBase(standings)}
+              seasonLabel={competition.name}
+              onTeamPress={(team) => {
+                const id = teamIdByName(standings).get(team);
+                if (id != null)
+                  router.push({ pathname: '/team/[slug]', params: { slug: String(id), name: team } });
+              }}
+            />
+          ) : (
+            <TieredStandingsView
+              tiered={tiered}
+              loading={loading}
+              onTeamPress={(row) =>
+                router.push({
+                  pathname: '/team/[slug]',
+                  params: { slug: String(row.teamId), name: row.name },
+                })
+              }
+            />
+          )}
+        </>
       )}
     </PageContainer>
   );

@@ -13,6 +13,7 @@
     "db:export": "python ../backend/export_for_expo.py && python ../backend/build_vectors.py",
     "build": "npm run export-data && expo export -p web",
     "vercel-build": "npm run export-data && expo export -p web",
+    "test": "tsx scripts/tieredTables.test.ts && tsx scripts/fixtureRecommendation.test.ts && tsx scripts/apiRecommendationAdapter.test.ts",
     "lint": "expo lint"
   },
   "engines": {
