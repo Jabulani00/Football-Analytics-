@@ -3,7 +3,18 @@ import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import SectionLabel from '@/components/shared/SectionLabel';
 import type { StandingRow } from '@/mock/matchData';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
-import { getPosZone, type PosZone } from '@/utils/standingsAnalytics';
+import { getPosZone, type MetricColumn, type PosZone } from '@/utils/standingsAnalytics';
+
+type TierZone = 'top' | 'mid' | 'bottom';
+const TIER_COLOR: Record<TierZone, string> = { top: '#16A34A', mid: '#D97706', bottom: '#DC2626' };
+
+/** Green / yellow / red category by table thirds (top / middle / bottom). */
+function getTierZone(pos: number, total: number): TierZone {
+  const third = Math.max(1, Math.ceil(total / 3));
+  if (pos <= third) return 'top';
+  if (pos > total - third) return 'bottom';
+  return 'mid';
+}
 
 type ZoneSeparatorSpec = { afterPos: number; label: string };
 
@@ -18,8 +29,12 @@ type StandingsTableProps = {
   zoneSeparators?: ZoneSeparatorSpec[];
   /** Colour the rank number by promotion/relegation/cup-qualification zone. */
   colorRank?: boolean;
+  /** Colour the rank number by green/yellow/red tier (table thirds) instead. */
+  tierColor?: boolean;
   /** Draw a band divider after this many rows (color-band analytics tables). */
   bandDivideAfter?: number;
+  /** Replace the Form column with a metric value column (probability tables). */
+  metricColumn?: MetricColumn;
   /** Make rows tappable (e.g. open a team). Receives the row's team name. */
   onRowPress?: (team: string) => void;
 };
@@ -85,19 +100,24 @@ function TableRow({
   highlighted,
   separators,
   colorRank,
+  tierColor,
   total,
+  metricCell,
   onPress,
 }: {
   row: StandingRow;
   highlighted: boolean;
   separators: ZoneSeparatorSpec[];
   colorRank: boolean;
+  tierColor: boolean;
   total: number;
+  metricCell?: { display: string; sub: string };
   onPress?: () => void;
 }) {
   const separator = separators.find((z) => z.afterPos === row.pos);
-  const zone = colorRank ? getPosZone(row.pos, total) : null;
-  const posColor = zone ? ZONE_COLOR[zone] : undefined;
+  const tierZone = tierColor ? getTierZone(row.pos, total) : null;
+  const zone = !tierColor && colorRank ? getPosZone(row.pos, total) : null;
+  const posColor = tierZone ? TIER_COLOR[tierZone] : zone ? ZONE_COLOR[zone] : undefined;
 
   return (
     <>
@@ -105,6 +125,7 @@ function TableRow({
         onPress={onPress}
         style={({ pressed, hovered }) => [
           styles.row,
+          tierZone ? { borderLeftColor: TIER_COLOR[tierZone] } : null,
           highlighted && styles.rowHighlighted,
           (pressed || (Platform.OS === 'web' && hovered)) && styles.rowHover,
           onPress && Platform.OS === 'web' ? ({ cursor: 'pointer' } as object) : null,
@@ -124,7 +145,16 @@ function TableRow({
         <Text style={styles.cell}>{row.gd > 0 ? `+${row.gd}` : row.gd}</Text>
         <Text style={[styles.cell, styles.colPts]}>{row.points}</Text>
         <View style={styles.colForm}>
-          <FormPills form={row.form} />
+          {metricCell ? (
+            <View style={styles.metricCell}>
+              <Text style={styles.metricValue}>{metricCell.display}</Text>
+              <Text style={styles.metricSub} numberOfLines={1}>
+                {metricCell.sub}
+              </Text>
+            </View>
+          ) : (
+            <FormPills form={row.form} />
+          )}
         </View>
       </Pressable>
       {separator ? <ZoneSeparator label={separator.label} /> : null}
@@ -138,7 +168,9 @@ export default function StandingsTable({
   seasonLabel = 'SCOTTISH PREMIERSHIP — 2024/25',
   zoneSeparators = DEFAULT_ZONE_SEPARATORS,
   colorRank = false,
+  tierColor = false,
   bandDivideAfter,
+  metricColumn,
   onRowPress,
 }: StandingsTableProps) {
   const highlights = highlightTeams ?? [];
@@ -157,7 +189,7 @@ export default function StandingsTable({
         <Text style={styles.headerCell}>GA</Text>
         <Text style={styles.headerCell}>GD</Text>
         <Text style={[styles.headerCell, styles.colPts]}>Pts</Text>
-        <Text style={[styles.headerCell, styles.colForm]}>Form</Text>
+        <Text style={[styles.headerCell, styles.colForm]}>{metricColumn ? metricColumn.header : 'Form'}</Text>
       </View>
       {standings.map((row, i) => (
         <View key={row.team}>
@@ -166,7 +198,9 @@ export default function StandingsTable({
             highlighted={highlights.includes(row.team)}
             separators={zoneSeparators}
             colorRank={colorRank}
+            tierColor={tierColor}
             total={standings.length}
+            metricCell={metricColumn?.values.get(row.team)}
             onPress={onRowPress ? () => onRowPress(row.team) : undefined}
           />
           {bandDivideAfter != null && i + 1 === bandDivideAfter ? <BandDivider /> : null}
@@ -246,6 +280,19 @@ const styles = StyleSheet.create({
   colForm: {
     width: 80,
     alignItems: 'flex-end',
+  },
+  metricCell: {
+    alignItems: 'flex-end',
+  },
+  metricValue: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 13,
+    color: theme.textPrimary,
+  },
+  metricSub: {
+    fontFamily: fonts.body,
+    fontSize: 9,
+    color: theme.textFaint,
   },
   formRow: {
     flexDirection: 'row',

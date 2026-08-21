@@ -33,12 +33,24 @@ export type Selection =
   | { kind: 'form'; window: FormWindow; split: Split; period: Period }
   | { kind: 'prob'; metric: ProbMetricKey; period: Period };
 
+/** The value column shown for a probability metric (the stat it's ranked by). */
+export type MetricColumn = {
+  /** Short header, e.g. "SC%" or "E20". */
+  header: string;
+  /** Full metric label. */
+  full: string;
+  /** Per-team display: the headline value + a supporting stat line. */
+  values: Map<string, { display: string; sub: string }>;
+};
+
 export type StandingsView = {
   rows: StandingRow[];
   /** Insert a visual divider after this many rows (band tables only). */
   bandDivideAfter?: number;
   /** Human-readable description of the active filter. */
   caption: string;
+  /** Present for probability tables — the value shown + ranked per team. */
+  metric?: MetricColumn;
 };
 
 // ---------------------------------------------------------------------------
@@ -562,16 +574,73 @@ function probValue(row: StandingRow, games: Game[], metric: ProbMetricKey): numb
   }
 }
 
+/** Metrics that read as an average number rather than a percentage. */
+const AVG_METRICS = new Set<ProbMetricKey>(['scm', 'concm', 'avg', 'handicap']);
+
+/**
+ * Estimated average first-goal minute for a team. No real minute data exists in
+ * the synthetic history, so — like the app's other goal-timing estimates — we
+ * derive a deterministic, plausible minute: stronger attacks score earlier.
+ */
+function synthFirstGoalMinute(row: StandingRow, games: Game[]): number {
+  const rng = makeRng(hash(row.team) * 53 + 7);
+  const gpm = games.length ? games.reduce((s, g) => s + g.gf, 0) / games.length : 0.9;
+  const strength = Math.min(1, gpm / 2.4); // 0 (blunt) … 1 (prolific)
+  const minute = 55 - strength * 34 - (rng() - 0.5) * 8;
+  return Math.max(6, Math.min(80, Math.round(minute)));
+}
+
+type Cell = { value: number; asc: boolean; display: string; sub: string };
+
+/**
+ * The value + supporting stat shown for one team on a probability metric, plus
+ * how to rank it (asc = smaller-is-better, e.g. earliest goal first).
+ */
+function metricCell(row: StandingRow, games: Game[], metric: ProbMetricKey): Cell {
+  const n = games.length;
+
+  // Early goals — ranked by the EARLIEST average first-goal minute.
+  if (metric === 'early1h') {
+    const minute = synthFirstGoalMinute(row, games);
+    const scored = Math.round(pct(games, (g) => g.gf1 >= 1));
+    return { value: minute, asc: true, display: `${minute}'`, sub: `${scored}% score 1st half` };
+  }
+
+  const v = probValue(row, games, metric);
+
+  if (AVG_METRICS.has(metric)) {
+    const display = metric === 'handicap' ? `${v >= 0 ? '+' : ''}${v.toFixed(2)}` : v.toFixed(2);
+    const sub = metric === 'handicap' ? 'avg goal margin' : 'goals / match';
+    return { value: v, asc: false, display, sub };
+  }
+
+  // Percentage metrics: show the % and how many of the games hit it.
+  const hits = Math.round((v / 100) * n);
+  return { value: v, asc: false, display: `${Math.round(v)}%`, sub: `${hits} of ${n}` };
+}
+
 function buildProbTable(
   base: StandingRow[],
   games: Map<string, Game[]>,
   metric: ProbMetricKey,
   period: Period,
-): StandingRow[] {
-  return [...base]
-    .map((r) => ({ row: r, v: probValue(r, projectPeriod(games.get(r.team)!, period), metric) }))
-    .sort((a, b) => b.v - a.v)
-    .map(({ row }, i) => ({ ...row, pos: i + 1 }));
+): { rows: StandingRow[]; metric: MetricColumn } {
+  const cells = base.map((r) => ({
+    row: r,
+    cell: metricCell(r, projectPeriod(games.get(r.team)!, period), metric),
+  }));
+
+  const asc = cells[0]?.cell.asc ?? false;
+  cells.sort((a, b) => (asc ? a.cell.value - b.cell.value : b.cell.value - a.cell.value));
+
+  const values = new Map<string, { display: string; sub: string }>();
+  for (const { row, cell } of cells) values.set(row.team, { display: cell.display, sub: cell.sub });
+
+  const meta = PROB_METRICS.find((m) => m.key === metric) ?? PROB_METRICS[0];
+  return {
+    rows: cells.map(({ row }, i) => ({ ...row, pos: i + 1 })),
+    metric: { header: meta.short, full: meta.label, values },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -692,10 +761,12 @@ export function buildStandingsView(base: StandingRow[], sel: Selection): Standin
   }
 
   // prob
-  const metric = PROB_METRICS.find((m) => m.key === sel.metric) ?? PROB_METRICS[0];
+  const meta = PROB_METRICS.find((m) => m.key === sel.metric) ?? PROB_METRICS[0];
+  const { rows, metric } = buildProbTable(base, games, sel.metric, sel.period);
   return {
-    rows: buildProbTable(base, games, sel.metric, sel.period),
-    caption: `${PERIOD_LABEL[sel.period]} · ranked by ${metric.label} (${metric.short})`,
+    rows,
+    metric,
+    caption: `${PERIOD_LABEL[sel.period]} · ranked by ${meta.label} (${meta.short})`,
   };
 }
 

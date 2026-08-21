@@ -167,10 +167,9 @@ export default function StandingsAnalyticsView({
 
           {group === 'standard' ? (
             <View style={styles.legend}>
-              <LegendDot color={theme.accentGreen} label="Promotion" />
-              <LegendDot color={theme.accentBlue} label="Champions Lg" />
-              <LegendDot color={theme.accentPurple} label="Europa Lg" />
-              <LegendDot color={theme.loss} label="Relegation" />
+              <LegendDot color="#16A34A" label="Top tier" />
+              <LegendDot color="#D97706" label="Mid tier" />
+              <LegendDot color="#DC2626" label="Bottom tier" />
             </View>
           ) : null}
 
@@ -179,9 +178,10 @@ export default function StandingsAnalyticsView({
             seasonLabel={seasonLabel}
             highlightTeams={highlightTeams}
             onRowPress={onTeamPress}
-            colorRank={group === 'standard'}
-            zoneSeparators={group === 'standard' ? undefined : []}
+            tierColor={group === 'standard'}
+            zoneSeparators={[]}
             bandDivideAfter={view.bandDivideAfter}
+            metricColumn={view.metric}
           />
         </>
       )}
