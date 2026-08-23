@@ -2,18 +2,22 @@
  * Pure tier-table computation — no network, no React Native imports, so it can
  * be unit-tested directly (see scripts/tieredTables.test.ts).
  *
- * The spec: three colour tables built from a team's *current* zone.
- *   • 🟢 Green (top zone)    — ranked by a head-to-head mini-league among the
- *                              green teams (green-vs-green results only), NOT by
- *                              overall league points.
- *   • 🟡 Yellow (mid zone)   — ranked by results against the Green table.
- *   • 🔴 Red (bottom zone)   — ranked by results against the Green table.
+ * Three colour tables are built from a team's *current* zone (top/mid/bottom
+ * thirds of the live table). Every team also gets its record broken down by the
+ * opponent's zone, so a table can be ranked "vs Green", "vs Yellow", "vs Red"
+ * or "Overall":
+ *   • 🟢 Green (top)    — by default a head-to-head mini-league among themselves.
+ *   • 🟡 Yellow (mid)   — by default ranked by results against the Green table.
+ *   • 🔴 Red (bottom)   — by default ranked by results against the Green table.
  *
  * Zones come from the live standings, so a past result is judged by the
  * opponent's tier *today*, not the tier it held when the match was played.
+ * Only fixtures from the SAME competition and season are ever counted.
  */
 
 export type TierZone = 'top' | 'mid' | 'bottom';
+/** What a table's record/ranking is measured against. */
+export type TargetZone = TierZone | 'all';
 
 /** One standings row, reduced to what the tier tables need. */
 export type TierStanding = {
@@ -33,12 +37,29 @@ export type TierFixture = {
   awayGoals: number;
 };
 
+/** A W/D/L record over some set of games. */
+export type TierRecord = {
+  played: number;
+  won: number;
+  drawn: number;
+  lost: number;
+  goalsFor: number;
+  goalsAgainst: number;
+  goalDiff: number;
+  points: number;
+};
+
 export type TierTeamRow = {
   teamId: number;
   name: string;
   /** The team's position in the full league table (for reference). */
   overallRank: number;
-  /** Games / record counted for THIS tier's ranking (not the whole season). */
+  /** The team's own colour tier. */
+  zone: TierZone;
+  /** Record split by the opponent's tier, plus `all` = every comp/season game. */
+  byZone: Record<TargetZone, TierRecord>;
+  // Flat convenience fields = the record vs the Green (top) table — the default
+  // measure. Kept so existing consumers keep working.
   played: number;
   won: number;
   drawn: number;
@@ -90,10 +111,52 @@ function recordResult(acc: TierAccum, gf: number, ga: number): void {
   }
 }
 
+function toRecord(a: TierAccum): TierRecord {
+  return {
+    played: a.played,
+    won: a.won,
+    drawn: a.drawn,
+    lost: a.lost,
+    goalsFor: a.gf,
+    goalsAgainst: a.ga,
+    goalDiff: a.gf - a.ga,
+    points: a.points,
+  };
+}
+
+function sumAccum(...accs: TierAccum[]): TierAccum {
+  const out = emptyAccum();
+  for (const a of accs) {
+    out.played += a.played;
+    out.won += a.won;
+    out.drawn += a.drawn;
+    out.lost += a.lost;
+    out.gf += a.gf;
+    out.ga += a.ga;
+    out.points += a.points;
+  }
+  return out;
+}
+
 /**
- * Build the three ranked colour tables from standings + finished fixtures.
- * Only fixtures from `competitionId` (and, when the fixture carries one, the
- * matching `seasonId`) are counted.
+ * Rank a colour table by a chosen target zone (points, then goal difference,
+ * goals for, then name). Used to re-rank when the "measured vs" filter changes.
+ */
+export function rankTierRows(rows: TierTeamRow[], target: TargetZone): TierTeamRow[] {
+  return [...rows].sort((a, b) => {
+    const ra = a.byZone[target];
+    const rb = b.byZone[target];
+    if (rb.points !== ra.points) return rb.points - ra.points;
+    if (rb.goalDiff !== ra.goalDiff) return rb.goalDiff - ra.goalDiff;
+    if (rb.goalsFor !== ra.goalsFor) return rb.goalsFor - ra.goalsFor;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+/**
+ * Build the three colour tables from standings + finished fixtures, each team
+ * carrying its record vs every tier. Only fixtures from `competitionId` (and,
+ * when the fixture carries one, the matching `seasonId`) are counted.
  */
 export function buildTieredTables(opts: {
   competitionId: number;
@@ -102,85 +165,89 @@ export function buildTieredTables(opts: {
   fixtures: TierFixture[];
 }): TieredTables {
   const zoneByTeam = new Map<number, TierZone>();
-  const infoByTeam = new Map<number, { name: string; overallRank: number }>();
+  const infoByTeam = new Map<number, { name: string; overallRank: number; zone: TierZone }>();
   for (const r of opts.standings) {
     zoneByTeam.set(r.teamId, r.zone);
-    infoByTeam.set(r.teamId, { name: r.name, overallRank: r.rank });
+    infoByTeam.set(r.teamId, { name: r.name, overallRank: r.rank, zone: r.zone });
   }
 
-  const greenAcc = new Map<number, TierAccum>(); // green-vs-green mini-league
-  const yellowAcc = new Map<number, TierAccum>(); // mid team's record vs green
-  const redAcc = new Map<number, TierAccum>(); // bottom team's record vs green
-  // Pairwise head-to-head points among green teams, keyed `${teamId}:${oppId}`,
-  // used to break ties in the green table (the "that match decides it" rule).
+  // Per team: record vs each opponent zone.
+  const byZoneAcc = new Map<number, Record<TierZone, TierAccum>>();
+  // Pairwise head-to-head points among green teams (green table tiebreak).
   const h2hPoints = new Map<string, number>();
 
-  const bump = (m: Map<number, TierAccum>, id: number): TierAccum => {
-    let a = m.get(id);
-    if (!a) {
-      a = emptyAccum();
-      m.set(id, a);
+  const zoneRec = (id: number, zone: TierZone): TierAccum => {
+    let rec = byZoneAcc.get(id);
+    if (!rec) {
+      rec = { top: emptyAccum(), mid: emptyAccum(), bottom: emptyAccum() };
+      byZoneAcc.set(id, rec);
     }
-    return a;
+    return rec[zone];
   };
 
   for (const f of opts.fixtures) {
-    // Only matches from THIS competition count — never cup ties or other
-    // competitions the same teams also play in.
+    // Only matches from THIS competition + season count — never cup ties or
+    // other competitions/seasons the same teams also play in.
     if (f.competitionId !== opts.competitionId) continue;
     if (opts.seasonId != null && f.seasonId != null && f.seasonId !== opts.seasonId) continue;
 
-    const hId = f.homeId;
-    const aId = f.awayId;
-    const hg = f.homeGoals;
-    const ag = f.awayGoals;
+    const { homeId: hId, awayId: aId, homeGoals: hg, awayGoals: ag } = f;
     const hZone = zoneByTeam.get(hId);
     const aZone = zoneByTeam.get(aId);
-    if (!hZone || !aZone) continue;
+    if (!hZone || !aZone) continue; // both teams must be in the current table
 
-    // 🟢 Green: only matches between two current top-zone teams.
+    // Each team's result recorded against the opponent's CURRENT tier.
+    recordResult(zoneRec(hId, aZone), hg, ag);
+    recordResult(zoneRec(aId, hZone), ag, hg);
+
+    // Green head-to-head: pairwise points among two top-zone teams.
     if (hZone === 'top' && aZone === 'top') {
-      recordResult(bump(greenAcc, hId), hg, ag);
-      recordResult(bump(greenAcc, aId), ag, hg);
       const hPts = hg > ag ? 3 : hg === ag ? 1 : 0;
       const aPts = ag > hg ? 3 : hg === ag ? 1 : 0;
       h2hPoints.set(`${hId}:${aId}`, (h2hPoints.get(`${hId}:${aId}`) ?? 0) + hPts);
       h2hPoints.set(`${aId}:${hId}`, (h2hPoints.get(`${aId}:${hId}`) ?? 0) + aPts);
     }
-
-    // 🟡 Yellow / 🔴 Red: a mid/bottom team's result against a green opponent.
-    if (aZone === 'top' && hZone === 'mid') recordResult(bump(yellowAcc, hId), hg, ag);
-    if (aZone === 'top' && hZone === 'bottom') recordResult(bump(redAcc, hId), hg, ag);
-    if (hZone === 'top' && aZone === 'mid') recordResult(bump(yellowAcc, aId), ag, hg);
-    if (hZone === 'top' && aZone === 'bottom') recordResult(bump(redAcc, aId), ag, hg);
   }
 
-  const toRow = (teamId: number, acc: TierAccum): TierTeamRow => {
+  const toRow = (teamId: number): TierTeamRow => {
     const info = infoByTeam.get(teamId)!;
+    const rec = byZoneAcc.get(teamId) ?? {
+      top: emptyAccum(),
+      mid: emptyAccum(),
+      bottom: emptyAccum(),
+    };
+    const byZone: Record<TargetZone, TierRecord> = {
+      top: toRecord(rec.top),
+      mid: toRecord(rec.mid),
+      bottom: toRecord(rec.bottom),
+      all: toRecord(sumAccum(rec.top, rec.mid, rec.bottom)),
+    };
+    // Flat fields mirror the vs-Green (top) record — the default measure.
     return {
       teamId,
       name: info.name,
       overallRank: info.overallRank,
-      played: acc.played,
-      won: acc.won,
-      drawn: acc.drawn,
-      lost: acc.lost,
-      goalsFor: acc.gf,
-      goalsAgainst: acc.ga,
-      goalDiff: acc.gf - acc.ga,
-      points: acc.points,
+      zone: info.zone,
+      byZone,
+      played: byZone.top.played,
+      won: byZone.top.won,
+      drawn: byZone.top.drawn,
+      lost: byZone.top.lost,
+      goalsFor: byZone.top.goalsFor,
+      goalsAgainst: byZone.top.goalsAgainst,
+      goalDiff: byZone.top.goalDiff,
+      points: byZone.top.points,
     };
   };
 
   // Every team keeps its tier slot even before it has a qualifying result.
-  const buildRows = (zone: TierZone, acc: Map<number, TierAccum>): TierTeamRow[] =>
-    opts.standings
-      .filter((r) => r.zone === zone)
-      .map((r) => toRow(r.teamId, acc.get(r.teamId) ?? emptyAccum()));
+  const rowsFor = (zone: TierZone): TierTeamRow[] =>
+    opts.standings.filter((r) => r.zone === zone).map((r) => toRow(r.teamId));
 
-  const green = buildRows('top', greenAcc).sort((a, b) => {
+  // Green defaults to the head-to-head mini-league (vs top), with the pairwise
+  // tiebreak; yellow/red default to their record vs Green (top).
+  const green = rowsFor('top').sort((a, b) => {
     if (b.points !== a.points) return b.points - a.points;
-    // Tied on mini-league points → the head-to-head between them decides it.
     const ab = h2hPoints.get(`${a.teamId}:${b.teamId}`) ?? 0;
     const ba = h2hPoints.get(`${b.teamId}:${a.teamId}`) ?? 0;
     if (ab !== ba) return ba - ab;
@@ -189,16 +256,9 @@ export function buildTieredTables(opts: {
     return a.name.localeCompare(b.name);
   });
 
-  const vsGreenSort = (a: TierTeamRow, b: TierTeamRow): number => {
-    if (b.points !== a.points) return b.points - a.points;
-    if (b.goalDiff !== a.goalDiff) return b.goalDiff - a.goalDiff;
-    if (b.goalsFor !== a.goalsFor) return b.goalsFor - a.goalsFor;
-    return a.name.localeCompare(b.name);
-  };
-
   return {
     green,
-    yellow: buildRows('mid', yellowAcc).sort(vsGreenSort),
-    red: buildRows('bottom', redAcc).sort(vsGreenSort),
+    yellow: rankTierRows(rowsFor('mid'), 'top'),
+    red: rankTierRows(rowsFor('bottom'), 'top'),
   };
 }

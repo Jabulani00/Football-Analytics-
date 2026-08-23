@@ -6,6 +6,7 @@
  */
 import {
   buildTieredTables,
+  rankTierRows,
   type TierFixture,
   type TierStanding,
   type TierTeamRow,
@@ -154,6 +155,39 @@ console.log('Test D — a team missing from standings (unknown zone) is ignored'
   const t = buildTieredTables({ competitionId: 100, seasonId: 1, standings, fixtures });
   eq('T1 counts only the known-opponent game', t.green.find((r) => r.teamId === 1)!.played, 1);
   eq('T1 green points = 3', t.green.find((r) => r.teamId === 1)!.points, 3);
+}
+
+// ---------------------------------------------------------------------------
+console.log('Test E — record vs every tier (vs Yellow / vs Red / Overall) + re-ranking');
+// ---------------------------------------------------------------------------
+{
+  const standings: TierStanding[] = [
+    s(1, 1, 'top'),
+    s(2, 2, 'top'),
+    s(3, 3, 'mid'), // Y1
+    s(4, 4, 'mid'), // Y2
+    s(5, 5, 'bottom'), // R1
+    s(6, 6, 'bottom'), // R2
+  ];
+  const fixtures: TierFixture[] = [
+    f(3, 1, 0, 1), // Y1 loses to green G1  → Y1 vs top: L
+    f(3, 4, 3, 0), // Y1 beats mid Y2       → Y1 vs mid: W
+    f(3, 5, 2, 2), // Y1 draws bottom R1     → Y1 vs bottom: D
+    f(3, 4, 9, 0, { competitionId: 999 }), // other competition → ignored
+  ];
+  const t = buildTieredTables({ competitionId: 100, seasonId: 1, standings, fixtures });
+  const y1 = t.yellow.find((r) => r.teamId === 3)!;
+
+  eq('Y1 vs Green (flat/primary) = 0 pts', y1.points, 0);
+  eq('Y1 vs Yellow = 3 pts (beat Y2)', y1.byZone.mid.points, 3);
+  eq('Y1 vs Red = 1 pt (drew R1)', y1.byZone.bottom.points, 1);
+  eq('Y1 overall = 3 games, 4 pts', [y1.byZone.all.played, y1.byZone.all.points], [3, 4]);
+  eq('cross-competition game excluded from vs-Yellow', y1.byZone.mid.played, 1);
+
+  const byMid = rankTierRows(t.yellow, 'mid');
+  eq('re-ranked vs Yellow puts Y1 first', byMid[0].teamId, 3);
+  const byAll = rankTierRows(t.yellow, 'all');
+  eq('re-ranked Overall puts Y1 first', byAll[0].teamId, 3);
 }
 
 // ---------------------------------------------------------------------------
