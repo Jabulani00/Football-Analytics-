@@ -165,21 +165,12 @@ export default function StandingsAnalyticsView({
         <>
           <Text style={styles.caption}>{view.caption}</Text>
 
-          {group === 'standard' ? (
-            <View style={styles.legend}>
-              <LegendDot color="#16A34A" label="Top tier" />
-              <LegendDot color="#D97706" label="Mid tier" />
-              <LegendDot color="#DC2626" label="Bottom tier" />
-            </View>
-          ) : null}
-
           <StandingsTable
             standings={view.rows}
             seasonLabel={seasonLabel}
             highlightTeams={highlightTeams}
             onRowPress={onTeamPress}
             tierColor={group === 'standard'}
-            zoneSeparators={[]}
             bandDivideAfter={view.bandDivideAfter}
             metricColumn={view.metric}
           />
@@ -303,15 +294,6 @@ function leanText(a: number, b: number, marketLabel: string): string {
   return `→ ${marketLabel} is a coin-flip — check other markets`;
 }
 
-function LegendDot({ color, label }: { color: string; label: string }) {
-  return (
-    <View style={styles.legendItem}>
-      <View style={[styles.legendSwatch, { backgroundColor: color }]} />
-      <Text style={styles.legendText}>{label}</Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   wrap: { width: '100%' },
   caption: {
@@ -320,16 +302,6 @@ const styles = StyleSheet.create({
     color: theme.textPrimary,
     marginBottom: spacing.sm,
   },
-  legend: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.md,
-    marginBottom: spacing.sm,
-  },
-  legendItem: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
-  legendSwatch: { width: 10, height: 10, borderRadius: 2 },
-  legendText: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted },
-
   // Bet Finder
   fixtureCard: {
     backgroundColor: theme.surfaceMuted,

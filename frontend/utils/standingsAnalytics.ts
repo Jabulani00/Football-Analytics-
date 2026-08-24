@@ -484,7 +484,7 @@ export const PROB_METRICS: ProbMetric[] = [
   { key: 'handicap', label: 'Handicap (avg margin)', short: 'HCP' },
   { key: 'early1h', label: 'Early goals — first 20 min', short: 'E20' },
   { key: 'early2h', label: 'Early goals — up to 60 min', short: 'E60' },
-  { key: 'earlyConc', label: 'Early goals conceded', short: 'EC' },
+  { key: 'earlyConc', label: 'Early goals conceded — first 20 min', short: 'EC' },
   { key: 'late', label: 'Late goals — from 70 min', short: 'L70' },
 ];
 
@@ -578,16 +578,57 @@ function probValue(row: StandingRow, games: Game[], metric: ProbMetricKey): numb
 const AVG_METRICS = new Set<ProbMetricKey>(['scm', 'concm', 'avg', 'handicap']);
 
 /**
- * Estimated average first-goal minute for a team. No real minute data exists in
- * the synthetic history, so — like the app's other goal-timing estimates — we
- * derive a deterministic, plausible minute: stronger attacks score earlier.
+ * Metrics that are about *when* a goal arrives rather than how often. These
+ * show a minute as the headline value and rank by it, so the table answers
+ * "who gets there first?" — the percentage moves to the supporting stat line.
  */
-function synthFirstGoalMinute(row: StandingRow, games: Game[]): number {
-  const rng = makeRng(hash(row.team) * 53 + 7);
-  const gpm = games.length ? games.reduce((s, g) => s + g.gf, 0) / games.length : 0.9;
-  const strength = Math.min(1, gpm / 2.4); // 0 (blunt) … 1 (prolific)
-  const minute = 55 - strength * 34 - (rng() - 0.5) * 8;
-  return Math.max(6, Math.min(80, Math.round(minute)));
+type TimingSpec = {
+  /** Goals the team scores, or the ones it ships. */
+  side: 'for' | 'against';
+  /** Which goal of the game we time — the opening one or the closing one. */
+  edge: 'first' | 'last';
+  /** Wording for the percentage on the stat line, e.g. "by 20'". */
+  windowLabel: string;
+};
+
+const TIMING_SPECS: Partial<Record<ProbMetricKey, TimingSpec>> = {
+  early1h: { side: 'for', edge: 'first', windowLabel: "by 20'" },
+  early2h: { side: 'for', edge: 'first', windowLabel: "by 60'" },
+  earlyConc: { side: 'against', edge: 'first', windowLabel: "by 20'" },
+  late: { side: 'for', edge: 'last', windowLabel: "from 70'" },
+};
+
+/** The minutes a period can actually contain a goal in. */
+function periodBounds(period: Period): { lo: number; hi: number } {
+  if (period === '1h') return { lo: 1, hi: 45 };
+  if (period === '2h') return { lo: 46, hi: 90 };
+  return { lo: 1, hi: 90 };
+}
+
+/**
+ * Estimated minute of a team's opening (or closing) goal. No real minute data
+ * exists in the synthetic history, so — like the app's other goal-timing
+ * estimates — we derive a deterministic, plausible minute: the more often a
+ * side scores, the sooner its first goal lands (and the later its last one).
+ * The result is clamped to the period on screen, so a 2nd-half table never
+ * reports a first-half minute.
+ */
+function synthGoalMinute(
+  row: StandingRow,
+  games: Game[],
+  spec: TimingSpec,
+  period: Period,
+): number {
+  const rng = makeRng(hash(row.team) * 53 + hash(spec.side + spec.edge) * 17 + 7);
+  const scored = games.reduce((s, g) => s + (spec.side === 'for' ? g.gf : g.ga), 0);
+  const gpm = games.length ? scored / games.length : 0.9;
+  const rate = Math.min(1, gpm / 2.4); // 0 (rare) … 1 (frequent)
+  // A prolific side opens early; its last goal, by the same token, comes late.
+  const frac = spec.edge === 'first' ? 0.62 - rate * 0.42 : 0.5 + rate * 0.38;
+  const jitter = (rng() - 0.5) * 0.14;
+  const { lo, hi } = periodBounds(period);
+  const t = Math.min(0.97, Math.max(0.05, frac + jitter));
+  return Math.round(lo + (hi - lo) * t);
 }
 
 type Cell = { value: number; asc: boolean; display: string; sub: string };
@@ -596,14 +637,26 @@ type Cell = { value: number; asc: boolean; display: string; sub: string };
  * The value + supporting stat shown for one team on a probability metric, plus
  * how to rank it (asc = smaller-is-better, e.g. earliest goal first).
  */
-function metricCell(row: StandingRow, games: Game[], metric: ProbMetricKey): Cell {
+function metricCell(
+  row: StandingRow,
+  games: Game[],
+  metric: ProbMetricKey,
+  period: Period,
+): Cell {
   const n = games.length;
 
-  // Early goals — ranked by the EARLIEST average first-goal minute.
-  if (metric === 'early1h') {
-    const minute = synthFirstGoalMinute(row, games);
-    const scored = Math.round(pct(games, (g) => g.gf1 >= 1));
-    return { value: minute, asc: true, display: `${minute}'`, sub: `${scored}% score 1st half` };
+  // Goal-timing metrics — headline is the minute, ranked earliest-first (or
+  // latest-first for "late goals"); the percentage rides along underneath.
+  const timing = TIMING_SPECS[metric];
+  if (timing) {
+    const minute = synthGoalMinute(row, games, timing, period);
+    const hitRate = Math.round(probValue(row, games, metric));
+    return {
+      value: minute,
+      asc: timing.edge === 'first',
+      display: `${minute}'`,
+      sub: `${hitRate}% ${timing.windowLabel}`,
+    };
   }
 
   const v = probValue(row, games, metric);
@@ -627,7 +680,7 @@ function buildProbTable(
 ): { rows: StandingRow[]; metric: MetricColumn } {
   const cells = base.map((r) => ({
     row: r,
-    cell: metricCell(r, projectPeriod(games.get(r.team)!, period), metric),
+    cell: metricCell(r, projectPeriod(games.get(r.team)!, period), metric, period),
   }));
 
   const asc = cells[0]?.cell.asc ?? false;
@@ -763,25 +816,16 @@ export function buildStandingsView(base: StandingRow[], sel: Selection): Standin
   // prob
   const meta = PROB_METRICS.find((m) => m.key === sel.metric) ?? PROB_METRICS[0];
   const { rows, metric } = buildProbTable(base, games, sel.metric, sel.period);
+  const timing = TIMING_SPECS[sel.metric];
+  // Timing metrics rank by the clock, so spell out which end of it leads.
+  const order = timing
+    ? timing.edge === 'first'
+      ? ' — earliest first'
+      : ' — latest first'
+    : '';
   return {
     rows,
     metric,
-    caption: `${PERIOD_LABEL[sel.period]} · ranked by ${meta.label} (${meta.short})`,
+    caption: `${PERIOD_LABEL[sel.period]} · ranked by ${meta.label} (${meta.short})${order}`,
   };
-}
-
-// ---------------------------------------------------------------------------
-// Rank-number zone colouring (promotion / relegation / cup qualification)
-// ---------------------------------------------------------------------------
-
-export type PosZone = 'promotion' | 'championsLeague' | 'europaLeague' | 'relegation' | null;
-
-/** Competitive meaning of a finishing position, scaled to league size. */
-export function getPosZone(pos: number, total: number): PosZone {
-  if (total <= 0) return null;
-  if (pos === 1) return 'promotion';
-  if (pos <= Math.max(2, Math.round(total * 0.18))) return 'championsLeague';
-  if (pos <= Math.max(3, Math.round(total * 0.34))) return 'europaLeague';
-  if (pos > total - Math.max(1, Math.round(total * 0.16))) return 'relegation';
-  return null;
 }

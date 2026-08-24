@@ -42,7 +42,6 @@ export default function LeagueStandingsPanel({ leagueId, leagueName }: LeagueSta
           standings={bundle.archivedOverall}
           highlightTeams={[]}
           seasonLabel={`${leagueName} — Archived`}
-          colorRank
         />
       )}
     </View>

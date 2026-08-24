@@ -3,10 +3,12 @@ import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import SectionLabel from '@/components/shared/SectionLabel';
 import type { StandingRow } from '@/mock/matchData';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
-import { getPosZone, type MetricColumn, type PosZone } from '@/utils/standingsAnalytics';
+import type { MetricColumn } from '@/utils/standingsAnalytics';
 
 type TierZone = 'top' | 'mid' | 'bottom';
 const TIER_COLOR: Record<TierZone, string> = { top: '#16A34A', mid: '#D97706', bottom: '#DC2626' };
+const TIER_LABEL: Record<TierZone, string> = { top: 'Top tier', mid: 'Mid tier', bottom: 'Bottom tier' };
+const TIER_ZONES: TierZone[] = ['top', 'mid', 'bottom'];
 
 /** Green / yellow / red category by table thirds (top / middle / bottom). */
 function getTierZone(pos: number, total: number): TierZone {
@@ -16,20 +18,15 @@ function getTierZone(pos: number, total: number): TierZone {
   return 'mid';
 }
 
-type ZoneSeparatorSpec = { afterPos: number; label: string };
-
 type StandingsTableProps = {
   standings: StandingRow[];
   highlightTeams?: string[];
   seasonLabel?: string;
   /**
-   * Zone separators drawn after given positions. Defaults to the European
-   * qualification/relegation set; pass `[]` to disable (e.g. analytics views).
+   * Colour the rank by green / yellow / red tier (table thirds) and show the
+   * matching legend. On by default; pass `false` for tables whose position
+   * column is a metric rank rather than a league placing.
    */
-  zoneSeparators?: ZoneSeparatorSpec[];
-  /** Colour the rank number by promotion/relegation/cup-qualification zone. */
-  colorRank?: boolean;
-  /** Colour the rank number by green/yellow/red tier (table thirds) instead. */
   tierColor?: boolean;
   /** Draw a band divider after this many rows (color-band analytics tables). */
   bandDivideAfter?: number;
@@ -37,20 +34,6 @@ type StandingsTableProps = {
   metricColumn?: MetricColumn;
   /** Make rows tappable (e.g. open a team). Receives the row's team name. */
   onRowPress?: (team: string) => void;
-};
-
-const DEFAULT_ZONE_SEPARATORS: ZoneSeparatorSpec[] = [
-  { afterPos: 3, label: '─── Champions League ───' },
-  { afterPos: 6, label: '─── Europa League ───' },
-  { afterPos: 9, label: '─── Relegation Play-off ───' },
-  { afterPos: 11, label: '─── Relegation ───' },
-];
-
-const ZONE_COLOR: Record<Exclude<PosZone, null>, string> = {
-  promotion: theme.accentGreen,
-  championsLeague: theme.accentBlue,
-  europaLeague: theme.accentPurple,
-  relegation: theme.loss,
 };
 
 function FormPills({ form }: { form: StandingRow['form'] | undefined }) {
@@ -79,10 +62,15 @@ function FormPills({ form }: { form: StandingRow['form'] | undefined }) {
   );
 }
 
-function ZoneSeparator({ label }: { label: string }) {
+function TierLegend() {
   return (
-    <View style={styles.zoneRow}>
-      <Text style={styles.zoneLabel}>{label}</Text>
+    <View style={styles.legend}>
+      {TIER_ZONES.map((z) => (
+        <View key={z} style={styles.legendItem}>
+          <View style={[styles.legendSwatch, { backgroundColor: TIER_COLOR[z] }]} />
+          <Text style={styles.legendText}>{TIER_LABEL[z]}</Text>
+        </View>
+      ))}
     </View>
   );
 }
@@ -98,8 +86,6 @@ function BandDivider() {
 function TableRow({
   row,
   highlighted,
-  separators,
-  colorRank,
   tierColor,
   total,
   metricCell,
@@ -107,21 +93,16 @@ function TableRow({
 }: {
   row: StandingRow;
   highlighted: boolean;
-  separators: ZoneSeparatorSpec[];
-  colorRank: boolean;
   tierColor: boolean;
   total: number;
   metricCell?: { display: string; sub: string };
   onPress?: () => void;
 }) {
-  const separator = separators.find((z) => z.afterPos === row.pos);
   const tierZone = tierColor ? getTierZone(row.pos, total) : null;
-  const zone = !tierColor && colorRank ? getPosZone(row.pos, total) : null;
-  const posColor = tierZone ? TIER_COLOR[tierZone] : zone ? ZONE_COLOR[zone] : undefined;
+  const posColor = tierZone ? TIER_COLOR[tierZone] : undefined;
 
   return (
-    <>
-      <Pressable
+    <Pressable
         onPress={onPress}
         style={({ pressed, hovered }) => [
           styles.row,
@@ -156,9 +137,7 @@ function TableRow({
             <FormPills form={row.form} />
           )}
         </View>
-      </Pressable>
-      {separator ? <ZoneSeparator label={separator.label} /> : null}
-    </>
+    </Pressable>
   );
 }
 
@@ -166,9 +145,7 @@ export default function StandingsTable({
   standings,
   highlightTeams = [],
   seasonLabel = 'SCOTTISH PREMIERSHIP — 2024/25',
-  zoneSeparators = DEFAULT_ZONE_SEPARATORS,
-  colorRank = false,
-  tierColor = false,
+  tierColor = true,
   bandDivideAfter,
   metricColumn,
   onRowPress,
@@ -178,6 +155,7 @@ export default function StandingsTable({
   return (
     <View style={styles.container}>
       <SectionLabel style={styles.heading}>{seasonLabel}</SectionLabel>
+      {tierColor ? <TierLegend /> : null}
       <View style={styles.headerRow}>
         <Text style={[styles.headerCell, styles.colPos]}>#</Text>
         <Text style={[styles.headerCell, styles.colTeam]}>Team</Text>
@@ -196,8 +174,6 @@ export default function StandingsTable({
           <TableRow
             row={row}
             highlighted={highlights.includes(row.team)}
-            separators={zoneSeparators}
-            colorRank={colorRank}
             tierColor={tierColor}
             total={standings.length}
             metricCell={metricColumn?.values.get(row.team)}
@@ -324,20 +300,16 @@ const styles = StyleSheet.create({
   formPillTextDraw: {
     color: theme.textMuted,
   },
-  zoneRow: {
-    paddingVertical: spacing.sm,
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: theme.textFaint,
-    borderStyle: 'dashed',
-    opacity: 0.6,
+  legend: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.md,
+    paddingHorizontal: spacing.sm,
+    marginBottom: spacing.md,
   },
-  zoneLabel: {
-    fontFamily: fonts.body,
-    fontSize: 10,
-    color: theme.textMuted,
-    letterSpacing: 0.5,
-  },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  legendSwatch: { width: 10, height: 10, borderRadius: 2 },
+  legendText: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted },
   bandDivider: {
     paddingVertical: spacing.sm,
     alignItems: 'center',
