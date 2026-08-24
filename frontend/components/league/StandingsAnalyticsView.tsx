@@ -17,6 +17,7 @@ import {
   type ProbMetricKey,
   type Selection,
   type Split,
+  type TeamTiming,
 } from '@/utils/standingsAnalytics';
 
 type Group = 'standard' | 'ppg' | 'last6' | 'form' | 'prob' | 'insights';
@@ -74,6 +75,11 @@ type Props = {
   highlightTeams?: string[];
   /** Make table rows tappable, receiving the row's team name. */
   onTeamPress?: (team: string) => void;
+  /**
+   * Recorded goal timing per team name. When supplied, the goal-timing metrics
+   * use the provider's measured minutes instead of the estimate.
+   */
+  timing?: Map<string, TeamTiming>;
 };
 
 export default function StandingsAnalyticsView({
@@ -81,6 +87,7 @@ export default function StandingsAnalyticsView({
   seasonLabel,
   highlightTeams,
   onTeamPress,
+  timing,
 }: Props) {
   const [group, setGroup] = useState<Group>('standard');
   const [period, setPeriod] = useState<Period>('ft');
@@ -106,7 +113,10 @@ export default function StandingsAnalyticsView({
     }
   }, [group, period, scope, band, window, metric]);
 
-  const view = useMemo(() => buildStandingsView(base, selection), [base, selection]);
+  const view = useMemo(
+    () => buildStandingsView(base, selection, { timing }),
+    [base, selection, timing],
+  );
 
   const isInsights = group === 'insights';
   const showPeriodScope = group === 'ppg' || group === 'last6' || group === 'form';

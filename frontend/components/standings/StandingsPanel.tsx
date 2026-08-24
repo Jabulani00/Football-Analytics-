@@ -11,7 +11,7 @@ import TieredStandingsView from '@/components/standings/TieredStandingsView';
 import StandingsAnalyticsView from '@/components/league/StandingsAnalyticsView';
 import SubTabBar from '@/components/shared/SubTabBar';
 import { useStandings } from '@/hooks/useStandings';
-import { apiStandingsToBase, teamIdByName } from '@/utils/standingsAdapter';
+import { apiStandingsToBase, teamIdByName, timingByName } from '@/utils/standingsAdapter';
 import {
   fetchAllFixturesBetween,
   mapFixture,
@@ -107,6 +107,7 @@ export default function StandingsPanel() {
             <StandingsAnalyticsView
               base={apiStandingsToBase(standings)}
               seasonLabel={competition.name}
+              timing={timingByName(standings)}
               onTeamPress={(team) => {
                 const id = teamIdByName(standings).get(team);
                 if (id != null)

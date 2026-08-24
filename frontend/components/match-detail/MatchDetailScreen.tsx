@@ -46,6 +46,7 @@ import {
   statsByCategory,
 } from '@/utils/matchDetailDisplay';
 import { isGroupStageTournament } from '@/utils/groupStandings';
+import { timingByName } from '@/utils/standingsAdapter';
 
 type MatchDetailScreenProps = {
   matchId: string;
@@ -931,6 +932,9 @@ function StandingsTab({
     form: [],
   }));
   const idByName = new Map(standings.map((row) => [row.name, row.teamId]));
+  // The season-stats endpoint carries recorded goal timing per team, so the
+  // goal-timing metrics can use measured minutes rather than an estimate.
+  const timing = timingByName(standings);
 
   return (
     <>
@@ -940,6 +944,7 @@ function StandingsTab({
         seasonLabel="LEAGUE TABLE"
         highlightTeams={[homeName, awayName]}
         onTeamPress={(team) => onTeamPress(idByName.get(team) ?? null, team)}
+        timing={timing}
       />
     </>
   );

@@ -51,6 +51,12 @@ export type StandingsView = {
   caption: string;
   /** Present for probability tables — the value shown + ranked per team. */
   metric?: MetricColumn;
+  /**
+   * Provenance for goal-timing tables: 'measured' when every row came from the
+   * provider's recorded timings, 'partial' when only some did, 'estimated'
+   * when none did. Absent for metrics that are not timing-based.
+   */
+  timingSource?: 'measured' | 'partial' | 'estimated';
 };
 
 // ---------------------------------------------------------------------------
@@ -482,10 +488,10 @@ export const PROB_METRICS: ProbMetric[] = [
   { key: 'tconc25', label: 'Conceding 2.5+ goals', short: 'CN2.5+' },
   { key: 'scoredFirst', label: 'Scored first', short: 'ScrdF' },
   { key: 'handicap', label: 'Handicap (avg margin)', short: 'HCP' },
-  { key: 'early1h', label: 'Early goals — first 20 min', short: 'E20' },
-  { key: 'early2h', label: 'Early goals — up to 60 min', short: 'E60' },
-  { key: 'earlyConc', label: 'Early goals conceded — first 20 min', short: 'EC' },
+  { key: 'early1h', label: 'First goal — average minute', short: 'FG' },
+  { key: 'earlyConc', label: 'First goal conceded — average minute', short: 'FGA' },
   { key: 'late', label: 'Late goals — from 70 min', short: 'L70' },
+  { key: 'early2h', label: 'Late goals conceded — from 70 min', short: 'LC70' },
 ];
 
 function pct(games: Game[], cond: (g: Game) => boolean): number {
@@ -562,11 +568,14 @@ function probValue(row: StandingRow, games: Game[], metric: ProbMetricKey): numb
       return Math.min(100, base * 0.6 + (rng() - 0.5) * 12 + 15);
     }
     case 'early1h':
-      return Math.min(100, pct(games, (g) => g.gf1 >= 1) * 0.5 + rng() * 8);
+      // Share of matches scoring inside the opening 15 minutes (~a third of
+      // the half), so the estimate lands near the measured window.
+      return Math.min(100, pct(games, (g) => g.gf1 >= 1) * 0.35 + rng() * 5);
     case 'early2h':
-      return Math.min(100, pct(games, (g) => g.gf >= 1) * 0.55 + rng() * 8);
+      // Late goals conceded — estimated from second-half goals against.
+      return Math.min(100, pct(games, (g) => g.ga - g.ga1 >= 1) * 0.6 + rng() * 10);
     case 'earlyConc':
-      return Math.min(100, pct(games, (g) => g.ga1 >= 1) * 0.5 + rng() * 8);
+      return Math.min(100, pct(games, (g) => g.ga1 >= 1) * 0.35 + rng() * 5);
     case 'late':
       return Math.min(100, pct(games, (g) => g.gf - g.gf1 >= 1) * 0.6 + rng() * 10);
     default:
@@ -592,11 +601,63 @@ type TimingSpec = {
 };
 
 const TIMING_SPECS: Partial<Record<ProbMetricKey, TimingSpec>> = {
-  early1h: { side: 'for', edge: 'first', windowLabel: "by 20'" },
-  early2h: { side: 'for', edge: 'first', windowLabel: "by 60'" },
-  earlyConc: { side: 'against', edge: 'first', windowLabel: "by 20'" },
+  early1h: { side: 'for', edge: 'first', windowLabel: "scored by 15'" },
+  early2h: { side: 'against', edge: 'last', windowLabel: "from 70'" },
+  earlyConc: { side: 'against', edge: 'first', windowLabel: "conceded by 15'" },
   late: { side: 'for', edge: 'last', windowLabel: "from 70'" },
 };
+
+/**
+ * Measured goal timing for one team, as supplied by the caller.
+ *
+ * Mirrors `TeamGoalTiming` in services/oddAlerts, kept as a local shape so this
+ * module stays free of any API import and remains testable with plain objects.
+ */
+export type TeamTiming = {
+  firstGoalFor: number | null;
+  firstGoalAgainst: number | null;
+  scoredIn15: { count: number; pct: number };
+  concededIn15: { count: number; pct: number };
+  scoredAfter70: { count: number; pct: number };
+  concededAfter70: { count: number; pct: number };
+  coveragePct: number;
+};
+
+/**
+ * The real cell for a goal-timing metric, or null when this team has no
+ * measured timing (a competition the provider does not cover, or a side that
+ * has not scored yet). Callers fall back to the estimate in that case.
+ *
+ * `first`-edge metrics headline the average minute and rank earliest-first;
+ * `last`-edge metrics headline the share of matches with a late goal, because
+ * the API measures that as a rate rather than a minute.
+ */
+function realTimingCell(metric: ProbMetricKey, t: TeamTiming, played: number): Cell | null {
+  if (metric === 'early1h' || metric === 'earlyConc') {
+    const forSide = metric === 'early1h';
+    const minute = forSide ? t.firstGoalFor : t.firstGoalAgainst;
+    if (minute == null) return null;
+    const window = forSide ? t.scoredIn15 : t.concededIn15;
+    const verb = forSide ? 'scored' : 'conceded';
+    return {
+      value: minute,
+      asc: true,
+      display: `${minute.toFixed(1)}'`,
+      sub: `${Math.round(window.pct)}% ${verb} by 15'`,
+    };
+  }
+  if (metric === 'late' || metric === 'early2h') {
+    const window = metric === 'late' ? t.scoredAfter70 : t.concededAfter70;
+    if (!played) return null;
+    return {
+      value: window.pct,
+      asc: false,
+      display: `${Math.round(window.pct)}%`,
+      sub: `${window.count} of ${played}`,
+    };
+  }
+  return null;
+}
 
 /** The minutes a period can actually contain a goal in. */
 function periodBounds(period: Period): { lo: number; hi: number } {
@@ -642,20 +703,32 @@ function metricCell(
   games: Game[],
   metric: ProbMetricKey,
   period: Period,
+  measured?: TeamTiming,
 ): Cell {
   const n = games.length;
 
-  // Goal-timing metrics — headline is the minute, ranked earliest-first (or
-  // latest-first for "late goals"); the percentage rides along underneath.
-  const timing = TIMING_SPECS[metric];
-  if (timing) {
-    const minute = synthGoalMinute(row, games, timing, period);
+  const spec = TIMING_SPECS[metric];
+  if (spec) {
+    // Measured timing covers the whole match, so it answers the Full-time view
+    // only; the half views keep the estimate.
+    if (measured && period === 'ft') {
+      const real = realTimingCell(metric, measured, row.played);
+      if (real) return real;
+    }
+    // Fallback estimate. It must mirror the measured column's shape, or the
+    // same metric would read as a minute for one competition and a rate for
+    // another: a minute for the first-goal pair, a rate for the late pair.
+    if (spec.edge === 'last') {
+      const v = probValue(row, games, metric);
+      return { value: v, asc: false, display: `${Math.round(v)}%`, sub: `~${Math.round((v / 100) * n)} of ${n} est.` };
+    }
+    const minute = synthGoalMinute(row, games, spec, period);
     const hitRate = Math.round(probValue(row, games, metric));
     return {
       value: minute,
-      asc: timing.edge === 'first',
+      asc: true,
       display: `${minute}'`,
-      sub: `${hitRate}% ${timing.windowLabel}`,
+      sub: `${hitRate}% ${spec.windowLabel} est.`,
     };
   }
 
@@ -677,11 +750,21 @@ function buildProbTable(
   games: Map<string, Game[]>,
   metric: ProbMetricKey,
   period: Period,
-): { rows: StandingRow[]; metric: MetricColumn } {
+  timing?: Map<string, TeamTiming>,
+): { rows: StandingRow[]; metric: MetricColumn; measuredCount: number } {
   const cells = base.map((r) => ({
     row: r,
-    cell: metricCell(r, projectPeriod(games.get(r.team)!, period), metric, period),
+    cell: metricCell(r, projectPeriod(games.get(r.team)!, period), metric, period, timing?.get(r.team)),
   }));
+
+  // How many rows came from measured timing rather than the estimate.
+  const measuredCount =
+    TIMING_SPECS[metric] && period === 'ft' && timing
+      ? base.filter((r) => {
+          const t = timing.get(r.team);
+          return !!t && realTimingCell(metric, t, r.played) !== null;
+        }).length
+      : 0;
 
   const asc = cells[0]?.cell.asc ?? false;
   cells.sort((a, b) => (asc ? a.cell.value - b.cell.value : b.cell.value - a.cell.value));
@@ -693,6 +776,7 @@ function buildProbTable(
   return {
     rows: cells.map(({ row }, i) => ({ ...row, pos: i + 1 })),
     metric: { header: meta.short, full: meta.label, values },
+    measuredCount,
   };
 }
 
@@ -778,7 +862,11 @@ const BAND_LABEL: Record<Exclude<Band, 'plain'>, string> = {
 // Public API
 // ---------------------------------------------------------------------------
 
-export function buildStandingsView(base: StandingRow[], sel: Selection): StandingsView {
+export function buildStandingsView(
+  base: StandingRow[],
+  sel: Selection,
+  opts?: { timing?: Map<string, TeamTiming> },
+): StandingsView {
   if (sel.kind === 'standard') {
     return { rows: base, caption: 'League standings' };
   }
@@ -815,17 +903,36 @@ export function buildStandingsView(base: StandingRow[], sel: Selection): Standin
 
   // prob
   const meta = PROB_METRICS.find((m) => m.key === sel.metric) ?? PROB_METRICS[0];
-  const { rows, metric } = buildProbTable(base, games, sel.metric, sel.period);
-  const timing = TIMING_SPECS[sel.metric];
+  const { rows, metric, measuredCount } = buildProbTable(
+    base,
+    games,
+    sel.metric,
+    sel.period,
+    opts?.timing,
+  );
+  const spec = TIMING_SPECS[sel.metric];
+
   // Timing metrics rank by the clock, so spell out which end of it leads.
-  const order = timing
-    ? timing.edge === 'first'
-      ? ' — earliest first'
-      : ' — latest first'
-    : '';
+  // 'first'-edge metrics headline a minute; the late-goal pair headline a rate.
+  const order = spec ? (spec.edge === 'first' ? ' — earliest first' : ' — highest first') : '';
+
+  let timingSource: StandingsView['timingSource'];
+  let provenance = '';
+  if (spec) {
+    timingSource =
+      measuredCount === 0 ? 'estimated' : measuredCount === base.length ? 'measured' : 'partial';
+    provenance =
+      timingSource === 'measured'
+        ? ' · recorded timings'
+        : timingSource === 'partial'
+          ? ` · recorded for ${measuredCount}/${base.length}, rest estimated`
+          : ' · estimated (no recorded timings)';
+  }
+
   return {
     rows,
     metric,
-    caption: `${PERIOD_LABEL[sel.period]} · ranked by ${meta.label} (${meta.short})${order}`,
+    timingSource,
+    caption: `${PERIOD_LABEL[sel.period]} · ranked by ${meta.label} (${meta.short})${order}${provenance}`,
   };
 }

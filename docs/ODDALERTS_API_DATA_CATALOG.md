@@ -19,7 +19,7 @@ These were tested with `include=events|goals|cards|substitutions|lineups|timelin
 | Missing data | Notes |
 | ------------ | ----- |
 | Goal scorers / assists | No per-goal timeline on `fixtures/:id` |
-| Exact goal minute | Only 15‑min **buckets** via `stats/fixture` (see gaps doc) |
+| Exact goal minute (per goal) | Only 15‑min **buckets** via `stats/fixture`. But `stats/season/:seasonId` does give a per-team **average first-goal minute** — see §5.1 |
 | Bookings with minute & player | Only aggregate card counts in `stats` |
 | Substitutions | Not exposed |
 | Confirmed starting XI | Use `GET /players/fixture/:id` (full squad by position) |
@@ -238,6 +238,33 @@ Per-team season aggregates (used for table + movement). Includes **1H/2H splits 
 - `goals_for_1h`, `goals_for_2h`, `goals_against_1h`, `goals_against_2h`
 - `btts_1h`, `btts_2h`, `corners_1h_total`, `cards_1h_total`, …
 - `points` with `home` / `away` breakdown (in mapped `StandingRow`)
+
+### 5.1 Goal timing (per team, per season) — **measured, not estimated**
+
+This endpoint is the only source of real goal timing at team level. Verified
+against Latvian Virsliga (26–27 games played) in Aug 2026.
+
+| Field | Shape | Meaning |
+| ----- | ----- | ------- |
+| `first_goal_time_for` | `{ total, home, away }` | **Average minute** of the team's first goal (decimal, e.g. `27.36`) |
+| `first_goal_time_against` | `{ total, home, away }` | Average minute of the first goal conceded |
+| `goal_timing_for` / `goal_timing_against` | 6 buckets: `m0_15`, `m15_30`, `m30_45`, `m45_60`, `m60_75`, `m75_90` | Each `{ total, total_percentage, … }` |
+| `scored_after_70` / `conceded_after_70` | `{ total, total_percentage, … }` | Matches with a goal from the 70th minute |
+| `coverage.goal_timings` | `{ total, total_percentage }` | Share of the team's matches that carry timing data — check before trusting the rest |
+
+Two traps, both verified the hard way:
+
+1. **`total` on a bucket counts MATCHES, not goals.** A match with two goals in
+   one window counts once. Proof: `total / played × 100` reproduces
+   `total_percentage` exactly, and the six buckets summed to 66 for a team with
+   79 `goals_for`. This means you **cannot add buckets** to get "scored by 60'" —
+   a match scoring in two windows would be double-counted.
+2. **Minute `0` means "no first goal on record"**, not the opening seconds. A
+   team that has not scored reports `first_goal_time_for.total = 0`. Map it to
+   `null` or it will rank as the fastest scorer in the league.
+
+Consumed by `fetchSeasonStandings` → `StandingRow.timing` (`TeamGoalTiming`).
+See [GOAL_TIMING.md](./GOAL_TIMING.md).
 
 UI: **Table** tab on match detail; full standings browser in Clubs sidebar.
 

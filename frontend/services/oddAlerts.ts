@@ -968,7 +968,15 @@ export type StandingRow = {
   homePoints: number;
   awayPoints: number;
   zone: StandingZone;
+  /** Measured goal timing for the season (see TeamGoalTiming). */
+  timing: TeamGoalTiming;
 };
+
+/** A `{ total, total_percentage }` pair as the season-stats endpoint returns it. */
+type RawTally = { total?: number; total_percentage?: number };
+
+/** The endpoint buckets goals into six 15-minute windows. */
+type RawGoalTiming = Partial<Record<'m0_15' | 'm15_30' | 'm30_45' | 'm45_60' | 'm60_75' | 'm75_90', RawTally>>;
 
 type RawSeasonStat = {
   team_id: number;
@@ -981,7 +989,67 @@ type RawSeasonStat = {
   goals_for?: { total?: number };
   goals_against?: { total?: number };
   goals_difference?: { total?: number };
+  // Real goal timing — average first-goal minute, 15-minute buckets, and the
+  // late-goal tallies. `total` on a bucket counts MATCHES with a goal in that
+  // window (not goals), so `total_percentage` is total / played.
+  first_goal_time_for?: { total?: number };
+  first_goal_time_against?: { total?: number };
+  goal_timing_for?: RawGoalTiming;
+  goal_timing_against?: RawGoalTiming;
+  scored_after_70?: RawTally;
+  conceded_after_70?: RawTally;
+  coverage?: { goal_timings?: RawTally };
 };
+
+/** Matches hitting a condition, plus that as a share of the team's matches. */
+export type Tally = { count: number; pct: number };
+
+/**
+ * Real per-team goal timing for a season, straight from `stats/season/{id}`.
+ *
+ * The API reports an average first-goal minute and six 15-minute buckets, so
+ * these are measured values rather than estimates. A team that has not scored
+ * (or a competition the provider has no timing for) reports minute 0 — we map
+ * that to `null` so callers can tell "no data" from "scored in minute zero".
+ */
+export type TeamGoalTiming = {
+  /** Average minute of this team's first goal; null when unknown. */
+  firstGoalFor: number | null;
+  /** Average minute of the first goal it concedes; null when unknown. */
+  firstGoalAgainst: number | null;
+  /** Matches with a goal in the opening 15 minutes. */
+  scoredIn15: Tally;
+  /** Matches conceding in the opening 15 minutes. */
+  concededIn15: Tally;
+  /** Matches scoring from the 70th minute on. */
+  scoredAfter70: Tally;
+  /** Matches conceding from the 70th minute on. */
+  concededAfter70: Tally;
+  /** Share of the team's matches that actually carry timing data (0-100). */
+  coveragePct: number;
+};
+
+function tally(raw: RawTally | undefined): Tally {
+  return { count: Math.max(0, Math.round(raw?.total ?? 0)), pct: raw?.total_percentage ?? 0 };
+}
+
+/** Minute 0 means "no first goal on record", not the opening seconds. */
+function minuteOrNull(raw: { total?: number } | undefined): number | null {
+  const v = raw?.total;
+  return typeof v === 'number' && v > 0 ? v : null;
+}
+
+function readGoalTiming(s: RawSeasonStat): TeamGoalTiming {
+  return {
+    firstGoalFor: minuteOrNull(s.first_goal_time_for),
+    firstGoalAgainst: minuteOrNull(s.first_goal_time_against),
+    scoredIn15: tally(s.goal_timing_for?.m0_15),
+    concededIn15: tally(s.goal_timing_against?.m0_15),
+    scoredAfter70: tally(s.scored_after_70),
+    concededAfter70: tally(s.conceded_after_70),
+    coveragePct: s.coverage?.goal_timings?.total_percentage ?? 0,
+  };
+}
 
 /** Standings comparator: points, then goal difference, then goals for, then name. */
 function compareStandings(
@@ -1024,6 +1092,7 @@ export async function fetchSeasonStandings(
     points: s.points?.total ?? 0,
     homePoints: s.points?.home ?? 0,
     awayPoints: s.points?.away ?? 0,
+    timing: readGoalTiming(s),
   }));
 
   rows.sort(compareStandings);
