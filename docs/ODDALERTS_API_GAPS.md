@@ -129,7 +129,7 @@ goal splits — that is **not** the same as live half-time stats for one match.
 | League standings | Yes — per `season_id` | Home/away points, zones |
 | Cup knockout bracket tree | **No** | Cup results are fixtures, not a bracket object |
 | World Cup / Euro **group name** (A, B, C…) | **No** | App infers groups from fixture clustering |
-| Promotion / relegation play-off slots | **No** explicit | Zones are client-defined |
+| Promotion / relegation play-off slots | **No** explicit | Curated per competition in `frontend/utils/competitionZones.ts` — see below |
 | `competitions?country_ids=` filter | **Ignored** | Must fetch all competitions, filter client-side |
 
 ---
@@ -223,3 +223,37 @@ Probe scripts in `frontend/scripts/`:
 | `timing-dump.json` | Sample frozen timing response |
 
 Re-run with `ODDALERTS_TOKEN` in `frontend/.env` after API changes.
+
+---
+
+## Qualification / relegation zones — how we fill this gap
+
+Confirmed absent from every endpoint the proxy allows: `stats/season/:id`
+returns 100+ per-team fields but no zone, description, or qualification marker;
+`competitions/:id` carries only `id, name, slug, country, country_id, type,
+current_season`; `stats` rejects anything but `season` or `fixture`, so there is
+no standings endpoint to ask.
+
+**Deriving it from history does not work.** Diffing consecutive seasons' team
+lists to infer who went down was tried and abandoned — historical coverage is
+incomplete. Latvia's 2024 season (`season_id` 5748) advertises
+`progress: 100, played: 180` in the competitions listing, but `stats/season`
+returns teams having played **9-11 of 36** games. In that same season the only
+team to disappear did so from **6th place** while the league grew from 10 to 11
+clubs. The listing's `progress` field cannot be trusted as a completeness
+signal.
+
+Zones therefore live in `frontend/utils/competitionZones.ts`, keyed by OddAlerts
+competition id, seeded with the top five European leagues (423 England, 419
+Spain, 499 Italy, 477 Germany, 200 France). Competitions with no entry render
+**no zones** — there are 1,250+ competitions in the feed and a single default
+set is wrong for nearly all of them.
+
+Two rules worth preserving when extending it:
+
+- **Anchor demotion bands to the bottom** (`fromBottom`/`toBottom`), not the
+  top. Leagues resize between seasons — Latvia went 10 → 11 — and a
+  top-anchored relegation rule rots silently.
+- **Review each season.** UEFA slot allocation is not static: the two
+  best-performing leagues by coefficient gain an extra Champions League place,
+  and domestic-cup winners can push the Europa and Conference slots down.
