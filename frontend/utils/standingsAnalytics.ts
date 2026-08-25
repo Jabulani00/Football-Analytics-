@@ -639,11 +639,14 @@ function realTimingCell(metric: ProbMetricKey, t: TeamTiming, played: number): C
     if (minute == null) return null;
     const window = forSide ? t.scoredIn15 : t.concededIn15;
     const verb = forSide ? 'scored' : 'conceded';
+    const thin = played < MIN_TIMING_MATCHES;
     return {
       value: minute,
       asc: true,
       display: `${minute.toFixed(1)}'`,
-      sub: `${Math.round(window.pct)}% ${verb} by 15'`,
+      sub: thin
+        ? `from ${played} ${played === 1 ? 'match' : 'matches'}`
+        : `${Math.round(window.pct)}% ${verb} by 15'`,
     };
   }
   if (metric === 'late' || metric === 'early2h') {
@@ -657,6 +660,11 @@ function realTimingCell(metric: ProbMetricKey, t: TeamTiming, played: number): C
     };
   }
   return null;
+}
+
+/** Placeholder for a team the provider has no measured value for. */
+function missingCell(asc: boolean): Cell {
+  return { value: asc ? Infinity : -Infinity, asc, display: '—', sub: 'not yet', missing: true };
 }
 
 /** The minutes a period can actually contain a goal in. */
@@ -692,7 +700,21 @@ function synthGoalMinute(
   return Math.round(lo + (hi - lo) * t);
 }
 
-type Cell = { value: number; asc: boolean; display: string; sub: string };
+type Cell = {
+  value: number;
+  asc: boolean;
+  display: string;
+  sub: string;
+  /** No measured value for this team — always sorts last, never ranked. */
+  missing?: boolean;
+};
+
+/**
+ * Below this many matches an "average first goal minute" is really just one
+ * match, and a percentage is only ever 0 or 100. Values still show, but the
+ * stat line reports the sample instead of a meaningless rate.
+ */
+const MIN_TIMING_MATCHES = 3;
 
 /**
  * The value + supporting stat shown for one team on a probability metric, plus
@@ -704,16 +726,19 @@ function metricCell(
   metric: ProbMetricKey,
   period: Period,
   measured?: TeamTiming,
+  /** True when this column is being built from the provider's timings. */
+  measuredColumn = false,
 ): Cell {
   const n = games.length;
 
   const spec = TIMING_SPECS[metric];
   if (spec) {
-    // Measured timing covers the whole match, so it answers the Full-time view
-    // only; the half views keep the estimate.
-    if (measured && period === 'ft') {
-      const real = realTimingCell(metric, measured, row.played);
-      if (real) return real;
+    // A column is either measured or estimated — never a mix. Ranking an
+    // invented minute against recorded ones would let a team that has not
+    // scored outrank teams that have.
+    if (measuredColumn) {
+      const real = measured ? realTimingCell(metric, measured, row.played) : null;
+      return real ?? missingCell(spec.edge === 'first');
     }
     // Fallback estimate. It must mirror the measured column's shape, or the
     // same metric would read as a minute for one competition and a rate for
@@ -751,13 +776,10 @@ function buildProbTable(
   metric: ProbMetricKey,
   period: Period,
   timing?: Map<string, TeamTiming>,
-): { rows: StandingRow[]; metric: MetricColumn; measuredCount: number } {
-  const cells = base.map((r) => ({
-    row: r,
-    cell: metricCell(r, projectPeriod(games.get(r.team)!, period), metric, period, timing?.get(r.team)),
-  }));
-
-  // How many rows came from measured timing rather than the estimate.
+): { rows: StandingRow[]; metric: MetricColumn; measuredCount: number; thinCount: number } {
+  // Measured timing covers the whole match, so it answers the Full-time view
+  // only; the half views keep the estimate. If the provider has a value for at
+  // least one team, the whole column is measured and the rest read "—".
   const measuredCount =
     TIMING_SPECS[metric] && period === 'ft' && timing
       ? base.filter((r) => {
@@ -765,18 +787,39 @@ function buildProbTable(
           return !!t && realTimingCell(metric, t, r.played) !== null;
         }).length
       : 0;
+  const measuredColumn = measuredCount > 0;
+
+  const cells = base.map((r) => ({
+    row: r,
+    cell: metricCell(
+      r,
+      projectPeriod(games.get(r.team)!, period),
+      metric,
+      period,
+      timing?.get(r.team),
+      measuredColumn,
+    ),
+  }));
 
   const asc = cells[0]?.cell.asc ?? false;
-  cells.sort((a, b) => (asc ? a.cell.value - b.cell.value : b.cell.value - a.cell.value));
+  cells.sort((a, b) => {
+    // Teams with no measured value are not ranked — they collect at the bottom.
+    if (a.cell.missing !== b.cell.missing) return a.cell.missing ? 1 : -1;
+    return asc ? a.cell.value - b.cell.value : b.cell.value - a.cell.value;
+  });
 
   const values = new Map<string, { display: string; sub: string }>();
   for (const { row, cell } of cells) values.set(row.team, { display: cell.display, sub: cell.sub });
 
   const meta = PROB_METRICS.find((m) => m.key === metric) ?? PROB_METRICS[0];
+  const thinCount = measuredColumn
+    ? cells.filter((c) => !c.cell.missing && c.row.played < MIN_TIMING_MATCHES).length
+    : 0;
   return {
     rows: cells.map(({ row }, i) => ({ ...row, pos: i + 1 })),
     metric: { header: meta.short, full: meta.label, values },
     measuredCount,
+    thinCount,
   };
 }
 
@@ -903,7 +946,7 @@ export function buildStandingsView(
 
   // prob
   const meta = PROB_METRICS.find((m) => m.key === sel.metric) ?? PROB_METRICS[0];
-  const { rows, metric, measuredCount } = buildProbTable(
+  const { rows, metric, measuredCount, thinCount } = buildProbTable(
     base,
     games,
     sel.metric,
@@ -919,14 +962,17 @@ export function buildStandingsView(
   let timingSource: StandingsView['timingSource'];
   let provenance = '';
   if (spec) {
+    // 'partial' still means a measured column — the gap is teams with no value
+    // yet, shown as "—" and left unranked, not swapped for an estimate.
     timingSource =
       measuredCount === 0 ? 'estimated' : measuredCount === base.length ? 'measured' : 'partial';
+    const noValue = base.length - measuredCount;
     provenance =
-      timingSource === 'measured'
-        ? ' · recorded timings'
-        : timingSource === 'partial'
-          ? ` · recorded for ${measuredCount}/${base.length}, rest estimated`
-          : ' · estimated (no recorded timings)';
+      timingSource === 'estimated'
+        ? ' · estimated (no recorded timings)'
+        : ' · recorded timings' +
+          (noValue > 0 ? ` · ${noValue} without a value yet` : '') +
+          (thinCount > 0 ? ` · ${thinCount} from under ${MIN_TIMING_MATCHES} matches` : '');
   }
 
   return {

@@ -64,7 +64,7 @@ console.log('Late-goal metrics use the recorded rate, not a minute');
   check('sub counts matches', cell(v, 'Mid').sub === '6 of 10', cell(v, 'Mid').sub);
 }
 
-console.log('A team with no recorded first goal falls back rather than reading minute 0');
+console.log('A team with no recorded value is shown as unknown, never estimated into the ranking');
 {
   const timing = new Map<string, TeamTiming>([
     ['Early', timed({ firstGoalFor: 30 })],
@@ -72,10 +72,52 @@ console.log('A team with no recorded first goal falls back rather than reading m
     ['Late', timed({ firstGoalFor: null })],
   ]);
   const v = buildStandingsView(base, { kind: 'prob', metric: 'early1h', period: 'ft' }, { timing });
-  const mins = v.rows.map((r) => parseFloat(cell(v, r.team).display));
-  check('no row reports minute 0', mins.every((m) => m > 0), JSON.stringify(mins));
+  const displays = v.rows.map((r) => cell(v, r.team).display);
+
+  check('no row reports minute 0', !displays.includes("0.0'"), JSON.stringify(displays));
+  check('unknown rows render as a dash', displays.filter((d) => d === '—').length === 2, JSON.stringify(displays));
+  // The bug this guards: an invented minute ranked against recorded ones.
+  check('no estimated value appears in a measured column',
+    v.rows.every((r) => !cell(v, r.team).sub.includes('est.')),
+    v.rows.map((r) => cell(v, r.team).sub).join(' | '));
+  check('the measured team ranks first', v.rows[0].team === 'Early', v.rows[0].team);
+  check('unknown rows sort last', displays[displays.length - 1] === '—', JSON.stringify(displays));
   check('source is partial', v.timingSource === 'partial', String(v.timingSource));
-  check('caption names the split', v.caption.includes('recorded for 1/3'), v.caption);
+  check('caption counts the gap, not an estimate',
+    v.caption.includes('recorded timings') && v.caption.includes('2 without a value yet'), v.caption);
+}
+
+console.log('Measured and estimated values never share one column');
+{
+  // One team measured, the rest not: the column must stay wholly measured.
+  for (const metric of ['early1h', 'earlyConc', 'late', 'early2h'] as const) {
+    const timing = new Map<string, TeamTiming>([
+      ['Early', timed({ firstGoalFor: 12, firstGoalAgainst: 12, scoredAfter70: { count: 1, pct: 10 }, concededAfter70: { count: 1, pct: 10 } })],
+    ]);
+    const v = buildStandingsView(base, { kind: 'prob', metric, period: 'ft' }, { timing });
+    const subs = v.rows.map((r) => cell(v, r.team).sub);
+    const mixed = subs.some((x) => x.includes('est.')) && subs.some((x) => !x.includes('est.') && x !== 'not yet');
+    check(`${metric}: column is not mixed`, !mixed, subs.join(' | '));
+  }
+}
+
+console.log('Thin samples report the sample size instead of a meaningless rate');
+{
+  const thin = [row('A', 1, 3, 0), row('B', 1, 1, 1)];
+  const timing = new Map<string, TeamTiming>([
+    ['A', timed({ firstGoalFor: 9, scoredIn15: { count: 1, pct: 100 } })],
+    ['B', timed({ firstGoalFor: 40, scoredIn15: { count: 0, pct: 0 } })],
+  ]);
+  const v = buildStandingsView(thin, { kind: 'prob', metric: 'early1h', period: 'ft' }, { timing });
+  check('sub reports the sample', cell(v, 'A').sub === 'from 1 match', cell(v, 'A').sub);
+  check('no 100% claim off one match', !cell(v, 'A').sub.includes('100%'), cell(v, 'A').sub);
+  check('caption flags thin samples', v.caption.includes('under 3 matches'), v.caption);
+
+  const deep = [row('C', 10, 20, 5)];
+  const deepTiming = new Map<string, TeamTiming>([['C', timed({ firstGoalFor: 22, scoredIn15: { count: 4, pct: 40 } })]]);
+  const v2 = buildStandingsView(deep, { kind: 'prob', metric: 'early1h', period: 'ft' }, { timing: deepTiming });
+  check('a full sample still shows the rate', cell(v2, 'C').sub === "40% scored by 15'", cell(v2, 'C').sub);
+  check('caption does not flag a full sample', !v2.caption.includes('under 3 matches'), v2.caption);
 }
 
 console.log('Without recorded timings the estimate stands in, and says so');
@@ -94,7 +136,10 @@ console.log('Column shape does not change with the data source');
   for (const [metric, suffix] of [['early1h', "'"], ['earlyConc', "'"], ['late', '%'], ['early2h', '%']] as const) {
     const real = buildStandingsView(base, { kind: 'prob', metric, period: 'ft' }, { timing });
     const est = buildStandingsView(base, { kind: 'prob', metric, period: 'ft' });
-    const realOk = real.rows.every((r) => cell(real, r.team).display.endsWith(suffix));
+    const realOk = real.rows.every((r) => {
+      const d = cell(real, r.team).display;
+      return d === '—' || d.endsWith(suffix);
+    });
     const estOk = est.rows.every((r) => cell(est, r.team).display.endsWith(suffix));
     check(`${metric} ends with "${suffix}" either way`, realOk && estOk,
       `measured=${cell(real, base[0].team).display} estimated=${cell(est, base[0].team).display}`);

@@ -73,9 +73,20 @@ the main reason the estimate path still exists.
   cannot answer a half-split view.
 
 Provenance is surfaced, never hidden. `StandingsView.timingSource` is
-`'measured' | 'partial' | 'estimated'`, the caption spells it out
-(`· recorded timings`, `· recorded for 7/10, rest estimated`,
-`· estimated (no recorded timings)`), and estimated cells end in `est.`.
+`'measured' | 'partial' | 'estimated'`, the caption spells it out, and
+estimated cells end in `est.`.
+
+**A column is wholly measured or wholly estimated — never a mix.** If the
+provider has a value for even one team, the whole column is measured and teams
+without a value render `—` and sort last, unranked. This is not cosmetic: the
+first cut fell back per team, so a side that had *not scored at all* was handed
+a plausible ~56' and ranked above teams with real recorded minutes. `partial`
+therefore means "measured column with gaps", not "half estimated".
+
+Thin samples are flagged too. Under `MIN_TIMING_MATCHES` (3) an average is just
+one match and a percentage is only ever 0 or 100, so the stat line reports
+`from 1 match` rather than a meaningless `100% scored by 15'`, and the caption
+counts how many rows are affected.
 
 **Rule worth keeping:** the column's *shape* must not change with the data
 source. `FG`/`FGA` are always a minute, `L70`/`LC70` are always a percentage.
