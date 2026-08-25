@@ -80,6 +80,8 @@ type Props = {
    * use the provider's measured minutes instead of the estimate.
    */
   timing?: Map<string, TeamTiming>;
+  /** OddAlerts competition id, for qualification / relegation dividers. */
+  competitionId?: number | string | null;
 };
 
 export default function StandingsAnalyticsView({
@@ -88,6 +90,7 @@ export default function StandingsAnalyticsView({
   highlightTeams,
   onTeamPress,
   timing,
+  competitionId,
 }: Props) {
   const [group, setGroup] = useState<Group>('standard');
   const [period, setPeriod] = useState<Period>('ft');
@@ -181,6 +184,7 @@ export default function StandingsAnalyticsView({
             highlightTeams={highlightTeams}
             onRowPress={onTeamPress}
             tierColor={group === 'standard'}
+            competitionId={group === 'standard' ? competitionId : null}
             bandDivideAfter={view.bandDivideAfter}
             metricColumn={view.metric}
           />

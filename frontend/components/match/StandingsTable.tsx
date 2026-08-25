@@ -4,11 +4,22 @@ import SectionLabel from '@/components/shared/SectionLabel';
 import type { StandingRow } from '@/mock/matchData';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 import type { MetricColumn } from '@/utils/standingsAnalytics';
+import { zonesForCompetition, type ResolvedZone, type ZoneKind } from '@/utils/competitionZones';
 
 type TierZone = 'top' | 'mid' | 'bottom';
 const TIER_COLOR: Record<TierZone, string> = { top: '#16A34A', mid: '#D97706', bottom: '#DC2626' };
 const TIER_LABEL: Record<TierZone, string> = { top: 'Top tier', mid: 'Mid tier', bottom: 'Bottom tier' };
 const TIER_ZONES: TierZone[] = ['top', 'mid', 'bottom'];
+
+/** Divider tint per qualification / demotion band. */
+const ZONE_COLOR: Record<ZoneKind, string> = {
+  champions: theme.accentBlue,
+  championsQual: theme.accentBlue,
+  europa: theme.accentPurple,
+  conference: theme.accentGreen,
+  relegationPlayoff: theme.yellow,
+  relegation: theme.loss,
+};
 
 /** Green / yellow / red category by table thirds (top / middle / bottom). */
 function getTierZone(pos: number, total: number): TierZone {
@@ -30,6 +41,11 @@ type StandingsTableProps = {
   tierColor?: boolean;
   /** Draw a band divider after this many rows (color-band analytics tables). */
   bandDivideAfter?: number;
+  /**
+   * OddAlerts competition id. When it has curated rules, the table draws
+   * labelled qualification / relegation dividers; otherwise none are shown.
+   */
+  competitionId?: number | string | null;
   /** Replace the Form column with a metric value column (probability tables). */
   metricColumn?: MetricColumn;
   /** Make rows tappable (e.g. open a team). Receives the row's team name. */
@@ -58,6 +74,16 @@ function FormPills({ form }: { form: StandingRow['form'] | undefined }) {
           </Text>
         </View>
       ))}
+    </View>
+  );
+}
+
+function ZoneSeparator({ zone }: { zone: ResolvedZone }) {
+  const color = ZONE_COLOR[zone.kind];
+  return (
+    <View style={[styles.zoneRow, { borderTopColor: color }]}>
+      <View style={[styles.zoneDot, { backgroundColor: color }]} />
+      <Text style={[styles.zoneLabel, { color }]}>{zone.label}</Text>
     </View>
   );
 }
@@ -147,10 +173,14 @@ export default function StandingsTable({
   seasonLabel = 'SCOTTISH PREMIERSHIP — 2024/25',
   tierColor = true,
   bandDivideAfter,
+  competitionId,
   metricColumn,
   onRowPress,
 }: StandingsTableProps) {
   const highlights = highlightTeams ?? [];
+  // Empty for any competition without curated rules — no guessed zones.
+  const zones = zonesForCompetition(competitionId, standings.length);
+  const zoneByPos = new Map(zones.map((z) => [z.afterPos, z]));
 
   return (
     <View style={styles.container}>
@@ -179,6 +209,7 @@ export default function StandingsTable({
             metricCell={metricColumn?.values.get(row.team)}
             onPress={onRowPress ? () => onRowPress(row.team) : undefined}
           />
+          {zoneByPos.has(row.pos) ? <ZoneSeparator zone={zoneByPos.get(row.pos)!} /> : null}
           {bandDivideAfter != null && i + 1 === bandDivideAfter ? <BandDivider /> : null}
         </View>
       ))}
@@ -299,6 +330,21 @@ const styles = StyleSheet.create({
   },
   formPillTextDraw: {
     color: theme.textMuted,
+  },
+  zoneRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingVertical: 5,
+    paddingHorizontal: spacing.sm,
+    borderTopWidth: 2,
+  },
+  zoneDot: { width: 6, height: 6, borderRadius: 3 },
+  zoneLabel: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 9,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
   },
   legend: {
     flexDirection: 'row',

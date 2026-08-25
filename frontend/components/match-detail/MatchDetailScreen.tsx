@@ -846,6 +846,7 @@ function TableOddsTab({
           onTeamPress={onTeamPress}
           odds={detail.odds}
           probability={detail.probability}
+          competitionId={detail.competition_id ?? null}
         />
       ) : view === 'tiers' ? (
         canTier ? (
@@ -879,6 +880,7 @@ function StandingsTab({
   onTeamPress,
   odds,
   probability,
+  competitionId,
 }: {
   standings: StandingRow[];
   groupCompetition: Competition | null;
@@ -890,6 +892,7 @@ function StandingsTab({
   onTeamPress: (teamId: number | null, name: string) => void;
   odds: OddsByMarket | undefined;
   probability: Probability | undefined;
+  competitionId: number | null;
 }) {
   if (groupCompetition) {
     return (
@@ -945,6 +948,7 @@ function StandingsTab({
         highlightTeams={[homeName, awayName]}
         onTeamPress={(team) => onTeamPress(idByName.get(team) ?? null, team)}
         timing={timing}
+        competitionId={competitionId}
       />
     </>
   );
