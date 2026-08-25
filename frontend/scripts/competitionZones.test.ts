@@ -48,6 +48,30 @@ console.log('Relegation is anchored to the bottom, so it survives a resize');
   check('18-team table relegates from 16th', at(423, 18).includes('15:Relegation'), at(423, 18).join(' | '));
 }
 
+console.log('Scottish Premiership (comp 259, 12 teams)');
+{
+  const z = at(259, 12);
+  check('Champions League under 1st', z[0] === '1:Champions League', z[0]);
+  check('CL qualifying under 2nd', z[1] === '2:Champions League qualifying', z[1]);
+  check('Conference qualifying under 3rd', z[2] === '3:Conference League qualifying', z[2]);
+  check('play-off line above 11th', z.includes('10:Relegation play-off'), z.join(' | '));
+  check('relegation line above 12th', z.includes('11:Relegation'), z.join(' | '));
+  // The Scottish Cup winner's Europa place has no league position to sit on.
+  check('no Europa divider is invented', !z.some((x) => /Europa/.test(x)), z.join(' | '));
+}
+
+console.log('South Africa Premier League (comp 26, 16 teams) — CAF, not UEFA');
+{
+  const z = at(26, 16);
+  check('CAF Champions League under 2nd', z[0] === '2:CAF Champions League', z[0]);
+  check('play-off line above 15th', z.includes('14:Promotion / relegation play-off'), z.join(' | '));
+  check('relegation line above 16th', z.includes('15:Relegation'), z.join(' | '));
+  check('no UEFA competition named', !z.some((x) => /Europa|Conference|(^|[^F])Champions League/.test(x.replace('CAF Champions League', ''))),
+    z.join(' | '));
+  // The Nedbank Cup winner's Confederation Cup place is not a league position.
+  check('no Confederation Cup divider is invented', !z.some((x) => /Confederation/.test(x)), z.join(' | '));
+}
+
 console.log('Unknown or missing competitions show no zones at all');
 {
   check('unknown id', zonesForCompetition(999999, 20).length === 0);

@@ -13,10 +13,10 @@ const TIER_ZONES: TierZone[] = ['top', 'mid', 'bottom'];
 
 /** Divider tint per qualification / demotion band. */
 const ZONE_COLOR: Record<ZoneKind, string> = {
-  champions: theme.accentBlue,
-  championsQual: theme.accentBlue,
-  europa: theme.accentPurple,
-  conference: theme.accentGreen,
+  continentalTop: theme.accentBlue,
+  continentalTopQual: theme.accentBlue,
+  continentalSecond: theme.accentPurple,
+  continentalThird: theme.accentGreen,
   relegationPlayoff: theme.yellow,
   relegation: theme.loss,
 };
