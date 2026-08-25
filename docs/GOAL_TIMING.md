@@ -65,12 +65,16 @@ the main reason the estimate path still exists.
 
 ## The estimate is still there — on purpose
 
-`buildStandingsView` falls back to `synthGoalMinute` / `probValue` when:
+`buildStandingsView` falls back to `synthGoalMinute` / `probValue` only when the
+**whole column** has nothing measured:
 
 - no `timing` map is passed (mock data), **or**
-- the team has no recorded first goal (`firstGoalFor === null`), **or**
+- not one team in the table has a recorded value for this metric, **or**
 - the period is `1h` / `2h` — recorded timing covers the **whole match**, so it
   cannot answer a half-split view.
+
+A single team missing a value does *not* trigger the estimate — see the rule
+below.
 
 Provenance is surfaced, never hidden. `StandingsView.timingSource` is
 `'measured' | 'partial' | 'estimated'`, the caption spells it out, and
