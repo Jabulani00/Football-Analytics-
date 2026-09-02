@@ -8,6 +8,7 @@ import CountryFlag from '@/components/shared/CountryFlag';
 import PageContainer from '@/components/shared/PageContainer';
 import GroupStandingsView from '@/components/standings/GroupStandingsView';
 import TieredStandingsView from '@/components/standings/TieredStandingsView';
+import StandingsStakesView from '@/components/standings/StandingsStakesView';
 import StandingsAnalyticsView from '@/components/league/StandingsAnalyticsView';
 import SubTabBar from '@/components/shared/SubTabBar';
 import { useStandings } from '@/hooks/useStandings';
@@ -32,7 +33,7 @@ export default function StandingsPanel() {
     isGroups ? null : competition,
     isGroups ? null : selectedSeasonId,
   );
-  const [view, setView] = useState<'league' | 'tiers'>('league');
+  const [view, setView] = useState<'league' | 'tiers' | 'stakes'>('league');
 
   if (!competition) return null;
 
@@ -99,9 +100,10 @@ export default function StandingsPanel() {
             tabs={[
               { id: 'league', label: 'League table' },
               { id: 'tiers', label: '🟢🟡🔴 Tier tables' },
+              { id: 'stakes', label: 'Table stakes' },
             ]}
             active={view}
-            onChange={(id) => setView(id as 'league' | 'tiers')}
+            onChange={(id) => setView(id as 'league' | 'tiers' | 'stakes')}
           />
           {view === 'league' ? (
             <StandingsAnalyticsView
@@ -115,7 +117,7 @@ export default function StandingsPanel() {
                   router.push({ pathname: '/team/[slug]', params: { slug: String(id), name: team } });
               }}
             />
-          ) : (
+          ) : view === 'tiers' ? (
             <TieredStandingsView
               tiered={tiered}
               loading={loading}
@@ -125,6 +127,12 @@ export default function StandingsPanel() {
                   params: { slug: String(row.teamId), name: row.name },
                 })
               }
+            />
+          ) : (
+            <StandingsStakesView
+              standings={standings}
+              competitionId={competition.id}
+              seasonProgress={season?.progress ?? null}
             />
           )}
         </>

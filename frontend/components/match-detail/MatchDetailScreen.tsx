@@ -15,6 +15,7 @@ import OddsValuePanel from '@/components/match-detail/OddsValuePanel';
 import H2HPanel from '@/components/match-detail/H2HPanel';
 import PressureMonitorPanel from '@/components/match-detail/PressureMonitorPanel';
 import PitchLineup from '@/components/match-detail/PitchLineup';
+import FixtureMotivationPanel from '@/components/standings/FixtureMotivationPanel';
 import SubTabBar from '@/components/shared/SubTabBar';
 import { useMatchDetail } from '@/hooks/useMatchDetail';
 import {
@@ -258,6 +259,9 @@ export default function MatchDetailScreen({ matchId, onBack }: MatchDetailScreen
       {tab === 'summary' ? (
         <SummaryTab
           detail={detail}
+          standings={standings}
+          homeId={fixture.home.id}
+          awayId={fixture.away.id}
           homeName={fixture.home.name}
           awayName={fixture.away.name}
           goals={goals}
@@ -330,6 +334,9 @@ function MovementBadge({ m }: { m?: Movement }) {
 
 function SummaryTab({
   detail,
+  standings,
+  homeId,
+  awayId,
   homeName,
   awayName,
   goals,
@@ -343,6 +350,9 @@ function SummaryTab({
   pressureReading,
 }: {
   detail: RawFixtureDetail;
+  standings: StandingRow[];
+  homeId: number | null;
+  awayId: number | null;
   homeName: string;
   awayName: string;
   goals: MatchGoalEvent[];
@@ -369,6 +379,17 @@ function SummaryTab({
         homePosition={detail.home_position}
         awayPosition={detail.away_position}
         isLive={isLive}
+      />
+
+      {/* Section 2+3: additive — does not replace existing summary blocks */}
+      <FixtureMotivationPanel
+        standings={standings}
+        homeId={homeId}
+        awayId={awayId}
+        homeName={homeName}
+        awayName={awayName}
+        competitionId={detail.competition_id}
+        seasonProgress={detail.season_progress}
       />
 
       <MatchInfoCard detail={detail} homeName={homeName} awayName={awayName} />

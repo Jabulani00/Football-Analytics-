@@ -10,6 +10,7 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
+import { usePathname, useRouter } from 'expo-router';
 
 import { useScoresFilter } from '@/components/layout/ScoresFilterContext';
 import CountryFlag from '@/components/shared/CountryFlag';
@@ -31,6 +32,21 @@ export default function LeagueSidebar() {
   return kind === 'country' ? <FeedCompetitionList /> : <CountryBrowser />;
 }
 
+/** Standings live on `/`; leave match/team/stats routes so the table can show. */
+function useOpenStandingsNav() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const { openStandings } = useScoresFilter();
+
+  return (competition: Competition) => {
+    openStandings(competition);
+    const onHome = pathname === '/' || pathname === '' || pathname === '/index';
+    if (!onHome) {
+      router.replace('/');
+    }
+  };
+}
+
 // ===== Country -> Leagues/Cups browser (Clubs) ============================
 
 type CountryEntry = { id: number; country: string; leagues: Competition[]; cups: Competition[] };
@@ -40,8 +56,8 @@ function CountryBrowser() {
     expandedCountryId,
     setExpandedCountryId,
     selectedCompetition,
-    openStandings,
   } = useScoresFilter();
+  const openStandingsNav = useOpenStandingsNav();
   const { width } = useWindowDimensions();
   const isDesktop = width >= 1024;
 
@@ -92,7 +108,7 @@ function CountryBrowser() {
   }, [countries, query]);
 
   const pickCompetition = (c: Competition) => {
-    openStandings(c);
+    openStandingsNav(c);
     setMobileOpen(false); // collapse the mobile browser so the table is visible
   };
 
@@ -227,7 +243,8 @@ function CompGroup({
 // ===== Feed-driven competition list (national teams) ======================
 
 function FeedCompetitionList() {
-  const { competitions, competitionId, setCompetitionId, kind, openStandings } = useScoresFilter();
+  const { competitions, competitionId, setCompetitionId, kind } = useScoresFilter();
+  const openStandingsNav = useOpenStandingsNav();
   const { width } = useWindowDimensions();
   const isDesktop = width >= 1024;
 
@@ -264,7 +281,7 @@ function FeedCompetitionList() {
           ? groupTournaments.map((c) => (
               <Pressable
                 key={`grp-${c.id}`}
-                onPress={() => openStandings(c)}
+                onPress={() => openStandingsNav(c)}
                 style={[styles.mobileChip, styles.mobileChipGroups]}>
                 <Text style={styles.mobileGrpTag}>TBL</Text>
                 <Text style={styles.mobileLabel} numberOfLines={1}>
@@ -301,7 +318,7 @@ function FeedCompetitionList() {
             {groupTournaments.map((c) => (
               <Pressable
                 key={c.id}
-                onPress={() => openStandings(c)}
+                onPress={() => openStandingsNav(c)}
                 style={({ hovered }) => [
                   styles.compItem,
                   Platform.OS === 'web' && hovered && styles.itemHover,
