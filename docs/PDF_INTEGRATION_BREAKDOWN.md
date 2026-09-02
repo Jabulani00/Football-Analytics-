@@ -17,8 +17,8 @@ Related docs already in the repo: `Football_Analytics_Project_Spec.md`, `USER_ST
 | 72 stats tables (ordinary / PPG / series / last-N) | Structure + live builder largely in place |
 | H2H lists on match page | Basic version in place |
 | Motivation / “importance of 3 points” | **Built** — match Summary “Table stakes” + standings Stakes tab |
-| Separator tools (sudden drop, streaks, Imbangi…) | Not built |
-| Last-5 graded analysis + matchup naming | Not built |
+| Separator tools (sudden drop, streaks, Imbangi…) | **Built** — match Summary “Separators & last 5” |
+| Last-5 graded analysis + matchup naming | **Built** — same panel (Ukulumbana + lenses A–D) |
 | Bhozoma / mid-table power tables | Not built |
 | Hollywood hunt script + value odds rules | Partial / sample only |
 | Strategy compliance + bet slip | UI shell / sample; not full engine |
@@ -120,6 +120,8 @@ Build the “other separator tools” as yes/no flags on fixtures.
 
 **Done when:** a fixture can show a short list of active separators with Good / Mediocre / Bad where needed.
 
+**Status (2026-09-02):** ✅ Shipped — `utils/separatorTools.ts` + match Summary **Separators & last 5** panel. Existing tabs unchanged.
+
 ---
 
 ## Section 5 — Last 5 analysis engine
@@ -149,6 +151,8 @@ Also support comparison lenses:
 Same-strength rule: difference **≤ 4.0**; meaningful gap when scenario differences are **≥ 3**.
 
 **Done when:** opening a fixture shows last-5 grades, matchup name, and whether the gap is same-strength or split.
+
+**Status (2026-09-02):** ✅ Shipped — `utils/last5Analysis.ts` (grades, Inhlambuluko, 21 Ukulumbana, lenses A–D) on the same Summary panel.
 
 ---
 

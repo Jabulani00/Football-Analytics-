@@ -5,6 +5,7 @@ import {
   evaluateTableStances,
   type StandingLike,
 } from '@/utils/motivationEngine';
+import { contestedLeagueTop } from '@/utils/separatorTools';
 import { fonts, spacing, theme } from '@/styles/theme';
 
 type StandingsStakesViewProps = {
@@ -30,6 +31,7 @@ export default function StandingsStakesView({
   const chase = rows.filter((r) => r.stance === 'chase').length;
   const escape = rows.filter((r) => r.stance === 'escape').length;
   const motivated = rows.filter((r) => r.grade !== 'none').length;
+  const contested = contestedLeagueTop(standings);
 
   return (
     <View>
@@ -40,6 +42,9 @@ export default function StandingsStakesView({
       <Text style={styles.summary}>
         {chase} chase · {escape} escape · {motivated} with motivation A/B
       </Text>
+      {contested.active ? (
+        <Text style={styles.contested}>⚠ {contested.detail}</Text>
+      ) : null}
       {rows.map((m) => (
         <TeamMotivationCard key={m.teamId} motivation={m} compact />
       ))}
@@ -59,6 +64,12 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodySemiBold,
     fontSize: 11,
     color: theme.textPrimary,
+    marginBottom: spacing.sm,
+  },
+  contested: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 12,
+    color: theme.accentOrange,
     marginBottom: spacing.sm,
   },
   muted: {

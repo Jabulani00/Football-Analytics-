@@ -16,6 +16,7 @@ import H2HPanel from '@/components/match-detail/H2HPanel';
 import PressureMonitorPanel from '@/components/match-detail/PressureMonitorPanel';
 import PitchLineup from '@/components/match-detail/PitchLineup';
 import FixtureMotivationPanel from '@/components/standings/FixtureMotivationPanel';
+import FixtureFormAnalysisPanel from '@/components/standings/FixtureFormAnalysisPanel';
 import SubTabBar from '@/components/shared/SubTabBar';
 import { useMatchDetail } from '@/hooks/useMatchDetail';
 import {
@@ -389,6 +390,16 @@ function SummaryTab({
         homeName={homeName}
         awayName={awayName}
         competitionId={detail.competition_id}
+        seasonProgress={detail.season_progress}
+      />
+
+      {/* Section 4+5: separators + last-5 / Ukulumbana */}
+      <FixtureFormAnalysisPanel
+        standings={standings}
+        homeId={homeId}
+        awayId={awayId}
+        homeName={homeName}
+        awayName={awayName}
         seasonProgress={detail.season_progress}
       />
 
