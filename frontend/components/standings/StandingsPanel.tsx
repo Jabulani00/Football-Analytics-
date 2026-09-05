@@ -111,9 +111,9 @@ export default function StandingsPanel() {
             tabs={[
               { id: 'league', label: 'League table' },
               { id: 'tiers', label: '🟢🟡🔴 Tier tables' },
-              { id: 'stakes', label: 'Table stakes' },
-              { id: 'bhozoma', label: 'Bhozoma' },
-              { id: 'imbanpi', label: 'Imbanpi' },
+              { id: 'stakes', label: 'Who needs points' },
+              { id: 'bhozoma', label: 'Mid-table form' },
+              { id: 'imbanpi', label: 'Closest rivals' },
             ]}
             active={view}
             onChange={(id) => setView(id as StandingsView)}

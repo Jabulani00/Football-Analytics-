@@ -81,12 +81,12 @@ export const GRADE_POINTS: Record<FormGrade, number> = {
 };
 
 export const OPTION_LABEL: Record<TrueOption, string> = {
-  good: 'Good',
-  medium: 'Medium',
-  bad: 'Bad',
-  good_inhla: 'Good + Inhlambuluko',
-  medium_inhla: 'Medium + Inhlambuluko',
-  bad_inhla: 'Bad + Inhlambuluko',
+  good: 'Good form',
+  medium: 'Mixed form',
+  bad: 'Poor form',
+  good_inhla: 'Good form · bounce-back',
+  medium_inhla: 'Mixed form · bounce-back',
+  bad_inhla: 'Poor form · bounce-back',
 };
 
 /**
@@ -181,27 +181,27 @@ export function analyseTeamLast5(teamId: number, results: TeamResult[]): TeamLas
 
 /** All 21 Ukulumbana pairings from the notes (order preserved). */
 export const UKULUMBANA: { id: number; a: TrueOption; b: TrueOption; label: string }[] = [
-  { id: 1, a: 'good', b: 'bad', label: 'Good vs Bad' },
-  { id: 2, a: 'good', b: 'medium', label: 'Good vs Medium' },
-  { id: 3, a: 'good', b: 'good_inhla', label: 'Good vs Good + Inhlambuluko' },
-  { id: 4, a: 'good', b: 'bad_inhla', label: 'Good vs Bad + Inhlambuluko' },
-  { id: 5, a: 'good', b: 'medium_inhla', label: 'Good vs Medium + Inhlambuluko' },
-  { id: 6, a: 'bad', b: 'medium', label: 'Bad vs Medium' },
-  { id: 7, a: 'bad', b: 'good_inhla', label: 'Bad vs Good + Inhlambuluko' },
-  { id: 8, a: 'bad', b: 'bad_inhla', label: 'Bad vs Bad + Inhlambuluko' },
-  { id: 9, a: 'bad', b: 'medium_inhla', label: 'Bad vs Medium + Inhlambuluko' },
-  { id: 10, a: 'medium', b: 'good_inhla', label: 'Medium vs Good + Inhlambuluko' },
-  { id: 11, a: 'medium', b: 'bad_inhla', label: 'Medium vs Bad + Inhlambuluko' },
-  { id: 12, a: 'medium', b: 'medium_inhla', label: 'Medium vs Medium + Inhlambuluko' },
-  { id: 13, a: 'good_inhla', b: 'bad_inhla', label: 'Good+Inhla vs Bad+Inhla' },
-  { id: 14, a: 'good_inhla', b: 'medium_inhla', label: 'Good+Inhla vs Medium+Inhla' },
-  { id: 15, a: 'bad_inhla', b: 'medium_inhla', label: 'Bad+Inhla vs Medium+Inhla' },
-  { id: 16, a: 'good', b: 'good', label: 'Good vs Good' },
-  { id: 17, a: 'bad', b: 'bad', label: 'Bad vs Bad' },
-  { id: 18, a: 'medium', b: 'medium', label: 'Medium vs Medium' },
-  { id: 19, a: 'good_inhla', b: 'good_inhla', label: 'Good+Inhla vs Good+Inhla' },
-  { id: 20, a: 'bad_inhla', b: 'bad_inhla', label: 'Bad+Inhla vs Bad+Inhla' },
-  { id: 21, a: 'medium_inhla', b: 'medium_inhla', label: 'Medium+Inhla vs Medium+Inhla' },
+  { id: 1, a: 'good', b: 'bad', label: 'Good form vs poor form' },
+  { id: 2, a: 'good', b: 'medium', label: 'Good form vs mixed form' },
+  { id: 3, a: 'good', b: 'good_inhla', label: 'Good form vs good (bounce-back)' },
+  { id: 4, a: 'good', b: 'bad_inhla', label: 'Good form vs poor (bounce-back)' },
+  { id: 5, a: 'good', b: 'medium_inhla', label: 'Good form vs mixed (bounce-back)' },
+  { id: 6, a: 'bad', b: 'medium', label: 'Poor form vs mixed form' },
+  { id: 7, a: 'bad', b: 'good_inhla', label: 'Poor form vs good (bounce-back)' },
+  { id: 8, a: 'bad', b: 'bad_inhla', label: 'Poor form vs poor (bounce-back)' },
+  { id: 9, a: 'bad', b: 'medium_inhla', label: 'Poor form vs mixed (bounce-back)' },
+  { id: 10, a: 'medium', b: 'good_inhla', label: 'Mixed form vs good (bounce-back)' },
+  { id: 11, a: 'medium', b: 'bad_inhla', label: 'Mixed form vs poor (bounce-back)' },
+  { id: 12, a: 'medium', b: 'medium_inhla', label: 'Mixed form vs mixed (bounce-back)' },
+  { id: 13, a: 'good_inhla', b: 'bad_inhla', label: 'Good bounce-back vs poor bounce-back' },
+  { id: 14, a: 'good_inhla', b: 'medium_inhla', label: 'Good bounce-back vs mixed bounce-back' },
+  { id: 15, a: 'bad_inhla', b: 'medium_inhla', label: 'Poor bounce-back vs mixed bounce-back' },
+  { id: 16, a: 'good', b: 'good', label: 'Good form vs good form' },
+  { id: 17, a: 'bad', b: 'bad', label: 'Poor form vs poor form' },
+  { id: 18, a: 'medium', b: 'medium', label: 'Mixed form vs mixed form' },
+  { id: 19, a: 'good_inhla', b: 'good_inhla', label: 'Both bouncing back well' },
+  { id: 20, a: 'bad_inhla', b: 'bad_inhla', label: 'Both bouncing back from poor form' },
+  { id: 21, a: 'medium_inhla', b: 'medium_inhla', label: 'Both bouncing back from mixed form' },
 ];
 
 function optionsMatch(a: TrueOption, b: TrueOption, left: TrueOption, right: TrueOption): boolean {
@@ -273,12 +273,12 @@ export function analyseFixtureLast5(
     lenses,
     significantSplit,
     reliabilityNote:
-      'Machine reliability: compare this pre-match read to the actual result after full-time (hook ready).',
+      'After full-time, compare this pre-match read to the real result to judge how reliable it was.',
   };
 }
 
 export const CHANGE_LABEL: Record<FormChange, string> = {
-  positive: 'Positive change',
-  zero: 'No change',
-  negative: 'Negative change',
+  positive: 'Improving lately',
+  zero: 'Steady lately',
+  negative: 'Slipping lately',
 };

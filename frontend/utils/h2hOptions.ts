@@ -5,7 +5,7 @@
 
 import type { H2HMatch } from '@/services/oddAlerts';
 import {
-  h2hOutcomeForHomeTeam,
+  h2hOutcomeForTeam,
   teamsMatch,
   type H2HOutcome,
   type H2HSplit,
@@ -38,19 +38,7 @@ export type FixtureH2HOptions = {
 
 /** W/D/L for a named side in one H2H row. */
 export function outcomeForSide(m: H2HMatch, sideName: string): H2HOutcome {
-  const hg = m.home_goals ?? 0;
-  const ag = m.away_goals ?? 0;
-  const sideIsHome = teamsMatch(m.home_name, sideName);
-  const sideIsAway = teamsMatch(m.away_name, sideName);
-  if (!sideIsHome && !sideIsAway) {
-    // Fall back to fixture-home convention if names don't match cleanly.
-    return h2hOutcomeForHomeTeam(m, sideName);
-  }
-  const gf = sideIsHome ? hg : ag;
-  const ga = sideIsHome ? ag : hg;
-  if (gf > ga) return 'W';
-  if (gf < ga) return 'L';
-  return 'D';
+  return h2hOutcomeForTeam(m, sideName);
 }
 
 function neverBeaten(
@@ -168,9 +156,9 @@ export function evaluateH2HOptions(opts: {
   };
   tags.push({
     id: 'points_share',
-    label: same ? 'H2H same strength' : homePts > awayPtsReal ? 'H2H edge home' : 'H2H edge away',
+    label: same ? 'Even in past meetings' : homePts > awayPtsReal ? 'Home edge in H2H' : 'Away edge in H2H',
     kind: same ? 'neutral' : homePts > awayPtsReal ? 'good' : 'bad',
-    detail: `${homePts}/${maxPts} vs ${awayPtsReal}/${maxPts} (Δ ${shareDiff}${same ? ' ≤ 3 → same' : ''})`,
+    detail: `${homePts}–${awayPtsReal} points from past meetings (max ${maxPts} each)`,
   });
 
   // Polar dominance: one side has ≥70% of available points and ≥3 meetings
@@ -180,9 +168,9 @@ export function evaluateH2HOptions(opts: {
     const dominant = homeShare >= awayShare ? homeName : awayName;
     tags.push({
       id: 'polar',
-      label: 'Polar — one dominant',
+      label: 'One side dominates',
       kind: 'warn',
-      detail: `${dominant} clearly dominates this H2H`,
+      detail: `${dominant} has clearly dominated these meetings`,
     });
   }
 
@@ -191,9 +179,9 @@ export function evaluateH2HOptions(opts: {
   if (overall.length >= 3 && same && !isPolar) {
     tags.push({
       id: 'nika_nika',
-      label: 'Nika Nika',
+      label: "Anyone's game",
       kind: 'neutral',
-      detail: "Anyone's game — balanced H2H, no clear dominator",
+      detail: 'Balanced head-to-head — no clear dominator',
     });
   }
 
@@ -221,16 +209,16 @@ export function evaluateH2HOptions(opts: {
     if (avgGoals >= 2.5) {
       tags.push({
         id: 'high_avg_goals',
-        label: 'High avg goals',
+        label: 'High-scoring meetings',
         kind: 'info',
-        detail: `H2H average ${avgGoals.toFixed(2)} goals (≥ 2.5)`,
+        detail: `Past meetings average ${avgGoals.toFixed(1)} goals`,
       });
     } else if (avgGoals <= 1.5) {
       tags.push({
         id: 'low_avg_goals',
-        label: 'Low avg goals',
+        label: 'Low-scoring meetings',
         kind: 'info',
-        detail: `H2H average ${avgGoals.toFixed(2)} goals (≤ 1.5)`,
+        detail: `Past meetings average ${avgGoals.toFixed(1)} goals`,
       });
     }
   }
@@ -241,16 +229,16 @@ export function evaluateH2HOptions(opts: {
     if (wr >= 0.6) {
       tags.push({
         id: 'team_good',
-        label: 'Team good (H2H)',
+        label: 'Strong in these meetings',
         kind: 'good',
-        detail: `${homeName} wins ${Math.round(wr * 100)}% of H2H`,
+        detail: `${homeName} wins ${Math.round(wr * 100)}% of past meetings`,
       });
     } else if (wr <= 0.25) {
       tags.push({
         id: 'team_bad',
-        label: 'Team bad (H2H)',
+        label: 'Struggles in these meetings',
         kind: 'bad',
-        detail: `${homeName} wins only ${Math.round(wr * 100)}% of H2H`,
+        detail: `${homeName} wins only ${Math.round(wr * 100)}% of past meetings`,
       });
     }
   }
@@ -266,12 +254,12 @@ export function evaluateH2HOptions(opts: {
     const best = polarSequences[0];
     tags.push({
       id: 'polar_sequence',
-      label: `Polar form ${best.pattern}`,
+      label: `Clear win pattern (${best.pattern})`,
       kind: best.matchesFound <= 1 ? 'info' : 'warn',
       detail:
         best.matchesFound === 1
-          ? `Single W pattern (less value) — ${best.sequence}`
-          : `${best.matchesFound} matches found · sequence ${best.sequence}`,
+          ? `Only one match in this pattern — weaker signal · ${best.sequence}`
+          : `${best.matchesFound} matches fit · ${best.sequence}`,
     });
   }
 
@@ -281,9 +269,9 @@ export function evaluateH2HOptions(opts: {
   if (scoreBetRelevant) {
     tags.push({
       id: 'score_bet',
-      label: 'Score bet',
+      label: 'Worth a correct-score look',
       kind: 'info',
-      detail: 'H2H profile suggests correct-score / multi-score investigation',
+      detail: 'Past meetings suggest checking exact scores or multi-score bets',
     });
   }
 

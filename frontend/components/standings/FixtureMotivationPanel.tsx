@@ -33,9 +33,9 @@ export default function FixtureMotivationPanel({
   if (standings.length === 0 || (homeId == null && awayId == null)) {
     return (
       <View style={styles.card}>
-        <Text style={styles.title}>Table stakes</Text>
+        <Text style={styles.title}>Who needs the win?</Text>
         <Text style={styles.muted}>
-          Motivation / chase-escape needs a league table for this season.
+          Open once the league table is available — it shows which side gains more from three points.
         </Text>
       </View>
     );
@@ -48,9 +48,9 @@ export default function FixtureMotivationPanel({
 
   return (
     <View style={styles.wrap}>
-      <Text style={styles.title}>Table stakes</Text>
+      <Text style={styles.title}>Who needs the win?</Text>
       <Text style={styles.sub}>
-        Importance of 3 points · Chase / Escape · {homeName} vs {awayName}
+        How much this result matters for {homeName} and {awayName} in the table
       </Text>
       {home ? <TeamMotivationCard motivation={home} /> : null}
       {away ? <TeamMotivationCard motivation={away} /> : null}

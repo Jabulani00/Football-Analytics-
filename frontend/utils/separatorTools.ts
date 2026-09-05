@@ -181,7 +181,7 @@ function childBeaterFlags(results: TeamResult[], side: 'home' | 'away', zone?: s
   if (thrash) {
     flags.push({
       id: `child_beater_m1_${side}`,
-      label: 'Child beater (method 1)',
+      label: 'Comfortable win vs lower side',
       active: true,
       grade: 'info',
       detail: `Beat lower side ${thrash.gf}-${thrash.ga} (${thrash.opponentName})`,
@@ -198,7 +198,7 @@ function childBeaterFlags(results: TeamResult[], side: 'home' | 'away', zone?: s
   if (topBeatsBottom.length >= 2) {
     flags.push({
       id: `child_beater_m2_${side}`,
-      label: 'Child beater (method 2)',
+      label: 'Regularly thrashing lower sides',
       active: true,
       grade: 'mediocre',
       detail: `${topBeatsBottom.length} heavy wins vs sides below in last 6`,
@@ -213,7 +213,7 @@ function imbangiFlag(homePts: number | null, awayPts: number | null): SeparatorF
   if (homePts == null || awayPts == null) {
     return {
       id: 'imbangi',
-      label: 'Imbangi',
+      label: 'Close on the table',
       active: false,
       grade: 'info',
       detail: 'Need both sides’ points',
@@ -224,12 +224,12 @@ function imbangiFlag(homePts: number | null, awayPts: number | null): SeparatorF
   const active = d <= 3;
   return {
     id: 'imbangi',
-    label: 'Imbangi',
+    label: 'Close on the table',
     active,
     grade: active ? 'warn' : 'info',
     detail: active
-      ? `Rivals — only ${d} pts apart (closer to zero = tighter)`
-      : `Points gap ${d} — not a close-table rivalry`,
+      ? `Only ${d} pts apart — a real local rivalry`
+      : `${d} pts apart — not a tight table fight`,
     side: 'fixture',
   };
 }
@@ -247,7 +247,7 @@ function indlelaFlag(
   const active = signals.length > 0;
   return {
     id: 'indlela',
-    label: 'Indlela',
+    label: 'Path pattern',
     active,
     grade: active ? 'info' : 'info',
     detail: active ? signals.join(' · ') : 'No clear path pattern in recent form',
@@ -383,13 +383,13 @@ export function evaluateFixtureSeparators(opts: {
   if (pointsDiff != null) {
     flags.push({
       id: 'points_diff',
-      label: 'Points difference (ΔP)',
+      label: 'Points difference',
       active: true,
       grade: pointsDiff <= 4 ? 'warn' : 'info',
       detail:
         pointsDiff <= 4
-          ? `ΔP = ${pointsDiff} — close enough to need separators`
-          : `ΔP = ${pointsDiff} — enough power gap on paper`,
+          ? `${pointsDiff} pts apart — tight enough that form matters more`
+          : `${pointsDiff} pts apart — clear gap on the table`,
       side: 'fixture',
     });
   }

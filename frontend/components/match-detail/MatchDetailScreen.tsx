@@ -382,42 +382,7 @@ function SummaryTab({
         isLive={isLive}
       />
 
-      {/* Section 2+3: additive — does not replace existing summary blocks */}
-      <FixtureMotivationPanel
-        standings={standings}
-        homeId={homeId}
-        awayId={awayId}
-        homeName={homeName}
-        awayName={awayName}
-        competitionId={detail.competition_id}
-        seasonProgress={detail.season_progress}
-      />
-
-      {/* Section 4+5: separators + last-5 / Ukulumbana */}
-      <FixtureFormAnalysisPanel
-        standings={standings}
-        homeId={homeId}
-        awayId={awayId}
-        homeName={homeName}
-        awayName={awayName}
-        seasonProgress={detail.season_progress}
-      />
-
       <MatchInfoCard detail={detail} homeName={homeName} awayName={awayName} />
-
-      <PressureMonitorPanel
-        homeName={homeName}
-        awayName={awayName}
-        status={detail.status}
-        reading={pressureReading}
-        history={pressureHistory}
-        stats={detail.stats}
-        apiTimeline={timeline}
-        periodGoals={goalTiming.periodGoals}
-        oddAlertsMarkers={goalTiming.chartMarkers}
-        eventsConfigured={goalsConfigured}
-        timingApproximate={goalTiming.approximate}
-      />
 
       <GoalTimingPanel
         homeName={homeName}
@@ -454,21 +419,85 @@ function SummaryTab({
           </View>
           {(prob.btts != null || prob.o25 != null) && (
             <View style={styles.quickProb}>
-              {prob.btts != null ? <Text style={styles.quickProbItem}>BTTS {Math.round(prob.btts)}%</Text> : null}
-              {prob.o25 != null ? <Text style={styles.quickProbItem}>O2.5 {Math.round(prob.o25)}%</Text> : null}
+              {prob.btts != null ? <Text style={styles.quickProbItem}>Both teams score {Math.round(prob.btts)}%</Text> : null}
+              {prob.o25 != null ? <Text style={styles.quickProbItem}>Over 2.5 goals {Math.round(prob.o25)}%</Text> : null}
               {prob.home_win_ht != null ? (
-                <Text style={styles.quickProbItem}>Home HT {Math.round(prob.home_win_ht)}%</Text>
+                <Text style={styles.quickProbItem}>Home lead at HT {Math.round(prob.home_win_ht)}%</Text>
               ) : null}
             </View>
           )}
         </View>
       ) : null}
 
-      {detail.referee?.name ? (
-        <Text style={styles.refLine}>Referee: {detail.referee.name}</Text>
-      ) : null}
+      <PressureMonitorPanel
+        homeName={homeName}
+        awayName={awayName}
+        status={detail.status}
+        reading={pressureReading}
+        history={pressureHistory}
+        stats={detail.stats}
+        apiTimeline={timeline}
+        periodGoals={goalTiming.periodGoals}
+        oddAlertsMarkers={goalTiming.chartMarkers}
+        eventsConfigured={goalsConfigured}
+        timingApproximate={goalTiming.approximate}
+      />
+
+      <FixtureMotivationPanel
+        standings={standings}
+        homeId={homeId}
+        awayId={awayId}
+        homeName={homeName}
+        awayName={awayName}
+        competitionId={detail.competition_id}
+        seasonProgress={detail.season_progress}
+      />
+
+      <FixtureFormAnalysisPanel
+        standings={standings}
+        homeId={homeId}
+        awayId={awayId}
+        homeName={homeName}
+        awayName={awayName}
+        seasonProgress={detail.season_progress}
+      />
     </View>
   );
+}
+
+function formatMatchDate(raw: string): string {
+  // Prefer a short readable date; fall back to the API string.
+  const d = new Date(raw.includes('T') || raw.includes(' ') ? raw : `${raw}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return raw;
+  return d.toLocaleDateString(undefined, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+function formatProgress(value: number): string | null {
+  // API may send 0–100 or 0–1. Skip empty / zero noise.
+  const pct = value > 0 && value <= 1 ? value * 100 : value;
+  if (!Number.isFinite(pct) || pct <= 0) return null;
+  return `${Math.round(pct)}% of season played`;
+}
+
+function formatPredictability(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const asNum = Number(trimmed);
+  if (Number.isFinite(asNum)) {
+    if (asNum === 0) return null;
+    // Show one decimal max — avoid 0.0000000 strings.
+    const pct = asNum > 0 && asNum <= 1 ? asNum * 100 : asNum;
+    if (pct <= 0) return null;
+    return `${Math.round(pct)}% predictable league`;
+  }
+  // Non-numeric labels (e.g. "High") pass through.
+  if (/^0(\.0+)?$/.test(trimmed)) return null;
+  return trimmed;
 }
 
 function MatchInfoCard({
@@ -481,23 +510,35 @@ function MatchInfoCard({
   awayName: string;
 }) {
   const rows: { label: string; value: string }[] = [];
-  if (detail.date) rows.push({ label: 'Date', value: detail.date });
+  if (detail.date) rows.push({ label: 'Date', value: formatMatchDate(detail.date) });
   if (detail.ko_human) rows.push({ label: 'Kick-off', value: detail.ko_human });
   if (detail.venue) rows.push({ label: 'Venue', value: detail.venue });
+  rows.push({ label: 'Competition', value: detail.is_cup ? 'Cup' : detail.is_friendly ? 'Friendly' : 'League' });
+  if (detail.home_position != null) {
+    rows.push({ label: `${homeName}`, value: `${detail.home_position}${ordinal(detail.home_position)} in the table` });
+  }
+  if (detail.away_position != null) {
+    rows.push({ label: `${awayName}`, value: `${detail.away_position}${ordinal(detail.away_position)} in the table` });
+  }
+  if (detail.home_played != null && detail.home_played > 0) {
+    rows.push({ label: `${homeName} games played`, value: String(detail.home_played) });
+  }
+  if (detail.away_played != null && detail.away_played > 0) {
+    rows.push({ label: `${awayName} games played`, value: String(detail.away_played) });
+  }
   if (detail.home_formation) rows.push({ label: `${homeName} formation`, value: detail.home_formation });
   if (detail.away_formation) rows.push({ label: `${awayName} formation`, value: detail.away_formation });
-  if (detail.home_position != null) rows.push({ label: `${homeName} table`, value: `#${detail.home_position}` });
-  if (detail.away_position != null) rows.push({ label: `${awayName} table`, value: `#${detail.away_position}` });
-  if (detail.home_played != null) rows.push({ label: `${homeName} played`, value: String(detail.home_played) });
-  if (detail.away_played != null) rows.push({ label: `${awayName} played`, value: String(detail.away_played) });
-  if (detail.season_progress != null) rows.push({ label: 'Season progress', value: `${detail.season_progress}%` });
-  if (detail.competition_predictability) {
-    rows.push({ label: 'Predictability', value: detail.competition_predictability });
+  if (detail.season_progress != null) {
+    const progress = formatProgress(detail.season_progress);
+    if (progress) rows.push({ label: 'Season stage', value: progress });
   }
-  rows.push({ label: 'Competition type', value: detail.is_cup ? 'Cup' : 'League' });
-  if (detail.is_friendly) rows.push({ label: 'Friendly', value: 'Yes' });
-  if (detail.has_odds) rows.push({ label: 'Odds available', value: 'Yes' });
+  if (detail.competition_predictability) {
+    const pred = formatPredictability(String(detail.competition_predictability));
+    if (pred) rows.push({ label: 'League style', value: pred });
+  }
   if (detail.referee?.name) rows.push({ label: 'Referee', value: detail.referee.name });
+
+  if (rows.length === 0) return null;
 
   return (
     <View style={styles.card}>
@@ -510,6 +551,21 @@ function MatchInfoCard({
       ))}
     </View>
   );
+}
+
+function ordinal(n: number): string {
+  const v = n % 100;
+  if (v >= 11 && v <= 13) return 'th';
+  switch (n % 10) {
+    case 1:
+      return 'st';
+    case 2:
+      return 'nd';
+    case 3:
+      return 'rd';
+    default:
+      return 'th';
+  }
 }
 
 function ScorePeriodRow({

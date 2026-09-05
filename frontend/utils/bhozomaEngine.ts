@@ -68,16 +68,16 @@ function emptySide(): BhozomaSideStats {
 }
 
 function labelAbove(pct: number | null, dataDust: boolean): string | null {
-  if (dataDust || pct == null) return 'DATA DUST';
-  if (pct < GOLIATH_PCT) return 'Goliath hero';
-  return 'Bhozoma classic';
+  if (dataDust || pct == null) return 'Not enough games';
+  if (pct < GOLIATH_PCT) return 'Giant-killer';
+  return 'Solid vs higher sides';
 }
 
 function labelBelow(pct: number | null, dataDust: boolean): string | null {
-  if (dataDust || pct == null) return 'DATA DUST';
-  if (pct >= 70) return 'Dominates below';
-  if (pct < 40) return 'Leaks points below';
-  return 'Average vs below';
+  if (dataDust || pct == null) return 'Not enough games';
+  if (pct >= 70) return 'Dominates lower sides';
+  if (pct < 40) return 'Drops points to lower sides';
+  return 'Average vs lower sides';
 }
 
 function sideStats(

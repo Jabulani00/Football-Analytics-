@@ -7,7 +7,8 @@ import { fonts, layout, spacing, theme } from '@/styles/theme';
 import {
   filterH2hBySplit,
   formatH2hScore,
-  h2hOutcomeForHomeTeam,
+  h2hFocusTeam,
+  h2hOutcomeForTeam,
   h2hSummary,
   outcomeBg,
   outcomeColor,
@@ -39,13 +40,13 @@ function SummaryBar({
   wins,
   draws,
   losses,
-  homeName,
+  focusName,
   count,
 }: {
   wins: number;
   draws: number;
   losses: number;
-  homeName: string;
+  focusName: string;
   count: number;
 }) {
   return (
@@ -59,7 +60,7 @@ function SummaryBar({
         <SummaryPill label="L" value={losses} color={theme.loss} />
       </View>
       <Text style={styles.summaryCaption}>
-        {homeName} — green win · yellow draw · red loss
+        {focusName} — green win · yellow draw · red loss
       </Text>
     </View>
   );
@@ -76,18 +77,16 @@ function SummaryPill({ label, value, color }: { label: string; value: number; co
 
 function H2HRow({
   match,
-  fixtureHome,
-  fixtureAway,
+  focusTeam,
 }: {
   match: H2HMatch;
-  fixtureHome: string;
-  fixtureAway: string;
+  focusTeam: string;
 }) {
-  const outcome = h2hOutcomeForHomeTeam(match, fixtureHome);
+  const outcome = h2hOutcomeForTeam(match, focusTeam);
   const color = outcomeColor(outcome);
   const bg = outcomeBg(outcome);
-  const homeHighlight = teamsMatch(match.home_name, fixtureHome);
-  const awayHighlight = teamsMatch(match.away_name, fixtureAway);
+  const homeHighlight = teamsMatch(match.home_name, focusTeam);
+  const awayHighlight = teamsMatch(match.away_name, focusTeam);
 
   return (
     <View style={styles.row}>
@@ -188,10 +187,15 @@ export default function H2HPanel({ matches, homeName, awayName }: H2HPanelProps)
     [matches, split, homeName, awayName],
   );
 
-  const summary = useMemo(() => h2hSummary(filtered, homeName), [filtered, homeName]);
+  const focusTeam = useMemo(
+    () => h2hFocusTeam(split, homeName, awayName),
+    [split, homeName, awayName],
+  );
+
+  const summary = useMemo(() => h2hSummary(filtered, focusTeam), [filtered, focusTeam]);
   const formOutcomes = useMemo(
-    () => filtered.map((m) => h2hOutcomeForHomeTeam(m, homeName)),
-    [filtered, homeName],
+    () => filtered.map((m) => h2hOutcomeForTeam(m, focusTeam)),
+    [filtered, focusTeam],
   );
 
   // Section 7 — additive option tags; does not change the list below.
@@ -203,7 +207,7 @@ export default function H2HPanel({ matches, homeName, awayName }: H2HPanelProps)
   if (matches.length === 0) {
     return (
       <View style={styles.wrap}>
-        <Text style={styles.optionsTitle}>H2H options</Text>
+        <Text style={styles.optionsTitle}>What the head-to-head says</Text>
         {options.tags.map((t) => (
           <OptionChip key={t.id} tag={t} />
         ))}
@@ -214,11 +218,11 @@ export default function H2HPanel({ matches, homeName, awayName }: H2HPanelProps)
 
   return (
     <View style={styles.wrap}>
-      <Text style={styles.optionsTitle}>H2H options</Text>
+      <Text style={styles.optionsTitle}>What the head-to-head says</Text>
       <Text style={styles.optionsSub}>
-        Section 7 · Polar / never beaten / Nika Nika / score-bet
+        Quick reads from past meetings between these two
         {options.pointsShare
-          ? ` · share ${options.pointsShare.home}/${options.pointsShare.max}–${options.pointsShare.away}/${options.pointsShare.max}`
+          ? ` · points from H2H: ${options.pointsShare.home}–${options.pointsShare.away} (of ${options.pointsShare.max} each)`
           : ''}
       </Text>
       <View style={styles.optionList}>
@@ -230,8 +234,8 @@ export default function H2HPanel({ matches, homeName, awayName }: H2HPanelProps)
       <SubTabBar
         tabs={[
           { id: 'overall', label: 'Overall' },
-          { id: 'home', label: `${homeName} home` },
-          { id: 'away', label: `${awayName} home` },
+          { id: 'home', label: `${homeName} at home` },
+          { id: 'away', label: `${awayName} away` },
         ]}
         active={split}
         onChange={setSplit}
@@ -243,18 +247,13 @@ export default function H2HPanel({ matches, homeName, awayName }: H2HPanelProps)
             wins={summary.wins}
             draws={summary.draws}
             losses={summary.losses}
-            homeName={homeName}
+            focusName={focusTeam}
             count={filtered.length}
           />
           <FormStrip outcomes={formOutcomes} />
           <View style={styles.list}>
             {filtered.map((m) => (
-              <H2HRow
-                key={m.id}
-                match={m}
-                fixtureHome={homeName}
-                fixtureAway={awayName}
-              />
+              <H2HRow key={m.id} match={m} focusTeam={focusTeam} />
             ))}
           </View>
         </>

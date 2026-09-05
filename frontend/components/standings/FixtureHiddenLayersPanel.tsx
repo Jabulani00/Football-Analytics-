@@ -10,30 +10,30 @@ import { fonts, layout, spacing, theme } from '@/styles/theme';
 
 function SignalLine({ s }: { s: HiddenSignal }) {
   const color = s.polarity === 'strength' ? theme.accentGreen : theme.loss;
+  const sideLabel = s.side === 'home' ? 'Home' : s.side === 'away' ? 'Away' : s.side;
   return (
     <Text style={[styles.signal, { color }]}>
-      [{s.side}] {s.naming} · {s.detail}
-      {s.canCallOut ? ' · call-out' : ''}
+      {sideLabel}: {s.naming} — {s.detail}
     </Text>
   );
 }
 
 function ProblemLine({ p }: { p: ProblemRow }) {
+  const tone = p.polarity === 'strength' ? 'strength' : 'weakness';
   return (
     <View style={styles.problemRow}>
-      <Text style={styles.problemCode}>{p.code}</Text>
       <View style={styles.problemBody}>
         <Text style={styles.problemName}>{p.naming}</Text>
         <Text style={styles.problemDetail}>
-          {p.polarity} · {p.valueLabel} · level {p.level}
-          {p.canCallOut ? ' · can call out' : ' · no call-out'}
+          {tone} · {p.valueLabel}
+          {p.canCallOut ? ' · clear enough to act on' : ' · early signal only'}
         </Text>
       </View>
     </View>
   );
 }
 
-/** Presentational Section 6 block (fed by useFixtureFormAnalysis). */
+/** Presentational hidden form block (fed by useFixtureFormAnalysis). */
 export function HiddenLayersView({
   layers,
   homeName,
@@ -45,10 +45,10 @@ export function HiddenLayersView({
 }) {
   return (
     <View style={styles.wrap}>
-      <Text style={styles.title}>Hidden layers</Text>
+      <Text style={styles.title}>Hidden strengths & weaknesses</Text>
       <Text style={styles.sub}>
-        Section 6 · {homeName} vs {awayName} · mode {layers.mode}
-        {layers.pointsDiff != null ? ` · ΔP ${layers.pointsDiff}` : ''}
+        Patterns in recent results for {homeName} vs {awayName}
+        {layers.pointsDiff != null ? ` · ${layers.pointsDiff} pts apart` : ''}
       </Text>
 
       <View style={styles.verdictBox}>
@@ -58,18 +58,18 @@ export function HiddenLayersView({
 
       {layers.homeSignals.length + layers.awaySignals.length > 0 ? (
         <View style={styles.block}>
-          <Text style={styles.blockTitle}>Strengths & weaknesses</Text>
+          <Text style={styles.blockTitle}>What stands out</Text>
           {[...layers.homeSignals, ...layers.awaySignals].map((s) => (
             <SignalLine key={s.id} s={s} />
           ))}
         </View>
       ) : (
-        <Text style={styles.muted}>No hidden signals from recent form yet.</Text>
+        <Text style={styles.muted}>Not enough recent form to spot a clear pattern yet.</Text>
       )}
 
       {layers.problems.length > 0 ? (
         <View style={styles.block}>
-          <Text style={styles.blockTitle}>Problem address</Text>
+          <Text style={styles.blockTitle}>Watch-outs</Text>
           {layers.problems.map((p) => (
             <ProblemLine key={`${p.code}-${p.naming}`} p={p} />
           ))}
@@ -124,13 +124,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   signal: { fontFamily: fonts.body, fontSize: 11, marginBottom: 3, lineHeight: 15 },
-  problemRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.xs },
-  problemCode: {
-    fontFamily: fonts.bodySemiBold,
-    fontSize: 11,
-    color: theme.accentOrange,
-    width: 52,
-  },
+  problemRow: { marginBottom: spacing.xs },
   problemBody: { flex: 1 },
   problemName: { fontFamily: fonts.bodySemiBold, fontSize: 11, color: theme.textPrimary },
   problemDetail: { fontFamily: fonts.body, fontSize: 10, color: theme.textMuted },

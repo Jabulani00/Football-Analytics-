@@ -23,8 +23,9 @@ function SideBlock({ title, side }: { title: string; side: BhozomaSideStats }) {
     <View style={[styles.side, dust && styles.sideDust]}>
       <Text style={styles.sideTitle}>{title}</Text>
       <Text style={styles.sideMeta}>
-        MP {side.mp} · pts {side.pointsAttained}/{side.pointsPossible} · lost {side.pointsLost}
-        {side.pctAttained != null ? ` · ${side.pctAttained.toFixed(0)}%` : ''}
+        {side.mp} games · {side.pointsAttained} of {side.pointsPossible} pts
+        {side.pctAttained != null ? ` (${side.pctAttained.toFixed(0)}%)` : ''}
+        {side.pointsLost > 0 ? ` · dropped ${side.pointsLost}` : ''}
       </Text>
       <Text style={[styles.sideLabel, dust ? styles.dust : styles.labelOk]}>
         {side.label ?? '—'}
@@ -44,7 +45,7 @@ function TeamCard({ row }: { row: BhozomaTeamRow }) {
           </Text>
           <Text style={styles.meta}>
             {row.points} pts · {row.zone}
-            {row.isMidTable ? ' · yellow focus' : ''}
+            {row.isMidTable ? ' · mid-table focus' : ''}
           </Text>
         </View>
       </View>
@@ -68,7 +69,7 @@ export default function BhozomaView({
     return (
       <View style={styles.center}>
         <ActivityIndicator color={theme.accentGreen} />
-        <Text style={styles.muted}>Building Bhozoma from season results…</Text>
+        <Text style={styles.muted}>Building mid-table form from season results…</Text>
       </View>
     );
   }
@@ -81,12 +82,13 @@ export default function BhozomaView({
   return (
     <View>
       <Text style={styles.blurb}>
-        Mid-table power vs sides currently above / below. Needs MP ≥ 3 (else DATA
-        DUST). Under 30% pts from above → Goliath hero; over 30% → Bhozoma classic.
+        How mid-table teams do against sides above them and below them. Needs at least
+        3 games in a bucket before the read is trusted. Taking under 30% of points from
+        higher sides is a giant-killer signal; over 30% is solid mid-table form.
       </Text>
       {table.midBand ? (
         <Text style={styles.summary}>
-          Yellow band pos {table.midBand.from}–{table.midBand.to} · showing{' '}
+          Mid-table places {table.midBand.from}–{table.midBand.to} · showing{' '}
           {focus.length} team{focus.length === 1 ? '' : 's'}
           {table.midRows.length === 0 ? ' (full table — no mid band hit)' : ''}
         </Text>

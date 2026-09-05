@@ -32,14 +32,19 @@ export default function H2HPanel({ results, homeTeamName, awayTeamName }: H2HPan
       <SubTabBar
         tabs={[
           { id: 'overall', label: 'Overall' },
-          { id: 'home', label: 'Home' },
-          { id: 'away', label: 'Away' },
+          { id: 'home', label: `${homeTeamName} at home` },
+          { id: 'away', label: `${awayTeamName} away` },
         ]}
         active={split}
         onChange={setSplit}
       />
       {filtered.length > 0 ? (
-        <H2HList results={filtered} homeTeamName={homeTeamName} awayTeamName={awayTeamName} />
+        <H2HList
+          results={filtered}
+          homeTeamName={homeTeamName}
+          awayTeamName={awayTeamName}
+          focusTeamName={split === 'away' ? awayTeamName : homeTeamName}
+        />
       ) : (
         <Text style={styles.empty}>No meetings in this split.</Text>
       )}

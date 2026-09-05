@@ -8,6 +8,8 @@ type H2HListProps = {
   results: H2HResult[];
   homeTeamName: string;
   awayTeamName: string;
+  /** Whose W/D/L to show — defaults to fixture home. */
+  focusTeamName?: string;
 };
 
 function parseScore(score: string): [number, number] {
@@ -30,10 +32,9 @@ function homeTeamResult(
 
 function scoreTint(
   result: H2HResult,
-  currentHome: string,
-  currentAway: string,
+  focusTeam: string,
 ): 'win' | 'loss' | 'draw' | null {
-  const r = homeTeamResult(result, currentHome);
+  const r = homeTeamResult(result, focusTeam);
   if (r === 'W') return 'win';
   if (r === 'L') return 'loss';
   return 'draw';
@@ -62,21 +63,19 @@ function formatDate(iso: string): string {
 
 function H2HRow({
   result,
-  currentHome,
-  currentAway,
+  focusTeam,
 }: {
   result: H2HResult;
-  currentHome: string;
-  currentAway: string;
+  focusTeam: string;
 }) {
-  const tint = scoreTint(result, currentHome, currentAway);
+  const tint = scoreTint(result, focusTeam);
   const scoreStyle =
     tint === 'win'
       ? styles.scoreWin
       : tint === 'loss'
         ? styles.scoreLoss
         : styles.scoreDraw;
-  const form = homeTeamResult(result, currentHome);
+  const form = homeTeamResult(result, focusTeam);
   const formColor =
     form === 'W' ? theme.win : form === 'L' ? theme.loss : theme.yellow;
 
@@ -104,7 +103,13 @@ function H2HRow({
   );
 }
 
-export default function H2HList({ results, homeTeamName, awayTeamName }: H2HListProps) {
+export default function H2HList({
+  results,
+  homeTeamName,
+  awayTeamName,
+  focusTeamName,
+}: H2HListProps) {
+  const focus = focusTeamName ?? homeTeamName;
   return (
     <View style={styles.container}>
       <SectionLabel style={styles.heading}>HEAD TO HEAD — LAST 5 MEETINGS</SectionLabel>
@@ -112,11 +117,10 @@ export default function H2HList({ results, homeTeamName, awayTeamName }: H2HList
         <H2HRow
           key={result.date + result.score}
           result={result}
-          currentHome={homeTeamName}
-          currentAway={awayTeamName}
+          focusTeam={focus}
         />
       ))}
-      <Text style={styles.summary}>{buildSummary(results, homeTeamName)}</Text>
+      <Text style={styles.summary}>{buildSummary(results, focus)}</Text>
     </View>
   );
 }

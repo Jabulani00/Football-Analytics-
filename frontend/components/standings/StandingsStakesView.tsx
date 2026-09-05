@@ -36,11 +36,11 @@ export default function StandingsStakesView({
   return (
     <View>
       <Text style={styles.blurb}>
-        Who needs the 3 points? Chase / Escape tags use qualification and
-        relegation lines (or table thirds when a league has no curated zones).
+        Who gains the most from three points? Tags show teams chasing a place up the
+        table or fighting to stay clear of trouble.
       </Text>
       <Text style={styles.summary}>
-        {chase} chase · {escape} escape · {motivated} with motivation A/B
+        {chase} chasing · {escape} escaping · {motivated} with a clear need for points
       </Text>
       {contested.active ? (
         <Text style={styles.contested}>⚠ {contested.detail}</Text>

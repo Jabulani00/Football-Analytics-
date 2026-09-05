@@ -297,20 +297,20 @@ export function evaluateHiddenLayers(opts: {
 
   const hasData = homeResults.length + awayResults.length > 0;
   let verdict: HiddenVerdict = 'insufficient_data';
-  let verdictDetail = 'Not enough recent form to read hidden layers.';
+  let       verdictDetail = 'Not enough recent form to spot a clear pattern.';
 
   if (hasData) {
     if (mode === 'close') {
       // Seek big hidden gaps to separate.
       if (netEdge >= 2.5) {
         verdict = 'separate_home';
-        verdictDetail = `Close on points (ΔP ${pointsDiff}) — hidden layer separates toward home (edge ${netEdge.toFixed(1)}).`;
+        verdictDetail = `Only ${pointsDiff} pts apart on the table — recent form leans home.`;
       } else if (netEdge <= -2.5) {
         verdict = 'separate_away';
-        verdictDetail = `Close on points (ΔP ${pointsDiff}) — hidden layer separates toward away (edge ${(-netEdge).toFixed(1)}).`;
+        verdictDetail = `Only ${pointsDiff} pts apart on the table — recent form leans away.`;
       } else {
         verdict = 'balanced';
-        verdictDetail = `Close on points (ΔP ${pointsDiff}) — hidden strengths/weaknesses cancel; no clean separation.`;
+        verdictDetail = `Only ${pointsDiff} pts apart — strengths and weaknesses cancel out.`;
       }
     } else if (mode === 'far' && favouriteSide) {
       // Risk: weakness of backed side vs strength of underdog.
@@ -325,17 +325,17 @@ export function evaluateHiddenLayers(opts: {
 
       if (favWeak.length > 0 && dogStrong.length > 0 && dogNet > favNet) {
         verdict = 'doubt_favourite';
-        verdictDetail = `Far apart (ΔP ${pointsDiff}) — favourite’s hidden weakness vs underdog strength plants doubt.`;
+        verdictDetail = `${pointsDiff} pts apart — favourite has a clear weakness and the underdog looks stronger in form.`;
       } else if (favNet >= dogNet) {
         verdict = 'support_favourite';
-        verdictDetail = `Far apart (ΔP ${pointsDiff}) — favourite’s hidden layer still supports the table power.`;
+        verdictDetail = `${pointsDiff} pts apart — recent form still backs the stronger side on the table.`;
       } else {
         verdict = 'doubt_favourite';
-        verdictDetail = `Far apart (ΔP ${pointsDiff}) — underdog hidden edge (${dogNet.toFixed(1)} vs fav ${favNet.toFixed(1)}).`;
+        verdictDetail = `${pointsDiff} pts apart — underdog’s recent form looks better than the favourite’s.`;
       }
     } else {
       verdict = 'balanced';
-      verdictDetail = 'Hidden layer read with no clear table favourite.';
+      verdictDetail = 'No clear favourite from the table, and form does not pick one either.';
     }
   }
 
@@ -353,10 +353,10 @@ export function evaluateHiddenLayers(opts: {
 }
 
 export const VERDICT_LABEL: Record<HiddenVerdict, string> = {
-  separate_home: 'Separate → Home',
-  separate_away: 'Separate → Away',
-  support_favourite: 'Supports favourite',
-  doubt_favourite: 'Doubts favourite',
-  balanced: 'Balanced / no call',
-  insufficient_data: 'Insufficient data',
+  separate_home: 'Leans home',
+  separate_away: 'Leans away',
+  support_favourite: 'Backs the favourite',
+  doubt_favourite: 'Doubts the favourite',
+  balanced: 'Even — no clear edge',
+  insufficient_data: 'Not enough data yet',
 };

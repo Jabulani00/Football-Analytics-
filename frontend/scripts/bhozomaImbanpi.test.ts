@@ -68,13 +68,13 @@ console.log('\nSection 8 — Bhozoma');
   );
   check('above not data dust', charlie?.above.dataDust === false);
   check(
-    'low pts vs above → Goliath hero',
-    charlie?.above.label === 'Goliath hero',
+    'low pts vs above → giant-killer',
+    charlie?.above.label === 'Giant-killer',
     `label=${charlie?.above.label} pct=${charlie?.above.pctAttained}`,
   );
   check(
     'strong vs below',
-    charlie?.below.label === 'Dominates below',
+    charlie?.below.label === 'Dominates lower sides',
     `label=${charlie?.below.label}`,
   );
 
@@ -82,7 +82,7 @@ console.log('\nSection 8 — Bhozoma');
     { homeId: 3, awayId: 1, homeGoals: 0, awayGoals: 1, unix: 1 },
   ], null);
   const c2 = thin.rows.find((r) => r.teamId === 3);
-  check('MP < 3 → DATA DUST', c2?.above.dataDust === true && c2.above.label === 'DATA DUST');
+  check('MP < 3 → not enough games', c2?.above.dataDust === true && c2.above.label === 'Not enough games');
 }
 
 console.log('\nSection 9 — Imbanpi + progress');

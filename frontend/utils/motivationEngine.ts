@@ -627,13 +627,13 @@ export const OUTCOME_LABEL: Record<MotivationOutcome, string> = {
 };
 
 export const STANCE_LABEL: Record<TeamStance, string> = {
-  chase: 'Chase',
-  escape: 'Escape',
-  no_reward: 'No reward',
+  chase: 'Chasing',
+  escape: 'Escaping',
+  no_reward: 'Little to gain',
 };
 
 export const GRADE_LABEL: Record<MotivationGrade, string> = {
-  A: 'Motivation A',
-  B: 'Motivation B',
-  none: 'No motivation',
+  A: 'Strong need',
+  B: 'Some need',
+  none: 'No special need',
 };

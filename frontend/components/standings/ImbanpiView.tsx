@@ -26,8 +26,8 @@ function RivalRow({ row }: { row: ImbanpiRow }) {
         </Text>
       </View>
       <View style={styles.rowRight}>
-        <Text style={[styles.diff, tight && styles.diffHot]}>ΔP {row.pointsDiff}</Text>
-        <Text style={styles.score}>{row.lastScore ?? 'no meeting'}</Text>
+        <Text style={[styles.diff, tight && styles.diffHot]}>{row.pointsDiff} pts</Text>
+        <Text style={styles.score}>{row.lastScore ?? 'not met yet'}</Text>
       </View>
     </View>
   );
@@ -47,7 +47,7 @@ export default function ImbanpiView({
     return (
       <View style={styles.center}>
         <ActivityIndicator color={theme.accentGreen} />
-        <Text style={styles.muted}>Loading Imbanpi meetings…</Text>
+        <Text style={styles.muted}>Loading closest-rival meetings…</Text>
       </View>
     );
   }
@@ -60,24 +60,25 @@ export default function ImbanpiView({
   return (
     <View>
       <Text style={styles.blurb}>
-        Imbanpi = neighbour rivals (one place above / below). Closer ΔP is more
-        interesting. Recent meeting score shown when available.
+        Neighbours on the table — the team one place above and below. Smaller point gaps
+        mean tighter fights. Recent score shown when they have already met.
       </Text>
 
       <View style={[styles.progressCard, progress.lateStretch && styles.progressLate]}>
-        <Text style={styles.progressTitle}>League progress</Text>
+        <Text style={styles.progressTitle}>How far through the season</Text>
         <Text style={styles.progressMeta}>
-          {progress.seasonProgress != null ? `${progress.seasonProgress}%` : 'n/a'} · max played{' '}
-          {progress.maxPlayed}
-          {progress.avgRemaining != null ? ` · ~${progress.avgRemaining} left` : ''}
-          {progress.lateStretch ? ' · LATE STRETCH' : ''}
+          {progress.seasonProgress != null ? `${progress.seasonProgress}% played` : 'Progress n/a'}
+          {' · '}
+          most games played: {progress.maxPlayed}
+          {progress.avgRemaining != null ? ` · about ${progress.avgRemaining} left` : ''}
+          {progress.lateStretch ? ' · late stretch' : ''}
         </Text>
         <Text style={styles.progressNote}>{progress.note}</Text>
       </View>
 
-      <Text style={styles.sectionTitle}>Closest Imbanpi pairs</Text>
+      <Text style={styles.sectionTitle}>Closest rivals</Text>
       {table.closest.length === 0 ? (
-        <Text style={styles.muted}>No neighbour pairs.</Text>
+        <Text style={styles.muted}>No neighbour pairs yet.</Text>
       ) : (
         table.closest.slice(0, 40).map((r) => (
           <RivalRow

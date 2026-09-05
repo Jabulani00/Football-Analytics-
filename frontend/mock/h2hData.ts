@@ -135,7 +135,8 @@ export function filterH2HBySplit(
   if (split === 'home') {
     return results.filter((r) => r.home === fixtureHomeTeam);
   }
-  return results.filter((r) => r.home === fixtureAwayTeam);
+  // Away tab = fixture away team when they were away (not when they hosted).
+  return results.filter((r) => r.away === fixtureAwayTeam);
 }
 
 export function getH2HForMatch(matchId: string): H2HResult[] {

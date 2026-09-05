@@ -37,11 +37,13 @@ function gradeColor(g: SeparatorGrade | FormGrade): string {
 }
 
 function FlagChip({ flag }: { flag: SeparatorFlag }) {
+  const side =
+    flag.side === 'home' ? 'Home' : flag.side === 'away' ? 'Away' : null;
   return (
     <View style={[styles.chip, { borderColor: gradeColor(flag.grade) }]}>
       <Text style={[styles.chipLabel, { color: gradeColor(flag.grade) }]}>{flag.label}</Text>
       <Text style={styles.chipDetail} numberOfLines={2}>
-        {flag.side !== 'fixture' ? `[${flag.side}] ` : ''}
+        {side ? `${side}: ` : ''}
         {flag.detail}
       </Text>
     </View>
@@ -53,12 +55,12 @@ function Last5Block({ title, team }: { title: string; team: TeamLast5 }) {
     <View style={styles.last5Card}>
       <Text style={styles.last5Title}>{title}</Text>
       <Text style={styles.last5Meta}>
-        {OPTION_LABEL[team.option]} · {team.tablePoints} pts · grade {team.gradePoints}
+        Form: {OPTION_LABEL[team.option]} · {team.tablePoints} pts from last 5
       </Text>
       <Text style={styles.seq}>{team.sequence.join(' ')}</Text>
       <Text style={styles.last5Meta}>
-        {CHANGE_LABEL[team.change]} ({team.initialBand} → {team.finalBand})
-        {team.inhlambuluko ? ' · Inhlambuluko' : ''}
+        {CHANGE_LABEL[team.change]}
+        {team.inhlambuluko ? ' · bounce-back stretch' : ''}
       </Text>
       <View style={styles.gradeRow}>
         {team.games.map((g) => (
@@ -105,9 +107,9 @@ export default function FixtureFormAnalysisPanel({
 
   return (
     <View style={styles.wrap}>
-      <Text style={styles.title}>Separators & last 5</Text>
+      <Text style={styles.title}>Form & recent games</Text>
       <Text style={styles.sub}>
-        Sections 4–5 · {homeName} vs {awayName}
+        Alerts from the table plus how each side has been playing lately
       </Text>
 
       {loading ? (
@@ -126,8 +128,10 @@ export default function FixtureFormAnalysisPanel({
       {separators && separators.active.length > 0 ? (
         <View style={styles.block}>
           <Text style={styles.blockTitle}>
-            Active separators ({separators.active.length})
-            {separators.pointsDiff != null ? ` · ΔP ${separators.pointsDiff}` : ''}
+            Things to watch ({separators.active.length})
+            {separators.pointsDiff != null
+              ? ` · ${separators.pointsDiff} pts apart in the table`
+              : ''}
           </Text>
           <View style={styles.chipList}>
             {separators.active.slice(0, 12).map((f) => (
@@ -139,21 +143,23 @@ export default function FixtureFormAnalysisPanel({
 
       {last5?.home || last5?.away ? (
         <View style={styles.block}>
-          <Text style={styles.blockTitle}>Last 5 analysis</Text>
+          <Text style={styles.blockTitle}>Last 5 games</Text>
           {last5.ukulumbanaLabel ? (
             <Text style={styles.ukulumbana}>
-              Ukulumbana #{last5.ukulumbanaId}: {last5.ukulumbanaLabel}
-              {last5.significantSplit ? ' · split' : ' · same-strength lean'}
+              Form matchup: {last5.ukulumbanaLabel}
+              {last5.significantSplit
+                ? ' — sides look different right now'
+                : ' — similar recent form'}
             </Text>
           ) : null}
           {last5.home ? <Last5Block title={homeName} team={last5.home} /> : null}
           {last5.away ? <Last5Block title={awayName} team={last5.away} /> : null}
 
-          <Text style={styles.lensTitle}>Lenses A–D (last 5 pts)</Text>
+          <Text style={styles.lensTitle}>How the last 5 compare</Text>
           {last5.lenses.map((l) => (
             <Text key={l.id} style={styles.lensLine}>
-              {l.id}. {l.label}: {l.homeScore}–{l.awayScore} (Δ {l.diff > 0 ? '+' : ''}
-              {l.diff}) {l.sameStrength ? '· same strength' : '· gap'}
+              {l.label}: {l.homeScore}–{l.awayScore} (
+              {l.sameStrength ? 'even' : `${l.diff > 0 ? '+' : ''}${l.diff} pts gap`})
             </Text>
           ))}
           <Text style={styles.reliability}>{last5.reliabilityNote}</Text>
