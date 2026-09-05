@@ -2,34 +2,39 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { fetchAllFixturesBetween, type RawFixture } from '@/services/oddAlerts';
 import { analyseFixtureLast5, type FixtureLast5 } from '@/utils/last5Analysis';
+import { evaluateHiddenLayers, type FixtureHiddenLayers } from '@/utils/hiddenLayers';
 import {
   evaluateFixtureSeparators,
   type FixtureSeparators,
 } from '@/utils/separatorTools';
 import type { StandingLike } from '@/utils/motivationEngine';
-import { ranksFromStandings, teamResultsFromFixtures } from '@/utils/teamResults';
+import {
+  ranksFromStandings,
+  teamResultsFromFixtures,
+  type TeamResult,
+} from '@/utils/teamResults';
 
 const FORM_LOOKBACK_DAYS = 120;
 
 type State = {
   loading: boolean;
   error: string | null;
-  homeResultsCount: number;
-  awayResultsCount: number;
+  homeResults: TeamResult[];
+  awayResults: TeamResult[];
   separators: FixtureSeparators | null;
   last5: FixtureLast5 | null;
+  hidden: FixtureHiddenLayers | null;
 };
 
 /**
- * Loads recent finished matches for both sides and runs Section 4 + 5 engines.
- * Additive — failures leave separators/last5 null without breaking the page.
+ * Loads recent finished matches for both sides and runs Sections 4–6 engines.
+ * Additive — failures leave analysis null without breaking the page.
  */
 export function useFixtureFormAnalysis(opts: {
   homeId: number | null | undefined;
   awayId: number | null | undefined;
   standings: StandingLike[];
   seasonProgress?: number | null;
-  /** Skip fetch when standings empty / cup with no table. */
   enabled?: boolean;
 }): State {
   const { homeId, awayId, standings, seasonProgress, enabled = true } = opts;
@@ -76,10 +81,11 @@ export function useFixtureFormAnalysis(opts: {
       return {
         loading: false,
         error: null,
-        homeResultsCount: 0,
-        awayResultsCount: 0,
+        homeResults: [],
+        awayResults: [],
         separators: null,
         last5: null,
+        hidden: null,
       };
     }
 
@@ -98,13 +104,22 @@ export function useFixtureFormAnalysis(opts: {
 
     const last5 = analyseFixtureLast5(homeId, awayId, homeResults, awayResults);
 
+    const hidden = evaluateHiddenLayers({
+      table: standings,
+      homeId,
+      awayId,
+      homeResults,
+      awayResults,
+    });
+
     return {
       loading,
       error,
-      homeResultsCount: homeResults.length,
-      awayResultsCount: awayResults.length,
+      homeResults,
+      awayResults,
       separators,
       last5,
+      hidden,
     };
   }, [canFetch, raw, homeId, awayId, standings, seasonProgress, loading, error]);
 }

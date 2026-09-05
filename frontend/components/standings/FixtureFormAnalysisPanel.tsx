@@ -1,6 +1,7 @@
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 import { useFixtureFormAnalysis } from '@/hooks/useFixtureFormAnalysis';
+import { HiddenLayersView } from '@/components/standings/FixtureHiddenLayersPanel';
 import {
   CHANGE_LABEL,
   OPTION_LABEL,
@@ -75,8 +76,8 @@ function Last5Block({ title, team }: { title: string; team: TeamLast5 }) {
 }
 
 /**
- * Additive Summary block for Section 4 (separators) + Section 5 (last 5).
- * Does not replace Table stakes / recommendations.
+ * Additive Summary block for Sections 4–6 (separators, last 5, hidden layers).
+ * One form fetch powers all three.
  */
 export default function FixtureFormAnalysisPanel({
   standings,
@@ -86,20 +87,27 @@ export default function FixtureFormAnalysisPanel({
   awayName,
   seasonProgress,
 }: Props) {
-  const { loading, error, separators, last5, homeResultsCount, awayResultsCount } =
-    useFixtureFormAnalysis({
-      homeId,
-      awayId,
-      standings,
-      seasonProgress,
-      enabled: homeId != null || awayId != null,
-    });
+  const {
+    loading,
+    error,
+    separators,
+    last5,
+    hidden,
+    homeResults,
+    awayResults,
+  } = useFixtureFormAnalysis({
+    homeId,
+    awayId,
+    standings,
+    seasonProgress,
+    enabled: homeId != null || awayId != null,
+  });
 
   return (
     <View style={styles.wrap}>
       <Text style={styles.title}>Separators & last 5</Text>
       <Text style={styles.sub}>
-        Section 4 flags · Section 5 Ukulumbana · {homeName} vs {awayName}
+        Sections 4–5 · {homeName} vs {awayName}
       </Text>
 
       {loading ? (
@@ -111,7 +119,7 @@ export default function FixtureFormAnalysisPanel({
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
-      {!loading && homeResultsCount + awayResultsCount === 0 && !error ? (
+      {!loading && homeResults.length + awayResults.length === 0 && !error ? (
         <Text style={styles.muted}>No recent finished matches found for these sides yet.</Text>
       ) : null}
 
@@ -151,6 +159,8 @@ export default function FixtureFormAnalysisPanel({
           <Text style={styles.reliability}>{last5.reliabilityNote}</Text>
         </View>
       ) : null}
+
+      {hidden ? <HiddenLayersView layers={hidden} homeName={homeName} awayName={awayName} /> : null}
     </View>
   );
 }

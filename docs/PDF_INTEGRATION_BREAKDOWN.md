@@ -19,6 +19,8 @@ Related docs already in the repo: `Football_Analytics_Project_Spec.md`, `USER_ST
 | Motivation / “importance of 3 points” | **Built** — match Summary “Table stakes” + standings Stakes tab |
 | Separator tools (sudden drop, streaks, Imbangi…) | **Built** — match Summary “Separators & last 5” |
 | Last-5 graded analysis + matchup naming | **Built** — same panel (Ukulumbana + lenses A–D) |
+| Hidden strength / weakness & problem address | **Built** — Summary “Hidden layers” (Section 6) |
+| H2H options & Polar patterns | **Built** — H2H tab option tags (Section 7) |
 | Bhozoma / mid-table power tables | Not built |
 | Hollywood hunt script + value odds rules | Partial / sample only |
 | Strategy compliance + bet slip | UI shell / sample; not full engine |
@@ -173,6 +175,8 @@ Use deeper layers when table power alone is not enough.
 
 **Done when:** close and far fixtures each show a short “hidden” verdict that can support or doubt the main pick.
 
+**Status (2026-09-05):** ✅ Shipped — `utils/hiddenLayers.ts` + Summary **Hidden layers** block (close separate / far risk). Existing views unchanged.
+
 ---
 
 ## Section 7 — H2H options & Polar patterns
@@ -190,6 +194,8 @@ Upgrade H2H from a plain list into decision options.
 - Output tags such as team good / team bad / warnings / score-bet relevance.
 
 **Done when:** match H2H tab shows option tags, not only past scores.
+
+**Status (2026-09-05):** ✅ Shipped — `utils/h2hOptions.ts` + additive **H2H options** strip above the existing H2H list.
 
 ---
 

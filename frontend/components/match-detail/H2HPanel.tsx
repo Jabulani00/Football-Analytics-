@@ -15,6 +15,7 @@ import {
   type H2HOutcome,
   type H2HSplit,
 } from '@/utils/h2hDisplay';
+import { evaluateH2HOptions, type H2HOptionTag } from '@/utils/h2hOptions';
 
 type H2HPanelProps = {
   matches: H2HMatch[];
@@ -160,6 +161,25 @@ function Tag({ label, muted }: { label: string; muted?: boolean }) {
   );
 }
 
+function OptionChip({ tag }: { tag: H2HOptionTag }) {
+  const color =
+    tag.kind === 'good'
+      ? theme.accentGreen
+      : tag.kind === 'bad'
+        ? theme.loss
+        : tag.kind === 'warn'
+          ? theme.accentOrange
+          : theme.textMuted;
+  return (
+    <View style={[styles.optionChip, { borderColor: color }]}>
+      <Text style={[styles.optionLabel, { color }]}>{tag.label}</Text>
+      <Text style={styles.optionDetail} numberOfLines={2}>
+        {tag.detail}
+      </Text>
+    </View>
+  );
+}
+
 export default function H2HPanel({ matches, homeName, awayName }: H2HPanelProps) {
   const [split, setSplit] = useState<H2HSplit>('overall');
 
@@ -174,12 +194,39 @@ export default function H2HPanel({ matches, homeName, awayName }: H2HPanelProps)
     [filtered, homeName],
   );
 
+  // Section 7 — additive option tags; does not change the list below.
+  const options = useMemo(
+    () => evaluateH2HOptions({ matches, homeName, awayName }),
+    [matches, homeName, awayName],
+  );
+
   if (matches.length === 0) {
-    return <Text style={styles.empty}>No head-to-head history available.</Text>;
+    return (
+      <View style={styles.wrap}>
+        <Text style={styles.optionsTitle}>H2H options</Text>
+        {options.tags.map((t) => (
+          <OptionChip key={t.id} tag={t} />
+        ))}
+        <Text style={styles.empty}>No head-to-head history available.</Text>
+      </View>
+    );
   }
 
   return (
     <View style={styles.wrap}>
+      <Text style={styles.optionsTitle}>H2H options</Text>
+      <Text style={styles.optionsSub}>
+        Section 7 · Polar / never beaten / Nika Nika / score-bet
+        {options.pointsShare
+          ? ` · share ${options.pointsShare.home}/${options.pointsShare.max}–${options.pointsShare.away}/${options.pointsShare.max}`
+          : ''}
+      </Text>
+      <View style={styles.optionList}>
+        {options.tags.map((t) => (
+          <OptionChip key={t.id} tag={t} />
+        ))}
+      </View>
+
       <SubTabBar
         tabs={[
           { id: 'overall', label: 'Overall' },
@@ -220,6 +267,30 @@ export default function H2HPanel({ matches, homeName, awayName }: H2HPanelProps)
 
 const styles = StyleSheet.create({
   wrap: { width: '100%' },
+  optionsTitle: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 12,
+    color: theme.textPrimary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  optionsSub: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: theme.textMuted,
+    marginBottom: spacing.sm,
+  },
+  optionList: { gap: spacing.xs, marginBottom: spacing.md },
+  optionChip: {
+    borderWidth: 1,
+    borderRadius: layout.borderRadius,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    backgroundColor: theme.surface,
+  },
+  optionLabel: { fontFamily: fonts.bodySemiBold, fontSize: 11 },
+  optionDetail: { fontFamily: fonts.body, fontSize: 10, color: theme.textMuted, marginTop: 2 },
   empty: {
     fontFamily: fonts.body,
     fontSize: 13,
