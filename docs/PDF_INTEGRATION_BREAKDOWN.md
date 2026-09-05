@@ -21,6 +21,8 @@ Related docs already in the repo: `Football_Analytics_Project_Spec.md`, `USER_ST
 | Last-5 graded analysis + matchup naming | **Built** — same panel (Ukulumbana + lenses A–D) |
 | Hidden strength / weakness & problem address | **Built** — Summary “Hidden layers” (Section 6) |
 | H2H options & Polar patterns | **Built** — H2H tab option tags (Section 7) |
+| Bhozoma / mid-table power tables | **Built** — standings **Bhozoma** tab (Section 8) |
+| Imbanpi & league progress | **Built** — standings **Imbanpi** tab (Section 9) |
 | Bhozoma / mid-table power tables | Not built |
 | Hollywood hunt script + value odds rules | Partial / sample only |
 | Strategy compliance + bet slip | UI shell / sample; not full engine |
@@ -216,6 +218,8 @@ Build the mid-table (“yellow guys”) separation tool.
 
 **Done when:** yellow-band teams have a Bhozoma panel with above/below % and labels.
 
+**Status (2026-09-05):** ✅ Shipped — `utils/bhozomaEngine.ts` + standings **Bhozoma** tab (mid-table focus, DATA DUST / Goliath / classic). League/tier tabs unchanged.
+
 ---
 
 ## Section 9 — League browser extras (Imbanpi & progress)
@@ -234,6 +238,8 @@ Extra league views beyond the normal table.
 - Optional standings extras from the wider project notes: Form, Over/Under, HT/FT, top scorers (add only after core motivation/separators work).
 
 **Done when:** picking a league offers Imbanpi + progress context beside the normal table.
+
+**Status (2026-09-05):** ✅ Shipped — `utils/imbanpiEngine.ts` + standings **Imbanpi** tab (neighbours by ΔP + league progress / late stretch).
 
 ---
 

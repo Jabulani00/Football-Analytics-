@@ -9,9 +9,12 @@ import PageContainer from '@/components/shared/PageContainer';
 import GroupStandingsView from '@/components/standings/GroupStandingsView';
 import TieredStandingsView from '@/components/standings/TieredStandingsView';
 import StandingsStakesView from '@/components/standings/StandingsStakesView';
+import BhozomaView from '@/components/standings/BhozomaView';
+import ImbanpiView from '@/components/standings/ImbanpiView';
 import StandingsAnalyticsView from '@/components/league/StandingsAnalyticsView';
 import SubTabBar from '@/components/shared/SubTabBar';
 import { useStandings } from '@/hooks/useStandings';
+import { useSeasonFixtures } from '@/hooks/useSeasonFixtures';
 import { apiStandingsToBase, teamIdByName, timingByName } from '@/utils/standingsAdapter';
 import {
   fetchAllFixturesBetween,
@@ -21,6 +24,8 @@ import {
 } from '@/services/oddAlerts';
 import { isGroupStageTournament } from '@/utils/groupStandings';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
+
+type StandingsView = 'league' | 'tiers' | 'stakes' | 'bhozoma' | 'imbanpi';
 
 export default function StandingsPanel() {
   const router = useRouter();
@@ -33,11 +38,17 @@ export default function StandingsPanel() {
     isGroups ? null : competition,
     isGroups ? null : selectedSeasonId,
   );
-  const [view, setView] = useState<'league' | 'tiers' | 'stakes'>('league');
+  const [view, setView] = useState<StandingsView>('league');
+
+  const season = competition?.seasons.find((s) => s.seasonId === selectedSeasonId);
+  const needSeasonFixtures = view === 'bhozoma' || view === 'imbanpi';
+  const seasonFx = useSeasonFixtures(
+    needSeasonFixtures ? competition : null,
+    needSeasonFixtures ? season : null,
+    needSeasonFixtures,
+  );
 
   if (!competition) return null;
-
-  const season = competition.seasons.find((s) => s.seasonId === selectedSeasonId);
 
   return (
     <PageContainer contentContainerStyle={styles.scroll}>
@@ -101,9 +112,11 @@ export default function StandingsPanel() {
               { id: 'league', label: 'League table' },
               { id: 'tiers', label: '🟢🟡🔴 Tier tables' },
               { id: 'stakes', label: 'Table stakes' },
+              { id: 'bhozoma', label: 'Bhozoma' },
+              { id: 'imbanpi', label: 'Imbanpi' },
             ]}
             active={view}
-            onChange={(id) => setView(id as 'league' | 'tiers' | 'stakes')}
+            onChange={(id) => setView(id as StandingsView)}
           />
           {view === 'league' ? (
             <StandingsAnalyticsView
@@ -128,10 +141,26 @@ export default function StandingsPanel() {
                 })
               }
             />
-          ) : (
+          ) : view === 'stakes' ? (
             <StandingsStakesView
               standings={standings}
               competitionId={competition.id}
+              seasonProgress={season?.progress ?? null}
+            />
+          ) : view === 'bhozoma' ? (
+            <BhozomaView
+              standings={standings}
+              matches={seasonFx.matches}
+              loading={seasonFx.loading}
+              error={seasonFx.error}
+              competitionId={competition.id}
+            />
+          ) : (
+            <ImbanpiView
+              standings={standings}
+              matches={seasonFx.matches}
+              loading={seasonFx.loading}
+              error={seasonFx.error}
               seasonProgress={season?.progress ?? null}
             />
           )}
