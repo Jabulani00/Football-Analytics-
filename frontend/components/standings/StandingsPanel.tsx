@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
 import { useScoresFilter } from '@/components/layout/ScoresFilterContext';
-import ScoresMatchRow from '@/components/scores/ScoresMatchRow';
 import CountryFlag from '@/components/shared/CountryFlag';
 import PageContainer from '@/components/shared/PageContainer';
 import GroupStandingsView from '@/components/standings/GroupStandingsView';
@@ -11,21 +10,30 @@ import TieredStandingsView from '@/components/standings/TieredStandingsView';
 import StandingsStakesView from '@/components/standings/StandingsStakesView';
 import BhozomaView from '@/components/standings/BhozomaView';
 import ImbanpiView from '@/components/standings/ImbanpiView';
+import SeasonFixturesList from '@/components/standings/SeasonFixturesList';
 import StandingsAnalyticsView from '@/components/league/StandingsAnalyticsView';
 import SubTabBar from '@/components/shared/SubTabBar';
 import { useStandings } from '@/hooks/useStandings';
 import { useSeasonFixtures } from '@/hooks/useSeasonFixtures';
 import { apiStandingsToBase, teamIdByName, timingByName } from '@/utils/standingsAdapter';
-import {
-  fetchAllFixturesBetween,
-  mapFixture,
-  seasonWindowUnix,
-  type Fixture,
-} from '@/services/oddAlerts';
 import { isGroupStageTournament } from '@/utils/groupStandings';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
-type StandingsView = 'league' | 'tiers' | 'stakes' | 'bhozoma' | 'imbanpi';
+type StandingsView =
+  | 'upcoming'
+  | 'previous'
+  | 'league'
+  | 'tiers'
+  | 'stakes'
+  | 'bhozoma'
+  | 'imbanpi'
+  | 'groups';
+
+function defaultView(opts: { isGroups: boolean; isCup: boolean }): StandingsView {
+  if (opts.isGroups) return 'groups';
+  if (opts.isCup) return 'upcoming';
+  return 'league';
+}
 
 export default function StandingsPanel() {
   const router = useRouter();
@@ -34,11 +42,18 @@ export default function StandingsPanel() {
 
   const competition = selectedCompetition;
   const isGroups = isGroupStageTournament(competition?.name ?? '');
+  const isCup = !!competition?.isCup;
   const { standings, tiered, loading, error } = useStandings(
-    isGroups ? null : competition,
-    isGroups ? null : selectedSeasonId,
+    isGroups || isCup ? null : competition,
+    isGroups || isCup ? null : selectedSeasonId,
   );
-  const [view, setView] = useState<StandingsView>('league');
+  const [view, setView] = useState<StandingsView>(() =>
+    defaultView({ isGroups, isCup }),
+  );
+
+  useEffect(() => {
+    setView(defaultView({ isGroups, isCup }));
+  }, [competition?.id, isGroups, isCup]);
 
   const season = competition?.seasons.find((s) => s.seasonId === selectedSeasonId);
   const needSeasonFixtures = view === 'bhozoma' || view === 'imbanpi';
@@ -48,7 +63,17 @@ export default function StandingsPanel() {
     needSeasonFixtures,
   );
 
+  const openMatch = (id: number) =>
+    router.push({ pathname: '/match/[id]', params: { id: String(id) } });
+
   if (!competition) return null;
+
+  const fixturesProps = {
+    competitionId: competition.id,
+    seasonId: selectedSeasonId,
+    seasonName: season?.seasonName ?? '',
+    onMatchPress: openMatch,
+  };
 
   return (
     <PageContainer contentContainerStyle={styles.scroll}>
@@ -66,7 +91,6 @@ export default function StandingsPanel() {
         </View>
       </View>
 
-      {/* Season selector */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -88,14 +112,40 @@ export default function StandingsPanel() {
       </ScrollView>
 
       {isGroups ? (
-        <GroupStandingsView competition={competition} seasonId={selectedSeasonId} />
+        <>
+          <SubTabBar
+            tabs={[
+              { id: 'groups', label: 'Groups' },
+              { id: 'upcoming', label: 'Upcoming' },
+              { id: 'previous', label: 'Previous' },
+            ]}
+            active={view === 'upcoming' || view === 'previous' || view === 'groups' ? view : 'groups'}
+            onChange={(id) => setView(id as StandingsView)}
+          />
+          {view === 'upcoming' ? (
+            <SeasonFixturesList {...fixturesProps} mode="upcoming" showModeTabs={false} />
+          ) : view === 'previous' ? (
+            <SeasonFixturesList {...fixturesProps} mode="previous" showModeTabs={false} />
+          ) : (
+            <GroupStandingsView competition={competition} seasonId={selectedSeasonId} />
+          )}
+        </>
       ) : competition.isCup ? (
-        <CupResults
-          competitionId={competition.id}
-          seasonId={selectedSeasonId}
-          seasonName={season?.seasonName ?? ''}
-          onMatchPress={(id) => router.push({ pathname: '/match/[id]', params: { id: String(id) } })}
-        />
+        <>
+          <SubTabBar
+            tabs={[
+              { id: 'upcoming', label: 'Upcoming' },
+              { id: 'previous', label: 'Previous' },
+            ]}
+            active={view === 'upcoming' || view === 'previous' ? view : 'previous'}
+            onChange={(id) => setView(id as StandingsView)}
+          />
+          <SeasonFixturesList
+            {...fixturesProps}
+            mode={view === 'upcoming' ? 'upcoming' : 'previous'}
+            showModeTabs={false}
+          />
+        </>
       ) : loading ? (
         <View style={styles.center}>
           <ActivityIndicator color={theme.accentGreen} />
@@ -104,13 +154,29 @@ export default function StandingsPanel() {
       ) : error ? (
         <Text style={styles.muted}>{error}</Text>
       ) : standings.length === 0 ? (
-        <Text style={styles.muted}>No standings available for this season.</Text>
+        <>
+          <SubTabBar
+            tabs={[
+              { id: 'upcoming', label: 'Upcoming' },
+              { id: 'previous', label: 'Previous' },
+            ]}
+            active={view === 'upcoming' || view === 'previous' ? view : 'upcoming'}
+            onChange={(id) => setView(id as StandingsView)}
+          />
+          <SeasonFixturesList
+            {...fixturesProps}
+            mode={view === 'previous' ? 'previous' : 'upcoming'}
+            showModeTabs={false}
+          />
+        </>
       ) : (
         <>
           <SubTabBar
             tabs={[
               { id: 'league', label: 'League table' },
-              { id: 'tiers', label: '🟢🟡🔴 Tier tables' },
+              { id: 'upcoming', label: 'Upcoming' },
+              { id: 'previous', label: 'Previous' },
+              { id: 'tiers', label: 'Tier tables' },
               { id: 'stakes', label: 'Who needs points' },
               { id: 'bhozoma', label: 'Mid-table form' },
               { id: 'imbanpi', label: 'Closest rivals' },
@@ -118,7 +184,11 @@ export default function StandingsPanel() {
             active={view}
             onChange={(id) => setView(id as StandingsView)}
           />
-          {view === 'league' ? (
+          {view === 'upcoming' ? (
+            <SeasonFixturesList {...fixturesProps} mode="upcoming" showModeTabs={false} />
+          ) : view === 'previous' ? (
+            <SeasonFixturesList {...fixturesProps} mode="previous" showModeTabs={false} />
+          ) : view === 'league' ? (
             <StandingsAnalyticsView
               base={apiStandingsToBase(standings)}
               seasonLabel={competition.name}
@@ -170,89 +240,6 @@ export default function StandingsPanel() {
   );
 }
 
-// ----- Cup results (no league table) --------------------------------------
-
-function CupResults({
-  competitionId,
-  seasonId,
-  seasonName,
-  onMatchPress,
-}: {
-  competitionId: number;
-  seasonId: number | null;
-  seasonName: string;
-  onMatchPress: (id: number) => void;
-}) {
-  const [fixtures, setFixtures] = useState<Fixture[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (seasonId == null) return;
-    let active = true;
-    setLoading(true);
-    const { fromUnix, toUnix } = seasonWindowUnix(seasonName);
-    fetchAllFixturesBetween({ fromUnix, toUnix, competitions: String(competitionId), maxPages: 6 })
-      .then((raw) => {
-        if (!active) return;
-        const mapped = raw
-          .filter((f) => f.season_id == null || f.season_id === seasonId)
-          .map(mapFixture)
-          .sort((a, b) => b.kickoffUnix - a.kickoffUnix);
-        setFixtures(mapped);
-        setLoading(false);
-      })
-      .catch(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [competitionId, seasonId, seasonName]);
-
-  const byDate = useMemo(() => {
-    const groups = new Map<string, Fixture[]>();
-    for (const f of fixtures) {
-      const day = new Date(f.kickoffUnix * 1000).toLocaleDateString([], {
-        weekday: 'short',
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-      });
-      const list = groups.get(day) ?? [];
-      list.push(f);
-      groups.set(day, list);
-    }
-    return [...groups.entries()];
-  }, [fixtures]);
-
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator color={theme.accentGreen} />
-        <Text style={styles.muted}>Loading fixtures…</Text>
-      </View>
-    );
-  }
-  if (fixtures.length === 0) {
-    return <Text style={styles.muted}>No fixtures found for this season.</Text>;
-  }
-
-  return (
-    <View>
-      {byDate.map(([day, list]) => (
-        <View key={day} style={styles.dateGroup}>
-          <Text style={styles.dateLabel}>{day}</Text>
-          <View style={styles.dateList}>
-            {list.map((f) => (
-              <ScoresMatchRow key={f.id} fixture={f} onPress={() => onMatchPress(f.id)} />
-            ))}
-          </View>
-        </View>
-      ))}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   scroll: { paddingTop: spacing.sm, paddingBottom: spacing.xxl, width: '100%' },
   back: { alignSelf: 'flex-start', paddingVertical: spacing.sm },
@@ -264,7 +251,6 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   header: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
-  flag: { fontSize: 24 },
   headerText: { flex: 1, minWidth: 0 },
   title: { fontFamily: fonts.display, fontSize: 20, color: theme.textPrimary },
   subtitle: { fontFamily: fonts.bodyMedium, fontSize: 12, color: theme.textMuted },
@@ -288,14 +274,4 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingVertical: spacing.lg,
   },
-  dateGroup: { marginBottom: spacing.md },
-  dateLabel: {
-    fontFamily: fonts.bodySemiBold,
-    fontSize: 11,
-    color: theme.textMuted,
-    paddingVertical: spacing.xs,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  dateList: { backgroundColor: theme.surface },
 });
