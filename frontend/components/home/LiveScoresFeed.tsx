@@ -4,6 +4,7 @@ import {
   Platform,
   Pressable,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -16,11 +17,21 @@ import FeedFixtureRow from '@/components/scores/FeedFixtureRow';
 import PageContainer from '@/components/shared/PageContainer';
 import SubTabBar from '@/components/shared/SubTabBar';
 import { useLiveFixtures } from '@/hooks/useLiveFixtures';
-import { groupByCompetition } from '@/services/oddAlerts';
+import { groupByCompetition, type CompetitionGroup, type Fixture } from '@/services/oddAlerts';
 import type { MarketModule } from '@/utils/fixtureRecommendation';
+import {
+  addDaysToKey,
+  buildUpcomingDayKeys,
+  formatUpcomingDayLabel,
+  localDateKey,
+  todayKey,
+} from '@/utils/dates';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
 type ModuleFilter = 'all' | MarketModule;
+
+/** Range windows for fixtures. `tomorrow` = tomorrow only. */
+type UpcomingWindow = 'today' | 'tomorrow' | '3' | '7' | '14';
 
 const MODULE_TABS: { id: ModuleFilter; label: string }[] = [
   { id: 'all', label: 'All markets' },
@@ -43,28 +54,126 @@ const RESULT_WINDOWS: { days: number; label: string }[] = [
   { days: 7, label: '7 days' },
 ];
 
+const UPCOMING_WINDOWS: { id: UpcomingWindow; label: string }[] = [
+  { id: 'today', label: 'Today' },
+  { id: 'tomorrow', label: 'Tomorrow' },
+  { id: '3', label: '3 days' },
+  { id: '7', label: '7 days' },
+  { id: '14', label: '14 days' },
+];
+
+function fetchDaysForWindow(w: UpcomingWindow): number {
+  if (w === 'today') return 1;
+  if (w === 'tomorrow') return 2;
+  return Number(w);
+}
+
+function fixtureDayKey(f: Fixture): string {
+  return localDateKey(f.kickoffUnix);
+}
+
+function groupByDateThenCompetition(
+  fixtures: Fixture[],
+  preferredIds?: number[],
+): { dayKey: string; groups: CompetitionGroup[] }[] {
+  const byDay = new Map<string, Fixture[]>();
+  for (const f of fixtures) {
+    const key = fixtureDayKey(f);
+    const list = byDay.get(key) ?? [];
+    list.push(f);
+    byDay.set(key, list);
+  }
+  return [...byDay.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([dayKey, list]) => ({
+      dayKey,
+      groups: groupByCompetition(list, preferredIds ? { preferredIds } : undefined),
+    }));
+}
+
 export default function LiveScoresFeed() {
   const router = useRouter();
-  const { statusFilter, gender, kind, competitionId, setCompetitionId, setCompetitions } =
-    useScoresFilter();
+  const {
+    statusFilter,
+    gender,
+    kind,
+    competitionId,
+    setCompetitionId,
+    setCompetitions,
+    upcomingScope,
+    favoriteCompetitionIds,
+  } = useScoresFilter();
   const [resultsDays, setResultsDays] = useState(2);
+  const [upcomingWindow, setUpcomingWindow] = useState<UpcomingWindow>('today');
+  /** null = show the full window; otherwise a single calendar day. */
+  const [selectedDayKey, setSelectedDayKey] = useState<string | null>(null);
   const [recModule, setRecModule] = useState<ModuleFilter>('all');
+
+  const upcomingDays = fetchDaysForWindow(upcomingWindow);
+  // Always load enough days for the day strip (up to 14) so picking a day is instant.
+  const fetchDays = Math.max(upcomingDays, 14);
+
   const { fixtures, loading, refreshing, error, lastUpdated, refresh } = useLiveFixtures(
     statusFilter,
-    { resultsDays },
+    {
+      resultsDays,
+      upcomingDays: statusFilter === 'ns' ? fetchDays : upcomingDays,
+      upcomingScope,
+      favoriteCompetitionIds,
+      kind,
+    },
   );
 
-  // Best-bet recommendations only make sense where a game hasn't finished.
   const showRecommendations = statusFilter !== 'ft';
+  const now = useMemo(() => new Date(), [lastUpdated]);
+  const today = todayKey(now);
+  const tomorrow = addDaysToKey(today, 1);
 
   const scoped = useMemo(
     () => fixtures.filter((f) => f.gender === gender && f.kind === kind),
     [fixtures, gender, kind],
   );
 
-  const allGroups = useMemo(() => groupByCompetition(scoped), [scoped]);
+  const preferredIds = useMemo(() => {
+    if (statusFilter !== 'ns' || upcomingScope !== 'popular') return undefined;
+    return favoriteCompetitionIds;
+  }, [statusFilter, upcomingScope, favoriteCompetitionIds]);
 
-  // Publish the loaded competitions so the sidebar can list them (API-driven).
+  // Day keys available in the current window (for the day picker).
+  const windowDayKeys = useMemo(() => {
+    if (upcomingWindow === 'today') return [today];
+    if (upcomingWindow === 'tomorrow') return [tomorrow];
+    return buildUpcomingDayKeys(Number(upcomingWindow), now);
+  }, [upcomingWindow, today, tomorrow, now]);
+
+  // Reset specific-day pick when the range window changes.
+  useEffect(() => {
+    setSelectedDayKey(null);
+  }, [upcomingWindow]);
+
+  const dateFiltered = useMemo(() => {
+    if (statusFilter !== 'ns') return scoped;
+
+    if (selectedDayKey) {
+      return scoped.filter((f) => fixtureDayKey(f) === selectedDayKey);
+    }
+
+    if (upcomingWindow === 'today') {
+      return scoped.filter((f) => fixtureDayKey(f) === today);
+    }
+    if (upcomingWindow === 'tomorrow') {
+      return scoped.filter((f) => fixtureDayKey(f) === tomorrow);
+    }
+    const allowed = new Set(windowDayKeys);
+    return scoped.filter((f) => allowed.has(fixtureDayKey(f)));
+  }, [statusFilter, scoped, selectedDayKey, upcomingWindow, today, tomorrow, windowDayKeys]);
+
+  const allGroups = useMemo(
+    () => groupByCompetition(dateFiltered, preferredIds ? { preferredIds } : undefined),
+    [dateFiltered, preferredIds],
+  );
+
+  // Sidebar sees competitions for the current day/window filter.
   useEffect(() => {
     setCompetitions(allGroups);
   }, [allGroups, setCompetitions]);
@@ -73,6 +182,15 @@ export default function LiveScoresFeed() {
     () => (competitionId ? allGroups.filter((g) => g.competition.id === competitionId) : allGroups),
     [allGroups, competitionId],
   );
+
+  const datedSections = useMemo(() => {
+    if (statusFilter !== 'ns') return null;
+    const list =
+      competitionId != null
+        ? dateFiltered.filter((f) => f.competition.id === competitionId)
+        : dateFiltered;
+    return groupByDateThenCompetition(list, preferredIds);
+  }, [statusFilter, dateFiltered, competitionId, preferredIds]);
 
   const activeCompetition =
     competitionId != null ? allGroups.find((g) => g.competition.id === competitionId) : null;
@@ -86,6 +204,18 @@ export default function LiveScoresFeed() {
     ? new Date(lastUpdated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     : null;
 
+  const dayCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const f of scoped) {
+      const k = fixtureDayKey(f);
+      if (!windowDayKeys.includes(k) && upcomingWindow !== 'today' && upcomingWindow !== 'tomorrow') {
+        // still count for strip when window is multi-day
+      }
+      map.set(k, (map.get(k) ?? 0) + 1);
+    }
+    return map;
+  }, [scoped, windowDayKeys, upcomingWindow]);
+
   return (
     <PageContainer
       contentContainerStyle={styles.scroll}
@@ -95,7 +225,13 @@ export default function LiveScoresFeed() {
         ) : undefined
       }>
       <View style={styles.statusBar}>
-        <Text style={styles.heading}>{VIEW_LABEL[statusFilter] ?? 'Matches'}</Text>
+        <Text style={styles.heading}>
+          {statusFilter === 'ns'
+            ? upcomingScope === 'popular'
+              ? 'Favourites'
+              : 'Fixtures'
+            : (VIEW_LABEL[statusFilter] ?? 'Matches')}
+        </Text>
         <View style={styles.meta}>
           {liveCount > 0 ? <Text style={styles.liveBadge}>{liveCount} LIVE</Text> : null}
           {updatedLabel ? <Text style={styles.updated}>Updated {updatedLabel}</Text> : null}
@@ -114,6 +250,68 @@ export default function LiveScoresFeed() {
           </Text>
           <Text style={styles.activeCompClear}>✕ clear</Text>
         </Pressable>
+      ) : null}
+
+      {statusFilter === 'ns' ? (
+        <>
+          <View style={styles.windowRow}>
+            {UPCOMING_WINDOWS.map((w) => {
+              const active = w.id === upcomingWindow && selectedDayKey == null;
+              return (
+                <Pressable
+                  key={w.id}
+                  onPress={() => {
+                    setUpcomingWindow(w.id);
+                    setSelectedDayKey(null);
+                  }}
+                  style={({ hovered }) => [
+                    styles.windowPill,
+                    active && styles.windowPillActive,
+                    hovered && !active ? styles.windowPillHover : null,
+                  ]}>
+                  <Text style={[styles.windowText, active && styles.windowTextActive]}>
+                    {w.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <Text style={styles.dayStripLabel}>Pick a day</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.dayStrip}>
+            <Pressable
+              onPress={() => setSelectedDayKey(null)}
+              style={[styles.dayChip, selectedDayKey == null && styles.dayChipActive]}>
+              <Text
+                style={[
+                  styles.dayChipText,
+                  selectedDayKey == null && styles.dayChipTextActive,
+                ]}>
+                Whole window
+              </Text>
+            </Pressable>
+            {windowDayKeys.map((key) => {
+              const active = selectedDayKey === key;
+              const count = dayCounts.get(key) ?? 0;
+              return (
+                <Pressable
+                  key={key}
+                  onPress={() => setSelectedDayKey(key)}
+                  style={[styles.dayChip, active && styles.dayChipActive]}>
+                  <Text style={[styles.dayChipText, active && styles.dayChipTextActive]}>
+                    {formatUpcomingDayLabel(key, now)}
+                  </Text>
+                  <Text style={[styles.dayChipCount, active && styles.dayChipTextActive]}>
+                    {count}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </>
       ) : null}
 
       {statusFilter === 'ft' ? (
@@ -156,11 +354,45 @@ export default function LiveScoresFeed() {
             <Text style={styles.retryText}>Retry</Text>
           </Pressable>
         </View>
-      ) : groups.length === 0 ? (
+      ) : statusFilter === 'ns' && (datedSections?.length ?? 0) === 0 ? (
+        <Text style={styles.empty}>
+          {selectedDayKey
+            ? `No matches on ${formatUpcomingDayLabel(selectedDayKey, now)}.`
+            : upcomingScope === 'popular'
+              ? 'No upcoming matches in your favourites for this window. Try All upcoming, another day, or star more leagues.'
+              : `No ${gender === 'women' ? "women's" : "men's"} ${kind === 'country' ? 'international' : 'club'} matches for this day window.`}
+        </Text>
+      ) : statusFilter !== 'ns' && groups.length === 0 ? (
         <Text style={styles.empty}>
           No {gender === 'women' ? "women's" : "men's"} {kind === 'country' ? 'international' : 'club'}{' '}
           matches for this view right now.
         </Text>
+      ) : statusFilter === 'ns' && datedSections ? (
+        datedSections.map(({ dayKey, groups: dayGroups }) => (
+          <View key={dayKey} style={styles.daySection}>
+            <Text style={styles.dayHeading}>{formatUpcomingDayLabel(dayKey, now)}</Text>
+            {dayGroups.map((group) => (
+              <View key={`${dayKey}-${group.key}`} style={styles.section}>
+                <CompetitionHeader group={group} />
+                <View style={styles.list}>
+                  {group.fixtures.map((fixture) => (
+                    <FeedFixtureRow
+                      key={fixture.id}
+                      fixture={fixture}
+                      module={recModule}
+                      onOpen={() =>
+                        router.push({
+                          pathname: '/match/[id]',
+                          params: { id: String(fixture.id) },
+                        })
+                      }
+                    />
+                  ))}
+                </View>
+              </View>
+            ))}
+          </View>
+        ))
       ) : (
         groups.map((group) => (
           <View key={group.key} style={styles.section}>
@@ -270,7 +502,7 @@ const styles = StyleSheet.create({
   windowRow: {
     flexDirection: 'row',
     gap: spacing.xs,
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
     flexWrap: 'wrap',
   },
   windowPill: {
@@ -297,6 +529,60 @@ const styles = StyleSheet.create({
   windowTextActive: {
     fontFamily: fonts.bodySemiBold,
     color: theme.textPrimary,
+  },
+  dayStripLabel: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 10,
+    letterSpacing: 0.8,
+    color: theme.textFaint,
+    textTransform: 'uppercase',
+    marginBottom: spacing.xs,
+  },
+  dayStrip: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+    paddingBottom: spacing.md,
+  },
+  dayChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    borderRadius: layout.borderRadius,
+    borderWidth: layout.borderWidth,
+    borderColor: theme.border,
+    backgroundColor: theme.surface,
+    ...(Platform.OS === 'web' ? ({ cursor: 'pointer' } as object) : {}),
+  },
+  dayChipActive: {
+    borderColor: theme.accentBlue,
+    backgroundColor: 'rgba(37, 99, 235, 0.08)',
+  },
+  dayChipText: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 12,
+    color: theme.textMuted,
+  },
+  dayChipTextActive: {
+    fontFamily: fonts.bodySemiBold,
+    color: theme.textPrimary,
+  },
+  dayChipCount: {
+    fontFamily: fonts.body,
+    fontSize: 10,
+    color: theme.textFaint,
+  },
+  daySection: {
+    marginBottom: spacing.lg,
+    width: '100%',
+  },
+  dayHeading: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 13,
+    color: theme.textPrimary,
+    marginBottom: spacing.sm,
+    letterSpacing: 0.2,
   },
   recFilter: {
     marginBottom: spacing.md,
@@ -347,9 +633,10 @@ const styles = StyleSheet.create({
   },
   empty: {
     fontFamily: fonts.body,
-    fontSize: 14,
+    fontSize: 13,
     color: theme.textMuted,
     textAlign: 'center',
     paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.md,
   },
 });

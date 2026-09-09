@@ -24,11 +24,22 @@ import {
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 import { countryFlag } from '@/utils/countryFlags';
 import { isGroupStageTournament } from '@/utils/groupStandings';
+import {
+  hasSeededPopularCountries,
+  hasSeededPopularCups,
+  hasSeededPopularIntl,
+  markPopularCountriesSeeded,
+  markPopularCupsSeeded,
+  markPopularIntlSeeded,
+} from '@/utils/favoritesStorage';
+import {
+  isPopularCountryName,
+  resolvePopularCupIds,
+  resolvePopularInternationalIds,
+} from '@/utils/popularCompetitions';
 
 export default function LeagueSidebar() {
   const { kind } = useScoresFilter();
-  // National-team tournaments keep the feed-driven list; club football gets the
-  // Country -> Leagues/Cups -> standings browser.
   return kind === 'country' ? <FeedCompetitionList /> : <CountryBrowser />;
 }
 
@@ -56,6 +67,14 @@ function CountryBrowser() {
     expandedCountryId,
     setExpandedCountryId,
     selectedCompetition,
+    favoriteCompetitionIds,
+    toggleFavoriteCompetition,
+    isFavoriteCompetition,
+    seedFavoriteCompetitions,
+    favoriteCountryIds,
+    toggleFavoriteCountry,
+    isFavoriteCountry,
+    seedFavoriteCountries,
   } = useScoresFilter();
   const openStandingsNav = useOpenStandingsNav();
   const { width } = useWindowDimensions();
@@ -66,16 +85,19 @@ function CountryBrowser() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [query, setQuery] = useState('');
-  // Mobile starts on the countries list; collapsing it reveals the scores feed.
   const [mobileOpen, setMobileOpen] = useState(true);
 
   useEffect(() => {
     let active = true;
     fetchAllCompetitions()
       .then((c) => {
-        if (active) {
-          setComps(c);
-          setLoading(false);
+        if (!active) return;
+        setComps(c);
+        setLoading(false);
+        if (!hasSeededPopularCups()) {
+          const cupIds = resolvePopularCupIds(c);
+          if (cupIds.length > 0) seedFavoriteCompetitions(cupIds);
+          markPopularCupsSeeded();
         }
       })
       .catch(() => {
@@ -86,30 +108,51 @@ function CountryBrowser() {
       });
     fetchCountries()
       .then((countries) => {
-        if (active) setCodeById(new Map(countries.map((c) => [c.id, c.code])));
+        if (!active) return;
+        setCodeById(new Map(countries.map((c) => [c.id, c.code])));
+        if (!hasSeededPopularCountries()) {
+          const popularCountryIds = countries
+            .filter((c) => isPopularCountryName(c.name))
+            .map((c) => c.id);
+          if (popularCountryIds.length > 0) seedFavoriteCountries(popularCountryIds);
+          markPopularCountriesSeeded();
+        }
       })
       .catch(() => {});
     return () => {
       active = false;
     };
-  }, []);
+  }, [seedFavoriteCompetitions, seedFavoriteCountries]);
 
   const countries = useMemo<CountryEntry[]>(() => {
     const map = clubCompetitionsByCountry(comps);
-    return [...map.entries()]
-      .map(([id, v]) => ({ id, ...v }))
-      .sort((a, b) => a.country.localeCompare(b.country));
+    return [...map.entries()].map(([id, v]) => ({ id, ...v }));
   }, [comps]);
+
+  const sortedCountries = useMemo(() => {
+    const favSet = new Set(favoriteCountryIds);
+    return [...countries].sort((a, b) => {
+      const fa = favSet.has(a.id) || isPopularCountryName(a.country) ? 0 : 1;
+      const fb = favSet.has(b.id) || isPopularCountryName(b.country) ? 0 : 1;
+      if (fa !== fb) return fa - fb;
+      return a.country.localeCompare(b.country);
+    });
+  }, [countries, favoriteCountryIds]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return countries;
-    return countries.filter((c) => c.country.toLowerCase().includes(q));
-  }, [countries, query]);
+    if (!q) return sortedCountries;
+    return sortedCountries.filter((c) => c.country.toLowerCase().includes(q));
+  }, [sortedCountries, query]);
+
+  const favoriteComps = useMemo(() => {
+    const byId = new Map(comps.map((c) => [c.id, c]));
+    return favoriteCompetitionIds.map((id) => byId.get(id)).filter((c): c is Competition => !!c);
+  }, [comps, favoriteCompetitionIds]);
 
   const pickCompetition = (c: Competition) => {
     openStandingsNav(c);
-    setMobileOpen(false); // collapse the mobile browser so the table is visible
+    setMobileOpen(false);
   };
 
   const body = (
@@ -123,6 +166,47 @@ function CountryBrowser() {
           style={styles.search}
         />
       </View>
+
+      {favoriteComps.length > 0 ? (
+        <View style={styles.group}>
+          <Text style={styles.groupLabel}>Favourites</Text>
+          {favoriteComps.map((c) => (
+            <View key={`fav-${c.id}`} style={styles.favRow}>
+              <Pressable
+                onPress={() => pickCompetition(c)}
+                style={({ hovered }) => [
+                  styles.compItem,
+                  styles.compItemFlex,
+                  selectedCompetition?.id === c.id && styles.compItemActive,
+                  Platform.OS === 'web' && hovered && styles.itemHover,
+                ]}>
+                <Text
+                  style={[
+                    styles.compName,
+                    selectedCompetition?.id === c.id && styles.compNameActive,
+                  ]}
+                  numberOfLines={1}>
+                  {c.name}
+                </Text>
+                <Text style={styles.compMeta} numberOfLines={1}>
+                  {c.country}
+                  {c.isCup ? ' · Cup' : ''}
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => toggleFavoriteCompetition(c.id)}
+                hitSlop={8}
+                style={styles.starBtn}
+                accessibilityLabel="Remove from favourites">
+                <Text style={styles.starOn}>★</Text>
+              </Pressable>
+            </View>
+          ))}
+        </View>
+      ) : (
+        <Text style={styles.emptyHint}>Star leagues below to pin them here.</Text>
+      )}
+
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator color={theme.accentGreen} />
@@ -135,21 +219,34 @@ function CountryBrowser() {
         filtered.map((entry) => {
           const expanded = expandedCountryId === entry.id;
           const total = entry.leagues.length + entry.cups.length;
+          const favCountry = isFavoriteCountry(entry.id);
           return (
             <View key={entry.id}>
-              <Pressable
-                onPress={() => setExpandedCountryId(expanded ? null : entry.id)}
-                style={({ hovered }) => [
-                  styles.countryRow,
-                  Platform.OS === 'web' && hovered && styles.itemHover,
-                ]}>
-                <CountryFlag code={codeById.get(entry.id)} name={entry.country} size={14} />
-                <Text style={styles.countryName} numberOfLines={1}>
-                  {entry.country}
-                </Text>
-                <Text style={styles.count}>{total}</Text>
-                <Text style={styles.chevron}>{expanded ? '▾' : '▸'}</Text>
-              </Pressable>
+              <View style={styles.countryRowWrap}>
+                <Pressable
+                  onPress={() => setExpandedCountryId(expanded ? null : entry.id)}
+                  style={({ hovered }) => [
+                    styles.countryRow,
+                    styles.countryRowFlex,
+                    Platform.OS === 'web' && hovered && styles.itemHover,
+                  ]}>
+                  <CountryFlag code={codeById.get(entry.id)} name={entry.country} size={14} />
+                  <Text style={styles.countryName} numberOfLines={1}>
+                    {entry.country}
+                  </Text>
+                  <Text style={styles.count}>{total}</Text>
+                  <Text style={styles.chevron}>{expanded ? '▾' : '▸'}</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => toggleFavoriteCountry(entry.id)}
+                  hitSlop={8}
+                  style={styles.starBtn}
+                  accessibilityLabel={favCountry ? 'Unpin country' : 'Pin country'}>
+                  <Text style={favCountry ? styles.starOn : styles.starOff}>
+                    {favCountry ? '★' : '☆'}
+                  </Text>
+                </Pressable>
+              </View>
               {expanded ? (
                 <View style={styles.compList}>
                   <CompGroup
@@ -157,12 +254,16 @@ function CountryBrowser() {
                     comps={entry.leagues}
                     selectedId={selectedCompetition?.id ?? null}
                     onPick={pickCompetition}
+                    isFavorite={isFavoriteCompetition}
+                    onToggleFavorite={toggleFavoriteCompetition}
                   />
                   <CompGroup
                     label="Cups"
                     comps={entry.cups}
                     selectedId={selectedCompetition?.id ?? null}
                     onPick={pickCompetition}
+                    isFavorite={isFavoriteCompetition}
+                    onToggleFavorite={toggleFavoriteCompetition}
                   />
                 </View>
               ) : null}
@@ -180,7 +281,7 @@ function CountryBrowser() {
         <Pressable onPress={() => setMobileOpen((v) => !v)} style={styles.mobileToggle}>
           <Text style={styles.mobileToggleText} numberOfLines={1}>
             {mobileOpen
-              ? 'Hide countries · show results'
+              ? 'Hide countries · show fixtures'
               : selectedLabel
                 ? `Standings · ${selectedLabel}`
                 : 'Browse countries & leagues'}
@@ -209,11 +310,15 @@ function CompGroup({
   comps,
   selectedId,
   onPick,
+  isFavorite,
+  onToggleFavorite,
 }: {
   label: string;
   comps: Competition[];
   selectedId: number | null;
   onPick: (c: Competition) => void;
+  isFavorite: (id: number) => boolean;
+  onToggleFavorite: (id: number) => void;
 }) {
   if (comps.length === 0) return null;
   return (
@@ -221,19 +326,29 @@ function CompGroup({
       <Text style={styles.groupLabel}>{label}</Text>
       {comps.map((c) => {
         const active = selectedId === c.id;
+        const fav = isFavorite(c.id);
         return (
-          <Pressable
-            key={c.id}
-            onPress={() => onPick(c)}
-            style={({ hovered }) => [
-              styles.compItem,
-              active && styles.compItemActive,
-              Platform.OS === 'web' && hovered && !active && styles.itemHover,
-            ]}>
-            <Text style={[styles.compName, active && styles.compNameActive]} numberOfLines={1}>
-              {c.name}
-            </Text>
-          </Pressable>
+          <View key={c.id} style={styles.favRow}>
+            <Pressable
+              onPress={() => onPick(c)}
+              style={({ hovered }) => [
+                styles.compItem,
+                styles.compItemFlex,
+                active && styles.compItemActive,
+                Platform.OS === 'web' && hovered && !active && styles.itemHover,
+              ]}>
+              <Text style={[styles.compName, active && styles.compNameActive]} numberOfLines={1}>
+                {c.name}
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => onToggleFavorite(c.id)}
+              hitSlop={8}
+              style={styles.starBtn}
+              accessibilityLabel={fav ? 'Remove favourite' : 'Add favourite'}>
+              <Text style={fav ? styles.starOn : styles.starOff}>{fav ? '★' : '☆'}</Text>
+            </Pressable>
+          </View>
         );
       })}
     </View>
@@ -243,7 +358,16 @@ function CompGroup({
 // ===== Feed-driven competition list (national teams) ======================
 
 function FeedCompetitionList() {
-  const { competitions, competitionId, setCompetitionId, kind } = useScoresFilter();
+  const {
+    competitions,
+    competitionId,
+    setCompetitionId,
+    kind,
+    favoriteCompetitionIds,
+    toggleFavoriteCompetition,
+    isFavoriteCompetition,
+    seedFavoriteCompetitions,
+  } = useScoresFilter();
   const openStandingsNav = useOpenStandingsNav();
   const { width } = useWindowDimensions();
   const isDesktop = width >= 1024;
@@ -252,9 +376,16 @@ function FeedCompetitionList() {
   useEffect(() => {
     if (kind !== 'country') return;
     fetchAllCompetitions()
-      .then(setAllComps)
+      .then((c) => {
+        setAllComps(c);
+        if (!hasSeededPopularIntl()) {
+          const ids = resolvePopularInternationalIds(c);
+          if (ids.length > 0) seedFavoriteCompetitions(ids);
+          markPopularIntlSeeded();
+        }
+      })
       .catch(() => {});
-  }, [kind]);
+  }, [kind, seedFavoriteCompetitions]);
 
   const groupTournaments = useMemo(
     () =>
@@ -263,6 +394,23 @@ function FeedCompetitionList() {
         .sort((a, b) => a.name.localeCompare(b.name)),
     [allComps],
   );
+
+  const orderedCompetitions = useMemo(() => {
+    const fav = new Set(favoriteCompetitionIds);
+    return [...competitions].sort((a, b) => {
+      const fa = fav.has(a.competition.id) ? 0 : 1;
+      const fb = fav.has(b.competition.id) ? 0 : 1;
+      if (fa !== fb) return fa - fb;
+      return a.competition.name.localeCompare(b.competition.name);
+    });
+  }, [competitions, favoriteCompetitionIds]);
+
+  const favoriteIntl = useMemo(() => {
+    const byId = new Map(allComps.map((c) => [c.id, c]));
+    return favoriteCompetitionIds
+      .map((id) => byId.get(id))
+      .filter((c): c is Competition => !!c && detectKind(c.name) === 'country');
+  }, [allComps, favoriteCompetitionIds]);
 
   const liveCount = (id: number) =>
     competitions
@@ -290,7 +438,7 @@ function FeedCompetitionList() {
               </Pressable>
             ))
           : null}
-        {competitions.map((group) => {
+        {orderedCompetitions.map((group) => {
           const active = competitionId === group.competition.id;
           return (
             <Pressable
@@ -312,6 +460,33 @@ function FeedCompetitionList() {
     <View style={styles.sidebar}>
       <Text style={styles.sidebarTitle}>{kind === 'country' ? 'TOURNAMENTS' : 'COMPETITIONS'}</Text>
       <ScrollView showsVerticalScrollIndicator={false}>
+        {favoriteIntl.length > 0 ? (
+          <View style={styles.group}>
+            <Text style={styles.groupLabel}>Favourites</Text>
+            {favoriteIntl.map((c) => (
+              <View key={`fav-intl-${c.id}`} style={styles.favRow}>
+                <Pressable
+                  onPress={() => openStandingsNav(c)}
+                  style={({ hovered }) => [
+                    styles.compItem,
+                    styles.compItemFlex,
+                    Platform.OS === 'web' && hovered && styles.itemHover,
+                  ]}>
+                  <Text style={styles.compName} numberOfLines={1}>
+                    {c.name}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => toggleFavoriteCompetition(c.id)}
+                  hitSlop={8}
+                  style={styles.starBtn}>
+                  <Text style={styles.starOn}>★</Text>
+                </Pressable>
+              </View>
+            ))}
+          </View>
+        ) : null}
+
         {kind === 'country' && groupTournaments.length > 0 ? (
           <View style={styles.group}>
             <Text style={styles.groupLabel}>GROUP TABLES</Text>
@@ -333,38 +508,47 @@ function FeedCompetitionList() {
             ))}
           </View>
         ) : null}
-        {competitions.length === 0 ? (
+        {orderedCompetitions.length === 0 ? (
           <Text style={styles.emptyHint}>No competitions loaded.</Text>
         ) : (
-          competitions.map((group) => {
+          orderedCompetitions.map((group) => {
             const active = competitionId === group.competition.id;
             const live = liveCount(group.competition.id);
+            const fav = isFavoriteCompetition(group.competition.id);
             return (
-              <Pressable
-                key={group.key}
-                onPress={() => setCompetitionId(active ? null : group.competition.id)}
-                style={({ hovered }) => [
-                  styles.item,
-                  active && styles.itemActive,
-                  Platform.OS === 'web' && hovered && !active && styles.itemHover,
-                ]}>
-                <Text style={styles.flag}>{countryFlag(group.competition.country)}</Text>
-                <View style={styles.itemText}>
-                  <Text style={[styles.name, active && styles.nameActive]} numberOfLines={1}>
-                    {group.competition.name}
-                  </Text>
-                  <Text style={styles.country} numberOfLines={1}>
-                    {group.competition.country}
-                  </Text>
-                </View>
-                {live > 0 ? (
-                  <View style={styles.liveBadge}>
-                    <Text style={styles.liveBadgeText}>{live}</Text>
+              <View key={group.key} style={styles.favRow}>
+                <Pressable
+                  onPress={() => setCompetitionId(active ? null : group.competition.id)}
+                  style={({ hovered }) => [
+                    styles.item,
+                    styles.compItemFlex,
+                    active && styles.itemActive,
+                    Platform.OS === 'web' && hovered && !active && styles.itemHover,
+                  ]}>
+                  <Text style={styles.flag}>{countryFlag(group.competition.country)}</Text>
+                  <View style={styles.itemText}>
+                    <Text style={[styles.name, active && styles.nameActive]} numberOfLines={1}>
+                      {group.competition.name}
+                    </Text>
+                    <Text style={styles.country} numberOfLines={1}>
+                      {group.competition.country}
+                    </Text>
                   </View>
-                ) : (
-                  <Text style={styles.count}>{group.fixtures.length}</Text>
-                )}
-              </Pressable>
+                  {live > 0 ? (
+                    <View style={styles.liveBadge}>
+                      <Text style={styles.liveBadgeText}>{live}</Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.count}>{group.fixtures.length}</Text>
+                  )}
+                </Pressable>
+                <Pressable
+                  onPress={() => toggleFavoriteCompetition(group.competition.id)}
+                  hitSlop={8}
+                  style={styles.starBtn}>
+                  <Text style={fav ? styles.starOn : styles.starOff}>{fav ? '★' : '☆'}</Text>
+                </Pressable>
+              </View>
             );
           })
         )}
@@ -436,6 +620,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
+  countryRowWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   countryRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -443,6 +631,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
+  countryRowFlex: { flex: 1, minWidth: 0 },
   countryName: {
     flex: 1,
     fontFamily: fonts.bodyMedium,
@@ -451,6 +640,22 @@ const styles = StyleSheet.create({
   },
   chevron: {
     fontSize: 11,
+    color: theme.textFaint,
+  },
+  favRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  starBtn: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+  },
+  starOn: {
+    fontSize: 14,
+    color: theme.yellow,
+  },
+  starOff: {
+    fontSize: 14,
     color: theme.textFaint,
   },
   compList: {
@@ -475,6 +680,7 @@ const styles = StyleSheet.create({
     borderLeftWidth: 3,
     borderLeftColor: 'transparent',
   },
+  compItemFlex: { flex: 1, minWidth: 0 },
   compItemActive: {
     borderLeftColor: theme.accentGreen,
     backgroundColor: theme.surfaceHover,

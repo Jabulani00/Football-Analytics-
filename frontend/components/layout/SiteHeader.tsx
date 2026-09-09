@@ -1,16 +1,26 @@
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
-import { useScoresFilter, type StatusFilter } from '@/components/layout/ScoresFilterContext';
+import {
+  useScoresFilter,
+  type StatusFilter,
+  type UpcomingScope,
+} from '@/components/layout/ScoresFilterContext';
 import type { FixtureKind, Gender } from '@/services/oddAlerts';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 import { formatTopBarDate } from '@/utils/dates';
 
-const FILTERS: { id: StatusFilter; label: string }[] = [
-  { id: 'ft', label: 'Results' },
-  { id: 'live', label: 'LIVE' },
-  { id: 'ns', label: 'Fixtures' },
-  { id: 'all', label: 'All' },
+type HeaderFilter =
+  | { id: 'favorites'; label: string; status: 'ns'; scope: UpcomingScope }
+  | { id: 'ns'; label: string; status: 'ns'; scope: UpcomingScope }
+  | { id: StatusFilter; label: string; status: StatusFilter; scope?: undefined };
+
+const FILTERS: HeaderFilter[] = [
+  { id: 'favorites', label: 'Favourites', status: 'ns', scope: 'popular' },
+  { id: 'ns', label: 'Fixtures', status: 'ns', scope: 'all' },
+  { id: 'live', label: 'LIVE', status: 'live' },
+  { id: 'ft', label: 'Results', status: 'ft' },
+  { id: 'all', label: 'All', status: 'all' },
 ];
 
 const KINDS: { id: FixtureKind; label: string }[] = [
@@ -32,6 +42,8 @@ export default function SiteHeader({ showFilters = true }: SiteHeaderProps) {
   const {
     statusFilter,
     setStatusFilter,
+    upcomingScope,
+    setUpcomingScope,
     kind,
     setKind,
     gender,
@@ -39,6 +51,13 @@ export default function SiteHeader({ showFilters = true }: SiteHeaderProps) {
     setCompetitionId,
     setPanelMode,
   } = useScoresFilter();
+
+  const isFilterActive = (f: HeaderFilter) => {
+    if (f.scope != null) {
+      return statusFilter === 'ns' && upcomingScope === f.scope;
+    }
+    return statusFilter === f.status;
+  };
 
   return (
     <View style={styles.wrap}>
@@ -57,12 +76,13 @@ export default function SiteHeader({ showFilters = true }: SiteHeaderProps) {
         <>
           <View style={styles.filters}>
             {FILTERS.map((f) => {
-              const active = statusFilter === f.id;
+              const active = isFilterActive(f);
               return (
                 <Pressable
                   key={f.id}
                   onPress={() => {
-                    setStatusFilter(f.id);
+                    setStatusFilter(f.status);
+                    if (f.scope != null) setUpcomingScope(f.scope);
                     setPanelMode('scores');
                   }}
                   style={[styles.filterChip, active && styles.filterActive]}>
@@ -106,6 +126,7 @@ export default function SiteHeader({ showFilters = true }: SiteHeaderProps) {
                     onPress={() => {
                       setGender(g.id);
                       setCompetitionId(null);
+                      setPanelMode('scores');
                     }}
                     style={[styles.segBtn, active && styles.segBtnActive]}>
                     <Text style={[styles.segText, active && styles.segTextActive]}>{g.label}</Text>

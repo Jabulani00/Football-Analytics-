@@ -216,6 +216,70 @@ export function fetchUpcomingFixtures(
 }
 
 /**
+ * Paginate `/fixtures/upcoming` so quieter leagues are not dropped after page 1.
+ * Optionally scope to comma-separated competition ids.
+ */
+export async function fetchAllUpcomingFixtures(
+  opts: { days?: number; competitions?: string; maxPages?: number } = {},
+  signal?: AbortSignal,
+): Promise<RawFixture[]> {
+  const maxPages = opts.maxPages ?? 10;
+  const all: RawFixture[] = [];
+  for (let page = 1; page <= maxPages; page += 1) {
+    const env = await fetchUpcomingFixtures(
+      { days: opts.days, competitions: opts.competitions, page },
+      signal,
+    );
+    all.push(...env.data);
+    if (!env.info?.next_page_url) break;
+  }
+  return all;
+}
+
+/**
+ * Fetch upcoming fixtures for many competitions by chunking ids
+ * (avoids truncating popular leagues when the global feed is huge).
+ */
+export async function fetchUpcomingForCompetitions(
+  competitionIds: number[],
+  opts: { days?: number; maxPagesPerChunk?: number; chunkSize?: number } = {},
+  signal?: AbortSignal,
+): Promise<RawFixture[]> {
+  const ids = [...new Set(competitionIds.filter((n) => Number.isFinite(n)))];
+  if (ids.length === 0) {
+    return fetchAllUpcomingFixtures(
+      { days: opts.days ?? 7, maxPages: opts.maxPagesPerChunk ?? 8 },
+      signal,
+    );
+  }
+  const chunkSize = opts.chunkSize ?? 6;
+  const maxPages = opts.maxPagesPerChunk ?? 4;
+  const days = opts.days ?? 7;
+  const chunks: number[][] = [];
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    chunks.push(ids.slice(i, i + chunkSize));
+  }
+  const batches = await Promise.all(
+    chunks.map((chunk) =>
+      fetchAllUpcomingFixtures(
+        { days, competitions: chunk.join(','), maxPages },
+        signal,
+      ),
+    ),
+  );
+  const seen = new Set<number>();
+  const out: RawFixture[] = [];
+  for (const batch of batches) {
+    for (const f of batch) {
+      if (seen.has(f.id)) continue;
+      seen.add(f.id);
+      out.push(f);
+    }
+  }
+  return out;
+}
+
+/**
  * Fixtures (including finished results) in a unix-time window. This is the
  * Flashscore "Results" source. Optionally scope to one or more competitions.
  */
@@ -378,7 +442,10 @@ const STATUS_ORDER: Record<ScoreStatus, number> = {
 };
 
 /** Group fixtures by competition, ordered like Flashscore (live first). */
-export function groupByCompetition(fixtures: Fixture[]): CompetitionGroup[] {
+export function groupByCompetition(
+  fixtures: Fixture[],
+  opts?: { preferredIds?: number[] },
+): CompetitionGroup[] {
   const map = new Map<string, CompetitionGroup>();
 
   for (const fixture of fixtures) {
@@ -401,7 +468,14 @@ export function groupByCompetition(fixtures: Fixture[]): CompetitionGroup[] {
     });
   }
 
+  const preferred = opts?.preferredIds ?? [];
+  const rank = new Map(preferred.map((id, i) => [id, i]));
+
   groups.sort((a, b) => {
+    const pa = rank.has(a.competition.id) ? rank.get(a.competition.id)! : Number.POSITIVE_INFINITY;
+    const pb = rank.has(b.competition.id) ? rank.get(b.competition.id)! : Number.POSITIVE_INFINITY;
+    if (pa !== pb) return pa - pb;
+
     const liveA = a.fixtures.some((f) => f.status === 'LIVE' || f.status === 'HT');
     const liveB = b.fixtures.some((f) => f.status === 'LIVE' || f.status === 'HT');
     if (liveA !== liveB) return liveA ? -1 : 1;
