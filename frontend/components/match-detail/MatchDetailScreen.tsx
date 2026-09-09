@@ -15,6 +15,7 @@ import OddsValuePanel from '@/components/match-detail/OddsValuePanel';
 import H2HPanel from '@/components/match-detail/H2HPanel';
 import PressureMonitorPanel from '@/components/match-detail/PressureMonitorPanel';
 import PitchLineup from '@/components/match-detail/PitchLineup';
+import FixtureCoreStatsPanel from '@/components/match-detail/FixtureCoreStatsPanel';
 import FixtureMotivationPanel from '@/components/standings/FixtureMotivationPanel';
 import FixtureFormAnalysisPanel from '@/components/standings/FixtureFormAnalysisPanel';
 import SubTabBar from '@/components/shared/SubTabBar';
@@ -276,7 +277,14 @@ export default function MatchDetailScreen({ matchId, onBack }: MatchDetailScreen
           pressureReading={pressureReading}
         />
       ) : tab === 'stats' ? (
-        <StatsTab detail={detail} homeName={fixture.home.name} awayName={fixture.away.name} />
+        <StatsTab
+          detail={detail}
+          standings={standings}
+          homeId={fixture.home.id}
+          awayId={fixture.away.id}
+          homeName={fixture.home.name}
+          awayName={fixture.away.name}
+        />
       ) : tab === 'tableodds' ? (
         <TableOddsTab
           detail={detail}
@@ -593,41 +601,60 @@ function ScorePeriodRow({
 
 function StatsTab({
   detail,
+  standings,
+  homeId,
+  awayId,
   homeName,
   awayName,
 }: {
   detail: RawFixtureDetail;
+  standings: StandingRow[];
+  homeId: number | null;
+  awayId: number | null;
   homeName: string;
   awayName: string;
 }) {
   const byCat = statsByCategory(detail.stats);
-  if (byCat.size === 0) {
-    return (
-      <Text style={styles.muted}>
-        Match stats appear once the game is live or finished. OddAlerts does not split live stats
-        into 1st / 2nd half — only the half-time score line is available.
-      </Text>
-    );
-  }
+
   return (
     <View>
-      <Text style={styles.statsHeader}>
-        {homeName} vs {awayName} — full match
-      </Text>
-      {[...byCat.entries()].map(([category, rows]) => (
-        <View key={category} style={styles.card}>
-          <Text style={styles.cardTitle}>{category}</Text>
-          {rows.map((r) => (
-            <StatComparison
-              key={r.home}
-              label={r.label}
-              home={detail.stats?.[r.home] ?? null}
-              away={detail.stats?.[r.away] ?? null}
-              pct={r.pct}
-            />
+      {/* Section 1 — additive core T1 vs T2; does not replace live match stats below */}
+      <FixtureCoreStatsPanel
+        standings={standings}
+        homeId={homeId}
+        awayId={awayId}
+        homeName={homeName}
+        awayName={awayName}
+        seasonProgress={detail.season_progress}
+      />
+
+      {byCat.size === 0 ? (
+        <Text style={styles.muted}>
+          In-play match stats (shots, possession, cards…) appear once the game is live or finished.
+          OddAlerts does not split live stats into 1st / 2nd half — only the half-time score line is
+          available.
+        </Text>
+      ) : (
+        <>
+          <Text style={styles.statsHeader}>
+            {homeName} vs {awayName} — this match
+          </Text>
+          {[...byCat.entries()].map(([category, rows]) => (
+            <View key={category} style={styles.card}>
+              <Text style={styles.cardTitle}>{category}</Text>
+              {rows.map((r) => (
+                <StatComparison
+                  key={r.home}
+                  label={r.label}
+                  home={detail.stats?.[r.home] ?? null}
+                  away={detail.stats?.[r.away] ?? null}
+                  pct={r.pct}
+                />
+              ))}
+            </View>
           ))}
-        </View>
-      ))}
+        </>
+      )}
     </View>
   );
 }

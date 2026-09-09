@@ -12,7 +12,8 @@ type StatValueCellProps = {
 };
 
 function formatValue(value: number, unit: StatDisplayUnit = 'percent'): string {
-  if (unit === 'goals') return value.toFixed(2);
+  if (!Number.isFinite(value)) return '—';
+  if (unit === 'goals' || unit === 'decimal') return value.toFixed(2);
   return `${Math.round(value)}%`;
 }
 

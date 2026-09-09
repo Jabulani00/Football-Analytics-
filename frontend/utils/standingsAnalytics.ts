@@ -931,16 +931,24 @@ export function buildStandingsView(
   }
 
   if (sel.kind === 'last6ppg') {
+    const rows = buildPPGTable(base, games, sel.split, sel.period, 6).filter((r) => {
+      const src = base.find((b) => b.team === r.team);
+      return (src?.played ?? 0) > 0;
+    });
     return {
-      rows: buildPPGTable(base, games, sel.split, sel.period, 6),
-      caption: `${SPLIT_LABEL[sel.split]} · ${PERIOD_LABEL[sel.period]} · Last 6 PPG`,
+      rows,
+      caption: `${SPLIT_LABEL[sel.split]} · ${PERIOD_LABEL[sel.period]} · Last 6 PPG (teams with matches only)`,
     };
   }
 
   if (sel.kind === 'form') {
+    const rows = buildPPGTable(base, games, sel.split, sel.period, sel.window).filter((r) => {
+      const src = base.find((b) => b.team === r.team);
+      return (src?.played ?? 0) > 0;
+    });
     return {
-      rows: buildPPGTable(base, games, sel.split, sel.period, sel.window),
-      caption: `Last ${sel.window} · ${SPLIT_LABEL[sel.split]} · ${PERIOD_LABEL[sel.period]}`,
+      rows,
+      caption: `Last ${sel.window} · ${SPLIT_LABEL[sel.split]} · ${PERIOD_LABEL[sel.period]} (teams with matches only)`,
     };
   }
 
