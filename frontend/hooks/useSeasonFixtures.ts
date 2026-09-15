@@ -16,7 +16,7 @@ type State = {
 };
 
 /**
- * Finished same-competition fixtures for a season — fuels Bhozoma / Imbanpi.
+ * Finished same-competition fixtures for a season — fuels Bhozoma / Imbangi.
  * Only runs when `enabled` so league/tier tabs stay untouched and cheap.
  */
 export function useSeasonFixtures(

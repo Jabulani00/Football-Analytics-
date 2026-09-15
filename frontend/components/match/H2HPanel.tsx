@@ -17,7 +17,7 @@ export default function H2HPanel({ results, homeTeamName, awayTeamName }: H2HPan
   const [split, setSplit] = useState<H2HSplit>('overall');
 
   const filtered = useMemo(
-    () => filterH2HBySplit(results, split, homeTeamName, awayTeamName),
+    () => filterH2HBySplit(results, split, homeTeamName, awayTeamName).slice(0, 5),
     [results, split, homeTeamName, awayTeamName],
   );
 

@@ -1,4 +1,4 @@
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import {
   buildBhozomaTable,
@@ -17,46 +17,90 @@ type Props = {
   competitionId?: number | string | null;
 };
 
-function SideBlock({ title, side }: { title: string; side: BhozomaSideStats }) {
-  const dust = side.dataDust;
+function pctText(side: BhozomaSideStats): string {
+  if (side.pctAttained == null) return '—';
+  return `${Math.round(side.pctAttained)}%`;
+}
+
+function resultsText(side: BhozomaSideStats): string {
+  if (side.results.length === 0) return '—';
+  const recent = side.results.slice(-4);
+  return recent.map((r) => `${r.gf}-${r.ga}`).join(' · ');
+}
+
+function Cell({
+  children,
+  style,
+  muted,
+  accent,
+}: {
+  children: string;
+  style?: object;
+  muted?: boolean;
+  accent?: 'warn' | 'ok' | null;
+}) {
+  const color =
+    accent === 'warn'
+      ? theme.accentOrange
+      : accent === 'ok'
+        ? theme.accentBlue
+        : muted
+          ? theme.textMuted
+          : theme.textPrimary;
   return (
-    <View style={[styles.side, dust && styles.sideDust]}>
-      <Text style={styles.sideTitle}>{title}</Text>
-      <Text style={styles.sideMeta}>
-        {side.mp} games · {side.pointsAttained} of {side.pointsPossible} pts
-        {side.pctAttained != null ? ` (${side.pctAttained.toFixed(0)}%)` : ''}
-        {side.pointsLost > 0 ? ` · dropped ${side.pointsLost}` : ''}
-      </Text>
-      <Text style={[styles.sideLabel, dust ? styles.dust : styles.labelOk]}>
-        {side.label ?? '—'}
-      </Text>
-    </View>
+    <Text style={[styles.td, style, { color }]} numberOfLines={1}>
+      {children}
+    </Text>
   );
 }
 
-function TeamCard({ row }: { row: BhozomaTeamRow }) {
+function SideCells({ side }: { side: BhozomaSideStats }) {
+  const noSample = side.mp <= 0;
+  const early = side.dataDust && side.mp > 0;
   return (
-    <View style={styles.card}>
-      <View style={styles.cardHead}>
-        <Text style={styles.rank}>#{row.rank}</Text>
-        <View style={styles.cardText}>
-          <Text style={styles.name} numberOfLines={1}>
-            {row.name}
-          </Text>
-          <Text style={styles.meta}>
-            {row.points} pts · {row.zone}
-            {row.isMidTable ? ' · mid-table focus' : ''}
-          </Text>
-        </View>
-      </View>
-      <SideBlock title="vs Above" side={row.above} />
-      <SideBlock title="vs Below" side={row.below} />
+    <>
+      <Cell style={styles.cMp}>{String(side.mp)}</Cell>
+      <Cell style={styles.cScores} muted>
+        {resultsText(side)}
+      </Cell>
+      <Cell style={styles.cNum} muted={noSample}>
+        {noSample ? '—' : String(side.pointsPossible)}
+      </Cell>
+      <Cell style={styles.cNum} muted={noSample}>
+        {noSample ? '—' : String(side.pointsAttained)}
+      </Cell>
+      <Cell style={styles.cNum} muted={noSample}>
+        {noSample ? '—' : String(side.pointsLost)}
+      </Cell>
+      <Cell style={styles.cPct} muted={noSample || early}>
+        {pctText(side)}
+      </Cell>
+      <Cell
+        style={styles.cLabel}
+        accent={noSample ? 'warn' : early ? 'warn' : 'ok'}
+        muted={noSample}>
+        {side.label ?? '—'}
+      </Cell>
+    </>
+  );
+}
+
+function DataRow({ row }: { row: BhozomaTeamRow }) {
+  return (
+    <View style={[styles.row, row.isMidTable && styles.rowMid]}>
+      <Text style={[styles.td, styles.cPos]}>{row.rank}</Text>
+      <Text style={[styles.td, styles.cTeam]} numberOfLines={1}>
+        {row.name}
+      </Text>
+      <Text style={[styles.td, styles.cPts]}>{row.points}</Text>
+      <SideCells side={row.above} />
+      <SideCells side={row.below} />
     </View>
   );
 }
 
 /**
- * Section 8 — mid-table Bhozoma panel. Additive standings tab.
+ * Section 8 — Bhozoma as a table (MP / scores / max / attained / lost / % / read).
  */
 export default function BhozomaView({
   standings,
@@ -69,7 +113,7 @@ export default function BhozomaView({
     return (
       <View style={styles.center}>
         <ActivityIndicator color={theme.accentGreen} />
-        <Text style={styles.muted}>Building mid-table form from season results…</Text>
+        <Text style={styles.muted}>Building Bhozoma from season results…</Text>
       </View>
     );
   }
@@ -82,14 +126,14 @@ export default function BhozomaView({
   return (
     <View>
       <Text style={styles.blurb}>
-        How mid-table teams do against sides above them and below them. Needs at least
-        3 games in a bucket before the read is trusted. Taking under 30% of points from
-        higher sides is a giant-killer signal; over 30% is solid mid-table form.
+        Mid-table form vs sides currently above and below on the table (not all season games).
+        Giant-killer = taking ≥50% of points from higher sides. vs lower sides: 60–74% =
+        good, ≥75% = dominates. Under 3 meetings still shows a read marked “early”.
       </Text>
       {table.midBand ? (
         <Text style={styles.summary}>
-          Mid-table places {table.midBand.from}–{table.midBand.to} · showing{' '}
-          {focus.length} team{focus.length === 1 ? '' : 's'}
+          Mid-table places {table.midBand.from}–{table.midBand.to} · {focus.length} team
+          {focus.length === 1 ? '' : 's'}
           {table.midRows.length === 0 ? ' (full table — no mid band hit)' : ''}
         </Text>
       ) : (
@@ -98,12 +142,49 @@ export default function BhozomaView({
       {matches.length === 0 ? (
         <Text style={styles.muted}>No finished season fixtures loaded yet.</Text>
       ) : null}
-      {focus.map((r) => (
-        <TeamCard key={r.teamId} row={r} />
-      ))}
+
+      <ScrollView horizontal showsHorizontalScrollIndicator>
+        <View style={styles.table}>
+          {/* Group header */}
+          <View style={[styles.row, styles.groupRow]}>
+            <View style={styles.cPos} />
+            <View style={styles.cTeam} />
+            <View style={styles.cPts} />
+            <Text style={[styles.groupLabel, styles.cAboveBlock]}>vs Above</Text>
+            <Text style={[styles.groupLabel, styles.cBelowBlock]}>vs Below</Text>
+          </View>
+
+          {/* Column header */}
+          <View style={[styles.row, styles.headRow]}>
+            <Text style={[styles.th, styles.cPos]}>#</Text>
+            <Text style={[styles.th, styles.cTeam]}>Team</Text>
+            <Text style={[styles.th, styles.cPts]}>Pts</Text>
+            <Text style={[styles.th, styles.cMp]}>MP</Text>
+            <Text style={[styles.th, styles.cScores]}>Scores</Text>
+            <Text style={[styles.th, styles.cNum]}>Max</Text>
+            <Text style={[styles.th, styles.cNum]}>Att</Text>
+            <Text style={[styles.th, styles.cNum]}>Lost</Text>
+            <Text style={[styles.th, styles.cPct]}>%</Text>
+            <Text style={[styles.th, styles.cLabel]}>Read</Text>
+            <Text style={[styles.th, styles.cMp]}>MP</Text>
+            <Text style={[styles.th, styles.cScores]}>Scores</Text>
+            <Text style={[styles.th, styles.cNum]}>Max</Text>
+            <Text style={[styles.th, styles.cNum]}>Att</Text>
+            <Text style={[styles.th, styles.cNum]}>Lost</Text>
+            <Text style={[styles.th, styles.cPct]}>%</Text>
+            <Text style={[styles.th, styles.cLabel]}>Read</Text>
+          </View>
+
+          {focus.map((r) => (
+            <DataRow key={r.teamId} row={r} />
+          ))}
+        </View>
+      </ScrollView>
     </View>
   );
 }
+
+const SIDE_COLS = 36 + 120 + 40 + 40 + 40 + 44 + 150; // MP Scores Max Att Lost % Read
 
 const styles = StyleSheet.create({
   blurb: {
@@ -127,35 +208,56 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingVertical: spacing.md,
   },
-  card: {
+  table: {
     backgroundColor: theme.surface,
     borderWidth: layout.borderWidth,
     borderColor: theme.border,
     borderRadius: layout.borderRadius,
-    padding: spacing.sm,
-    marginBottom: spacing.sm,
+    overflow: 'hidden',
+    minWidth: 28 + 140 + 40 + SIDE_COLS * 2,
   },
-  cardHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.xs },
-  rank: { fontFamily: fonts.bodySemiBold, fontSize: 14, color: theme.textFaint, width: 28 },
-  cardText: { flex: 1, minWidth: 0 },
-  name: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: theme.textPrimary },
-  meta: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted },
-  side: {
-    marginTop: spacing.xs,
-    paddingTop: spacing.xs,
-    borderTopWidth: layout.borderWidth,
-    borderTopColor: theme.border,
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 36,
+    borderBottomWidth: layout.borderWidth,
+    borderBottomColor: theme.border,
+    paddingHorizontal: spacing.xs,
   },
-  sideDust: { opacity: 0.75 },
-  sideTitle: {
+  groupRow: {
+    backgroundColor: theme.surfaceMuted,
+    minHeight: 28,
+    borderBottomWidth: 0,
+  },
+  headRow: { backgroundColor: theme.surfaceMuted },
+  rowMid: { backgroundColor: 'rgba(217, 119, 6, 0.05)' },
+  groupLabel: {
     fontFamily: fonts.bodySemiBold,
     fontSize: 10,
-    color: theme.textFaint,
+    color: theme.textPrimary,
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
+    textAlign: 'center',
   },
-  sideMeta: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted, marginTop: 2 },
-  sideLabel: { fontFamily: fonts.bodySemiBold, fontSize: 12, marginTop: 2 },
-  dust: { color: theme.accentOrange },
-  labelOk: { color: theme.accentBlue },
+  cAboveBlock: { width: SIDE_COLS },
+  cBelowBlock: { width: SIDE_COLS },
+  th: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 10,
+    color: theme.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  td: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+  },
+  cPos: { width: 28, textAlign: 'center', fontFamily: fonts.bodySemiBold },
+  cTeam: { width: 140, paddingRight: spacing.xs, fontFamily: fonts.bodySemiBold },
+  cPts: { width: 40, textAlign: 'center', fontFamily: fonts.bodySemiBold },
+  cMp: { width: 36, textAlign: 'center' },
+  cScores: { width: 120, paddingHorizontal: 4 },
+  cNum: { width: 40, textAlign: 'center' },
+  cPct: { width: 44, textAlign: 'center', fontFamily: fonts.bodySemiBold },
+  cLabel: { width: 150, paddingHorizontal: 4, fontFamily: fonts.bodySemiBold, fontSize: 11 },
 });

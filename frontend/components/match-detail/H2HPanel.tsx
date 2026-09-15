@@ -10,6 +10,7 @@ import {
   h2hFocusTeam,
   h2hOutcomeForTeam,
   h2hSummary,
+  recentH2hMeetings,
   outcomeBg,
   outcomeColor,
   teamsMatch,
@@ -183,7 +184,7 @@ export default function H2HPanel({ matches, homeName, awayName }: H2HPanelProps)
   const [split, setSplit] = useState<H2HSplit>('overall');
 
   const filtered = useMemo(
-    () => filterH2hBySplit(matches, split, homeName, awayName),
+    () => recentH2hMeetings(filterH2hBySplit(matches, split, homeName, awayName)),
     [matches, split, homeName, awayName],
   );
 

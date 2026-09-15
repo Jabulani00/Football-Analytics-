@@ -9,7 +9,7 @@ import GroupStandingsView from '@/components/standings/GroupStandingsView';
 import TieredStandingsView from '@/components/standings/TieredStandingsView';
 import StandingsStakesView from '@/components/standings/StandingsStakesView';
 import BhozomaView from '@/components/standings/BhozomaView';
-import ImbanpiView from '@/components/standings/ImbanpiView';
+import ImbangiView from '@/components/standings/ImbangiView';
 import SeasonFixturesList from '@/components/standings/SeasonFixturesList';
 import StandingsAnalyticsView from '@/components/league/StandingsAnalyticsView';
 import SubTabBar from '@/components/shared/SubTabBar';
@@ -26,7 +26,7 @@ type StandingsView =
   | 'tiers'
   | 'stakes'
   | 'bhozoma'
-  | 'imbanpi'
+  | 'imbangi'
   | 'groups';
 
 function defaultView(opts: { isGroups: boolean; isCup: boolean }): StandingsView {
@@ -56,7 +56,7 @@ export default function StandingsPanel() {
   }, [competition?.id, isGroups, isCup]);
 
   const season = competition?.seasons.find((s) => s.seasonId === selectedSeasonId);
-  const needSeasonFixtures = view === 'bhozoma' || view === 'imbanpi';
+  const needSeasonFixtures = view === 'bhozoma' || view === 'imbangi';
   const seasonFx = useSeasonFixtures(
     needSeasonFixtures ? competition : null,
     needSeasonFixtures ? season : null,
@@ -178,8 +178,8 @@ export default function StandingsPanel() {
               { id: 'previous', label: 'Previous' },
               { id: 'tiers', label: 'Tier tables' },
               { id: 'stakes', label: 'Who needs points' },
-              { id: 'bhozoma', label: 'Mid-table form' },
-              { id: 'imbanpi', label: 'Closest rivals' },
+              { id: 'bhozoma', label: 'Bhozoma' },
+              { id: 'imbangi', label: 'Imbangi' },
             ]}
             active={view}
             onChange={(id) => setView(id as StandingsView)}
@@ -226,7 +226,7 @@ export default function StandingsPanel() {
               competitionId={competition.id}
             />
           ) : (
-            <ImbanpiView
+            <ImbangiView
               standings={standings}
               matches={seasonFx.matches}
               loading={seasonFx.loading}

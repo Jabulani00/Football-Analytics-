@@ -1,5 +1,5 @@
 /**
- * Section 9 — Imbanpi (neighbour / rival rows) + league progress context.
+ * Section 9 — Imbangi (neighbour / rival rows) + league progress context.
  */
 
 import {
@@ -9,7 +9,7 @@ import {
 } from '@/utils/motivationEngine';
 import type { SeasonMatch } from '@/utils/bhozomaEngine';
 
-export type ImbanpiRow = {
+export type ImbangiRow = {
   teamId: number;
   teamName: string;
   position: number;
@@ -35,10 +35,10 @@ export type LeagueProgressInfo = {
   note: string;
 };
 
-export type ImbanpiTable = {
-  rows: ImbanpiRow[];
+export type ImbangiTable = {
+  rows: ImbangiRow[];
   /** Closest rivalries first (smallest pointsDiff). */
-  closest: ImbanpiRow[];
+  closest: ImbangiRow[];
   progress: LeagueProgressInfo;
 };
 
@@ -68,16 +68,16 @@ function lastMeeting(
 }
 
 /**
- * One Imbanpi row per team vs the neighbour immediately above and below
+ * One Imbangi row per team vs the neighbour immediately above and below
  * (when they exist). Sorted later by pointsDiff ascending.
  */
-export function buildImbanpiRows(
+export function buildImbangiRows(
   standings: StandingLike[],
   matches: SeasonMatch[],
-): ImbanpiRow[] {
+): ImbangiRow[] {
   const sorted = [...standings].sort((a, b) => a.rank - b.rank);
   const byRank = new Map(sorted.map((r) => [r.rank, r]));
-  const rows: ImbanpiRow[] = [];
+  const rows: ImbangiRow[] = [];
 
   for (const team of sorted) {
     for (const rel of ['above', 'below'] as const) {
@@ -125,8 +125,8 @@ export function leagueProgressInfo(
   if (lateStretch) {
     note =
       avgRemaining != null && avgRemaining <= 10
-        ? `Last ~${Math.ceil(avgRemaining)} games stretch — tighten chase/escape and Imbanpi gaps.`
-        : `Season ≥ ${LATE_SEASON_PROGRESS}% complete — pull + push factors active; watch close Imbanpi pairs.`;
+        ? `Last ~${Math.ceil(avgRemaining)} games stretch — tighten chase/escape and Imbangi gaps.`
+        : `Season ≥ ${LATE_SEASON_PROGRESS}% complete — pull + push factors active; watch close Imbangi pairs.`;
   } else if (seasonProgress != null) {
     note = `League progress ${seasonProgress}% · avg ~${avgRemaining ?? '?'} matches left.`;
   }
@@ -140,12 +140,12 @@ export function leagueProgressInfo(
   };
 }
 
-export function buildImbanpiTable(
+export function buildImbangiTable(
   standings: StandingLike[],
   matches: SeasonMatch[],
   seasonProgress?: number | null,
-): ImbanpiTable {
-  const rows = buildImbanpiRows(standings, matches);
+): ImbangiTable {
+  const rows = buildImbangiRows(standings, matches);
   const closest = [...rows].sort((a, b) => {
     if (a.pointsDiff !== b.pointsDiff) return a.pointsDiff - b.pointsDiff;
     return a.position - b.position;

@@ -1,9 +1,9 @@
 /**
  * Unit tests for Section 8 + 9.
- * Run: npx tsx scripts/bhozomaImbanpi.test.ts
+ * Run: npx tsx scripts/bhozomaImbangi.test.ts
  */
 import { buildBhozomaTable, BHOZOMA_MIN_MP, type SeasonMatch } from '../utils/bhozomaEngine';
-import { buildImbanpiTable, leagueProgressInfo } from '../utils/imbanpiEngine';
+import { buildImbangiTable, leagueProgressInfo } from '../utils/imbangiEngine';
 import type { StandingLike } from '../utils/motivationEngine';
 
 let passed = 0;
@@ -68,8 +68,8 @@ console.log('\nSection 8 — Bhozoma');
   );
   check('above not data dust', charlie?.above.dataDust === false);
   check(
-    'low pts vs above → giant-killer',
-    charlie?.above.label === 'Giant-killer',
+    'low pts vs above → soft (not giant-killer)',
+    charlie?.above.label === 'Soft vs higher sides',
     `label=${charlie?.above.label} pct=${charlie?.above.pctAttained}`,
   );
   check(
@@ -78,18 +78,58 @@ console.log('\nSection 8 — Bhozoma');
     `label=${charlie?.below.label}`,
   );
 
+  // Charlie takes points from Alpha (above) — should read as giant-killer.
+  const punchUp = buildBhozomaTable(
+    TABLE,
+    [
+      { homeId: 3, awayId: 1, homeGoals: 2, awayGoals: 0, unix: 1 },
+      { homeId: 3, awayId: 2, homeGoals: 1, awayGoals: 1, unix: 2 },
+      { homeId: 1, awayId: 3, homeGoals: 0, awayGoals: 1, unix: 3 },
+    ],
+    999999,
+  );
+  const cPunch = punchUp.rows.find((r) => r.teamId === 3);
+  check(
+    'high pts vs above → giant-killer',
+    cPunch?.above.label === 'Giant-killer',
+    `label=${cPunch?.above.label} pct=${cPunch?.above.pctAttained}`,
+  );
+
+  // ~67% vs below → good, not dominance.
+  const midBelow = buildBhozomaTable(
+    TABLE,
+    [
+      { homeId: 3, awayId: 5, homeGoals: 1, awayGoals: 0, unix: 1 },
+      { homeId: 3, awayId: 6, homeGoals: 1, awayGoals: 0, unix: 2 },
+      { homeId: 5, awayId: 3, homeGoals: 1, awayGoals: 0, unix: 3 },
+    ],
+    999999,
+  );
+  const cMid = midBelow.rows.find((r) => r.teamId === 3);
+  check(
+    '67% vs below → good against lower',
+    cMid?.below.label === 'Good against lower sides' &&
+      cMid.below.pctAttained != null &&
+      Math.round(cMid.below.pctAttained) === 67,
+    `label=${cMid?.below.label} pct=${cMid?.below.pctAttained}`,
+  );
+
   const thin = buildBhozomaTable(TABLE, [
     { homeId: 3, awayId: 1, homeGoals: 0, awayGoals: 1, unix: 1 },
   ], null);
   const c2 = thin.rows.find((r) => r.teamId === 3);
-  check('MP < 3 → not enough games', c2?.above.dataDust === true && c2.above.label === 'Not enough games');
+  check(
+    'MP < 3 → early soft read',
+    c2?.above.dataDust === true && c2.above.label === 'Soft vs higher sides · early',
+    `label=${c2?.above.label}`,
+  );
 }
 
-console.log('\nSection 9 — Imbanpi + progress');
+console.log('\nSection 9 — Imbangi + progress');
 {
   const matches = matchesForCharlie();
-  const imb = buildImbanpiTable(TABLE, matches, 80);
-  check('imbanpi rows > 0', imb.rows.length > 0);
+  const imb = buildImbangiTable(TABLE, matches, 80);
+  check('imbangi rows > 0', imb.rows.length > 0);
   check('closest sorted by ΔP', imb.closest[0].pointsDiff <= imb.closest[1].pointsDiff);
   const pair = imb.rows.find((r) => r.teamId === 3 && r.opponentId === 4);
   check('Charlie vs Delta neighbour', pair != null && pair.pointsDiff === 2);

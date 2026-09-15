@@ -4,6 +4,19 @@ import { theme } from '@/styles/theme';
 export type H2HSplit = 'overall' | 'home' | 'away';
 export type H2HOutcome = 'W' | 'D' | 'L';
 
+/** How many past meetings to show in the H2H list / summary. */
+export const H2H_MEETINGS_LIMIT = 5;
+
+/** Newest-first, capped to the display window. */
+export function recentH2hMeetings(
+  matches: H2HMatch[],
+  limit: number = H2H_MEETINGS_LIMIT,
+): H2HMatch[] {
+  return [...matches]
+    .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+    .slice(0, limit);
+}
+
 function norm(name: string): string {
   return name
     .toLowerCase()

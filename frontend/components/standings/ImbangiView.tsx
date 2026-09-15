@@ -1,7 +1,7 @@
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 import type { SeasonMatch } from '@/utils/bhozomaEngine';
-import { buildImbanpiTable, type ImbanpiRow } from '@/utils/imbanpiEngine';
+import { buildImbangiTable, type ImbangiRow } from '@/utils/imbangiEngine';
 import type { StandingLike } from '@/utils/motivationEngine';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
@@ -13,7 +13,7 @@ type Props = {
   seasonProgress?: number | null;
 };
 
-function RivalRow({ row }: { row: ImbanpiRow }) {
+function RivalRow({ row }: { row: ImbangiRow }) {
   const tight = row.pointsDiff <= 3;
   return (
     <View style={[styles.row, tight && styles.rowTight]}>
@@ -34,9 +34,9 @@ function RivalRow({ row }: { row: ImbanpiRow }) {
 }
 
 /**
- * Section 9 — Imbanpi neighbour table + league progress. Additive standings tab.
+ * Section 9 — Imbangi neighbour table + league progress. Additive standings tab.
  */
-export default function ImbanpiView({
+export default function ImbangiView({
   standings,
   matches,
   loading,
@@ -54,7 +54,7 @@ export default function ImbanpiView({
   if (error) return <Text style={styles.muted}>{error}</Text>;
   if (standings.length === 0) return <Text style={styles.muted}>No standings.</Text>;
 
-  const table = buildImbanpiTable(standings, matches, seasonProgress);
+  const table = buildImbangiTable(standings, matches, seasonProgress);
   const { progress } = table;
 
   return (
@@ -76,7 +76,7 @@ export default function ImbanpiView({
         <Text style={styles.progressNote}>{progress.note}</Text>
       </View>
 
-      <Text style={styles.sectionTitle}>Closest rivals</Text>
+      <Text style={styles.sectionTitle}>Imbangi</Text>
       {table.closest.length === 0 ? (
         <Text style={styles.muted}>No neighbour pairs yet.</Text>
       ) : (

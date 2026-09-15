@@ -21,8 +21,8 @@ Related docs already in the repo: `Football_Analytics_Project_Spec.md`, `USER_ST
 | Last-5 graded analysis + matchup naming | **Built** — same panel |
 | Hidden strength / weakness & problem address | **Built** — Summary “Hidden strengths & weaknesses” |
 | H2H options & Polar patterns | **Built** — H2H tab tags |
-| Bhozoma / mid-table power tables | **Built** — standings **Mid-table form** tab |
-| Imbanpi & league progress | **Built** — standings **Closest rivals** tab |
+| Bhozoma / mid-table power tables | **Built** — standings **Bhozoma** tab |
+| Imbangi & league progress | **Built** — standings **Imbangi** tab |
 | Hollywood hunt script + value odds rules | Partial / sample only |
 | Strategy compliance + bet slip | UI shell / sample; not full engine |
 | Chase / Escape / critical positions | **Built** — same Table stakes surfaces (Section 3) |
@@ -38,7 +38,7 @@ Small shared pieces every later section will reuse.
 - Keep **Last 10 / Last 8 / Last 6** rolling windows available on stats views.
 - Store or compute, per team: points, position, matches played, remaining matches, gap to neighbours.
 - Agree plain English names for internal terms used in the notes (keep original names in UI later if needed):
-  - **Imbangi / Imbanpi** — rival / neighbour comparison in the table
+  - **Imbangi** — rival / neighbour comparison in the table (separator flag + closest-rivals view)
   - **Indlela** — path / method filter
   - **Bhozoma / Bozoma** — mid-table power vs teams above/below
   - **Makhelwane** — neighbour team tied to a target position
@@ -222,24 +222,24 @@ Build the mid-table (“yellow guys”) separation tool.
 
 ---
 
-## Section 9 — League browser extras (Imbanpi & progress)
+## Section 9 — League browser extras (Imbangi & progress)
 
 Extra league views beyond the normal table.
 
 - League tables already need Overall / Home / Away; keep win=3, draw=1, loss=0.
-- Build an **Imbanpi** comparison row/table:
+- Build an **Imbangi** comparison row/table:
   - team playing
   - position
   - competition / opponent team
   - opponent position
   - points difference (closer to 0 is more interesting)
-  - recent Imbanpi score / result
+  - recent score / result
 - Show league progress and remaining matches; tighten logic in the last ~10 games.
 - Optional standings extras from the wider project notes: Form, Over/Under, HT/FT, top scorers (add only after core motivation/separators work).
 
-**Done when:** picking a league offers Imbanpi + progress context beside the normal table.
+**Done when:** picking a league offers Imbangi + progress context beside the normal table.
 
-**Status (2026-09-05):** ✅ Shipped — `utils/imbanpiEngine.ts` + standings **Imbanpi** tab (neighbours by ΔP + league progress / late stretch).
+**Status (2026-09-15):** ✅ Shipped — `utils/imbangiEngine.ts` + standings **Imbangi** tab (neighbours by ΔP + league progress / late stretch). Formerly mislabeled Imbanpi.
 
 ---
 
@@ -324,7 +324,7 @@ Also capture manager homework fields: **max payout** and **limiting policies** p
 | 3 | Section 4 | Separators to split close games |
 | 4 | Section 5 | Last-5 naming engine |
 | 5 | Section 6 + 7 | Hidden layers + H2H options |
-| 6 | Section 8 + 9 | Bhozoma + Imbanpi league tools |
+| 6 | Section 8 + 9 | Bhozoma + Imbangi league tools |
 | 7 | Section 10 + 11 | Hollywood hunt + value odds |
 | 8 | Section 12 | Strategies / slip / dashboard |
 | 9 | Section 13 | Extra bookmakers |

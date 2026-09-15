@@ -7,8 +7,16 @@
 import { criticalLinesFor, type StandingLike } from '@/utils/motivationEngine';
 
 export const BHOZOMA_MIN_MP = 3;
-/** Under this % of points taken from sides above → Goliath hero. */
-export const GOLIATH_PCT = 30;
+/** Points % vs sides above — giant-killer only when they actually take points up the table. */
+export const GIANT_KILLER_PCT = 50;
+/** Competitive (not soft) vs higher sides. */
+export const COMPETITIVE_ABOVE_PCT = 30;
+/** Strong haul vs sides below — dominance. */
+export const DOMINATES_BELOW_PCT = 75;
+/** Good (but not dominant) vs sides below. */
+export const GOOD_BELOW_PCT = 60;
+/** Soft / leaky vs sides below. */
+export const DROPS_BELOW_PCT = 45;
 
 export type SeasonMatch = {
   homeId: number;
@@ -54,7 +62,7 @@ function ptsFor(gf: number, ga: number): number {
   return 0;
 }
 
-function emptySide(): BhozomaSideStats {
+function emptySide(kind: 'above' | 'below'): BhozomaSideStats {
   return {
     mp: 0,
     pointsAttained: 0,
@@ -63,21 +71,28 @@ function emptySide(): BhozomaSideStats {
     pctAttained: null,
     dataDust: true,
     results: [],
-    label: null,
+    label: kind === 'above' ? 'No sides above' : 'No sides below',
   };
 }
 
-function labelAbove(pct: number | null, dataDust: boolean): string | null {
-  if (dataDust || pct == null) return 'Not enough games';
-  if (pct < GOLIATH_PCT) return 'Giant-killer';
-  return 'Solid vs higher sides';
+/** Classify from points %; thin samples still get a real read (not a blank wall). */
+function labelAbove(pct: number | null, mp: number): string {
+  if (mp <= 0 || pct == null) return 'No meetings yet';
+  let core: string;
+  if (pct >= GIANT_KILLER_PCT) core = 'Giant-killer';
+  else if (pct >= COMPETITIVE_ABOVE_PCT) core = 'Competitive vs higher sides';
+  else core = 'Soft vs higher sides';
+  return mp < BHOZOMA_MIN_MP ? `${core} · early` : core;
 }
 
-function labelBelow(pct: number | null, dataDust: boolean): string | null {
-  if (dataDust || pct == null) return 'Not enough games';
-  if (pct >= 70) return 'Dominates lower sides';
-  if (pct < 40) return 'Drops points to lower sides';
-  return 'Average vs lower sides';
+function labelBelow(pct: number | null, mp: number): string {
+  if (mp <= 0 || pct == null) return 'No meetings yet';
+  let core: string;
+  if (pct >= DOMINATES_BELOW_PCT) core = 'Dominates lower sides';
+  else if (pct >= GOOD_BELOW_PCT) core = 'Good against lower sides';
+  else if (pct >= DROPS_BELOW_PCT) core = 'Solid vs lower sides';
+  else core = 'Drops points to lower sides';
+  return mp < BHOZOMA_MIN_MP ? `${core} · early` : core;
 }
 
 function sideStats(
@@ -87,7 +102,7 @@ function sideStats(
   matches: SeasonMatch[],
   kind: 'above' | 'below',
 ): BhozomaSideStats {
-  if (opponentIds.size === 0) return emptySide();
+  if (opponentIds.size === 0) return emptySide(kind);
 
   const results: BhozomaSideStats['results'] = [];
   let pointsAttained = 0;
@@ -125,7 +140,7 @@ function sideStats(
     pctAttained,
     dataDust,
     results,
-    label: kind === 'above' ? labelAbove(pctAttained, dataDust) : labelBelow(pctAttained, dataDust),
+    label: kind === 'above' ? labelAbove(pctAttained, mp) : labelBelow(pctAttained, mp),
   };
 }
 
