@@ -321,6 +321,11 @@ export default function MatchDetailScreen({ matchId, onBack }: MatchDetailScreen
           seasonId={detail.season_id ?? null}
           seasonName={detail.season ?? ''}
           seasonProgress={detail.season_progress}
+          homeId={fixture.home.id}
+          awayId={fixture.away.id}
+          homeName={fixture.home.name}
+          awayName={fixture.away.name}
+          h2hMatches={detail.h2h ?? []}
         />
       ) : (
         <H2HPanel
