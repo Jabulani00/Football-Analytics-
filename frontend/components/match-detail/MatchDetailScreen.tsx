@@ -16,6 +16,7 @@ import H2HPanel from '@/components/match-detail/H2HPanel';
 import PressureMonitorPanel from '@/components/match-detail/PressureMonitorPanel';
 import PitchLineup from '@/components/match-detail/PitchLineup';
 import FixtureCoreStatsPanel from '@/components/match-detail/FixtureCoreStatsPanel';
+import MatchPowerDynamicsPanel from '@/components/match-detail/MatchPowerDynamicsPanel';
 import FixtureMotivationPanel from '@/components/standings/FixtureMotivationPanel';
 import FixtureFormAnalysisPanel from '@/components/standings/FixtureFormAnalysisPanel';
 import SubTabBar from '@/components/shared/SubTabBar';
@@ -56,14 +57,15 @@ type MatchDetailScreenProps = {
   onBack: () => void;
 };
 
-type TabId = 'summary' | 'stats' | 'tableodds' | 'h2h' | 'lineups';
+type TabId = 'summary' | 'goals' | 'tableodds' | 'h2h' | 'lineups' | 'power';
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'summary', label: 'Summary' },
-  { id: 'stats', label: 'Stats' },
+  { id: 'goals', label: 'Goal distributions' },
   { id: 'tableodds', label: 'Table/Odds' },
   { id: 'h2h', label: 'H2H' },
   { id: 'lineups', label: 'Lineups' },
+  { id: 'power', label: 'Power dynamics' },
 ];
 
 type TableOddsView = 'table' | 'tiers' | 'odds';
@@ -266,24 +268,26 @@ export default function MatchDetailScreen({ matchId, onBack }: MatchDetailScreen
           awayId={fixture.away.id}
           homeName={fixture.home.name}
           awayName={fixture.away.name}
-          goals={goals}
           timeline={timeline}
           goalsConfigured={goalsConfigured}
-          goalsMatched={goalsMatched}
-          goalsLoading={goalsLoading}
           goalTiming={goalTiming}
-          timingLoading={timingLoading}
           pressureHistory={pressureHistory}
           pressureReading={pressureReading}
         />
-      ) : tab === 'stats' ? (
-        <StatsTab
+      ) : tab === 'goals' ? (
+        <GoalDistributionsTab
           detail={detail}
           standings={standings}
           homeId={fixture.home.id}
           awayId={fixture.away.id}
           homeName={fixture.home.name}
           awayName={fixture.away.name}
+          goals={goals}
+          goalsConfigured={goalsConfigured}
+          goalsMatched={goalsMatched}
+          goalsLoading={goalsLoading}
+          goalTiming={goalTiming}
+          timingLoading={timingLoading}
         />
       ) : tab === 'tableodds' ? (
         <TableOddsTab
@@ -306,6 +310,17 @@ export default function MatchDetailScreen({ matchId, onBack }: MatchDetailScreen
           awayName={fixture.away.name}
           homeFormation={detail.home_formation}
           awayFormation={detail.away_formation}
+        />
+      ) : tab === 'power' ? (
+        <MatchPowerDynamicsPanel
+          standings={standings}
+          competitionId={detail.competition_id}
+          competitionName={detail.competition_name}
+          competitionCountry={detail.competition_country}
+          competitionType={detail.competition_type}
+          seasonId={detail.season_id ?? null}
+          seasonName={detail.season ?? ''}
+          seasonProgress={detail.season_progress}
         />
       ) : (
         <H2HPanel
@@ -348,13 +363,9 @@ function SummaryTab({
   awayId,
   homeName,
   awayName,
-  goals,
   timeline,
   goalsConfigured,
-  goalsMatched,
-  goalsLoading,
   goalTiming,
-  timingLoading,
   pressureHistory,
   pressureReading,
 }: {
@@ -364,13 +375,9 @@ function SummaryTab({
   awayId: number | null;
   homeName: string;
   awayName: string;
-  goals: MatchGoalEvent[];
   timeline: MatchTimelineEvent[];
   goalsConfigured: boolean;
-  goalsMatched: boolean;
-  goalsLoading: boolean;
   goalTiming: FixtureGoalTiming;
-  timingLoading: boolean;
   pressureHistory: PressureSnapshot[];
   pressureReading: PressureReading | null;
 }) {
@@ -391,18 +398,6 @@ function SummaryTab({
       />
 
       <MatchInfoCard detail={detail} homeName={homeName} awayName={awayName} />
-
-      <GoalTimingPanel
-        homeName={homeName}
-        awayName={awayName}
-        htScore={detail.ht_score}
-        goals={goals}
-        goalsConfigured={goalsConfigured}
-        goalsMatched={goalsMatched}
-        goalsLoading={goalsLoading}
-        oddAlertsTiming={goalTiming}
-        timingLoading={timingLoading}
-      />
 
       {scores.ft ? (
         <View style={styles.card}>
@@ -597,15 +592,23 @@ function ScorePeriodRow({
   );
 }
 
-// ----- Stats (all API match stats) ----------------------------------------
+// ----- Goal distributions (Stats + Agents) --------------------------------
 
-function StatsTab({
+type GoalDistView = 'stats' | 'agents';
+
+function GoalDistributionsTab({
   detail,
   standings,
   homeId,
   awayId,
   homeName,
   awayName,
+  goals,
+  goalsConfigured,
+  goalsMatched,
+  goalsLoading,
+  goalTiming,
+  timingLoading,
 }: {
   detail: RawFixtureDetail;
   standings: StandingRow[];
@@ -613,47 +616,83 @@ function StatsTab({
   awayId: number | null;
   homeName: string;
   awayName: string;
+  goals: MatchGoalEvent[];
+  goalsConfigured: boolean;
+  goalsMatched: boolean;
+  goalsLoading: boolean;
+  goalTiming: FixtureGoalTiming;
+  timingLoading: boolean;
 }) {
+  const [view, setView] = useState<GoalDistView>('stats');
   const byCat = statsByCategory(detail.stats);
 
   return (
     <View>
-      {/* Section 1 — additive core T1 vs T2; does not replace live match stats below */}
-      <FixtureCoreStatsPanel
-        standings={standings}
-        homeId={homeId}
-        awayId={awayId}
-        homeName={homeName}
-        awayName={awayName}
-        seasonProgress={detail.season_progress}
+      <SubTabBar
+        tabs={[
+          { id: 'stats', label: 'Stats' },
+          { id: 'agents', label: 'Agents' },
+        ]}
+        active={view}
+        onChange={(id) => setView(id as GoalDistView)}
       />
 
-      {byCat.size === 0 ? (
-        <Text style={styles.muted}>
-          In-play match stats (shots, possession, cards…) appear once the game is live or finished.
-          OddAlerts does not split live stats into 1st / 2nd half — only the half-time score line is
-          available.
-        </Text>
-      ) : (
-        <>
-          <Text style={styles.statsHeader}>
-            {homeName} vs {awayName} — this match
-          </Text>
-          {[...byCat.entries()].map(([category, rows]) => (
-            <View key={category} style={styles.card}>
-              <Text style={styles.cardTitle}>{category}</Text>
-              {rows.map((r) => (
-                <StatComparison
-                  key={r.home}
-                  label={r.label}
-                  home={detail.stats?.[r.home] ?? null}
-                  away={detail.stats?.[r.away] ?? null}
-                  pct={r.pct}
-                />
+      {view === 'stats' ? (
+        <View>
+          <FixtureCoreStatsPanel
+            standings={standings}
+            homeId={homeId}
+            awayId={awayId}
+            homeName={homeName}
+            awayName={awayName}
+            seasonProgress={detail.season_progress}
+          />
+
+          {byCat.size === 0 ? (
+            <Text style={styles.muted}>
+              In-play match stats (shots, possession, cards…) appear once the game is live or finished.
+              OddAlerts does not split live stats into 1st / 2nd half — only the half-time score line is
+              available.
+            </Text>
+          ) : (
+            <>
+              <Text style={styles.statsHeader}>
+                {homeName} vs {awayName} — this match
+              </Text>
+              {[...byCat.entries()].map(([category, rows]) => (
+                <View key={category} style={styles.card}>
+                  <Text style={styles.cardTitle}>{category}</Text>
+                  {rows.map((r) => (
+                    <StatComparison
+                      key={r.home}
+                      label={r.label}
+                      home={detail.stats?.[r.home] ?? null}
+                      away={detail.stats?.[r.away] ?? null}
+                      pct={r.pct}
+                    />
+                  ))}
+                </View>
               ))}
-            </View>
-          ))}
-        </>
+            </>
+          )}
+        </View>
+      ) : (
+        <View>
+          <Text style={styles.muted}>
+            Goal timing agents — when goals fell in this match (timeline and period bars).
+          </Text>
+          <GoalTimingPanel
+            homeName={homeName}
+            awayName={awayName}
+            htScore={detail.ht_score}
+            goals={goals}
+            goalsConfigured={goalsConfigured}
+            goalsMatched={goalsMatched}
+            goalsLoading={goalsLoading}
+            oddAlertsTiming={goalTiming}
+            timingLoading={timingLoading}
+          />
+        </View>
       )}
     </View>
   );

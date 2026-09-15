@@ -1,7 +1,11 @@
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import type { SeasonMatch } from '@/utils/bhozomaEngine';
-import { buildImbangiTable, type ImbangiRow } from '@/utils/imbangiEngine';
+import {
+  buildImbangiTable,
+  IMBANGI_TIGHT_PTS,
+  type ImbangiRow,
+} from '@/utils/imbangiEngine';
 import type { StandingLike } from '@/utils/motivationEngine';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
@@ -11,30 +15,76 @@ type Props = {
   loading: boolean;
   error: string | null;
   seasonProgress?: number | null;
+  /** Competition / league name for the table. */
+  competitionName?: string;
 };
 
-function RivalRow({ row }: { row: ImbangiRow }) {
-  const tight = row.pointsDiff <= 3;
+function Cell({
+  children,
+  style,
+  color,
+}: {
+  children: string;
+  style?: object;
+  color?: string;
+}) {
   return (
-    <View style={[styles.row, tight && styles.rowTight]}>
-      <View style={styles.rowMain}>
-        <Text style={styles.team} numberOfLines={1}>
-          #{row.position} {row.teamName}
-        </Text>
-        <Text style={styles.vs}>
-          {row.relation === 'above' ? '↑' : '↓'} vs #{row.opponentPosition} {row.opponentName}
-        </Text>
-      </View>
-      <View style={styles.rowRight}>
-        <Text style={[styles.diff, tight && styles.diffHot]}>{row.pointsDiff} pts</Text>
-        <Text style={styles.score}>{row.lastScore ?? 'not met yet'}</Text>
-      </View>
+    <Text style={[styles.td, style, color ? { color } : null]} numberOfLines={1}>
+      {children}
+    </Text>
+  );
+}
+
+function resultColor(r: ImbangiRow['lastResult']): string {
+  if (r === 'W') return theme.win;
+  if (r === 'L') return theme.loss;
+  if (r === 'D') return theme.yellow;
+  return theme.textMuted;
+}
+
+function DataRow({ row, competition }: { row: ImbangiRow; competition: string }) {
+  return (
+    <View style={[styles.row, row.tight && styles.rowTight]}>
+      <Cell style={styles.cPos}>{String(row.position)}</Cell>
+      <Cell style={styles.cTeam}>{row.teamName}</Cell>
+      <Cell style={styles.cNum}>{String(row.teamPoints)}</Cell>
+      <Cell style={styles.cNum}>{String(row.teamPlayed)}</Cell>
+      <Cell style={styles.cNum}>{String(row.remaining)}</Cell>
+      <Cell style={styles.cComp} color={theme.textMuted}>
+        {competition}
+      </Cell>
+      <Cell style={styles.cRel} color={row.relation === 'above' ? theme.accentBlue : theme.accentOrange}>
+        {row.relation === 'above' ? 'Above' : 'Below'}
+      </Cell>
+      <Cell style={styles.cPos}>{String(row.opponentPosition)}</Cell>
+      <Cell style={styles.cTeam}>{row.opponentName}</Cell>
+      <Cell style={styles.cNum}>{String(row.opponentPoints)}</Cell>
+      <Cell
+        style={styles.cDiff}
+        color={row.tight ? theme.accentOrange : theme.textPrimary}>
+        {String(row.pointsDiff)}
+      </Cell>
+      <Cell style={styles.cDate} color={theme.textMuted}>
+        {row.lastDate ?? '—'}
+      </Cell>
+      <Cell style={styles.cScore}>{row.lastScore ?? 'Not met yet'}</Cell>
+      <Cell style={styles.cRes} color={resultColor(row.lastResult)}>
+        {row.lastResult ?? '—'}
+      </Cell>
+      <Cell style={styles.cNum} color={theme.textMuted}>
+        {row.lastPtsForTeam != null ? String(row.lastPtsForTeam) : '—'}
+      </Cell>
+      <Cell
+        style={styles.cInterest}
+        color={row.tight ? theme.accentOrange : theme.textMuted}>
+        {row.tight ? 'Tight' : 'Wide'}
+      </Cell>
     </View>
   );
 }
 
 /**
- * Section 9 — Imbangi neighbour table + league progress. Additive standings tab.
+ * Section 9 — Imbangi neighbour table + league progress (clear columns).
  */
 export default function ImbangiView({
   standings,
@@ -42,12 +92,13 @@ export default function ImbangiView({
   loading,
   error,
   seasonProgress,
+  competitionName,
 }: Props) {
   if (loading) {
     return (
       <View style={styles.center}>
         <ActivityIndicator color={theme.accentGreen} />
-        <Text style={styles.muted}>Loading closest-rival meetings…</Text>
+        <Text style={styles.muted}>Loading Imbangi neighbour meetings…</Text>
       </View>
     );
   }
@@ -56,37 +107,93 @@ export default function ImbangiView({
 
   const table = buildImbangiTable(standings, matches, seasonProgress);
   const { progress } = table;
+  const competition = competitionName?.trim() || 'League';
+  const tightCount = table.closest.filter((r) => r.tight).length;
 
   return (
     <View>
       <Text style={styles.blurb}>
-        Neighbours on the table — the team one place above and below. Smaller point gaps
-        mean tighter fights. Recent score shown when they have already met.
+        Imbangi compares each team to the neighbour one place above and one place below.
+        Smaller ΔP (points difference) means a tighter fight — {IMBANGI_TIGHT_PTS} pts or less
+        is marked Tight. Last meeting is from that team’s lens (score, W/D/L, points taken).
       </Text>
 
       <View style={[styles.progressCard, progress.lateStretch && styles.progressLate]}>
-        <Text style={styles.progressTitle}>How far through the season</Text>
-        <Text style={styles.progressMeta}>
-          {progress.seasonProgress != null ? `${progress.seasonProgress}% played` : 'Progress n/a'}
-          {' · '}
-          most games played: {progress.maxPlayed}
-          {progress.avgRemaining != null ? ` · about ${progress.avgRemaining} left` : ''}
-          {progress.lateStretch ? ' · late stretch' : ''}
-        </Text>
+        <Text style={styles.progressTitle}>League progress</Text>
+        <View style={styles.progressGrid}>
+          <View style={styles.progressItem}>
+            <Text style={styles.progressLabel}>Season played</Text>
+            <Text style={styles.progressValue}>
+              {progress.seasonProgress != null ? `${progress.seasonProgress}%` : 'n/a'}
+            </Text>
+          </View>
+          <View style={styles.progressItem}>
+            <Text style={styles.progressLabel}>Most games played</Text>
+            <Text style={styles.progressValue}>{progress.maxPlayed}</Text>
+          </View>
+          <View style={styles.progressItem}>
+            <Text style={styles.progressLabel}>Avg remaining</Text>
+            <Text style={styles.progressValue}>
+              {progress.avgRemaining != null ? String(progress.avgRemaining) : 'n/a'}
+            </Text>
+          </View>
+          <View style={styles.progressItem}>
+            <Text style={styles.progressLabel}>Stage</Text>
+            <Text
+              style={[
+                styles.progressValue,
+                progress.lateStretch && { color: theme.accentOrange },
+              ]}>
+              {progress.lateStretch ? 'Late stretch' : 'Open season'}
+            </Text>
+          </View>
+        </View>
         <Text style={styles.progressNote}>{progress.note}</Text>
       </View>
 
-      <Text style={styles.sectionTitle}>Imbangi</Text>
-      {table.closest.length === 0 ? (
-        <Text style={styles.muted}>No neighbour pairs yet.</Text>
-      ) : (
-        table.closest.slice(0, 40).map((r) => (
-          <RivalRow
-            key={`${r.teamId}-${r.opponentId}-${r.relation}`}
-            row={r}
-          />
-        ))
-      )}
+      <Text style={styles.summary}>
+        {table.closest.length} neighbour pairs · {tightCount} tight (ΔP ≤ {IMBANGI_TIGHT_PTS})
+        {matches.length === 0 ? ' · no finished fixtures loaded yet for last meetings' : ''}
+      </Text>
+
+      <ScrollView horizontal showsHorizontalScrollIndicator>
+        <View style={styles.table}>
+          <View style={[styles.row, styles.headRow]}>
+            <Text style={[styles.th, styles.cPos]}>#</Text>
+            <Text style={[styles.th, styles.cTeam]}>Team</Text>
+            <Text style={[styles.th, styles.cNum]}>Pts</Text>
+            <Text style={[styles.th, styles.cNum]}>P</Text>
+            <Text style={[styles.th, styles.cNum]}>Left</Text>
+            <Text style={[styles.th, styles.cComp]}>Competition</Text>
+            <Text style={[styles.th, styles.cRel]}>Rival</Text>
+            <Text style={[styles.th, styles.cPos]}>Opp #</Text>
+            <Text style={[styles.th, styles.cTeam]}>Opponent</Text>
+            <Text style={[styles.th, styles.cNum]}>Opp pts</Text>
+            <Text style={[styles.th, styles.cDiff]}>ΔP</Text>
+            <Text style={[styles.th, styles.cDate]}>Met</Text>
+            <Text style={[styles.th, styles.cScore]}>Last score</Text>
+            <Text style={[styles.th, styles.cRes]}>Res</Text>
+            <Text style={[styles.th, styles.cNum]}>LP</Text>
+            <Text style={[styles.th, styles.cInterest]}>Interest</Text>
+          </View>
+
+          {table.closest.length === 0 ? (
+            <Text style={styles.empty}>No neighbour pairs yet.</Text>
+          ) : (
+            table.closest.map((r) => (
+              <DataRow
+                key={`${r.teamId}-${r.opponentId}-${r.relation}`}
+                row={r}
+                competition={competition}
+              />
+            ))
+          )}
+        </View>
+      </ScrollView>
+
+      <Text style={styles.legend}>
+        LP = points taken by the team in the last meeting (3 / 1 / 0). Sorted by closest ΔP first.
+      </Text>
     </View>
   );
 }
@@ -99,6 +206,19 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     lineHeight: 17,
   },
+  summary: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 11,
+    color: theme.textPrimary,
+    marginBottom: spacing.sm,
+  },
+  legend: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: theme.textMuted,
+    marginTop: spacing.sm,
+    lineHeight: 15,
+  },
   center: { alignItems: 'center', paddingVertical: spacing.xl, gap: spacing.sm },
   muted: {
     fontFamily: fonts.body,
@@ -106,6 +226,12 @@ const styles = StyleSheet.create({
     color: theme.textMuted,
     textAlign: 'center',
     paddingVertical: spacing.md,
+  },
+  empty: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: theme.textMuted,
+    padding: spacing.md,
   },
   progressCard: {
     backgroundColor: theme.surface,
@@ -122,42 +248,70 @@ const styles = StyleSheet.create({
     color: theme.textPrimary,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+    marginBottom: spacing.xs,
   },
-  progressMeta: {
+  progressGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  progressItem: { minWidth: 110, flexGrow: 1 },
+  progressLabel: {
+    fontFamily: fonts.body,
+    fontSize: 10,
+    color: theme.textMuted,
+  },
+  progressValue: {
     fontFamily: fonts.bodySemiBold,
-    fontSize: 12,
+    fontSize: 14,
     color: theme.textPrimary,
-    marginTop: 4,
+    marginTop: 2,
   },
   progressNote: {
     fontFamily: fonts.body,
     fontSize: 11,
     color: theme.textMuted,
-    marginTop: 4,
+    marginTop: spacing.xs,
     lineHeight: 15,
   },
-  sectionTitle: {
-    fontFamily: fonts.bodySemiBold,
-    fontSize: 11,
-    color: theme.textPrimary,
-    marginBottom: spacing.xs,
-  },
-  row: {
-    flexDirection: 'row',
-    gap: spacing.sm,
+  table: {
     backgroundColor: theme.surface,
     borderWidth: layout.borderWidth,
     borderColor: theme.border,
     borderRadius: layout.borderRadius,
-    padding: spacing.sm,
-    marginBottom: spacing.xs,
+    overflow: 'hidden',
+    minWidth: 980,
   },
-  rowTight: { borderColor: theme.accentOrange, backgroundColor: 'rgba(234, 88, 12, 0.06)' },
-  rowMain: { flex: 1, minWidth: 0 },
-  team: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: theme.textPrimary },
-  vs: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted, marginTop: 2 },
-  rowRight: { alignItems: 'flex-end' },
-  diff: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: theme.textMuted },
-  diffHot: { color: theme.accentOrange },
-  score: { fontFamily: fonts.body, fontSize: 10, color: theme.textFaint, marginTop: 2 },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 36,
+    borderBottomWidth: layout.borderWidth,
+    borderBottomColor: theme.border,
+    paddingHorizontal: spacing.xs,
+  },
+  headRow: { backgroundColor: theme.surfaceMuted },
+  rowTight: { backgroundColor: 'rgba(234, 88, 12, 0.06)' },
+  th: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 10,
+    color: theme.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  td: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: theme.textPrimary,
+  },
+  cPos: { width: 36, textAlign: 'center', fontFamily: fonts.bodySemiBold },
+  cTeam: { width: 120, paddingRight: 4, fontFamily: fonts.bodySemiBold },
+  cNum: { width: 40, textAlign: 'center' },
+  cComp: { width: 110, paddingHorizontal: 4 },
+  cRel: { width: 52, textAlign: 'center', fontFamily: fonts.bodySemiBold },
+  cDiff: { width: 40, textAlign: 'center', fontFamily: fonts.bodySemiBold },
+  cDate: { width: 88, textAlign: 'center' },
+  cScore: { width: 88, textAlign: 'center' },
+  cRes: { width: 36, textAlign: 'center', fontFamily: fonts.bodySemiBold },
+  cInterest: { width: 56, textAlign: 'center', fontFamily: fonts.bodySemiBold },
 });

@@ -21,8 +21,8 @@ Related docs already in the repo: `Football_Analytics_Project_Spec.md`, `USER_ST
 | Last-5 graded analysis + matchup naming | **Built** — same panel |
 | Hidden strength / weakness & problem address | **Built** — Summary “Hidden strengths & weaknesses” |
 | H2H options & Polar patterns | **Built** — H2H tab tags |
-| Bhozoma / mid-table power tables | **Built** — standings **Bhozoma** tab |
-| Imbangi & league progress | **Built** — standings **Imbangi** tab |
+| Bhozoma / mid-table power tables | **Built** — match **Power dynamics → Bhozoma** |
+| Imbangi & league progress | **Built** — match **Power dynamics → Imbangi** |
 | Hollywood hunt script + value odds rules | Partial / sample only |
 | Strategy compliance + bet slip | UI shell / sample; not full engine |
 | Chase / Escape / critical positions | **Built** — same Table stakes surfaces (Section 3) |
@@ -64,7 +64,7 @@ Finish the stats layer so later “call-outs” have real numbers.
 
 **Done when:** fixture and league stats views show correct live numbers with colours, and T1 vs T2 can compare the 7 core stats.
 
-**Status (2026-09-09):** ✅ Shipped (additive) — match **Stats** tab **Core comparison** panel (`utils/coreFixtureStats.ts`, `FixtureCoreStatsPanel`) with Overall/Home/Away + traffic lights; Last 10/8/6 form tables omit teams with 0 matches. Existing live match stats / league analytics unchanged.
+**Status (2026-09-09):** ✅ Shipped (additive) — match **Goal distributions → Stats** core T1/T2 (`utils/coreFixtureStats.ts`, `FixtureCoreStatsPanel`) with Overall/Home/Away + traffic lights; **Agents** shows goal timing. Last 10/8/6 form tables omit teams with 0 matches.
 ---
 
 ## Section 2 — Importance of 3 points (motivation engine)
@@ -218,7 +218,7 @@ Build the mid-table (“yellow guys”) separation tool.
 
 **Done when:** yellow-band teams have a Bhozoma panel with above/below % and labels.
 
-**Status (2026-09-05):** ✅ Shipped — `utils/bhozomaEngine.ts` + standings **Bhozoma** tab (mid-table focus, DATA DUST / Goliath / classic). League/tier tabs unchanged.
+**Status (2026-09-05):** ✅ Shipped — `utils/bhozomaEngine.ts` + match **Power dynamics → Bhozoma** (mid-table focus). Removed from league standings tabs.
 
 ---
 
@@ -239,7 +239,7 @@ Extra league views beyond the normal table.
 
 **Done when:** picking a league offers Imbangi + progress context beside the normal table.
 
-**Status (2026-09-15):** ✅ Shipped — `utils/imbangiEngine.ts` + standings **Imbangi** tab (neighbours by ΔP + league progress / late stretch). Formerly mislabeled Imbanpi.
+**Status (2026-09-15):** ✅ Shipped — `utils/imbangiEngine.ts` + match **Power dynamics → Imbangi** (neighbours by ΔP + league progress). Formerly mislabeled Imbanpi; removed from league standings tabs.
 
 ---
 

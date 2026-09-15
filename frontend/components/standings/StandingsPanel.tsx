@@ -8,13 +8,10 @@ import PageContainer from '@/components/shared/PageContainer';
 import GroupStandingsView from '@/components/standings/GroupStandingsView';
 import TieredStandingsView from '@/components/standings/TieredStandingsView';
 import StandingsStakesView from '@/components/standings/StandingsStakesView';
-import BhozomaView from '@/components/standings/BhozomaView';
-import ImbangiView from '@/components/standings/ImbangiView';
 import SeasonFixturesList from '@/components/standings/SeasonFixturesList';
 import StandingsAnalyticsView from '@/components/league/StandingsAnalyticsView';
 import SubTabBar from '@/components/shared/SubTabBar';
 import { useStandings } from '@/hooks/useStandings';
-import { useSeasonFixtures } from '@/hooks/useSeasonFixtures';
 import { apiStandingsToBase, teamIdByName, timingByName } from '@/utils/standingsAdapter';
 import { isGroupStageTournament } from '@/utils/groupStandings';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
@@ -25,8 +22,6 @@ type StandingsView =
   | 'league'
   | 'tiers'
   | 'stakes'
-  | 'bhozoma'
-  | 'imbangi'
   | 'groups';
 
 function defaultView(opts: { isGroups: boolean; isCup: boolean }): StandingsView {
@@ -56,12 +51,6 @@ export default function StandingsPanel() {
   }, [competition?.id, isGroups, isCup]);
 
   const season = competition?.seasons.find((s) => s.seasonId === selectedSeasonId);
-  const needSeasonFixtures = view === 'bhozoma' || view === 'imbangi';
-  const seasonFx = useSeasonFixtures(
-    needSeasonFixtures ? competition : null,
-    needSeasonFixtures ? season : null,
-    needSeasonFixtures,
-  );
 
   const openMatch = (id: number) =>
     router.push({ pathname: '/match/[id]', params: { id: String(id) } });
@@ -178,8 +167,6 @@ export default function StandingsPanel() {
               { id: 'previous', label: 'Previous' },
               { id: 'tiers', label: 'Tier tables' },
               { id: 'stakes', label: 'Who needs points' },
-              { id: 'bhozoma', label: 'Bhozoma' },
-              { id: 'imbangi', label: 'Imbangi' },
             ]}
             active={view}
             onChange={(id) => setView(id as StandingsView)}
@@ -211,26 +198,10 @@ export default function StandingsPanel() {
                 })
               }
             />
-          ) : view === 'stakes' ? (
+          ) : (
             <StandingsStakesView
               standings={standings}
               competitionId={competition.id}
-              seasonProgress={season?.progress ?? null}
-            />
-          ) : view === 'bhozoma' ? (
-            <BhozomaView
-              standings={standings}
-              matches={seasonFx.matches}
-              loading={seasonFx.loading}
-              error={seasonFx.error}
-              competitionId={competition.id}
-            />
-          ) : (
-            <ImbangiView
-              standings={standings}
-              matches={seasonFx.matches}
-              loading={seasonFx.loading}
-              error={seasonFx.error}
               seasonProgress={season?.progress ?? null}
             />
           )}
@@ -257,13 +228,13 @@ const styles = StyleSheet.create({
   seasonRow: { flexDirection: 'row', gap: spacing.xs, paddingVertical: spacing.sm },
   seasonChip: {
     paddingHorizontal: spacing.sm,
-    paddingVertical: 5,
+    paddingVertical: spacing.xs,
     borderRadius: layout.borderRadius,
     borderWidth: layout.borderWidth,
     borderColor: theme.border,
     backgroundColor: theme.surface,
   },
-  seasonChipActive: { borderColor: theme.accentGreen, backgroundColor: theme.surfaceMuted },
+  seasonChipActive: { borderColor: theme.accentGreen, backgroundColor: 'rgba(22, 163, 74, 0.08)' },
   seasonText: { fontFamily: fonts.bodyMedium, fontSize: 12, color: theme.textMuted },
   seasonTextActive: { color: theme.textPrimary, fontFamily: fonts.bodySemiBold },
   center: { alignItems: 'center', paddingVertical: spacing.xxl, gap: spacing.sm },
@@ -272,6 +243,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: theme.textMuted,
     textAlign: 'center',
-    paddingVertical: spacing.lg,
+    paddingVertical: spacing.md,
   },
 });
