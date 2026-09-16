@@ -8,9 +8,17 @@ import {
 } from '@/utils/hiddenLayers';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
-function SignalLine({ s }: { s: HiddenSignal }) {
+function SignalLine({
+  s,
+  homeLabel,
+  awayLabel,
+}: {
+  s: HiddenSignal;
+  homeLabel: string;
+  awayLabel: string;
+}) {
   const color = s.polarity === 'strength' ? theme.accentGreen : theme.loss;
-  const sideLabel = s.side === 'home' ? 'Home' : s.side === 'away' ? 'Away' : s.side;
+  const sideLabel = s.side === 'home' ? homeLabel : s.side === 'away' ? awayLabel : s.side;
   return (
     <Text style={[styles.signal, { color }]}>
       {sideLabel}: {s.naming} — {s.detail}
@@ -38,16 +46,22 @@ export function HiddenLayersView({
   layers,
   homeName,
   awayName,
+  homeLabel,
+  awayLabel,
 }: {
   layers: FixtureHiddenLayers;
   homeName: string;
   awayName: string;
+  homeLabel?: string;
+  awayLabel?: string;
 }) {
+  const t1 = homeLabel ?? homeName;
+  const t2 = awayLabel ?? awayName;
   return (
     <View style={styles.wrap}>
       <Text style={styles.title}>Hidden strengths & weaknesses</Text>
       <Text style={styles.sub}>
-        Patterns in recent results for {homeName} vs {awayName}
+        Patterns in recent results for {t1} vs {t2}
         {layers.pointsDiff != null ? ` · ${layers.pointsDiff} pts apart` : ''}
       </Text>
 
@@ -60,7 +74,7 @@ export function HiddenLayersView({
         <View style={styles.block}>
           <Text style={styles.blockTitle}>What stands out</Text>
           {[...layers.homeSignals, ...layers.awaySignals].map((s) => (
-            <SignalLine key={s.id} s={s} />
+            <SignalLine key={s.id} s={s} homeLabel={t1} awayLabel={t2} />
           ))}
         </View>
       ) : (

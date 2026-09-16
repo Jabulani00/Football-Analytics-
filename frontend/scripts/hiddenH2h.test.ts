@@ -3,7 +3,7 @@
  * Run: npx tsx scripts/hiddenH2h.test.ts
  */
 import { evaluateHiddenLayers, polarityCounts, problemPatternFor } from '../utils/hiddenLayers';
-import { evaluateH2HOptions, matchPolarSequences, outcomeForSide } from '../utils/h2hOptions';
+import { evaluateH2HOptions, formatNeverBeatenSequence, matchPolarSequences, outcomeForSide } from '../utils/h2hOptions';
 import type { TeamResult } from '../utils/teamResults';
 import type { StandingLike } from '../utils/motivationEngine';
 import type { H2HMatch } from '../services/oddAlerts';
@@ -148,7 +148,25 @@ console.log('\nSection 7 — H2H options');
   const opts = evaluateH2HOptions({ matches: meetings, homeName: 'Alpha', awayName: 'Beta' });
   check('has data', opts.hasData);
   check('points share present', opts.pointsShare != null);
+  check(
+    'points share max ≤ 15',
+    (opts.pointsShare?.max ?? 99) <= 15,
+    `max=${opts.pointsShare?.max}`,
+  );
   check('Alpha never beaten overall', opts.tags.some((t) => t.id === 'never_beaten_home_overall'));
+  const neverTag = opts.tags.find((t) => t.id === 'never_beaten_home_overall');
+  check(
+    'never beaten shows W/D sequence',
+    neverTag?.label.includes('(D W W W)') === true,
+    neverTag?.label,
+  );
+  check('formatNeverBeatenSequence caps at 5', formatNeverBeatenSequence(['W', 'W', 'W', 'D', 'D', 'W']) === '(W W W D D)');
+  check('formatNeverBeatenSequence', formatNeverBeatenSequence(['W', 'W', 'W', 'D', 'D']) === '(W W W D D)');
+  check(
+    'never beaten detail has W/D/L totals',
+    /In .+?: \d+ wins?, \d+ draws?, \d+ loss/.test(neverTag?.detail ?? '') === true,
+    neverTag?.detail,
+  );
   check('last draw flagged', opts.tags.some((t) => t.id === 'last_draw'));
   check('outcome for side', outcomeForSide(meetings[3], 'Alpha') === 'W');
   check('polar WWWWL hit', matchPolarSequences(['W', 'W', 'W', 'W', 'L'])[0]?.pattern === 'WWWWL');

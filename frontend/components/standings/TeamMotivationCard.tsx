@@ -25,9 +25,11 @@ function stanceColor(stance: TeamStance): string {
 type TeamMotivationCardProps = {
   motivation: TeamMotivation;
   compact?: boolean;
+  /** Override the standing name, e.g. T1 (Arsenal). */
+  displayName?: string;
 };
 
-export default function TeamMotivationCard({ motivation: m, compact }: TeamMotivationCardProps) {
+export default function TeamMotivationCard({ motivation: m, compact, displayName }: TeamMotivationCardProps) {
   const activeProbes = m.probes.filter((p) => p.motivates);
 
   return (
@@ -35,7 +37,7 @@ export default function TeamMotivationCard({ motivation: m, compact }: TeamMotiv
       <View style={styles.head}>
         <View style={styles.headText}>
           <Text style={styles.team} numberOfLines={1}>
-            {m.name}
+            {displayName ?? m.name}
           </Text>
           <Text style={styles.meta}>
             #{m.rank} · {m.points} pts

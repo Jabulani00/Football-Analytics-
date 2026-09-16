@@ -1,0 +1,542 @@
+/**
+ * Presentational T1 vs T2 blocks used by Power dynamics tabs.
+ */
+
+import { type ReactNode, StyleSheet, Text, View } from 'react-native';
+
+import {
+  PPG_BAND_LABEL,
+  colourWord,
+  fmtPct,
+  fmtPpg,
+  wdl,
+  type ChildBeaterSide,
+  type ColourSideRead,
+  type LastGameFlag,
+  type PowerDynamicsBundle,
+  type ScopeRecord,
+  type ShowRead,
+  type SideSnapshot,
+  type StreakSide,
+  type SwingScope,
+  type Tone,
+  type VenueRead,
+} from '@/utils/powerDynamicsEngine';
+import { CHANGE_LABEL, OPTION_LABEL, type TeamLast5 } from '@/utils/last5Analysis';
+import { GRADE_LABEL, STANCE_LABEL } from '@/utils/motivationEngine';
+import { fonts, layout, spacing, theme } from '@/styles/theme';
+
+function toneColor(t: Tone): string {
+  if (t === 'good') return theme.accentGreen;
+  if (t === 'warn') return theme.yellow;
+  if (t === 'bad') return theme.loss;
+  return theme.textMuted;
+}
+
+export function SectorIntro({ title, note }: { title: string; note: string }) {
+  return (
+    <View style={styles.intro}>
+      <Text style={styles.sectorTitle}>{title}</Text>
+      <Text style={styles.note}>{note}</Text>
+    </View>
+  );
+}
+
+export function Callout({ text, tone = 'info' }: { text: string; tone?: Tone }) {
+  return (
+    <View style={[styles.callout, { borderColor: toneColor(tone) }]}>
+      <Text style={[styles.calloutText, { color: toneColor(tone) }]}>{text}</Text>
+    </View>
+  );
+}
+
+export function SideCard({
+  label,
+  meta,
+  children,
+}: {
+  label: string;
+  meta?: string;
+  children: ReactNode;
+}) {
+  return (
+    <View style={styles.card}>
+      <Text style={styles.sideLabel}>{label}</Text>
+      {meta ? <Text style={styles.meta}>{meta}</Text> : null}
+      {children}
+    </View>
+  );
+}
+
+function Line({ text, tone }: { text: string; tone?: Tone }) {
+  return (
+    <Text style={[styles.line, tone ? { color: toneColor(tone) } : null]}>{text}</Text>
+  );
+}
+
+export function RecordBlock({ title, rec }: { title: string; rec: ScopeRecord }) {
+  return (
+    <Text style={styles.line}>
+      {title}: {wdl(rec)}
+      {rec.ppg != null ? ` · PPG ${fmtPpg(rec.ppg)}` : ''}
+      {rec.ppga != null ? ` · PPGa ${fmtPpg(rec.ppga)}` : ''}
+    </Text>
+  );
+}
+
+export function BaselineCards({ pd }: { pd: PowerDynamicsBundle }) {
+  const row = (s: SideSnapshot) => (
+    <SideCard
+      key={s.side}
+      label={s.label}
+      meta={
+        s.rank != null
+          ? `#${s.rank} · ${s.points} pts · ${colourWord(s.colour)}`
+          : 'Not on this table'
+      }>
+      <RecordBlock title="Original" rec={s.overall} />
+      <RecordBlock title="Home" rec={s.home} />
+      <RecordBlock title="Away" rec={s.away} />
+    </SideCard>
+  );
+  return (
+    <View>
+      <SectorIntro
+        title="Baseline — original state"
+        note="Natural table state before separators. T1 is home, T2 is away."
+      />
+      {row(pd.t1)}
+      {row(pd.t2)}
+      {pd.pointsDiff != null ? (
+        <Callout
+          text={`${pd.pointsDiff} pts apart${pd.closeOnTable ? ' — close enough that form matters more' : ' — clear gap on the table'}`}
+          tone={pd.closeOnTable ? 'warn' : 'info'}
+        />
+      ) : null}
+    </View>
+  );
+}
+
+export function Last5Cards({
+  pd,
+  home,
+  away,
+}: {
+  pd: PowerDynamicsBundle;
+  home: TeamLast5 | null | undefined;
+  away: TeamLast5 | null | undefined;
+}) {
+  const block = (label: string, team: TeamLast5 | null | undefined, flags: LastGameFlag[]) => (
+    <SideCard label={label}>
+      {team ? (
+        <>
+          <Line text={`${OPTION_LABEL[team.option]} · ${team.tablePoints} pts from last 5`} />
+          <Text style={styles.seq}>{team.sequence.join(' ')}</Text>
+          <Line text={CHANGE_LABEL[team.change]} />
+          {team.inhlambuluko ? <Line text="Bounce-back stretch (3+ draws)" tone="warn" /> : null}
+        </>
+      ) : (
+        <Line text="No last-5 sample yet" />
+      )}
+      <Text style={styles.subHead}>Last game</Text>
+      {flags
+        .filter((f) => f.active && !f.blocked)
+        .map((f) => (
+          <Line key={f.id} text={`· ${f.label}`} />
+        ))}
+      {flags.some((f) => f.blocked) ? (
+        <Line text="0–0 HT / 2nd half blocked — no half-time score on last game" />
+      ) : null}
+    </SideCard>
+  );
+  return (
+    <View>
+      {block(pd.t1.label, home, pd.lastGame.t1)}
+      {block(pd.t2.label, away, pd.lastGame.t2)}
+    </View>
+  );
+}
+
+export function ColourCards({ pd }: { pd: PowerDynamicsBundle }) {
+  const one = (label: string, read: ColourSideRead, snap: SideSnapshot) => (
+    <SideCard label={label} meta={`${colourWord(read.colour)} band`}>
+      <Line
+        text={`PPG ${fmtPpg(read.ppg)}${read.band ? ` · ${PPG_BAND_LABEL[read.band]}` : ''}`}
+        tone={read.aligns === false ? 'bad' : read.aligns ? 'good' : 'info'}
+      />
+      <Line
+        text={
+          read.aligns == null
+            ? 'Need PPG + table colour'
+            : read.aligns
+              ? 'Aligns with the colour plan'
+              : 'Does not align with the colour plan'
+        }
+        tone={read.aligns === false ? 'warn' : 'info'}
+      />
+      {read.mshayi ? <Line text={read.mshayi} tone="warn" /> : null}
+      <Line text={wdl(snap.overall)} />
+      <Line text={read.lossesVsPositive} />
+      {read.types.map((t) => (
+        <Line key={t.key} text={`${t.label}: ${fmtPpg(t.ppg)}`} />
+      ))}
+    </SideCard>
+  );
+  return (
+    <View>
+      <SectorIntro
+        title="Colour verification"
+        note="Does PPG match Green / Yellow / Red? Six PPG types: overall, home, away, against, vs top third, vs bottom third."
+      />
+      <Callout text={pd.colour.whoFacesWho} />
+      {one(pd.t1.label, pd.colour.t1, pd.t1)}
+      {one(pd.t2.label, pd.colour.t2, pd.t2)}
+    </View>
+  );
+}
+
+export function VenueCards({ pd }: { pd: PowerDynamicsBundle }) {
+  const one = (label: string, v: VenueRead, homeVenue: boolean) => (
+    <SideCard label={label}>
+      <Line text={`Overall PPG ${fmtPpg(v.overallPpg)} · home ${fmtPpg(v.homePpg)} · away ${fmtPpg(v.awayPpg)}`} />
+      <Line
+        text={homeVenue ? (v.homeStrong ? 'Strong at home' : 'No home lift vs overall') : v.awayStrong ? 'Strong away' : 'No away lift vs overall'}
+        tone={homeVenue ? (v.homeStrong ? 'good' : 'info') : v.awayStrong ? 'good' : 'info'}
+      />
+      <Line text={v.detail} />
+    </SideCard>
+  );
+  return (
+    <View>
+      <SectorIntro
+        title="Home / Away strong → underdog strength"
+        note="Underdog is the side with fewer points (or worse rank). A venue lift of 0.3+ PPG vs overall counts as strength."
+      />
+      <Callout text={pd.venue.call} tone="warn" />
+      {one(pd.t1.label, pd.venue.t1, true)}
+      {one(pd.t2.label, pd.venue.t2, false)}
+    </View>
+  );
+}
+
+export function CharacterCards({ pd }: { pd: PowerDynamicsBundle }) {
+  return (
+    <View>
+      <SectorIntro
+        title="Character — original + home vs away"
+        note="Crossed on the sheet but kept in the checklist. Split = home/away PPG gap ≥ 0.5."
+      />
+      <SideCard label={pd.t1.label}>
+        <Line text={pd.character.t1.original} />
+        <Line text={pd.character.t1.other} tone={pd.character.t1.split ? 'warn' : 'info'} />
+      </SideCard>
+      <SideCard label={pd.t2.label}>
+        <Line text={pd.character.t2.original} />
+        <Line text={pd.character.t2.other} tone={pd.character.t2.split ? 'warn' : 'info'} />
+      </SideCard>
+    </View>
+  );
+}
+
+export function MiddleGuysCards({ pd }: { pd: PowerDynamicsBundle }) {
+  const one = (label: string, show: ShowRead) => (
+    <SideCard label={label} meta={show.yellow ? 'Yellow band — usage focus' : 'Not mid-table'}>
+      <Line text={`vs above: ${show.vsAboveMp} MP · ${fmtPct(show.vsAbovePct)}`} />
+      <Line text={`vs below: ${show.vsBelowMp} MP · ${fmtPct(show.vsBelowPct)}`} />
+      <Line text={`Strong show: ${show.strongShow}`} tone="good" />
+      <Line text={`Weak show: ${show.weakShow}`} tone="bad" />
+    </SideCard>
+  );
+  return (
+    <View>
+      <SectorIntro
+        title="Middle guys — strong show / weak show"
+        note="Yellow-band focus. Strong show = taking points from sides above or dominating sides below. Use Bhozoma for the full table."
+      />
+      {one(pd.t1.label, pd.middle.t1)}
+      {one(pd.t2.label, pd.middle.t2)}
+    </View>
+  );
+}
+
+export function IndlelaCards({ pd }: { pd: PowerDynamicsBundle }) {
+  return (
+    <View>
+      <SectorIntro
+        title="Indlela — path / method"
+        note="Win/loss paths and never-twice patterns. Yellow-band fixtures get extra weight. T2 as the negative counterpart of T1."
+      />
+      {pd.indlela.yellow ? <Callout text="Yellow-band application — path matters more" tone="warn" /> : null}
+      <Callout text={pd.indlela.counterpart} />
+      <SideCard label={pd.t1.label}>
+        {pd.indlela.t1.map((p) => (
+          <Line key={p} text={`· ${p}`} />
+        ))}
+      </SideCard>
+      <SideCard label={pd.t2.label}>
+        {pd.indlela.t2.map((p) => (
+          <Line key={p} text={`· ${p}`} />
+        ))}
+      </SideCard>
+    </View>
+  );
+}
+
+export function StreakCards({
+  title,
+  note,
+  t1,
+  t2,
+  kind,
+}: {
+  title: string;
+  note: string;
+  t1: { label: string; streak: StreakSide };
+  t2: { label: string; streak: StreakSide };
+  kind: 'win' | 'loss';
+}) {
+  const threshold = title.includes('6') ? 6 : 2;
+  const one = (label: string, s: StreakSide) => {
+    const hit = s.current >= threshold;
+    return (
+      <SideCard label={label}>
+        <Line
+          text={`Current ${kind} streak: ${s.current}${hit ? ' — active' : ''}`}
+          tone={hit ? 'warn' : 'info'}
+        />
+        <Line text={`Recent: ${s.sequence || '—'}`} />
+        <Line
+          text={
+            s.neverTwice
+              ? `Never ${kind === 'win' ? 'won' : 'lost'} twice in a row (last 10)`
+              : `Has ${kind === 'win' ? 'won' : 'lost'} twice in a row in last 10`
+          }
+        />
+        {s.last10 ? <Line text={`Last 10: ${s.last10}`} /> : null}
+      </SideCard>
+    );
+  };
+  return (
+    <View>
+      <SectorIntro title={title} note={note} />
+      {one(t1.label, t1.streak)}
+      {one(t2.label, t2.streak)}
+    </View>
+  );
+}
+
+export function SwingCards({
+  title,
+  want,
+  pd,
+}: {
+  title: string;
+  want: 'drop' | 'rise';
+  pd: PowerDynamicsBundle;
+}) {
+  const one = (label: string, swings: SwingScope[]) => (
+    <SideCard label={label}>
+      {swings.map((s) => {
+        const hit = want === 'drop' ? s.drop : s.rise;
+        return (
+          <Line
+            key={s.scope}
+            text={`${s.detail}${hit ? ' — flagged' : ''}`}
+            tone={hit ? (want === 'drop' ? 'bad' : 'good') : 'info'}
+          />
+        );
+      })}
+    </SideCard>
+  );
+  return (
+    <View>
+      <SectorIntro
+        title={title}
+        note="Last 3 vs previous 3, overall / home / away. Flag when the swing is ≥ 5 points."
+      />
+      {one(pd.t1.label, pd.swing.t1)}
+      {one(pd.t2.label, pd.swing.t2)}
+    </View>
+  );
+}
+
+export function ChildBeaterCards({
+  title,
+  note,
+  pd,
+  method,
+}: {
+  title: string;
+  note: string;
+  pd: PowerDynamicsBundle;
+  method: 1 | 2 | 'both';
+}) {
+  const one = (label: string, yellow: boolean, cb: ChildBeaterSide) => (
+    <SideCard label={label} meta={yellow ? 'Yellow-band application' : undefined}>
+      {method !== 2 ? (
+        <Line text={cb.method1 ? `Method 1: ${cb.method1}` : 'Method 1: no recent thrashing of a lower side'} />
+      ) : null}
+      {method !== 1 ? (
+        <Line
+          text={cb.method2 ? `Method 2: ${cb.method2}` : 'Method 2: not regularly thrashing bottom-third sides'}
+          tone={cb.method2 ? 'warn' : 'info'}
+        />
+      ) : null}
+    </SideCard>
+  );
+  return (
+    <View>
+      <SectorIntro title={title} note={note} />
+      {one(pd.t1.label, pd.t1.zone === 'mid', pd.childBeater.t1)}
+      {one(pd.t2.label, pd.t2.zone === 'mid', pd.childBeater.t2)}
+    </View>
+  );
+}
+
+export function PointsDiffCards({ pd }: { pd: PowerDynamicsBundle }) {
+  const yellow = pd.t1.zone === 'mid' || pd.t2.zone === 'mid';
+  return (
+    <View>
+      <SectorIntro
+        title="Points difference"
+        note="ΔP ≤ 4 is close (form matters). ≥ 4.1 is a clear table gap. Yellow-band fixtures should answer this first."
+      />
+      <Callout
+        text={
+          pd.pointsDiff == null
+            ? 'Need both sides on the table'
+            : `${pd.t1.label} ${pd.t1.points} pts (#${pd.t1.rank ?? '?'}) vs ${pd.t2.label} ${pd.t2.points} pts (#${pd.t2.rank ?? '?'}) · ΔP ${pd.pointsDiff}`
+        }
+        tone={pd.closeOnTable ? 'warn' : 'info'}
+      />
+      {yellow ? <Callout text="Yellow-band application — answer ΔP before other separators" tone="warn" /> : null}
+      <Line
+        text={
+          pd.closeOnTable
+            ? 'Close — hidden layers and last-5 should separate them'
+            : 'Far apart — check risk on the favourite (problem causer)'
+        }
+      />
+    </View>
+  );
+}
+
+export function ContestedCards({ pd }: { pd: PowerDynamicsBundle }) {
+  return (
+    <View>
+      <SectorIntro
+        title="Highly contested leagues"
+        note="Positions 1–5 within 3 points = dangerous to play. Check whether T1 or T2 sit in that pack."
+      />
+      <Callout
+        text={pd.contested.flag.detail}
+        tone={pd.contested.flag.active ? 'warn' : 'info'}
+      />
+      <Line
+        text={`${pd.t1.label} ${pd.contested.t1InPack ? 'is in the top 5 pack' : 'is outside the top 5 pack'}`}
+      />
+      <Line
+        text={`${pd.t2.label} ${pd.contested.t2InPack ? 'is in the top 5 pack' : 'is outside the top 5 pack'}`}
+      />
+    </View>
+  );
+}
+
+export function StruggleCards({ pd }: { pd: PowerDynamicsBundle }) {
+  return (
+    <View>
+      <SectorIntro
+        title="Struggle for 2 or 3 games"
+        note="2–3 recent losses / winless, plus whether a table position is still worth fighting for."
+      />
+      <SideCard label={pd.t1.label}>
+        <Line text={pd.struggle.t1} tone={pd.struggle.t1Fight ? 'warn' : 'info'} />
+      </SideCard>
+      <SideCard label={pd.t2.label}>
+        <Line text={pd.struggle.t2} tone={pd.struggle.t2Fight ? 'warn' : 'info'} />
+      </SideCard>
+    </View>
+  );
+}
+
+export function CompetitionCards({ pd }: { pd: PowerDynamicsBundle }) {
+  const p = pd.competition.progress;
+  const mot = (label: string, m: PowerDynamicsBundle['competition']['t1']) => (
+    <SideCard label={label}>
+      {m ? (
+        <>
+          <Line text={`#${m.rank} · ${m.points} pts · ${STANCE_LABEL[m.stance]} · ${GRADE_LABEL[m.grade]}`} />
+          <Line text={m.stanceReason} />
+          {m.futileChase ? <Line text="Futile chase — remaining matches cannot close it" tone="bad" /> : null}
+          {m.dethroned ? <Line text="Dethroned but still linked to the band" tone="warn" /> : null}
+        </>
+      ) : (
+        <Line text="Need this side on the table" />
+      )}
+    </SideCard>
+  );
+  return (
+    <View>
+      <SectorIntro
+        title="Competition status"
+        note="League progress, remaining matches, late stretch, and chase / escape for T1 and T2."
+      />
+      <Callout
+        text={`Season ${p.seasonProgress != null ? `${p.seasonProgress}%` : 'n/a'} · most games played ${p.maxPlayed}${
+          p.avgRemaining != null ? ` · about ${p.avgRemaining} left` : ''
+        }${p.lateStretch ? ' · late stretch' : ''}`}
+        tone={p.lateStretch ? 'warn' : 'info'}
+      />
+      <Line text={p.note} />
+      {mot(pd.t1.label, pd.competition.t1)}
+      {mot(pd.t2.label, pd.competition.t2)}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  intro: { marginBottom: spacing.sm },
+  sectorTitle: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 12,
+    color: theme.textPrimary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  note: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: theme.textMuted,
+    lineHeight: 16,
+    marginBottom: spacing.xs,
+  },
+  card: {
+    backgroundColor: theme.surface,
+    borderWidth: layout.borderWidth,
+    borderColor: theme.border,
+    borderRadius: layout.borderRadius,
+    padding: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  sideLabel: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: theme.textPrimary },
+  meta: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted, marginTop: 2, marginBottom: 4 },
+  line: { fontFamily: fonts.body, fontSize: 12, color: theme.textPrimary, lineHeight: 17, marginTop: 2 },
+  seq: { fontFamily: fonts.bodySemiBold, fontSize: 14, color: theme.textPrimary, marginTop: 4 },
+  subHead: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 11,
+    color: theme.textMuted,
+    marginTop: spacing.sm,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  callout: {
+    borderWidth: layout.borderWidth,
+    borderRadius: layout.borderRadius,
+    padding: spacing.sm,
+    marginBottom: spacing.sm,
+    backgroundColor: theme.surface,
+  },
+  calloutText: { fontFamily: fonts.bodySemiBold, fontSize: 12, lineHeight: 17 },
+});

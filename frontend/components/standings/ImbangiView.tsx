@@ -17,6 +17,8 @@ type Props = {
   seasonProgress?: number | null;
   /** Competition / league name for the table. */
   competitionName?: string;
+  highlightIds?: number[];
+  teamLabels?: Record<number, string>;
 };
 
 function Cell({
@@ -42,11 +44,21 @@ function resultColor(r: ImbangiRow['lastResult']): string {
   return theme.textMuted;
 }
 
-function DataRow({ row, competition }: { row: ImbangiRow; competition: string }) {
+function DataRow({
+  row,
+  competition,
+  highlight,
+  extraLabel,
+}: {
+  row: ImbangiRow;
+  competition: string;
+  highlight?: boolean;
+  extraLabel?: string;
+}) {
   return (
-    <View style={[styles.row, row.tight && styles.rowTight]}>
+    <View style={[styles.row, row.tight && styles.rowTight, highlight && styles.rowFocus]}>
       <Cell style={styles.cPos}>{String(row.position)}</Cell>
-      <Cell style={styles.cTeam}>{row.teamName}</Cell>
+      <Cell style={styles.cTeam}>{extraLabel ?? row.teamName}</Cell>
       <Cell style={styles.cNum}>{String(row.teamPoints)}</Cell>
       <Cell style={styles.cNum}>{String(row.teamPlayed)}</Cell>
       <Cell style={styles.cNum}>{String(row.remaining)}</Cell>
@@ -93,6 +105,8 @@ export default function ImbangiView({
   error,
   seasonProgress,
   competitionName,
+  highlightIds,
+  teamLabels,
 }: Props) {
   if (loading) {
     return (
@@ -185,6 +199,8 @@ export default function ImbangiView({
                 key={`${r.teamId}-${r.opponentId}-${r.relation}`}
                 row={r}
                 competition={competition}
+                highlight={Boolean(highlightIds?.includes(r.teamId))}
+                extraLabel={teamLabels?.[r.teamId]}
               />
             ))
           )}
@@ -292,6 +308,7 @@ const styles = StyleSheet.create({
   },
   headRow: { backgroundColor: theme.surfaceMuted },
   rowTight: { backgroundColor: 'rgba(234, 88, 12, 0.06)' },
+  rowFocus: { backgroundColor: 'rgba(37, 99, 235, 0.08)' },
   th: {
     fontFamily: fonts.bodySemiBold,
     fontSize: 10,

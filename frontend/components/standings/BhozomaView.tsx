@@ -15,6 +15,9 @@ type Props = {
   loading: boolean;
   error: string | null;
   competitionId?: number | string | null;
+  /** Pin T1/T2 at the top and highlight their rows. */
+  highlightIds?: number[];
+  teamLabels?: Record<number, string>;
 };
 
 function pctText(side: BhozomaSideStats): string {
@@ -85,12 +88,12 @@ function SideCells({ side }: { side: BhozomaSideStats }) {
   );
 }
 
-function DataRow({ row }: { row: BhozomaTeamRow }) {
+function DataRow({ row, highlight, extraLabel }: { row: BhozomaTeamRow; highlight?: boolean; extraLabel?: string }) {
   return (
-    <View style={[styles.row, row.isMidTable && styles.rowMid]}>
+    <View style={[styles.row, row.isMidTable && styles.rowMid, highlight && styles.rowFocus]}>
       <Text style={[styles.td, styles.cPos]}>{row.rank}</Text>
       <Text style={[styles.td, styles.cTeam]} numberOfLines={1}>
-        {row.name}
+        {extraLabel ?? row.name}
       </Text>
       <Text style={[styles.td, styles.cPts]}>{row.points}</Text>
       <SideCells side={row.above} />
@@ -108,6 +111,8 @@ export default function BhozomaView({
   loading,
   error,
   competitionId,
+  highlightIds,
+  teamLabels,
 }: Props) {
   if (loading) {
     return (
@@ -122,6 +127,12 @@ export default function BhozomaView({
 
   const table = buildBhozomaTable(standings, matches, competitionId);
   const focus = table.midRows.length > 0 ? table.midRows : table.rows;
+  const highlightSet = new Set((highlightIds ?? []).filter((id) => Number.isFinite(id)));
+  const ordered = [...focus].sort((a, b) => {
+    const ah = highlightSet.has(a.teamId) ? 0 : 1;
+    const bh = highlightSet.has(b.teamId) ? 0 : 1;
+    return ah - bh || a.rank - b.rank;
+  });
 
   return (
     <View>
@@ -175,8 +186,13 @@ export default function BhozomaView({
             <Text style={[styles.th, styles.cLabel]}>Read</Text>
           </View>
 
-          {focus.map((r) => (
-            <DataRow key={r.teamId} row={r} />
+          {ordered.map((r) => (
+            <DataRow
+              key={r.teamId}
+              row={r}
+              highlight={highlightSet.has(r.teamId)}
+              extraLabel={teamLabels?.[r.teamId]}
+            />
           ))}
         </View>
       </ScrollView>
@@ -231,6 +247,7 @@ const styles = StyleSheet.create({
   },
   headRow: { backgroundColor: theme.surfaceMuted },
   rowMid: { backgroundColor: 'rgba(217, 119, 6, 0.05)' },
+  rowFocus: { backgroundColor: 'rgba(37, 99, 235, 0.08)' },
   groupLabel: {
     fontFamily: fonts.bodySemiBold,
     fontSize: 10,

@@ -35,6 +35,9 @@ export type StandingLike = {
   played: number;
   points: number;
   zone?: 'top' | 'mid' | 'bottom';
+  won?: number;
+  drawn?: number;
+  lost?: number;
 };
 
 export type CriticalLines = {

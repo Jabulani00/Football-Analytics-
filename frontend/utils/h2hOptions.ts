@@ -5,13 +5,18 @@
 
 import type { H2HMatch } from '@/services/oddAlerts';
 import {
+  H2H_MEETINGS_LIMIT,
   h2hOutcomeForTeam,
+  recentH2hMeetings,
   teamsMatch,
   type H2HOutcome,
   type H2HSplit,
 } from '@/utils/h2hDisplay';
 import type { TeamResult } from '@/utils/teamResults';
 import { lastN } from '@/utils/teamResults';
+
+/** Max H2H points each side can show in the points-share read (5 meetings × 3). */
+export const H2H_POINTS_SHARE_MAX = H2H_MEETINGS_LIMIT * 3;
 
 export type H2HOptionTag = {
   id: string;
@@ -41,21 +46,78 @@ export function outcomeForSide(m: H2HMatch, sideName: string): H2HOutcome {
   return h2hOutcomeForTeam(m, sideName);
 }
 
-function neverBeaten(
+/** Meetings in a split from `viewer`'s venue lens, newest first. */
+function matchesInSplit(
   matches: H2HMatch[],
   viewer: string,
-  opponent: string,
   split: H2HSplit,
-): boolean {
+): H2HMatch[] {
   const list =
     split === 'overall'
       ? matches
       : split === 'home'
         ? matches.filter((m) => teamsMatch(m.home_name, viewer))
         : matches.filter((m) => teamsMatch(m.away_name, viewer));
-  if (list.length === 0) return false;
-  // Opponent never beat viewer ⇒ viewer has no losses in this split.
-  return list.every((m) => outcomeForSide(m, viewer) !== 'L');
+  return [...list].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+}
+
+function outcomesInSplit(
+  matches: H2HMatch[],
+  viewer: string,
+  split: H2HSplit,
+): H2HOutcome[] {
+  return matchesInSplit(matches, viewer, split).map((m) => outcomeForSide(m, viewer));
+}
+
+/** Max results shown inside the never-beaten brackets. */
+export const NEVER_BEATEN_SEQ_LIMIT = 5;
+
+/** e.g. (W W W D D) — at most 5, newest first. */
+export function formatNeverBeatenSequence(
+  outcomes: H2HOutcome[],
+  limit: number = NEVER_BEATEN_SEQ_LIMIT,
+): string {
+  if (outcomes.length === 0) return '';
+  return `(${outcomes.slice(0, limit).join(' ')})`;
+}
+
+function countWdl(outcomes: H2HOutcome[]): { w: number; d: number; l: number } {
+  let w = 0;
+  let d = 0;
+  let l = 0;
+  for (const o of outcomes) {
+    if (o === 'W') w += 1;
+    else if (o === 'D') d += 1;
+    else l += 1;
+  }
+  return { w, d, l };
+}
+
+/** Prefer meetings in the fixture’s current competition when the name matches. */
+export function filterH2hByCompetition(
+  matches: H2HMatch[],
+  competitionName?: string | null,
+): H2HMatch[] {
+  const name = competitionName?.trim();
+  if (!name) return matches;
+  const inLeague = matches.filter((m) => {
+    const league = m.league?.trim() ?? '';
+    if (!league) return false;
+    return teamsMatch(league, name);
+  });
+  return inLeague.length > 0 ? inLeague : matches;
+}
+
+function neverBeaten(
+  matches: H2HMatch[],
+  viewer: string,
+  split: H2HSplit,
+): H2HOutcome[] | null {
+  const outcomes = outcomesInSplit(matches, viewer, split);
+  if (outcomes.length === 0) return null;
+  // Viewer has no losses in this split.
+  if (outcomes.some((o) => o === 'L')) return null;
+  return outcomes;
 }
 
 function pointsFromOutcomes(outcomes: H2HOutcome[]): number {
@@ -94,10 +156,12 @@ export function evaluateH2HOptions(opts: {
   matches: H2HMatch[];
   homeName: string;
   awayName: string;
+  /** Current fixture competition — used for never-beaten totals. */
+  competitionName?: string | null;
   /** Optional recent form (non-H2H) for polar sequences through T1 lens. */
   homeForm?: TeamResult[];
 }): FixtureH2HOptions {
-  const { matches, homeName, awayName, homeForm } = opts;
+  const { matches, homeName, awayName, competitionName, homeForm } = opts;
 
   if (!matches || matches.length === 0) {
     return {
@@ -118,29 +182,40 @@ export function evaluateH2HOptions(opts: {
   }
 
   const tags: H2HOptionTag[] = [];
-  const overall = matches;
+  /** Points share / polar use last 5 meetings only (max 15 pts each). */
+  const overall = recentH2hMeetings(matches, H2H_MEETINGS_LIMIT);
+  const leagueMatches = filterH2hByCompetition(matches, competitionName);
+  const leagueLabel = competitionName?.trim() || 'these meetings';
 
-  // Never beaten — both lenses (overall / home / away splits)
+  // Never beaten — both lenses (overall / home / away splits), with W/D sequence
   for (const split of ['overall', 'home', 'away'] as const) {
-    if (neverBeaten(matches, homeName, awayName, split)) {
+    const homeSeq = neverBeaten(matches, homeName, split);
+    if (homeSeq) {
+      const seq = formatNeverBeatenSequence(homeSeq);
+      const leagueOutcomes = outcomesInSplit(leagueMatches, homeName, split);
+      const { w, d, l } = countWdl(leagueOutcomes.length > 0 ? leagueOutcomes : homeSeq);
       tags.push({
         id: `never_beaten_home_${split}`,
-        label: `${homeName} never beaten (${split})`,
+        label: `${homeName} never beaten (${split}) ${seq}`,
         kind: 'good',
-        detail: `From ${homeName}'s lens — no H2H losses in ${split}`,
+        detail: `In ${leagueLabel}: ${w} win${w === 1 ? '' : 's'}, ${d} draw${d === 1 ? '' : 's'}, ${l} loss${l === 1 ? '' : 'es'} (${split})`,
       });
     }
-    if (neverBeaten(matches, awayName, homeName, split)) {
+    const awaySeq = neverBeaten(matches, awayName, split);
+    if (awaySeq) {
+      const seq = formatNeverBeatenSequence(awaySeq);
+      const leagueOutcomes = outcomesInSplit(leagueMatches, awayName, split);
+      const { w, d, l } = countWdl(leagueOutcomes.length > 0 ? leagueOutcomes : awaySeq);
       tags.push({
         id: `never_beaten_away_${split}`,
-        label: `${awayName} never beaten (${split})`,
+        label: `${awayName} never beaten (${split}) ${seq}`,
         kind: 'bad',
-        detail: `From ${awayName}'s lens — no H2H losses in ${split}`,
+        detail: `In ${leagueLabel}: ${w} win${w === 1 ? '' : 's'}, ${d} draw${d === 1 ? '' : 's'}, ${l} loss${l === 1 ? '' : 'es'} (${split})`,
       });
     }
   }
 
-  // Points share (home lens on overall list)
+  // Points share — last 5 only so max is 15 per side
   const homeOutcomes = overall.map((m) => outcomeForSide(m, homeName));
   const homePts = pointsFromOutcomes(homeOutcomes);
   const maxPts = overall.length * 3;
@@ -158,7 +233,7 @@ export function evaluateH2HOptions(opts: {
     id: 'points_share',
     label: same ? 'Even in past meetings' : homePts > awayPtsReal ? 'Home edge in H2H' : 'Away edge in H2H',
     kind: same ? 'neutral' : homePts > awayPtsReal ? 'good' : 'bad',
-    detail: `${homePts}–${awayPtsReal} points from past meetings (max ${maxPts} each)`,
+    detail: `${homePts}–${awayPtsReal} points from last ${overall.length} meetings (max ${H2H_POINTS_SHARE_MAX} each)`,
   });
 
   // Polar dominance: one side has ≥70% of available points and ≥3 meetings

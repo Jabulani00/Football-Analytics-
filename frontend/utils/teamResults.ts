@@ -4,6 +4,7 @@
  */
 
 import type { RawFixture } from '@/services/oddAlerts';
+import { parseScorePair } from '@/utils/matchDetailDisplay';
 
 const FINISHED = new Set(['FT', 'AET', 'PEN', 'FT_PEN', 'AWD', 'AWARDED', 'WO']);
 
@@ -26,6 +27,9 @@ export type TeamResult = {
   /** Opponent was above this team on the live table. */
   opponentAbove: boolean | null;
   goalDiff: number;
+  /** Goals at HT for this side, when `ht_score` is on the fixture. */
+  htGf?: number | null;
+  htGa?: number | null;
 };
 
 export type RankLookup = Map<number, { rank: number; name: string; points: number }>;
@@ -64,6 +68,9 @@ export function teamResultsFromFixtures(
     const oppRank = opponentId != null ? ranks?.get(opponentId)?.rank ?? null : null;
     const opponentAbove =
       teamRank != null && oppRank != null ? oppRank < teamRank : null;
+    const ht = parseScorePair(f.ht_score);
+    const htGf = ht ? (isHome ? ht.home : ht.away) : null;
+    const htGa = ht ? (isHome ? ht.away : ht.home) : null;
 
     out.push({
       fixtureId: f.id,
@@ -79,6 +86,8 @@ export function teamResultsFromFixtures(
       teamRank,
       opponentAbove,
       goalDiff: gf - ga,
+      htGf,
+      htGa,
     });
   }
 

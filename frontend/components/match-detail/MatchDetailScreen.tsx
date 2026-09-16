@@ -332,6 +332,7 @@ export default function MatchDetailScreen({ matchId, onBack }: MatchDetailScreen
           matches={detail.h2h ?? []}
           homeName={fixture.home.name}
           awayName={fixture.away.name}
+          competitionName={detail.competition_name}
         />
       )}
     </PageContainer>

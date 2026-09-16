@@ -1,0 +1,746 @@
+/**
+ * Power dynamics sectors — T1 (home) vs T2 (away).
+ * Rules from PDF_POWER_DYNAMICS_NOTES.md + PDF_INTEGRATION_BREAKDOWN.md.
+ */
+
+import {
+  evaluateTeamMotivation,
+  type StandingLike,
+  type TeamMotivation,
+} from '@/utils/motivationEngine';
+import { contestedLeagueTop } from '@/utils/separatorTools';
+import { leagueProgressInfo } from '@/utils/imbangiEngine';
+import {
+  filterScope,
+  lastN,
+  type ResultOutcome,
+  type TeamResult,
+} from '@/utils/teamResults';
+
+export type SideId = 't1' | 't2';
+export type TableColour = 'green' | 'yellow' | 'red';
+export type PpgBand = 'bad' | 'mild' | 'good' | 'great' | 'great_against';
+export type Tone = 'good' | 'warn' | 'bad' | 'info';
+
+export type ScopeRecord = {
+  mp: number;
+  won: number;
+  drawn: number;
+  lost: number;
+  points: number;
+  ppg: number | null;
+  /** Points given to opponents per game: (3L + D) / MP. */
+  ppga: number | null;
+  scored: number | null;
+  conceded: number | null;
+};
+
+export type LastGameFlag = {
+  id: string;
+  label: string;
+  active: boolean;
+  blocked?: boolean;
+};
+
+export type SideSnapshot = {
+  side: SideId;
+  teamId: number | null;
+  name: string;
+  label: string;
+  rank: number | null;
+  points: number | null;
+  zone: 'top' | 'mid' | 'bottom' | null;
+  colour: TableColour | null;
+  overall: ScopeRecord;
+  home: ScopeRecord;
+  away: ScopeRecord;
+  vsAbove: ScopeRecord;
+  vsBelow: ScopeRecord;
+  vsTopThird: ScopeRecord;
+  vsBottomThird: ScopeRecord;
+};
+
+export type ColourSideRead = {
+  colour: TableColour | null;
+  ppg: number | null;
+  band: PpgBand | null;
+  aligns: boolean | null;
+  mshayi: string | null;
+  lossesVsPositive: string;
+  types: { key: string; label: string; ppg: number | null }[];
+};
+
+export type VenueRead = {
+  homeStrong: boolean;
+  awayStrong: boolean;
+  homePpg: number | null;
+  awayPpg: number | null;
+  overallPpg: number | null;
+  detail: string;
+};
+
+export type CharacterSide = {
+  split: boolean;
+  homeAwayGap: number | null;
+  original: string;
+  other: string;
+};
+
+export type ShowRead = {
+  yellow: boolean;
+  strongShow: string;
+  weakShow: string;
+  vsAbovePct: number | null;
+  vsBelowPct: number | null;
+  vsAboveMp: number;
+  vsBelowMp: number;
+};
+
+export type StreakSide = {
+  current: number;
+  sequence: string;
+  neverTwice: boolean;
+  last10: string;
+};
+
+export type SwingScope = {
+  scope: 'overall' | 'home' | 'away';
+  recent: number | null;
+  prior: number | null;
+  drop: boolean;
+  rise: boolean;
+  detail: string;
+};
+
+export type ChildBeaterSide = {
+  method1: string | null;
+  method2: string | null;
+};
+
+export type PowerDynamicsBundle = {
+  t1: SideSnapshot;
+  t2: SideSnapshot;
+  pointsDiff: number | null;
+  closeOnTable: boolean;
+  underdog: SideId | 'level' | null;
+  colour: { t1: ColourSideRead; t2: ColourSideRead; whoFacesWho: string };
+  venue: { t1: VenueRead; t2: VenueRead; call: string };
+  character: { t1: CharacterSide; t2: CharacterSide };
+  middle: { t1: ShowRead; t2: ShowRead };
+  indlela: { t1: string[]; t2: string[]; counterpart: string; yellow: boolean };
+  streaks: {
+    win: { t1: StreakSide; t2: StreakSide };
+    loss: { t1: StreakSide; t2: StreakSide };
+  };
+  swing: { t1: SwingScope[]; t2: SwingScope[] };
+  childBeater: { t1: ChildBeaterSide; t2: ChildBeaterSide };
+  struggle: { t1: string; t2: string; t1Fight: boolean; t2Fight: boolean };
+  contested: { flag: ReturnType<typeof contestedLeagueTop>; t1InPack: boolean; t2InPack: boolean };
+  lastGame: { t1: LastGameFlag[]; t2: LastGameFlag[] };
+  competition: {
+    progress: ReturnType<typeof leagueProgressInfo>;
+    t1: TeamMotivation | null;
+    t2: TeamMotivation | null;
+  };
+};
+
+const VENUE_GAP = 0.3;
+const CLOSE_PTS = 4;
+
+export function sideLabel(side: SideId, name: string): string {
+  return side === 't1' ? `T1 (${name})` : `T2 (${name})`;
+}
+
+export function colourFromZone(zone?: 'top' | 'mid' | 'bottom' | null): TableColour | null {
+  if (zone === 'top') return 'green';
+  if (zone === 'mid') return 'yellow';
+  if (zone === 'bottom') return 'red';
+  return null;
+}
+
+export function colourWord(c: TableColour | null): string {
+  if (c === 'green') return 'Green';
+  if (c === 'yellow') return 'Yellow';
+  if (c === 'red') return 'Red';
+  return 'Unknown';
+}
+
+/** SKM PPG bands — thresholds change by table colour. */
+export function ppgBandForColour(ppg: number, colour: TableColour): PpgBand {
+  if (colour === 'green') {
+    if (ppg < 0.8) return 'bad';
+    if (ppg < 1.2) return 'good';
+    return 'great_against';
+  }
+  if (colour === 'red') {
+    if (ppg < 1.0) return 'bad';
+    if (ppg < 1.5) return 'mild';
+    if (ppg < 1.7) return 'good';
+    return 'great';
+  }
+  if (ppg < 1.1) return 'bad';
+  if (ppg < 1.4) return 'mild';
+  if (ppg < 1.7) return 'good';
+  return 'great';
+}
+
+export function ppgAlignsWithColour(ppg: number, colour: TableColour): boolean {
+  const band = ppgBandForColour(ppg, colour);
+  if (colour === 'green') return band !== 'bad';
+  if (colour === 'red') return band === 'bad' || band === 'mild';
+  return band === 'mild' || band === 'good';
+}
+
+export const PPG_BAND_LABEL: Record<PpgBand, string> = {
+  bad: 'Bad',
+  mild: 'Mild / ok',
+  good: 'Good',
+  great: 'Great',
+  great_against: 'Great against',
+};
+
+/** Named call-out: red PPG too high, or green PPG too low. */
+export function mshayiNote(ppg: number, colour: TableColour): string | null {
+  if (colour === 'red' && ppg > 1.5) {
+    return 'Bottom-third PPG is high (>1.5) — punching above the colour';
+  }
+  if (colour === 'green' && ppg < 0.8) {
+    return 'Top-third PPG is weak (<0.8) — colour and PPG disagree';
+  }
+  return null;
+}
+
+export function emptyRecord(): ScopeRecord {
+  return {
+    mp: 0,
+    won: 0,
+    drawn: 0,
+    lost: 0,
+    points: 0,
+    ppg: null,
+    ppga: null,
+    scored: null,
+    conceded: null,
+  };
+}
+
+export function recordFromResults(results: TeamResult[]): ScopeRecord {
+  const mp = results.length;
+  if (mp === 0) return emptyRecord();
+  let won = 0;
+  let drawn = 0;
+  let lost = 0;
+  let gf = 0;
+  let ga = 0;
+  for (const r of results) {
+    if (r.outcome === 'W') won += 1;
+    else if (r.outcome === 'D') drawn += 1;
+    else lost += 1;
+    gf += r.gf;
+    ga += r.ga;
+  }
+  const points = won * 3 + drawn;
+  return {
+    mp,
+    won,
+    drawn,
+    lost,
+    points,
+    ppg: points / mp,
+    ppga: (lost * 3 + drawn) / mp,
+    scored: gf / mp,
+    conceded: ga / mp,
+  };
+}
+
+export function recordFromStanding(row: StandingLike & { won?: number; drawn?: number; lost?: number }): ScopeRecord {
+  const mp = row.played;
+  if (mp <= 0) return emptyRecord();
+  const won = row.won ?? 0;
+  const drawn = row.drawn ?? 0;
+  const lost = row.lost ?? Math.max(0, mp - won - drawn);
+  return {
+    mp,
+    won,
+    drawn,
+    lost,
+    points: row.points,
+    ppg: row.points / mp,
+    ppga: (lost * 3 + drawn) / mp,
+    scored: null,
+    conceded: null,
+  };
+}
+
+function thirdCuts(n: number): { topCut: number; bottomStart: number } {
+  const topCut = Math.max(1, Math.ceil(n / 3));
+  const bottomStart = n - Math.ceil(n / 3) + 1;
+  return { topCut, bottomStart };
+}
+
+export function currentStreak(results: TeamResult[], outcome: ResultOutcome): number {
+  let n = 0;
+  for (const r of results) {
+    if (r.outcome !== outcome) break;
+    n += 1;
+  }
+  return n;
+}
+
+export function neverTwiceInRow(
+  results: TeamResult[],
+  outcome: ResultOutcome,
+  window = 10,
+): boolean {
+  const slice = results.slice(0, window);
+  if (slice.length < 6) return false;
+  for (let i = 0; i < slice.length - 1; i++) {
+    if (slice[i].outcome === outcome && slice[i + 1].outcome === outcome) return false;
+  }
+  return true;
+}
+
+function sequenceOf(results: TeamResult[], n = 6): string {
+  const slice = lastN(results, n);
+  if (slice.length === 0) return '—';
+  return slice.map((r) => r.outcome).join(' ');
+}
+
+function pointsFrom(results: TeamResult[]): number {
+  let pts = 0;
+  for (const r of results) {
+    if (r.outcome === 'W') pts += 3;
+    else if (r.outcome === 'D') pts += 1;
+  }
+  return pts;
+}
+
+function formSwing(results: TeamResult[], scope: 'overall' | 'home' | 'away'): SwingScope {
+  const scoped = filterScope(results, scope);
+  if (scoped.length < 6) {
+    return {
+      scope,
+      recent: null,
+      prior: null,
+      drop: false,
+      rise: false,
+      detail: `${scope}: need 6 ${scope === 'overall' ? '' : `${scope} `}games`,
+    };
+  }
+  const recent = pointsFrom(scoped.slice(0, 3));
+  const prior = pointsFrom(scoped.slice(3, 6));
+  const drop = prior - recent >= 5;
+  const rise = recent - prior >= 5;
+  return {
+    scope,
+    recent,
+    prior,
+    drop,
+    rise,
+    detail: `${scope}: last 3 = ${recent} pts, previous 3 = ${prior} pts`,
+  };
+}
+
+function pctOf(rec: ScopeRecord): number | null {
+  if (rec.mp <= 0 || rec.ppg == null) return null;
+  return (rec.points / (rec.mp * 3)) * 100;
+}
+
+export function lastGameFlags(last: TeamResult | null, avgScored: number | null): LastGameFlag[] {
+  if (!last) {
+    return [{ id: 'none', label: 'No finished game yet', active: false }];
+  }
+  const htKnown = last.htGf != null && last.htGa != null;
+  const shGf = htKnown ? last.gf - (last.htGf ?? 0) : null;
+  const shGa = htKnown ? last.ga - (last.htGa ?? 0) : null;
+  return [
+    { id: 'won', label: 'Last game won', active: last.outcome === 'W' },
+    { id: 'lost', label: 'Last game lost', active: last.outcome === 'L' },
+    { id: 'draw', label: 'Last game draw', active: last.outcome === 'D' },
+    { id: 'lost_draw', label: 'Last game lost / draw', active: last.outcome !== 'W' },
+    { id: 'fts', label: 'Last game FTS', active: last.gf === 0 },
+    { id: 'scored_05', label: 'Last game scored 0.5+', active: last.gf >= 1 },
+    { id: 'conceded_05', label: 'Last game conceded 0.5+', active: last.ga >= 1 },
+    {
+      id: 'avg_down',
+      label: 'Last game AVG down',
+      active: avgScored != null && last.gf < avgScored,
+    },
+    {
+      id: 'avg_up',
+      label: 'Last game AVG up',
+      active: avgScored != null && last.gf > avgScored,
+    },
+    { id: 'cs', label: 'Last game CS', active: last.ga === 0 },
+    { id: 'no_btts', label: 'Last game no BTTS', active: !(last.gf >= 1 && last.ga >= 1) },
+    { id: 'btts', label: 'Last game BTTS', active: last.gf >= 1 && last.ga >= 1 },
+    {
+      id: '00_ht',
+      label: 'Last game 0–0 HT',
+      active: htKnown && last.htGf === 0 && last.htGa === 0,
+      blocked: !htKnown,
+    },
+    {
+      id: '00_2h',
+      label: 'Last game 0–0 2nd half',
+      active: shGf === 0 && shGa === 0,
+      blocked: !htKnown,
+    },
+  ];
+}
+
+function snapshotFor(
+  side: SideId,
+  name: string,
+  teamId: number | null,
+  row: (StandingLike & { won?: number; drawn?: number; lost?: number }) | null | undefined,
+  results: TeamResult[],
+  leagueSize: number,
+): SideSnapshot {
+  const overallResults = recordFromResults(results);
+  const overall = overallResults.mp > 0 ? overallResults : row ? recordFromStanding(row) : emptyRecord();
+  const { topCut, bottomStart } = thirdCuts(leagueSize);
+  return {
+    side,
+    teamId,
+    name,
+    label: sideLabel(side, name),
+    rank: row?.rank ?? null,
+    points: row?.points ?? null,
+    zone: row?.zone ?? null,
+    colour: colourFromZone(row?.zone),
+    overall,
+    home: recordFromResults(filterScope(results, 'home')),
+    away: recordFromResults(filterScope(results, 'away')),
+    vsAbove: recordFromResults(results.filter((r) => r.opponentAbove === true)),
+    vsBelow: recordFromResults(results.filter((r) => r.opponentAbove === false)),
+    vsTopThird: recordFromResults(
+      results.filter((r) => r.opponentRank != null && r.opponentRank <= topCut),
+    ),
+    vsBottomThird: recordFromResults(
+      results.filter((r) => r.opponentRank != null && r.opponentRank >= bottomStart),
+    ),
+  };
+}
+
+function colourRead(snap: SideSnapshot): ColourSideRead {
+  const ppg = snap.overall.ppg;
+  const colour = snap.colour;
+  const band = ppg != null && colour ? ppgBandForColour(ppg, colour) : null;
+  const aligns = ppg != null && colour ? ppgAlignsWithColour(ppg, colour) : null;
+  const rec = snap.overall;
+  const positive = rec.won + rec.drawn;
+  return {
+    colour,
+    ppg,
+    band,
+    aligns,
+    mshayi: ppg != null && colour ? mshayiNote(ppg, colour) : null,
+    lossesVsPositive:
+      rec.mp > 0 ? `${rec.lost} losses vs ${positive} wins+draws` : 'No sample',
+    types: [
+      { key: 'overall', label: 'Overall PPG', ppg: snap.overall.ppg },
+      { key: 'home', label: 'Home PPG', ppg: snap.home.ppg },
+      { key: 'away', label: 'Away PPG', ppg: snap.away.ppg },
+      { key: 'ppga', label: 'PPG against', ppg: snap.overall.ppga },
+      { key: 'above', label: 'PPG vs top third', ppg: snap.vsTopThird.ppg },
+      { key: 'below', label: 'PPG vs bottom third', ppg: snap.vsBottomThird.ppg },
+    ],
+  };
+}
+
+function venueRead(snap: SideSnapshot): VenueRead {
+  const overall = snap.overall.ppg;
+  const home = snap.home.ppg;
+  const away = snap.away.ppg;
+  const homeStrong = home != null && overall != null && home - overall >= VENUE_GAP;
+  const awayStrong = away != null && overall != null && away - overall >= VENUE_GAP;
+  const bits: string[] = [];
+  if (homeStrong) bits.push(`home PPG ${home!.toFixed(2)} vs overall ${overall!.toFixed(2)}`);
+  if (awayStrong) bits.push(`away PPG ${away!.toFixed(2)} vs overall ${overall!.toFixed(2)}`);
+  return {
+    homeStrong,
+    awayStrong,
+    homePpg: home,
+    awayPpg: away,
+    overallPpg: overall,
+    detail: bits.length > 0 ? bits.join(' · ') : 'No clear home/away lift vs overall',
+  };
+}
+
+function characterSide(snap: SideSnapshot): CharacterSide {
+  const h = snap.home.ppg;
+  const a = snap.away.ppg;
+  const o = snap.overall.ppg;
+  const gap = h != null && a != null ? h - a : null;
+  const split = gap != null && Math.abs(gap) >= 0.5;
+  return {
+    split,
+    homeAwayGap: gap,
+    original:
+      o != null
+        ? `Original (overall) PPG ${o.toFixed(2)} · ${snap.overall.mp} MP ${snap.overall.won}-${snap.overall.drawn}-${snap.overall.lost}`
+        : 'No overall sample yet',
+    other:
+      h != null || a != null
+        ? `Home PPG ${h != null ? h.toFixed(2) : '—'} · Away PPG ${a != null ? a.toFixed(2) : '—'}${
+            split ? ' — split character' : ''
+          }`
+        : 'Need home and away games',
+  };
+}
+
+function middleShow(snap: SideSnapshot): ShowRead {
+  const abovePct = pctOf(snap.vsAbove);
+  const belowPct = pctOf(snap.vsBelow);
+  const yellow = snap.zone === 'mid';
+  const strongBits: string[] = [];
+  const weakBits: string[] = [];
+  if (abovePct != null && abovePct >= 50) strongBits.push(`takes ${Math.round(abovePct)}% vs sides above`);
+  if (belowPct != null && belowPct >= 75) strongBits.push(`dominates sides below (${Math.round(belowPct)}%)`);
+  if (abovePct != null && abovePct < 30) weakBits.push(`soft vs sides above (${Math.round(abovePct)}%)`);
+  if (belowPct != null && belowPct < 45) weakBits.push(`drops points to sides below (${Math.round(belowPct)}%)`);
+  return {
+    yellow,
+    strongShow: strongBits.length > 0 ? strongBits.join(' · ') : 'No strong-show pattern yet',
+    weakShow: weakBits.length > 0 ? weakBits.join(' · ') : 'No weak-show pattern yet',
+    vsAbovePct: abovePct,
+    vsBelowPct: belowPct,
+    vsAboveMp: snap.vsAbove.mp,
+    vsBelowMp: snap.vsBelow.mp,
+  };
+}
+
+function streakSide(results: TeamResult[], outcome: ResultOutcome): StreakSide {
+  return {
+    current: currentStreak(results, outcome),
+    sequence: sequenceOf(results, 8),
+    neverTwice: neverTwiceInRow(results, outcome),
+    last10: lastN(results, 10)
+      .map((r) => r.outcome)
+      .join(' '),
+  };
+}
+
+function indlelaPaths(results: TeamResult[]): string[] {
+  const out: string[] = [];
+  const w = currentStreak(results, 'W');
+  const l = currentStreak(results, 'L');
+  if (w >= 4) out.push(`Win path (${w} in a row)`);
+  if (l >= 4) out.push(`Loss path (${l} in a row)`);
+  if (neverTwiceInRow(results, 'L')) out.push('Never lost twice in a row');
+  if (neverTwiceInRow(results, 'W')) out.push('Never won twice in a row');
+  if (out.length === 0) out.push('No clear path in recent form');
+  return out;
+}
+
+function childBeater(
+  results: TeamResult[],
+  zone: 'top' | 'mid' | 'bottom' | null,
+  leagueSize: number,
+): ChildBeaterSide {
+  const recent = lastN(results, 6);
+  const thrash = recent.find((r) => r.outcome === 'W' && r.goalDiff >= 2 && r.opponentAbove === false);
+  const { bottomStart } = thirdCuts(leagueSize);
+  const vsBottom = recent.filter(
+    (r) =>
+      r.outcome === 'W' &&
+      r.goalDiff >= 2 &&
+      r.opponentRank != null &&
+      r.opponentRank >= bottomStart,
+  );
+  const method2Ok = (zone === 'top' || zone === 'mid') && vsBottom.length >= 2;
+  return {
+    method1: thrash
+      ? `Beat lower side ${thrash.gf}-${thrash.ga} vs ${thrash.opponentName}`
+      : null,
+    method2: method2Ok
+      ? `${vsBottom.length} heavy wins vs bottom-third sides in last 6`
+      : vsBottom.length > 0
+        ? `${vsBottom.length} heavy win vs bottom third (need 2+)`
+        : null,
+  };
+}
+
+function struggleLine(
+  results: TeamResult[],
+  teamId: number | null,
+  table: StandingLike[],
+  seasonProgress: number | null | undefined,
+): { text: string; fight: boolean } {
+  const last3 = results.slice(0, 3);
+  if (last3.length < 2) return { text: 'Need 2+ recent games', fight: false };
+  const losses = last3.filter((r) => r.outcome === 'L').length;
+  const winless = last3.every((r) => r.outcome !== 'W');
+  const active = losses >= 2 || winless;
+  const seq = last3.map((r) => r.outcome).join(' ');
+  if (!active) return { text: `Not struggling · last 3: ${seq}`, fight: false };
+  let fight = false;
+  let fightDetail = 'no position of interest';
+  if (teamId != null && table.length > 0) {
+    const m = evaluateTeamMotivation(teamId, table, { seasonProgress });
+    if (m && (m.stance === 'chase' || m.stance === 'escape') && m.grade !== 'none') {
+      fight = true;
+      fightDetail = m.stanceReason;
+    }
+  }
+  return {
+    text: fight
+      ? `Struggling (${seq}) AND something to fight for — ${fightDetail}`
+      : `Struggling (${seq}) but ${fightDetail}`,
+    fight,
+  };
+}
+
+export function evaluatePowerDynamics(opts: {
+  table: StandingLike[];
+  homeId: number | null | undefined;
+  awayId: number | null | undefined;
+  homeName: string;
+  awayName: string;
+  homeResults: TeamResult[];
+  awayResults: TeamResult[];
+  seasonProgress?: number | null;
+  competitionId?: number | string | null;
+}): PowerDynamicsBundle {
+  const {
+    table,
+    homeId,
+    awayId,
+    homeName,
+    awayName,
+    homeResults,
+    awayResults,
+    seasonProgress,
+    competitionId,
+  } = opts;
+
+  const homeRow = homeId != null ? table.find((t) => t.teamId === homeId) : null;
+  const awayRow = awayId != null ? table.find((t) => t.teamId === awayId) : null;
+  const n = table.length;
+
+  const t1 = snapshotFor('t1', homeName, homeId ?? null, homeRow, homeResults, n);
+  const t2 = snapshotFor('t2', awayName, awayId ?? null, awayRow, awayResults, n);
+
+  const pointsDiff =
+    t1.points != null && t2.points != null ? Math.abs(t1.points - t2.points) : null;
+  const closeOnTable = pointsDiff != null && pointsDiff <= CLOSE_PTS;
+
+  let underdog: SideId | 'level' | null = null;
+  if (t1.points != null && t2.points != null) {
+    if (t1.points < t2.points) underdog = 't1';
+    else if (t2.points < t1.points) underdog = 't2';
+    else if (t1.rank != null && t2.rank != null) {
+      if (t1.rank > t2.rank) underdog = 't1';
+      else if (t2.rank > t1.rank) underdog = 't2';
+      else underdog = 'level';
+    } else underdog = 'level';
+  }
+
+  const c1 = colourRead(t1);
+  const c2 = colourRead(t2);
+  const v1 = venueRead(t1);
+  const v2 = venueRead(t2);
+
+  let venueCall = 'No underdog-strength call yet';
+  if (underdog === 't1' && v1.homeStrong) {
+    venueCall = `${t1.label} is the underdog and is strong at home`;
+  } else if (underdog === 't2' && v2.awayStrong) {
+    venueCall = `${t2.label} is the underdog and is strong away`;
+  } else if (underdog === 't1' && v1.awayStrong) {
+    venueCall = `${t1.label} is the underdog — away lift, not a home lift`;
+  } else if (underdog === 't2' && v2.homeStrong) {
+    venueCall = `${t2.label} is the underdog — home lift, playing away here`;
+  } else if (underdog === 'level') {
+    venueCall = 'Sides are level on the table — home/away strength is the split';
+  } else if (underdog) {
+    const dog = underdog === 't1' ? t1 : t2;
+    venueCall = `${dog.label} is the underdog, without a clear venue lift`;
+  }
+
+  const t1Paths = indlelaPaths(homeResults);
+  const t2Paths = indlelaPaths(awayResults);
+  const t1Win = currentStreak(homeResults, 'W') >= 4;
+  const t2Loss = currentStreak(awayResults, 'L') >= 4;
+  const t2Win = currentStreak(awayResults, 'W') >= 4;
+  const t1Loss = currentStreak(homeResults, 'L') >= 4;
+  let counterpart = 'No inverse path between the sides';
+  if (t1Win && t2Loss) counterpart = `${t1.label} win path vs ${t2.label} loss path (negative counterpart)`;
+  else if (t2Win && t1Loss) counterpart = `${t2.label} win path vs ${t1.label} loss path (negative counterpart)`;
+
+  const s1 = struggleLine(homeResults, homeId ?? null, table, seasonProgress);
+  const s2 = struggleLine(awayResults, awayId ?? null, table, seasonProgress);
+
+  const contested = contestedLeagueTop(table);
+  const t1InPack = t1.rank != null && t1.rank <= 5;
+  const t2InPack = t2.rank != null && t2.rank <= 5;
+
+  const t1Mot =
+    homeId != null && table.length > 0
+      ? evaluateTeamMotivation(homeId, table, { competitionId, seasonProgress })
+      : null;
+  const t2Mot =
+    awayId != null && table.length > 0
+      ? evaluateTeamMotivation(awayId, table, { competitionId, seasonProgress })
+      : null;
+
+  return {
+    t1,
+    t2,
+    pointsDiff,
+    closeOnTable,
+    underdog,
+    colour: {
+      t1: c1,
+      t2: c2,
+      whoFacesWho: `${t1.label} ${colourWord(c1.colour)} vs ${t2.label} ${colourWord(c2.colour)}`,
+    },
+    venue: { t1: v1, t2: v2, call: venueCall },
+    character: { t1: characterSide(t1), t2: characterSide(t2) },
+    middle: { t1: middleShow(t1), t2: middleShow(t2) },
+    indlela: {
+      t1: t1Paths,
+      t2: t2Paths,
+      counterpart,
+      yellow: t1.zone === 'mid' || t2.zone === 'mid',
+    },
+    streaks: {
+      win: { t1: streakSide(homeResults, 'W'), t2: streakSide(awayResults, 'W') },
+      loss: { t1: streakSide(homeResults, 'L'), t2: streakSide(awayResults, 'L') },
+    },
+    swing: {
+      t1: (['overall', 'home', 'away'] as const).map((s) => formSwing(homeResults, s)),
+      t2: (['overall', 'home', 'away'] as const).map((s) => formSwing(awayResults, s)),
+    },
+    childBeater: {
+      t1: childBeater(homeResults, t1.zone, n),
+      t2: childBeater(awayResults, t2.zone, n),
+    },
+    struggle: { t1: s1.text, t2: s2.text, t1Fight: s1.fight, t2Fight: s2.fight },
+    contested: { flag: contested, t1InPack, t2InPack },
+    lastGame: {
+      t1: lastGameFlags(homeResults[0] ?? null, t1.overall.scored),
+      t2: lastGameFlags(awayResults[0] ?? null, t2.overall.scored),
+    },
+    competition: {
+      progress: leagueProgressInfo(table, seasonProgress),
+      t1: t1Mot,
+      t2: t2Mot,
+    },
+  };
+}
+
+export function fmtPpg(v: number | null | undefined): string {
+  if (v == null || Number.isNaN(v)) return '—';
+  return v.toFixed(2);
+}
+
+export function fmtPct(v: number | null | undefined): string {
+  if (v == null || Number.isNaN(v)) return '—';
+  return `${Math.round(v)}%`;
+}
+
+export function wdl(rec: ScopeRecord): string {
+  if (rec.mp <= 0) return '—';
+  return `${rec.mp} MP · ${rec.won}-${rec.drawn}-${rec.lost}`;
+}

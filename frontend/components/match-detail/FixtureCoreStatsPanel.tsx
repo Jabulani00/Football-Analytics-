@@ -19,6 +19,9 @@ type Props = {
   homeName: string;
   awayName: string;
   seasonProgress?: number | null;
+  /** Column headers — default to team names (use T1 (Name) in Power dynamics). */
+  homeLabel?: string;
+  awayLabel?: string;
 };
 
 const SCOPES: { id: CoreStatScope; label: string }[] = [
@@ -38,6 +41,8 @@ export default function FixtureCoreStatsPanel({
   homeName,
   awayName,
   seasonProgress,
+  homeLabel,
+  awayLabel,
 }: Props) {
   const [scope, setScope] = useState<CoreStatScope>('overall');
   const standingLike: StandingLike[] = standings.map((r) => ({
@@ -95,11 +100,15 @@ export default function FixtureCoreStatsPanel({
         </View>
       ) : (
         <>
-          <StatsComparisonTable homeLabel={homeName} awayLabel={awayName} rows={rows} />
+          <StatsComparisonTable
+            homeLabel={homeLabel ?? homeName}
+            awayLabel={awayLabel ?? awayName}
+            rows={rows}
+          />
           <Text style={styles.foot}>
             {scope === 'overall' && source !== 'results'
               ? 'PPG / averages from the league table'
-              : `From finished matches · ${homeName} n=${homeSample} · ${awayName} n=${awaySample}`}
+              : `From finished matches · ${homeLabel ?? homeName} n=${homeSample} · ${awayLabel ?? awayName} n=${awaySample}`}
             {error ? ` · ${error}` : ''}
             {' · '}
             green strong · yellow mid · red weak

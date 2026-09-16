@@ -23,6 +23,8 @@ type H2HPanelProps = {
   matches: H2HMatch[];
   homeName: string;
   awayName: string;
+  /** Fixture competition — used for never-beaten W/D/L totals. */
+  competitionName?: string | null;
 };
 
 function FormStrip({ outcomes }: { outcomes: H2HOutcome[] }) {
@@ -180,7 +182,7 @@ function OptionChip({ tag }: { tag: H2HOptionTag }) {
   );
 }
 
-export default function H2HPanel({ matches, homeName, awayName }: H2HPanelProps) {
+export default function H2HPanel({ matches, homeName, awayName, competitionName }: H2HPanelProps) {
   const [split, setSplit] = useState<H2HSplit>('overall');
 
   const filtered = useMemo(
@@ -201,8 +203,8 @@ export default function H2HPanel({ matches, homeName, awayName }: H2HPanelProps)
 
   // Section 7 — additive option tags; does not change the list below.
   const options = useMemo(
-    () => evaluateH2HOptions({ matches, homeName, awayName }),
-    [matches, homeName, awayName],
+    () => evaluateH2HOptions({ matches, homeName, awayName, competitionName }),
+    [matches, homeName, awayName, competitionName],
   );
 
   if (matches.length === 0) {

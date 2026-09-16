@@ -15,6 +15,8 @@ type FixtureMotivationPanelProps = {
   awayName: string;
   competitionId?: number | string | null;
   seasonProgress?: number | null;
+  homeLabel?: string;
+  awayLabel?: string;
 };
 
 /**
@@ -29,6 +31,8 @@ export default function FixtureMotivationPanel({
   awayName,
   competitionId,
   seasonProgress,
+  homeLabel,
+  awayLabel,
 }: FixtureMotivationPanelProps) {
   if (standings.length === 0 || (homeId == null && awayId == null)) {
     return (
@@ -50,10 +54,10 @@ export default function FixtureMotivationPanel({
     <View style={styles.wrap}>
       <Text style={styles.title}>Who needs the win?</Text>
       <Text style={styles.sub}>
-        How much this result matters for {homeName} and {awayName} in the table
+        How much this result matters for {homeLabel ?? homeName} and {awayLabel ?? awayName} in the table
       </Text>
-      {home ? <TeamMotivationCard motivation={home} /> : null}
-      {away ? <TeamMotivationCard motivation={away} /> : null}
+      {home ? <TeamMotivationCard motivation={home} displayName={homeLabel} /> : null}
+      {away ? <TeamMotivationCard motivation={away} displayName={awayLabel} /> : null}
     </View>
   );
 }

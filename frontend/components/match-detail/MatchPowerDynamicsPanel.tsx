@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 import BhozomaView from '@/components/standings/BhozomaView';
@@ -7,22 +7,33 @@ import FixtureMotivationPanel from '@/components/standings/FixtureMotivationPane
 import { HiddenLayersView } from '@/components/standings/FixtureHiddenLayersPanel';
 import FixtureCoreStatsPanel from '@/components/match-detail/FixtureCoreStatsPanel';
 import H2HPanel from '@/components/match-detail/H2HPanel';
+import {
+  BaselineCards,
+  Callout,
+  CharacterCards,
+  ChildBeaterCards,
+  ColourCards,
+  CompetitionCards,
+  ContestedCards,
+  IndlelaCards,
+  Last5Cards,
+  MiddleGuysCards,
+  PointsDiffCards,
+  SectorIntro,
+  StreakCards,
+  StruggleCards,
+  SwingCards,
+  VenueCards,
+} from '@/components/match-detail/PowerDynamicsSectors';
 import SubTabBar from '@/components/shared/SubTabBar';
 import { useFixtureFormAnalysis } from '@/hooks/useFixtureFormAnalysis';
 import { useSeasonFixtures } from '@/hooks/useSeasonFixtures';
 import type { Competition, H2HMatch, StandingRow } from '@/services/oddAlerts';
-import {
-  CHANGE_LABEL,
-  OPTION_LABEL,
-  type FormGrade,
-  type TeamLast5,
-} from '@/utils/last5Analysis';
-import { leagueProgressInfo } from '@/utils/imbangiEngine';
+import { evaluatePowerDynamics, sideLabel } from '@/utils/powerDynamicsEngine';
 import type { StandingLike } from '@/utils/motivationEngine';
-import type { SeparatorFlag, SeparatorGrade } from '@/utils/separatorTools';
-import { fonts, layout, spacing, theme } from '@/styles/theme';
+import { fonts, spacing, theme } from '@/styles/theme';
 
-/** Power dynamics checklist order (SKM notes; #24 omitted). */
+/** Power dynamics checklist order (SKM notes; #24 odds omitted). */
 export const POWER_DYNAMICS_TABS = [
   { id: 'baseline', label: '1. Baseline' },
   { id: 'importance_3pts', label: '2. Importance of 3 pts' },
@@ -76,109 +87,14 @@ function toStandingLike(rows: StandingRow[]): StandingLike[] {
     points: r.points,
     played: r.played,
     zone: r.zone,
+    won: r.won,
+    drawn: r.drawn,
+    lost: r.lost,
   }));
 }
 
-function gradeColor(g: SeparatorGrade | FormGrade): string {
-  switch (g) {
-    case 'good':
-    case 'excellent':
-      return theme.accentGreen;
-    case 'mediocre':
-    case 'warn':
-      return theme.yellow;
-    case 'bad':
-      return theme.loss;
-    default:
-      return theme.textMuted;
-  }
-}
-
-function FlagChip({ flag }: { flag: SeparatorFlag }) {
-  const side = flag.side === 'home' ? 'Home' : flag.side === 'away' ? 'Away' : null;
-  return (
-    <View style={[styles.chip, { borderColor: gradeColor(flag.grade) }]}>
-      <Text style={[styles.chipLabel, { color: gradeColor(flag.grade) }]}>{flag.label}</Text>
-      <Text style={styles.chipDetail} numberOfLines={3}>
-        {side ? `${side}: ` : ''}
-        {flag.detail}
-        {!flag.active ? ' · not active' : ''}
-      </Text>
-    </View>
-  );
-}
-
-function Last5Block({ title, team }: { title: string; team: TeamLast5 }) {
-  return (
-    <View style={styles.last5Card}>
-      <Text style={styles.last5Title}>{title}</Text>
-      <Text style={styles.last5Meta}>
-        Form: {OPTION_LABEL[team.option]} · {team.tablePoints} pts from last 5
-      </Text>
-      <Text style={styles.seq}>{team.sequence.join(' ')}</Text>
-      <Text style={styles.last5Meta}>
-        {CHANGE_LABEL[team.change]}
-        {team.inhlambuluko ? ' · bounce-back stretch' : ''}
-      </Text>
-    </View>
-  );
-}
-
-function ComingSoon({ title, note }: { title: string; note?: string }) {
-  return (
-    <View style={styles.soonCard}>
-      <Text style={styles.soonTitle}>{title}</Text>
-      <Text style={styles.muted}>
-        {note ??
-          'Listed in Power dynamics — engine/UI for this sector still to be wired in a later pass.'}
-      </Text>
-    </View>
-  );
-}
-
-function SeparatorSector({
-  title,
-  flags,
-  loading,
-  emptyNote,
-}: {
-  title: string;
-  flags: SeparatorFlag[];
-  loading: boolean;
-  emptyNote: string;
-}) {
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator color={theme.accentGreen} />
-        <Text style={styles.muted}>Loading form signals…</Text>
-      </View>
-    );
-  }
-  const active = flags.filter((f) => f.active);
-  const show = active.length > 0 ? active : flags;
-  return (
-    <View>
-      <Text style={styles.sectorTitle}>{title}</Text>
-      {show.length === 0 ? (
-        <Text style={styles.muted}>{emptyNote}</Text>
-      ) : (
-        <View style={styles.chipList}>
-          {show.map((f) => (
-            <FlagChip key={`${f.id}-${f.side}`} flag={f} />
-          ))}
-        </View>
-      )}
-    </View>
-  );
-}
-
-function matchFlag(flags: SeparatorFlag[], ...needles: string[]): SeparatorFlag[] {
-  return flags.filter((f) => needles.some((n) => f.id.includes(n)));
-}
-
 /**
- * Match Power dynamics — full SKM checklist as ordered tabs.
+ * Match Power dynamics — full SKM checklist as ordered tabs with live T1/T2 data.
  */
 export default function MatchPowerDynamicsPanel({
   standings,
@@ -198,6 +114,12 @@ export default function MatchPowerDynamicsPanel({
   const [view, setView] = useState<PowerDynamicsTabId>('baseline');
 
   const like = useMemo(() => toStandingLike(standings), [standings]);
+  const t1Label = sideLabel('t1', homeName);
+  const t2Label = sideLabel('t2', awayName);
+  const highlightIds = [homeId, awayId].filter((id): id is number => id != null);
+  const teamLabels: Record<number, string> = {};
+  if (homeId != null) teamLabels[homeId] = t1Label;
+  if (awayId != null) teamLabels[awayId] = t2Label;
 
   const competition = useMemo((): Competition | null => {
     if (!seasonId) return null;
@@ -231,7 +153,11 @@ export default function MatchPowerDynamicsPanel({
   ]);
 
   const season = competition?.seasons[0] ?? null;
-  const needSeasonFx = view === 'bhozoma' || view === 'imbangi' || view === 'competition_status';
+  const needSeasonFx =
+    view === 'bhozoma' ||
+    view === 'imbangi' ||
+    view === 'competition_status' ||
+    view === 'middle_guys';
   const seasonFx = useSeasonFixtures(competition, season, needSeasonFx);
 
   const form = useFixtureFormAnalysis({
@@ -242,28 +168,63 @@ export default function MatchPowerDynamicsPanel({
     enabled: true,
   });
 
-  const allFlags = useMemo(() => {
-    if (!form.separators) return [] as SeparatorFlag[];
-    return form.separators.flags;
-  }, [form.separators]);
-
-  const progress = useMemo(
-    () => leagueProgressInfo(like, seasonProgress),
-    [like, seasonProgress],
+  const pd = useMemo(
+    () =>
+      evaluatePowerDynamics({
+        table: like,
+        homeId,
+        awayId,
+        homeName,
+        awayName,
+        homeResults: form.homeResults,
+        awayResults: form.awayResults,
+        seasonProgress,
+        competitionId,
+      }),
+    [
+      like,
+      homeId,
+      awayId,
+      homeName,
+      awayName,
+      form.homeResults,
+      form.awayResults,
+      seasonProgress,
+      competitionId,
+    ],
   );
+
+  const loadingForm = form.loading;
+
+  const formGate = (node: ReactNode) => {
+    if (loadingForm) {
+      return (
+        <View style={styles.center}>
+          <ActivityIndicator color={theme.accentGreen} />
+          <Text style={styles.muted}>Loading T1 / T2 form…</Text>
+        </View>
+      );
+    }
+    return node;
+  };
 
   const body = (() => {
     switch (view) {
       case 'baseline':
         return (
-          <FixtureCoreStatsPanel
-            standings={standings}
-            homeId={homeId}
-            awayId={awayId}
-            homeName={homeName}
-            awayName={awayName}
-            seasonProgress={seasonProgress}
-          />
+          <View>
+            <BaselineCards pd={pd} />
+            <FixtureCoreStatsPanel
+              standings={standings}
+              homeId={homeId}
+              awayId={awayId}
+              homeName={homeName}
+              awayName={awayName}
+              seasonProgress={seasonProgress}
+              homeLabel={t1Label}
+              awayLabel={t2Label}
+            />
+          </View>
         );
       case 'importance_3pts':
         return (
@@ -275,78 +236,68 @@ export default function MatchPowerDynamicsPanel({
             awayName={awayName}
             competitionId={competitionId}
             seasonProgress={seasonProgress}
+            homeLabel={t1Label}
+            awayLabel={t2Label}
           />
         );
       case 'last5':
-        if (form.loading) {
-          return (
-            <View style={styles.center}>
-              <ActivityIndicator color={theme.accentGreen} />
-              <Text style={styles.muted}>Loading last 5…</Text>
-            </View>
-          );
-        }
-        if (!form.last5?.home && !form.last5?.away) {
-          return <Text style={styles.muted}>No last-5 sample for these sides yet.</Text>;
-        }
-        return (
+        return formGate(
           <View>
-            <Text style={styles.sectorTitle}>Last 5</Text>
+            <SectorIntro
+              title="Last 5"
+              note="Graded last-5, Ukulumbana matchup, and last-game flags for T1 vs T2."
+            />
             {form.last5?.ukulumbanaLabel ? (
-              <Text style={styles.meta}>
-                Form matchup: {form.last5.ukulumbanaLabel}
-                {form.last5.significantSplit
-                  ? ' — sides look different right now'
-                  : ' — similar recent form'}
-              </Text>
+              <Callout
+                text={`${form.last5.ukulumbanaLabel}${
+                  form.last5.significantSplit
+                    ? ' — sides look different right now'
+                    : ' — similar recent form'
+                }`}
+                tone={form.last5.significantSplit ? 'warn' : 'info'}
+              />
             ) : null}
-            {form.last5?.home ? <Last5Block title={homeName} team={form.last5.home} /> : null}
-            {form.last5?.away ? <Last5Block title={awayName} team={form.last5.away} /> : null}
-          </View>
+            <Last5Cards pd={pd} home={form.last5?.home} away={form.last5?.away} />
+            {form.last5?.lenses.map((l) => (
+              <Text key={l.id} style={styles.lens}>
+                {l.id}. {l.label}: {t1Label} {l.homeScore} vs {t2Label} {l.awayScore}
+                {l.sameStrength ? ' · same strength' : ' · split'}
+              </Text>
+            ))}
+          </View>,
         );
       case 'h2h':
-        return <H2HPanel matches={h2hMatches} homeName={homeName} awayName={awayName} />;
-      case 'form_child_beater':
         return (
-          <SeparatorSector
+          <View>
+            <SectorIntro
+              title="H2H"
+              note={`${t1Label} vs ${t2Label} — Polar, never-beaten, and points share sit above the meetings.`}
+            />
+            <H2HPanel
+              matches={h2hMatches}
+              homeName={homeName}
+              awayName={awayName}
+              competitionName={competitionName}
+            />
+          </View>
+        );
+      case 'form_child_beater':
+        return formGate(
+          <ChildBeaterCards
             title="Form + Child beater"
-            loading={form.loading}
-            flags={[
-              ...matchFlag(allFlags, 'child_beater'),
-              ...matchFlag(allFlags, 'sudden_'),
-              ...matchFlag(allFlags, 'struggle'),
-            ]}
-            emptyNote="No form / child-beater signals active for this fixture."
-          />
+            note="In action with the opponent. Method 1 = recent thrashing of a lower side. Method 2 = regularly beating bottom-third sides."
+            pd={pd}
+            method="both"
+          />,
         );
       case 'home_away_strong':
-        return (
-          <ComingSoon
-            title="Home / Away strong → underdog strength"
-            note="PPG home/away underdog strength sector — listed for call-outs; dedicated panel still to land."
-          />
-        );
+        return formGate(<VenueCards pd={pd} />);
       case 'colour_verification':
-        return (
-          <ComingSoon
-            title="Colour verification (PPG evaluation)"
-            note="Checks that every stat aligns with the PPG / colour plan — dedicated verifier still to land."
-          />
-        );
+        return formGate(<ColourCards pd={pd} />);
       case 'character':
-        return (
-          <ComingSoon
-            title="Character (original + Home vs Away stats)"
-            note="Marked optional in the notes (crossed). Placeholder kept so the checklist order stays complete."
-          />
-        );
+        return formGate(<CharacterCards pd={pd} />);
       case 'middle_guys':
-        return (
-          <ComingSoon
-            title="Middle guys (strong show / weak show)"
-            note="Marked optional in the notes (crossed). Use Bhozoma for mid-table reads for now."
-          />
-        );
+        return formGate(<MiddleGuysCards pd={pd} />);
       case 'bhozoma':
         if (standings.length === 0) {
           return <Text style={styles.muted}>Need a league table for Bhozoma.</Text>;
@@ -361,10 +312,12 @@ export default function MatchPowerDynamicsPanel({
             loading={seasonFx.loading}
             error={seasonFx.error}
             competitionId={competitionId}
+            highlightIds={highlightIds}
+            teamLabels={teamLabels}
           />
         );
       case 'problem_causer':
-        if (form.loading) {
+        if (loadingForm) {
           return (
             <View style={styles.center}>
               <ActivityIndicator color={theme.accentGreen} />
@@ -374,7 +327,15 @@ export default function MatchPowerDynamicsPanel({
         if (!form.hidden) {
           return <Text style={styles.muted}>No hidden-layer / problem-causer read yet.</Text>;
         }
-        return <HiddenLayersView layers={form.hidden} homeName={homeName} awayName={awayName} />;
+        return (
+          <HiddenLayersView
+            layers={form.hidden}
+            homeName={homeName}
+            awayName={awayName}
+            homeLabel={t1Label}
+            awayLabel={t2Label}
+          />
+        );
       case 'imbangi':
         if (standings.length === 0) {
           return <Text style={styles.muted}>Need a league table for Imbangi.</Text>;
@@ -390,122 +351,73 @@ export default function MatchPowerDynamicsPanel({
             error={seasonFx.error}
             seasonProgress={seasonProgress}
             competitionName={competitionName}
+            highlightIds={highlightIds}
+            teamLabels={teamLabels}
           />
         );
       case 'indlela':
-        return (
-          <SeparatorSector
-            title="Indlela"
-            loading={form.loading}
-            flags={matchFlag(allFlags, 'indlela')}
-            emptyNote="No Indlela path pattern for this fixture."
-          />
-        );
+        return formGate(<IndlelaCards pd={pd} />);
       case 'competition_status':
-        return (
-          <View style={[styles.progressCard, progress.lateStretch && styles.progressLate]}>
-            <Text style={styles.sectorTitle}>Competition status</Text>
-            <Text style={styles.meta}>
-              Season played:{' '}
-              {progress.seasonProgress != null ? `${progress.seasonProgress}%` : 'n/a'}
-              {' · '}
-              most games played: {progress.maxPlayed}
-              {progress.avgRemaining != null ? ` · about ${progress.avgRemaining} left` : ''}
-              {progress.lateStretch ? ' · late stretch' : ''}
-            </Text>
-            <Text style={styles.muted}>{progress.note}</Text>
-          </View>
-        );
+        return <CompetitionCards pd={pd} />;
       case 'lost_twice':
-        return (
-          <SeparatorSector
+        return formGate(
+          <StreakCards
             title="Lost twice in a row"
-            loading={form.loading}
-            flags={matchFlag(allFlags, 'never_lost_twice')}
-            emptyNote="No ‘never lost twice’ / lost-twice signal flagged."
-          />
+            note="Current losing streak plus whether they ever lose back-to-back in the last 10."
+            kind="loss"
+            t1={{ label: t1Label, streak: pd.streaks.loss.t1 }}
+            t2={{ label: t2Label, streak: pd.streaks.loss.t2 }}
+          />,
         );
       case 'won_twice':
-        return (
-          <SeparatorSector
+        return formGate(
+          <StreakCards
             title="Won twice in a row"
-            loading={form.loading}
-            flags={matchFlag(allFlags, 'never_won_twice')}
-            emptyNote="No ‘never won twice’ / won-twice signal flagged."
-          />
+            note="Current winning streak plus whether they ever win back-to-back in the last 10."
+            kind="win"
+            t1={{ label: t1Label, streak: pd.streaks.win.t1 }}
+            t2={{ label: t2Label, streak: pd.streaks.win.t2 }}
+          />,
         );
       case 'won_6':
-        return (
-          <SeparatorSector
+        return formGate(
+          <StreakCards
             title="Won 6 matches in a row"
-            loading={form.loading}
-            flags={matchFlag(allFlags, 'won6')}
-            emptyNote="Neither side is on a 6-win run."
-          />
+            note="Warning when a side is on a 6+ win run."
+            kind="win"
+            t1={{ label: t1Label, streak: pd.streaks.win.t1 }}
+            t2={{ label: t2Label, streak: pd.streaks.win.t2 }}
+          />,
         );
       case 'lost_6':
-        return (
-          <SeparatorSector
+        return formGate(
+          <StreakCards
             title="Lost 6 matches in a row"
-            loading={form.loading}
-            flags={matchFlag(allFlags, 'lost6')}
-            emptyNote="Neither side is on a 6-loss run."
-          />
+            note="Warning when a side is on a 6+ loss run."
+            kind="loss"
+            t1={{ label: t1Label, streak: pd.streaks.loss.t1 }}
+            t2={{ label: t2Label, streak: pd.streaks.loss.t2 }}
+          />,
         );
       case 'points_diff':
-        return (
-          <SeparatorSector
-            title="Points difference"
-            loading={form.loading}
-            flags={matchFlag(allFlags, 'points_diff', 'imbangi')}
-            emptyNote="Points difference not available yet."
-          />
-        );
+        return <PointsDiffCards pd={pd} />;
       case 'child_beater_2':
-        return (
-          <SeparatorSector
-            title="Child beater (2 methods)"
-            loading={form.loading}
-            flags={matchFlag(allFlags, 'child_beater')}
-            emptyNote="No child-beater signals for this fixture."
-          />
+        return formGate(
+          <ChildBeaterCards
+            title="Child beater (method 2)"
+            note="Yellow-band application. Top/mid sides regularly thrashing bottom-third opponents (2+ in last 6)."
+            pd={pd}
+            method={2}
+          />,
         );
       case 'sudden_drop':
-        return (
-          <SeparatorSector
-            title="Sudden drop"
-            loading={form.loading}
-            flags={matchFlag(allFlags, 'sudden_drop')}
-            emptyNote="No sudden drop flagged."
-          />
-        );
+        return formGate(<SwingCards title="Sudden drop" want="drop" pd={pd} />);
       case 'sudden_pickup':
-        return (
-          <SeparatorSector
-            title="Sudden pick up"
-            loading={form.loading}
-            flags={matchFlag(allFlags, 'sudden_rise')}
-            emptyNote="No sudden pick-up flagged."
-          />
-        );
+        return formGate(<SwingCards title="Sudden pick up" want="rise" pd={pd} />);
       case 'contested_leagues':
-        return (
-          <SeparatorSector
-            title="Highly contested leagues"
-            loading={form.loading}
-            flags={matchFlag(allFlags, 'contested_top')}
-            emptyNote="Top of the table is not tightly contested right now."
-          />
-        );
+        return <ContestedCards pd={pd} />;
       case 'struggle':
-        return (
-          <SeparatorSector
-            title="Struggle for 2 or 3 games"
-            loading={form.loading}
-            flags={matchFlag(allFlags, 'struggle')}
-            emptyNote="No 2–3 game struggle flagged."
-          />
-        );
+        return formGate(<StruggleCards pd={pd} />);
       default:
         return null;
     }
@@ -514,8 +426,8 @@ export default function MatchPowerDynamicsPanel({
   return (
     <View>
       <Text style={styles.blurb}>
-        Power dynamics checklist for {homeName} vs {awayName} — open each sector in order. Built
-        sectors show live reads; others stay listed until their engines are finished.
+        Power dynamics for {t1Label} vs {t2Label} — open each sector in order. Numbers are live
+        from the table and recent finished games.
       </Text>
       <SubTabBar
         tabs={[...POWER_DYNAMICS_TABS]}
@@ -542,62 +454,11 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     lineHeight: 18,
   },
-  meta: {
-    fontFamily: fonts.body,
-    fontSize: 12,
-    color: theme.textPrimary,
-    marginBottom: spacing.sm,
-    lineHeight: 17,
-  },
   center: { alignItems: 'center', paddingVertical: spacing.xl, gap: spacing.sm },
-  sectorTitle: {
-    fontFamily: fonts.bodySemiBold,
-    fontSize: 12,
-    color: theme.textPrimary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: spacing.xs,
+  lens: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: theme.textMuted,
+    marginBottom: 2,
   },
-  chipList: { gap: spacing.xs },
-  chip: {
-    borderWidth: layout.borderWidth,
-    borderRadius: layout.borderRadius,
-    padding: spacing.sm,
-    backgroundColor: theme.surface,
-    marginBottom: spacing.xs,
-  },
-  chipLabel: { fontFamily: fonts.bodySemiBold, fontSize: 12 },
-  chipDetail: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted, marginTop: 2 },
-  last5Card: {
-    backgroundColor: theme.surface,
-    borderWidth: layout.borderWidth,
-    borderColor: theme.border,
-    borderRadius: layout.borderRadius,
-    padding: spacing.sm,
-    marginBottom: spacing.sm,
-  },
-  last5Title: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: theme.textPrimary },
-  last5Meta: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted, marginTop: 2 },
-  seq: { fontFamily: fonts.bodySemiBold, fontSize: 14, color: theme.textPrimary, marginTop: 4 },
-  soonCard: {
-    backgroundColor: theme.surface,
-    borderWidth: layout.borderWidth,
-    borderColor: theme.border,
-    borderRadius: layout.borderRadius,
-    padding: spacing.md,
-  },
-  soonTitle: {
-    fontFamily: fonts.bodySemiBold,
-    fontSize: 13,
-    color: theme.textPrimary,
-    marginBottom: spacing.xs,
-  },
-  progressCard: {
-    backgroundColor: theme.surface,
-    borderWidth: layout.borderWidth,
-    borderColor: theme.border,
-    borderRadius: layout.borderRadius,
-    padding: spacing.md,
-  },
-  progressLate: { borderColor: theme.accentOrange },
 });

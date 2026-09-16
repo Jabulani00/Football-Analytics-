@@ -341,3 +341,5 @@ Also capture manager homework fields: **max payout** and **limiting policies** p
 ---
 
 *Generated from the attached analysis PDF for Scoreline integration planning.*
+
+*in baseline we should name the teams as T1 and T2 but in brackets, samething as for last 5*
