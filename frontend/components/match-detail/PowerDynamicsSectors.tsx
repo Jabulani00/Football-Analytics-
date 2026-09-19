@@ -301,7 +301,7 @@ export function GapAnalysisCards({ pd }: { pd: PowerDynamicsBundle }) {
 }
 
 function streamTone(name: StreamName | null): Tone {
-  if (name === 'zidanloom') return 'good';
+  if (name === 'zidane_law') return 'good';
   if (name === 'bookie') return 'bad';
   if (name === 'bateteme') return 'warn';
   return 'info';
@@ -367,12 +367,15 @@ export function StreamlineCards({
 
   const introNote =
     focus === 'bateteme'
-      ? 'ΔP ≤ 4. Both sides sit here when the points gap is close.'
-      : focus === 'zidanloom'
-        ? 'Compliant stream when ΔP ≥ 4.1 and baseline gap backs that side.'
+      ? 'ΔP ≤ 4. Both sides sit here when the points gap is close and H2H is not Zidane Law or Bookie mistake.'
+      : focus === 'zidane_law'
+        ? 'T1 has never beaten T2 in H2H.'
         : focus === 'bookie'
-          ? 'Bookie mistake: non-compliant stream when ΔP ≥ 4.1 and baseline gap does not back that side.'
-          : 'T1 points minus T2 points. ΔP ≤ 4 → Bateteme stream. ΔP ≥ 4.1 → Zidanloom (compliant) or Bookie mistake (non-compliant), using whether baseline gap backs that side.';
+          ? 'T2 does beat T1, but H2H stats still say T1 has never beaten T2.'
+          : 'T1 high PPG expects lower odds than T2. H2H decides Zidane Law vs Bookie mistake.';
+
+  const oddsTone: Tone =
+    s.oddsOutcome === 'compliant' ? 'good' : s.oddsOutcome === 'non_compliant' ? 'bad' : 'info';
 
   return (
     <View>
@@ -385,20 +388,19 @@ export function StreamlineCards({
         }
         tone={s.close ? 'warn' : 'info'}
       />
-      <Callout text={s.call} tone={s.close ? 'warn' : 'info'} />
+      <Callout
+        text={s.oddsCall}
+        tone={oddsTone}
+      />
+      <Callout text={s.call} tone={s.close ? 'warn' : s.t1Stream === 'bookie' ? 'bad' : 'info'} />
       {focus ? (
         <>
           {bucket(focus, inStream(focus))}
           {belong(pd.t1.label, t1In, s.t1Points, focus)}
           {belong(pd.t2.label, t2In, s.t2Points, focus)}
         </>
-      ) : s.close ? (
-        bucket('bateteme', inStream('bateteme'))
-      ) : s.far ? (
-        <View>
-          {bucket('zidanloom', inStream('zidanloom'))}
-          {bucket('bookie', inStream('bookie'))}
-        </View>
+      ) : s.t1Stream ? (
+        bucket(s.t1Stream, inStream(s.t1Stream))
       ) : null}
     </View>
   );

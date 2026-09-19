@@ -323,34 +323,57 @@ console.log('\nstreamline');
     t2Points: 15,
     t1Label: 'T1 (A)',
     t2Label: 'T2 (B)',
-    t1BaselineScore: 2,
-    t2BaselineScore: 0,
   });
   check('ΔP 3 is close', close.close === true && close.delta === 3);
   check('close → both Bateteme', close.t1Stream === 'bateteme' && close.t2Stream === 'bateteme');
 
-  const far = evaluateStreamline({
+  const zidane = evaluateStreamline({
     t1Points: 28,
     t2Points: 14,
     t1Label: 'T1 (A)',
     t2Label: 'T2 (B)',
-    t1BaselineScore: 6,
-    t2BaselineScore: 0,
+    h2hMeetings: 4,
+    t1H2hWins: 0,
+    t2H2hWins: 0,
   });
-  check('ΔP 14 is far', far.far === true && far.delta === 14);
-  check('far + T1 gap backed → Zidanloom', far.t1Stream === 'zidanloom');
-  check('far + T2 not backed → Bookie', far.t2Stream === 'bookie');
+  check('T1 never beaten T2 → Zidane Law', zidane.t1Stream === 'zidane_law' && zidane.t2Stream === 'zidane_law');
+  check('Zidane Law flag', zidane.t1NeverBeatenT2 === true && zidane.t2BeatsT1 === false);
 
-  const farUnbacked = evaluateStreamline({
+  const bookie = evaluateStreamline({
     t1Points: 22,
     t2Points: 10,
     t1Label: 'T1 (A)',
     t2Label: 'T2 (B)',
-    t1BaselineScore: 0,
-    t2BaselineScore: 4,
+    h2hMeetings: 5,
+    t1H2hWins: 0,
+    t2H2hWins: 3,
   });
-  check('far T1 without baseline gap → Bookie', farUnbacked.t1Stream === 'bookie');
-  check('far T2 with baseline gap → Zidanloom', farUnbacked.t2Stream === 'zidanloom');
+  check('T2 beats T1 + T1 never won → Bookie mistake', bookie.t1Stream === 'bookie' && bookie.t2Stream === 'bookie');
+  check('Bookie T2 beats T1', bookie.t2BeatsT1 === true && bookie.t1NeverBeatenT2 === true);
+
+  const compliant = evaluateStreamline({
+    t1Points: 28,
+    t2Points: 10,
+    t1Label: 'T1 (A)',
+    t2Label: 'T2 (B)',
+    t1Ppg: 2.1,
+    t2Ppg: 1.2,
+    t1Odds: 1.55,
+    t2Odds: 5.5,
+  });
+  check('high T1 PPG + lower T1 odds → compliant', compliant.oddsOutcome === 'compliant' && compliant.t1PpgHigh === true);
+
+  const nonComp = evaluateStreamline({
+    t1Points: 28,
+    t2Points: 10,
+    t1Label: 'T1 (A)',
+    t2Label: 'T2 (B)',
+    t1Ppg: 2.1,
+    t2Ppg: 1.2,
+    t1Odds: 4.2,
+    t2Odds: 1.7,
+  });
+  check('high T1 PPG + higher T1 odds → non-compliant', nonComp.oddsOutcome === 'non_compliant');
 }
 
 console.log('\nposition gap analysis (G1 = largest)');

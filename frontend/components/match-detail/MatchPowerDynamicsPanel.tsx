@@ -30,7 +30,7 @@ import {
 import SubTabBar from '@/components/shared/SubTabBar';
 import { useFixtureFormAnalysis } from '@/hooks/useFixtureFormAnalysis';
 import { useSeasonFixtures } from '@/hooks/useSeasonFixtures';
-import type { Competition, H2HMatch, StandingRow } from '@/services/oddAlerts';
+import type { Competition, H2HMatch, OddsByMarket, StandingRow } from '@/services/oddAlerts';
 import { evaluatePowerDynamics } from '@/utils/powerDynamicsEngine';
 import { findUkulumbana } from '@/utils/last5Analysis';
 import type { StandingLike } from '@/utils/motivationEngine';
@@ -74,7 +74,7 @@ const BASELINE_SUBS = [
 
 const STREAMLINE_SUBS = [
   { id: 'bateteme', label: 'Bateteme stream' },
-  { id: 'zidanloom', label: 'Zidanloom' },
+  { id: 'zidane_law', label: 'Zidane Law' },
   { id: 'bookie', label: 'Bookie mistake' },
 ] as const;
 
@@ -95,6 +95,7 @@ type Props = {
   homeName: string;
   awayName: string;
   h2hMatches: H2HMatch[];
+  odds?: OddsByMarket;
 };
 
 function toStandingLike(rows: StandingRow[]): StandingLike[] {
@@ -130,6 +131,7 @@ export default function MatchPowerDynamicsPanel({
   homeName,
   awayName,
   h2hMatches,
+  odds,
 }: Props) {
   const [view, setView] = useState<PowerDynamicsTabId>('baseline');
   const [baselineSub, setBaselineSub] = useState<BaselineSubId>('original');
@@ -196,6 +198,8 @@ export default function MatchPowerDynamicsPanel({
         awayResults: form.awayResults,
         seasonProgress,
         competitionId,
+        h2hMatches,
+        odds,
       }),
     [
       like,
@@ -207,6 +211,8 @@ export default function MatchPowerDynamicsPanel({
       form.awayResults,
       seasonProgress,
       competitionId,
+      h2hMatches,
+      odds,
     ],
   );
 

@@ -16,6 +16,8 @@ import {
   type ResultOutcome,
   type TeamResult,
 } from '@/utils/teamResults';
+import { h2hOutcomeForTeam, teamsMatch } from '@/utils/h2hDisplay';
+import type { H2HMatch, OddsByMarket } from '@/services/oddAlerts';
 
 export type SideId = 't1' | 't2';
 export type TableColour = 'green' | 'yellow' | 'red';
@@ -183,18 +185,19 @@ export type PowerDynamicsBundle = {
 export const STREAMLINE_CLOSE_MAX = 4;
 export const STREAMLINE_FAR_MIN = 4.1;
 
-export type StreamName = 'bateteme' | 'zidanloom' | 'bookie';
+export type StreamName = 'bateteme' | 'zidane_law' | 'bookie';
+export type OddsOutcome = 'compliant' | 'non_compliant';
 
 export const STREAM_LABEL: Record<StreamName, string> = {
   bateteme: 'Bateteme stream',
-  zidanloom: 'Zidanloom stream',
+  zidane_law: 'Zidane Law',
   bookie: 'Bookie mistake',
 };
 
 export const STREAM_ROLE: Record<StreamName, string> = {
   bateteme: 'Close — ΔP ≤ 4',
-  zidanloom: 'Compliant — ΔP ≥ 4.1',
-  bookie: 'Non-compliant — Bookie mistake · ΔP ≥ 4.1',
+  zidane_law: 'T1 has never beaten T2',
+  bookie: 'T2 does beat T1, while stats say T1 has never beaten T2',
 };
 
 export type StreamlineRead = {
@@ -206,6 +209,18 @@ export type StreamlineRead = {
   far: boolean;
   t1Stream: StreamName | null;
   t2Stream: StreamName | null;
+  t1Ppg: number | null;
+  t2Ppg: number | null;
+  t1Odds: number | null;
+  t2Odds: number | null;
+  t1PpgHigh: boolean;
+  oddsOutcome: OddsOutcome | null;
+  h2hMeetings: number;
+  t1H2hWins: number;
+  t2H2hWins: number;
+  t1NeverBeatenT2: boolean;
+  t2BeatsT1: boolean;
+  oddsCall: string;
   call: string;
 };
 
@@ -311,59 +326,131 @@ export function evaluatePositionGap(opts: {
   };
 }
 
+export function h2hMeetingsForSides(
+  matches: H2HMatch[],
+  t1Name: string,
+  t2Name: string,
+): H2HMatch[] {
+  return matches.filter((m) => {
+    const a = teamsMatch(m.home_name, t1Name) || teamsMatch(m.away_name, t1Name);
+    const b = teamsMatch(m.home_name, t2Name) || teamsMatch(m.away_name, t2Name);
+    return a && b;
+  });
+}
+
+export function countH2hWins(matches: H2HMatch[], teamName: string): number {
+  return matches.filter((m) => h2hOutcomeForTeam(m, teamName) === 'W').length;
+}
+
+function ftOdds(odds: OddsByMarket | undefined, venue: 'home' | 'away'): number | null {
+  const n = odds?.ft_result?.[venue];
+  return typeof n === 'number' && Number.isFinite(n) ? n : null;
+}
+
 export function evaluateStreamline(opts: {
   t1Points: number | null;
   t2Points: number | null;
   t1Label: string;
   t2Label: string;
-  t1BaselineScore: number | null;
-  t2BaselineScore: number | null;
+  t1Ppg?: number | null;
+  t2Ppg?: number | null;
+  t1Odds?: number | null;
+  t2Odds?: number | null;
+  h2hMeetings?: number;
+  t1H2hWins?: number;
+  t2H2hWins?: number;
 }): StreamlineRead {
-  const { t1Points, t2Points, t1Label, t2Label, t1BaselineScore, t2BaselineScore } = opts;
+  const t1Points = opts.t1Points;
+  const t2Points = opts.t2Points;
+  const t1Label = opts.t1Label;
+  const t2Label = opts.t2Label;
+  const t1Ppg = opts.t1Ppg ?? null;
+  const t2Ppg = opts.t2Ppg ?? null;
+  const t1Odds = opts.t1Odds ?? null;
+  const t2Odds = opts.t2Odds ?? null;
+  const h2hMeetings = opts.h2hMeetings ?? 0;
+  const t1H2hWins = opts.t1H2hWins ?? 0;
+  const t2H2hWins = opts.t2H2hWins ?? 0;
   const delta = t1Points != null && t2Points != null ? t1Points - t2Points : null;
   const close = delta != null && delta <= STREAMLINE_CLOSE_MAX;
   const far = delta != null && delta >= STREAMLINE_FAR_MIN;
+  const t1NeverBeatenT2 = h2hMeetings > 0 && t1H2hWins === 0;
+  const t2BeatsT1 = h2hMeetings > 0 && t2H2hWins > 0;
+  const t1PpgHigh = t1Ppg != null && t2Ppg != null && t1Ppg > t2Ppg;
 
-  if (delta == null) {
-    return {
-      t1Points,
-      t2Points,
-      delta: null,
-      close: false,
-      far: false,
-      t1Stream: null,
-      t2Stream: null,
-      call: 'Need both sides on the table to run Streamline (T1 pts − T2 pts).',
-    };
+  let oddsOutcome: OddsOutcome | null = null;
+  let oddsCall: string;
+  if (!t1PpgHigh) {
+    oddsCall =
+      t1Ppg != null && t2Ppg != null
+        ? `T1 PPG ${t1Ppg.toFixed(2)} is not higher than T2 ${t2Ppg.toFixed(2)}, so the high-PPG odds check does not apply.`
+        : 'Need both sides\' PPG to check odds compliance.';
+  } else if (t1Odds == null || t2Odds == null) {
+    oddsCall = `T1 PPG ${t1Ppg!.toFixed(2)} is higher than T2 ${t2Ppg!.toFixed(2)}, so T1 odds should be lower. Need 1X2 odds to score compliant vs non-compliant.`;
+  } else if (t1Odds < t2Odds) {
+    oddsOutcome = 'compliant';
+    oddsCall = `T1 PPG ${t1Ppg!.toFixed(2)} vs T2 ${t2Ppg!.toFixed(2)} — T1 odds ${t1Odds} < T2 ${t2Odds}. Compliant.`;
+  } else {
+    oddsOutcome = 'non_compliant';
+    oddsCall = `T1 PPG ${t1Ppg!.toFixed(2)} vs T2 ${t2Ppg!.toFixed(2)} — expected T1 odds lower, got T1 ${t1Odds} vs T2 ${t2Odds}. Non-compliant.`;
   }
 
-  if (close) {
-    return {
-      t1Points,
-      t2Points,
-      delta,
-      close: true,
-      far: false,
-      t1Stream: 'bateteme',
-      t2Stream: 'bateteme',
-      call: `${t1Label} − ${t2Label} = ${delta} pts (≤ 4). Both sides sit in Bateteme stream.`,
-    };
-  }
-
-  const t1Compliant = (t1BaselineScore ?? 0) > 0;
-  const t2Compliant = (t2BaselineScore ?? 0) > 0;
-  const t1Stream: StreamName = t1Compliant ? 'zidanloom' : 'bookie';
-  const t2Stream: StreamName = t2Compliant ? 'zidanloom' : 'bookie';
-  return {
+  const empty = (call: string, t1Stream: StreamName | null, t2Stream: StreamName | null): StreamlineRead => ({
     t1Points,
     t2Points,
     delta,
-    close: false,
-    far: true,
+    close,
+    far,
     t1Stream,
     t2Stream,
-    call: `${t1Label} − ${t2Label} = ${delta} pts (≥ 4.1). Compliant → Zidanloom stream · non-compliant → Bookie mistake.`,
-  };
+    t1Ppg,
+    t2Ppg,
+    t1Odds,
+    t2Odds,
+    t1PpgHigh,
+    oddsOutcome,
+    h2hMeetings,
+    t1H2hWins,
+    t2H2hWins,
+    t1NeverBeatenT2,
+    t2BeatsT1,
+    oddsCall,
+    call,
+  });
+
+  if (delta == null) {
+    return empty('Need both sides on the table to run Streamline (T1 pts − T2 pts).', null, null);
+  }
+
+  if (t1NeverBeatenT2 && t2BeatsT1) {
+    return empty(
+      `Bookie mistake — ${t2Label} does beat ${t1Label}, but H2H stats still say ${t1Label} has never beaten ${t2Label} (${h2hMeetings} meetings, T1 ${t1H2hWins}W / T2 ${t2H2hWins}W).`,
+      'bookie',
+      'bookie',
+    );
+  }
+
+  if (t1NeverBeatenT2) {
+    return empty(
+      `Zidane Law — ${t1Label} has never beaten ${t2Label} (${h2hMeetings} meetings, T1 ${t1H2hWins}W / T2 ${t2H2hWins}W).`,
+      'zidane_law',
+      'zidane_law',
+    );
+  }
+
+  if (close) {
+    return empty(
+      `${t1Label} − ${t2Label} = ${delta} pts (≤ 4). Both sides sit in Bateteme stream.`,
+      'bateteme',
+      'bateteme',
+    );
+  }
+
+  return empty(
+    `${t1Label} − ${t2Label} = ${delta} pts. No Zidane Law / Bookie mistake in H2H (T1 has beaten T2).`,
+    null,
+    null,
+  );
 }
 
 const VENUE_GAP = 0.3;
@@ -1034,6 +1121,8 @@ export function evaluatePowerDynamics(opts: {
   awayResults: TeamResult[];
   seasonProgress?: number | null;
   competitionId?: number | string | null;
+  h2hMatches?: H2HMatch[];
+  odds?: OddsByMarket;
 }): PowerDynamicsBundle {
   const {
     table,
@@ -1045,6 +1134,8 @@ export function evaluatePowerDynamics(opts: {
     awayResults,
     seasonProgress,
     competitionId,
+    h2hMatches = [],
+    odds,
   } = opts;
 
   const homeRow = homeId != null ? table.find((t) => t.teamId === homeId) : null;
@@ -1124,6 +1215,7 @@ export function evaluatePowerDynamics(opts: {
     t2Id != null && table.length > 0
       ? evaluateTeamMotivation(t2Id, table, { competitionId, seasonProgress })
       : null;
+  const meetings = h2hMeetingsForSides(h2hMatches, t1.name, t2.name);
 
   return {
     t1,
@@ -1181,8 +1273,13 @@ export function evaluatePowerDynamics(opts: {
       t2Points: t2.points,
       t1Label: t1.label,
       t2Label: t2.label,
-      t1BaselineScore: baselineGap.t1.score,
-      t2BaselineScore: baselineGap.t2.score,
+      t1Ppg: t1.overall.ppg,
+      t2Ppg: t2.overall.ppg,
+      t1Odds: ftOdds(odds, t1.venue),
+      t2Odds: ftOdds(odds, t2.venue),
+      h2hMeetings: meetings.length,
+      t1H2hWins: countH2hWins(meetings, t1.name),
+      t2H2hWins: countH2hWins(meetings, t2.name),
     }),
   };
 }
