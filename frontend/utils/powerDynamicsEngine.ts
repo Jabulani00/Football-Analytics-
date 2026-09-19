@@ -188,13 +188,13 @@ export type StreamName = 'bateteme' | 'zidanloom' | 'bookie';
 export const STREAM_LABEL: Record<StreamName, string> = {
   bateteme: 'Bateteme stream',
   zidanloom: 'Zidanloom stream',
-  bookie: 'Bookie',
+  bookie: 'Bookie mistake',
 };
 
 export const STREAM_ROLE: Record<StreamName, string> = {
   bateteme: 'Close — ΔP ≤ 4',
   zidanloom: 'Compliant — ΔP ≥ 4.1',
-  bookie: 'Non-compliant — ΔP ≥ 4.1',
+  bookie: 'Non-compliant — Bookie mistake · ΔP ≥ 4.1',
 };
 
 export type StreamlineRead = {
@@ -213,9 +213,11 @@ export type PositionGap = {
   tableSize: number;
   t1Rank: number | null;
   t2Rank: number | null;
-  /** Inclusive count of table places from T1 to T2 (pos 2 vs 5 → 4). */
+  /** Inclusive count of table places from T1 to T2. */
   span: number | null;
-  /** G{span}. Max grade on this table is G{tableSize}. */
+  /** 1 = largest gap (full table). Higher = closer on the table. */
+  gradeIndex: number | null;
+  /** G{gradeIndex}. */
   grade: string | null;
   from: number | null;
   to: number | null;
@@ -229,8 +231,8 @@ function rankOrNull(v: number | null | undefined): number | null {
 }
 
 /**
- * Gap analysis on the live table: scale is 1…N (N = number of teams).
- * Distance is inclusive, so T1 #2 vs T2 #5 on a 20-team table is G4.
+ * Gap analysis on the live table. G1 is the largest gap (place 1 through N).
+ * Closer sides get G2, G3, … up to G{N-1} for neighbours.
  */
 export function evaluatePositionGap(opts: {
   tableSize: number;
@@ -247,6 +249,7 @@ export function evaluatePositionGap(opts: {
     t1Rank,
     t2Rank,
     span: null,
+    gradeIndex: null,
     grade: null,
     from: null,
     to: null,
@@ -254,19 +257,20 @@ export function evaluatePositionGap(opts: {
     call: 'Need both ranks on the table to run gap analysis.',
   };
   if (tableSize < 2) {
-    return { ...empty, call: 'Need a full table to set the 1–N gap scale.' };
+    return { ...empty, call: 'Need a full table to set the gap scale.' };
   }
   if (t1Rank == null || t2Rank == null) {
     return {
       ...empty,
-      call: `Need both ranks on a ${tableSize}-team table (scale 1–${tableSize}).`,
+      call: 'Need both ranks on the table to run gap analysis.',
     };
   }
 
   const from = Math.min(t1Rank, t2Rank);
   const to = Math.max(t1Rank, t2Rank);
   const span = to - from + 1;
-  const grade = `G${span}`;
+  const gradeIndex = tableSize - span + 1;
+  const grade = `G${gradeIndex}`;
   let higher: SideId | 'level' = 'level';
   if (t1Rank < t2Rank) higher = 't1';
   else if (t2Rank < t1Rank) higher = 't2';
@@ -276,11 +280,12 @@ export function evaluatePositionGap(opts: {
     t1Rank,
     t2Rank,
     span,
+    gradeIndex,
     grade,
     from,
     to,
     higher,
-    call: `${opts.t1Label} #${t1Rank} to ${opts.t2Label} #${t2Rank} covers ${span} of ${tableSize} places → ${grade}.`,
+    call: grade,
   };
 }
 
@@ -335,7 +340,7 @@ export function evaluateStreamline(opts: {
     far: true,
     t1Stream,
     t2Stream,
-    call: `${t1Label} − ${t2Label} = ${delta} pts (≥ 4.1). Compliant → Zidanloom stream · non-compliant → Bookie.`,
+    call: `${t1Label} − ${t2Label} = ${delta} pts (≥ 4.1). Compliant → Zidanloom stream · non-compliant → Bookie mistake.`,
   };
 }
 

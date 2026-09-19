@@ -37,11 +37,11 @@ function toneColor(t: Tone): string {
   return theme.textMuted;
 }
 
-export function SectorIntro({ title, note }: { title: string; note: string }) {
+export function SectorIntro({ title, note }: { title: string; note?: string }) {
   return (
     <View style={styles.intro}>
       <Text style={styles.sectorTitle}>{title}</Text>
-      <Text style={styles.note}>{note}</Text>
+      {note ? <Text style={styles.note}>{note}</Text> : null}
     </View>
   );
 }
@@ -141,13 +141,12 @@ function PositionGapBoard({ pd }: { pd: PowerDynamicsBundle }) {
       <View style={styles.gapGradeRow}>
         <View style={styles.gapGradeBox}>
           <Text style={styles.gapGrade}>{g.grade ?? '—'}</Text>
-          <Text style={styles.gapScoreCap}>
-            {g.span != null ? `${g.span} of ${g.tableSize}` : `1–${g.tableSize || 'N'}`}
-          </Text>
         </View>
-        <View style={{ flex: 1 }}>
-          <Callout text={g.call} tone={g.span != null && g.span <= 4 ? 'warn' : 'info'} />
-        </View>
+        {g.grade == null ? (
+          <View style={{ flex: 1 }}>
+            <Callout text={g.call} tone="info" />
+          </View>
+        ) : null}
       </View>
       {g.tableSize >= 2 ? (
         <View style={styles.posGrid}>
@@ -237,8 +236,8 @@ export function GapAnalysisCards({ pd }: { pd: PowerDynamicsBundle }) {
       }>
       <Line
         text={
-          rank != null && g.tableSize > 0
-            ? `Place ${rank} on a 1–${g.tableSize} ladder`
+          rank != null
+            ? `#${rank}`
             : 'No table place to plot'
         }
       />
@@ -247,10 +246,7 @@ export function GapAnalysisCards({ pd }: { pd: PowerDynamicsBundle }) {
 
   return (
     <View>
-      <SectorIntro
-        title="Gap analysis"
-        note={`The scale is 1–${g.tableSize || 'N'} (one slot per team on this table). Inclusive distance between T1 and T2 is the grade.`}
-      />
+      <SectorIntro title="Gap analysis" />
       <PositionGapBoard pd={pd} />
       {one(pd.t1, g.t1Rank)}
       {one(pd.t2, g.t2Rank)}
@@ -265,8 +261,32 @@ function streamTone(name: StreamName | null): Tone {
   return 'info';
 }
 
-export function StreamlineCards({ pd }: { pd: PowerDynamicsBundle }) {
+export function StreamlineCards({
+  pd,
+  focus,
+}: {
+  pd: PowerDynamicsBundle;
+  focus?: StreamName;
+}) {
   const s = pd.streamline;
+  const belong = (sideLabel: string, assigned: StreamName | null, points: number | null, stream: StreamName) => {
+    const inIt = assigned === stream;
+    return (
+      <SideCard
+        key={`${stream}-${sideLabel}`}
+        label={sideLabel}
+        meta={`${points ?? '—'} pts`}>
+        <Line
+          text={inIt ? `Belongs here — ${STREAM_LABEL[stream]}` : `Does not belong in ${STREAM_LABEL[stream]}`}
+          tone={inIt ? streamTone(stream) : 'info'}
+        />
+        <Line
+          text={assigned ? `Assigned stream: ${STREAM_LABEL[assigned]}` : 'Not assigned yet'}
+        />
+      </SideCard>
+    );
+  };
+
   const bucket = (name: StreamName, teams: string[]) => (
     <View
       key={name}
@@ -299,31 +319,41 @@ export function StreamlineCards({ pd }: { pd: PowerDynamicsBundle }) {
     return out;
   };
 
+  const introNote =
+    focus === 'bateteme'
+      ? 'ΔP ≤ 4. Both sides sit here when the points gap is close.'
+      : focus === 'zidanloom'
+        ? 'Compliant stream when ΔP ≥ 4.1 and baseline gap backs that side.'
+        : focus === 'bookie'
+          ? 'Bookie mistake: non-compliant stream when ΔP ≥ 4.1 and baseline gap does not back that side.'
+          : 'T1 points minus T2 points. ΔP ≤ 4 → Bateteme stream. ΔP ≥ 4.1 → Zidanloom (compliant) or Bookie mistake (non-compliant), using whether baseline gap backs that side.';
+
   return (
     <View>
-      <SectorIntro
-        title="Streamline"
-        note="T1 points minus T2 points. ΔP ≤ 4 → Bateteme stream. ΔP ≥ 4.1 → Zidanloom (compliant) or Bookie (non-compliant), using whether baseline gap backs that side."
-      />
+      <SectorIntro title={focus ? STREAM_LABEL[focus] : 'Streamline'} note={introNote} />
       <Callout
         text={
           s.delta != null
             ? `${pd.t1.label} ${s.t1Points} − ${pd.t2.label} ${s.t2Points} = ${s.delta}`
-            : 'Need both sides’ points'
+            : 'Need both sides\' points'
         }
-        tone={s.close ? 'warn' : s.far ? 'info' : 'info'}
+        tone={s.close ? 'warn' : 'info'}
       />
       <Callout text={s.call} tone={s.close ? 'warn' : 'info'} />
-      {s.close
-        ? bucket('bateteme', inStream('bateteme'))
-        : s.far
-          ? (
-            <View>
-              {bucket('zidanloom', inStream('zidanloom'))}
-              {bucket('bookie', inStream('bookie'))}
-            </View>
-          )
-          : null}
+      {focus ? (
+        <>
+          {bucket(focus, inStream(focus))}
+          {belong(pd.t1.label, t1In, s.t1Points, focus)}
+          {belong(pd.t2.label, t2In, s.t2Points, focus)}
+        </>
+      ) : s.close ? (
+        bucket('bateteme', inStream('bateteme'))
+      ) : s.far ? (
+        <View>
+          {bucket('zidanloom', inStream('zidanloom'))}
+          {bucket('bookie', inStream('bookie'))}
+        </View>
+      ) : null}
     </View>
   );
 }

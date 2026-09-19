@@ -352,45 +352,44 @@ console.log('\nstreamline');
   check('far T2 with baseline gap → Zidanloom', farUnbacked.t2Stream === 'zidanloom');
 }
 
-console.log('\nposition gap analysis (1–N table)');
+console.log('\nposition gap analysis (G1 = largest)');
 {
-  const g4 = evaluatePositionGap({
-    tableSize: 20,
-    t1Rank: 2,
-    t2Rank: 5,
+  const full22 = evaluatePositionGap({
+    tableSize: 22,
+    t1Rank: 1,
+    t2Rank: 22,
     t1Label: 'T1 (A)',
     t2Label: 'T2 (B)',
   });
-  check('20-team #2 vs #5 span is 4', g4.span === 4);
-  check('20-team #2 vs #5 is G4', g4.grade === 'G4');
-  check('20-team scale 1–20', g4.tableSize === 20 && g4.from === 2 && g4.to === 5);
+  check('22-team 1…22 is G1', full22.grade === 'G1' && full22.span === 22 && full22.gradeIndex === 1);
 
-  const g20 = evaluatePositionGap({
+  const full20 = evaluatePositionGap({
     tableSize: 20,
     t1Rank: 1,
     t2Rank: 20,
     t1Label: 'T1 (A)',
     t2Label: 'T2 (B)',
   });
-  check('full 20-team table is G20', g20.grade === 'G20' && g20.span === 20);
+  check('20-team full table is G1', full20.grade === 'G1' && full20.span === 20);
 
-  const g18 = evaluatePositionGap({
-    tableSize: 18,
-    t1Rank: 1,
-    t2Rank: 18,
+  const mid = evaluatePositionGap({
+    tableSize: 20,
+    t1Rank: 2,
+    t2Rank: 5,
     t1Label: 'T1 (A)',
     t2Label: 'T2 (B)',
   });
-  check('18-team table max grade is G18', g18.grade === 'G18' && g18.span === 18);
+  check('20-team span 4 is G17', mid.grade === 'G17' && mid.span === 4 && mid.gradeIndex === 17);
+  check('call is the grade only', mid.call === 'G17');
 
-  const g2 = evaluatePositionGap({
+  const near = evaluatePositionGap({
     tableSize: 20,
     t1Rank: 10,
     t2Rank: 11,
     t1Label: 'T1 (A)',
     t2Label: 'T2 (B)',
   });
-  check('neighbours on 20-team table are G2', g2.grade === 'G2');
+  check('20-team neighbours are G19', near.grade === 'G19' && near.gradeIndex === 19);
 
   const table20: StandingLike[] = Array.from({ length: 20 }, (_, i) =>
     row({
@@ -412,7 +411,7 @@ console.log('\nposition gap analysis (1–N table)');
   });
   check('live T1 is #2', live.t1.rank === 2);
   check('live T2 is #5', live.t2.rank === 5);
-  check('live gap is G4', live.positionGap.grade === 'G4' && live.positionGap.span === 4);
+  check('live gap is G17', live.positionGap.grade === 'G17' && live.positionGap.span === 4);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

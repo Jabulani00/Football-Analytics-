@@ -72,7 +72,14 @@ const BASELINE_SUBS = [
   { id: 'streamline', label: 'Streamline' },
 ] as const;
 
+const STREAMLINE_SUBS = [
+  { id: 'bateteme', label: 'Bateteme stream' },
+  { id: 'zidanloom', label: 'Zidanloom' },
+  { id: 'bookie', label: 'Bookie mistake' },
+] as const;
+
 type BaselineSubId = (typeof BASELINE_SUBS)[number]['id'];
+type StreamlineSubId = (typeof STREAMLINE_SUBS)[number]['id'];
 
 type Props = {
   standings: StandingRow[];
@@ -126,6 +133,7 @@ export default function MatchPowerDynamicsPanel({
 }: Props) {
   const [view, setView] = useState<PowerDynamicsTabId>('baseline');
   const [baselineSub, setBaselineSub] = useState<BaselineSubId>('original');
+  const [streamlineSub, setStreamlineSub] = useState<StreamlineSubId>('bateteme');
 
   const like = useMemo(() => toStandingLike(standings), [standings]);
 
@@ -238,7 +246,14 @@ export default function MatchPowerDynamicsPanel({
             {baselineSub === 'gap' ? (
               <GapAnalysisCards pd={pd} />
             ) : baselineSub === 'streamline' ? (
-              <StreamlineCards pd={pd} />
+              <View>
+                <SubTabBar
+                  tabs={[...STREAMLINE_SUBS]}
+                  active={streamlineSub}
+                  onChange={(id) => setStreamlineSub(id)}
+                />
+                <StreamlineCards pd={pd} focus={streamlineSub} />
+              </View>
             ) : (
               <>
                 <BaselineCards pd={pd} />
