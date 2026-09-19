@@ -6,10 +6,13 @@ import { type ReactNode, StyleSheet, Text, View } from 'react-native';
 
 import {
   PPG_BAND_LABEL,
+  STREAM_LABEL,
+  STREAM_ROLE,
   colourWord,
   fmtPct,
   fmtPpg,
   wdl,
+  type BaselineGap,
   type ChildBeaterSide,
   type ColourSideRead,
   type LastGameFlag,
@@ -17,6 +20,7 @@ import {
   type ScopeRecord,
   type ShowRead,
   type SideSnapshot,
+  type StreamName,
   type StreakSide,
   type SwingScope,
   type Tone,
@@ -84,16 +88,55 @@ export function RecordBlock({ title, rec }: { title: string; rec: ScopeRecord })
   );
 }
 
+function GapScoreRow({
+  s,
+  g,
+}: {
+  s: SideSnapshot;
+  g: BaselineGap['t1'];
+}) {
+  return (
+    <View style={styles.gapRow}>
+      <View style={styles.gapScoreBox}>
+        <Text style={styles.gapScore}>{g.score != null ? g.score : '—'}</Text>
+        <Text style={styles.gapScoreCap}>gap / 10</Text>
+      </View>
+      <View style={{ flex: 1 }}>
+        <Line
+          text={
+            g.letter
+              ? `Received ${g.letter} (${g.received}/10) — ${g.meaning}`
+              : g.meaning
+          }
+        />
+        {g.recode && g.recode !== g.letter ? (
+          <Line text={`Recode type ${g.recode}`} />
+        ) : null}
+        <View style={styles.meterTrack}>
+          <View
+            style={[
+              styles.meterFill,
+              { width: `${((g.score ?? 0) / 10) * 100}%` },
+            ]}
+          />
+        </View>
+      </View>
+    </View>
+  );
+}
+
 export function BaselineCards({ pd }: { pd: PowerDynamicsBundle }) {
-  const row = (s: SideSnapshot) => (
+  const gap = pd.baselineGap;
+  const row = (s: SideSnapshot, g: typeof gap.t1) => (
     <SideCard
       key={s.side}
       label={s.label}
       meta={
         s.rank != null
-          ? `#${s.rank} · ${s.points} pts · ${colourWord(s.colour)}`
-          : 'Not on this table'
+          ? `${s.venue === 'home' ? 'Home' : 'Away'} · #${s.rank} · ${s.points} pts · ${colourWord(s.colour)}`
+          : `${s.venue === 'home' ? 'Home' : 'Away'} · not on this table`
       }>
+      <GapScoreRow s={s} g={g} />
       <RecordBlock title="Original" rec={s.overall} />
       <RecordBlock title="Home" rec={s.home} />
       <RecordBlock title="Away" rec={s.away} />
@@ -103,16 +146,133 @@ export function BaselineCards({ pd }: { pd: PowerDynamicsBundle }) {
     <View>
       <SectorIntro
         title="Baseline — original state"
-        note="Natural table state before separators. T1 is home, T2 is away."
+        note="Natural table state before separators. T1 is the side with more points; T2 is who they face. Weaker baseline sits at 0; the stronger side gets the A–F gap (2–10)."
       />
-      {row(pd.t1)}
-      {row(pd.t2)}
+      {gap.leagueAvgPpg != null ? (
+        <Text style={styles.note}>League average PPG {gap.leagueAvgPpg.toFixed(2)}</Text>
+      ) : null}
+      <Callout
+        text={gap.call}
+        tone={gap.supports ? 'warn' : gap.stronger === 'level' ? 'info' : 'good'}
+      />
+      {row(pd.t1, gap.t1)}
+      {row(pd.t2, gap.t2)}
       {pd.pointsDiff != null ? (
         <Callout
           text={`${pd.pointsDiff} pts apart${pd.closeOnTable ? ' — close enough that form matters more' : ' — clear gap on the table'}`}
           tone={pd.closeOnTable ? 'warn' : 'info'}
         />
       ) : null}
+    </View>
+  );
+}
+
+export function GapAnalysisCards({ pd }: { pd: PowerDynamicsBundle }) {
+  const gap = pd.baselineGap;
+  const one = (s: SideSnapshot, g: typeof gap.t1) => (
+    <SideCard
+      key={s.side}
+      label={s.label}
+      meta={
+        s.rank != null
+          ? `${s.venue === 'home' ? 'Home' : 'Away'} · #${s.rank} · ${s.points} pts`
+          : s.venue === 'home'
+            ? 'Home'
+            : 'Away'
+      }>
+      <GapScoreRow s={s} g={g} />
+    </SideCard>
+  );
+  return (
+    <View>
+      <SectorIntro
+        title="Gap analysis"
+        note="One side sits at 0; the other gets 2–10 from the A–F baseline ladder. Gr 3+ (gap 6–10) can support a call."
+      />
+      {gap.leagueAvgPpg != null ? (
+        <Text style={styles.note}>League average PPG {gap.leagueAvgPpg.toFixed(2)}</Text>
+      ) : null}
+      <Callout
+        text={gap.call}
+        tone={gap.supports ? 'warn' : gap.stronger === 'level' ? 'info' : 'good'}
+      />
+      {gap.pair ? (
+        <Callout
+          text={`Pair ${gap.pair} · separation ${gap.separation ?? '—'}/10 · Gr ${gap.grade ?? '—'}`}
+        />
+      ) : null}
+      {one(pd.t1, gap.t1)}
+      {one(pd.t2, gap.t2)}
+    </View>
+  );
+}
+
+function streamTone(name: StreamName | null): Tone {
+  if (name === 'zidanloom') return 'good';
+  if (name === 'bookie') return 'bad';
+  if (name === 'bateteme') return 'warn';
+  return 'info';
+}
+
+export function StreamlineCards({ pd }: { pd: PowerDynamicsBundle }) {
+  const s = pd.streamline;
+  const bucket = (name: StreamName, teams: string[]) => (
+    <View
+      key={name}
+      style={[
+        styles.streamBucket,
+        { borderColor: toneColor(streamTone(name)) },
+      ]}>
+      <Text style={[styles.streamName, { color: toneColor(streamTone(name)) }]}>
+        {STREAM_LABEL[name]}
+      </Text>
+      <Text style={styles.streamRole}>{STREAM_ROLE[name]}</Text>
+      {teams.length > 0 ? (
+        teams.map((t) => (
+          <Text key={t} style={styles.streamTeam}>
+            {t}
+          </Text>
+        ))
+      ) : (
+        <Text style={styles.streamEmpty}>No team in this stream</Text>
+      )}
+    </View>
+  );
+
+  const t1In = s.t1Stream;
+  const t2In = s.t2Stream;
+  const inStream = (name: StreamName): string[] => {
+    const out: string[] = [];
+    if (t1In === name) out.push(`${pd.t1.label} · ${s.t1Points ?? '—'} pts`);
+    if (t2In === name) out.push(`${pd.t2.label} · ${s.t2Points ?? '—'} pts`);
+    return out;
+  };
+
+  return (
+    <View>
+      <SectorIntro
+        title="Streamline"
+        note="T1 points minus T2 points. ΔP ≤ 4 → Bateteme stream. ΔP ≥ 4.1 → Zidanloom (compliant) or Bookie (non-compliant), using whether baseline gap backs that side."
+      />
+      <Callout
+        text={
+          s.delta != null
+            ? `${pd.t1.label} ${s.t1Points} − ${pd.t2.label} ${s.t2Points} = ${s.delta}`
+            : 'Need both sides’ points'
+        }
+        tone={s.close ? 'warn' : s.far ? 'info' : 'info'}
+      />
+      <Callout text={s.call} tone={s.close ? 'warn' : 'info'} />
+      {s.close
+        ? bucket('bateteme', inStream('bateteme'))
+        : s.far
+          ? (
+            <View>
+              {bucket('zidanloom', inStream('zidanloom'))}
+              {bucket('bookie', inStream('bookie'))}
+            </View>
+          )
+          : null}
     </View>
   );
 }
@@ -126,6 +286,8 @@ export function Last5Cards({
   home: TeamLast5 | null | undefined;
   away: TeamLast5 | null | undefined;
 }) {
+  const t1Team = pd.t1.venue === 'home' ? home : away;
+  const t2Team = pd.t2.venue === 'home' ? home : away;
   const block = (label: string, team: TeamLast5 | null | undefined, flags: LastGameFlag[]) => (
     <SideCard label={label}>
       {team ? (
@@ -151,8 +313,8 @@ export function Last5Cards({
   );
   return (
     <View>
-      {block(pd.t1.label, home, pd.lastGame.t1)}
-      {block(pd.t2.label, away, pd.lastGame.t2)}
+      {block(pd.t1.label, t1Team, pd.lastGame.t1)}
+      {block(pd.t2.label, t2Team, pd.lastGame.t2)}
     </View>
   );
 }
@@ -196,25 +358,28 @@ export function ColourCards({ pd }: { pd: PowerDynamicsBundle }) {
 }
 
 export function VenueCards({ pd }: { pd: PowerDynamicsBundle }) {
-  const one = (label: string, v: VenueRead, homeVenue: boolean) => (
-    <SideCard label={label}>
-      <Line text={`Overall PPG ${fmtPpg(v.overallPpg)} · home ${fmtPpg(v.homePpg)} · away ${fmtPpg(v.awayPpg)}`} />
-      <Line
-        text={homeVenue ? (v.homeStrong ? 'Strong at home' : 'No home lift vs overall') : v.awayStrong ? 'Strong away' : 'No away lift vs overall'}
-        tone={homeVenue ? (v.homeStrong ? 'good' : 'info') : v.awayStrong ? 'good' : 'info'}
-      />
-      <Line text={v.detail} />
-    </SideCard>
-  );
+  const one = (snap: SideSnapshot, v: VenueRead) => {
+    const atHome = snap.venue === 'home';
+    return (
+      <SideCard label={snap.label} meta={atHome ? 'Playing at home' : 'Playing away'}>
+        <Line text={`Overall PPG ${fmtPpg(v.overallPpg)} · home ${fmtPpg(v.homePpg)} · away ${fmtPpg(v.awayPpg)}`} />
+        <Line
+          text={atHome ? (v.homeStrong ? 'Strong at home' : 'No home lift vs overall') : v.awayStrong ? 'Strong away' : 'No away lift vs overall'}
+          tone={atHome ? (v.homeStrong ? 'good' : 'info') : v.awayStrong ? 'good' : 'info'}
+        />
+        <Line text={v.detail} />
+      </SideCard>
+    );
+  };
   return (
     <View>
       <SectorIntro
         title="Home / Away strong → underdog strength"
-        note="Underdog is the side with fewer points (or worse rank). A venue lift of 0.3+ PPG vs overall counts as strength."
+        note="T1 has more points; T2 is the underdog. A venue lift of 0.3+ PPG vs overall counts as strength."
       />
       <Callout text={pd.venue.call} tone="warn" />
-      {one(pd.t1.label, pd.venue.t1, true)}
-      {one(pd.t2.label, pd.venue.t2, false)}
+      {one(pd.t1, pd.venue.t1)}
+      {one(pd.t2, pd.venue.t2)}
     </View>
   );
 }
@@ -539,4 +704,38 @@ const styles = StyleSheet.create({
     backgroundColor: theme.surface,
   },
   calloutText: { fontFamily: fonts.bodySemiBold, fontSize: 12, lineHeight: 17 },
+  gapRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.xs },
+  gapScoreBox: {
+    width: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.sm,
+    borderRadius: layout.borderRadius,
+    backgroundColor: theme.surfaceMuted,
+  },
+  gapScore: { fontFamily: fonts.bodySemiBold, fontSize: 22, color: theme.textPrimary, lineHeight: 26 },
+  gapScoreCap: { fontFamily: fonts.body, fontSize: 9, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: 0.4 },
+  meterTrack: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: theme.surfaceMuted,
+    marginTop: spacing.xs,
+    overflow: 'hidden',
+  },
+  meterFill: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: theme.accentBlue,
+  },
+  streamBucket: {
+    borderWidth: layout.borderWidth,
+    borderRadius: layout.borderRadius,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    backgroundColor: theme.surface,
+  },
+  streamName: { fontFamily: fonts.bodySemiBold, fontSize: 15, marginBottom: 2 },
+  streamRole: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted, marginBottom: spacing.sm },
+  streamTeam: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: theme.textPrimary, marginBottom: 2 },
+  streamEmpty: { fontFamily: fonts.body, fontSize: 12, color: theme.textFaint },
 });

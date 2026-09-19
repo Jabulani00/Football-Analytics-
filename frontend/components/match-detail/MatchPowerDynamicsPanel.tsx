@@ -15,12 +15,14 @@ import {
   ColourCards,
   CompetitionCards,
   ContestedCards,
+  GapAnalysisCards,
   IndlelaCards,
   Last5Cards,
   MiddleGuysCards,
   PointsDiffCards,
   SectorIntro,
   StreakCards,
+  StreamlineCards,
   StruggleCards,
   SwingCards,
   VenueCards,
@@ -29,7 +31,8 @@ import SubTabBar from '@/components/shared/SubTabBar';
 import { useFixtureFormAnalysis } from '@/hooks/useFixtureFormAnalysis';
 import { useSeasonFixtures } from '@/hooks/useSeasonFixtures';
 import type { Competition, H2HMatch, StandingRow } from '@/services/oddAlerts';
-import { evaluatePowerDynamics, sideLabel } from '@/utils/powerDynamicsEngine';
+import { evaluatePowerDynamics } from '@/utils/powerDynamicsEngine';
+import { findUkulumbana } from '@/utils/last5Analysis';
 import type { StandingLike } from '@/utils/motivationEngine';
 import { fonts, spacing, theme } from '@/styles/theme';
 
@@ -62,6 +65,14 @@ export const POWER_DYNAMICS_TABS = [
 ] as const;
 
 export type PowerDynamicsTabId = (typeof POWER_DYNAMICS_TABS)[number]['id'];
+
+const BASELINE_SUBS = [
+  { id: 'original', label: 'Original' },
+  { id: 'gap', label: 'Gap analysis' },
+  { id: 'streamline', label: 'Streamline' },
+] as const;
+
+type BaselineSubId = (typeof BASELINE_SUBS)[number]['id'];
 
 type Props = {
   standings: StandingRow[];
@@ -112,14 +123,9 @@ export default function MatchPowerDynamicsPanel({
   h2hMatches,
 }: Props) {
   const [view, setView] = useState<PowerDynamicsTabId>('baseline');
+  const [baselineSub, setBaselineSub] = useState<BaselineSubId>('original');
 
   const like = useMemo(() => toStandingLike(standings), [standings]);
-  const t1Label = sideLabel('t1', homeName);
-  const t2Label = sideLabel('t2', awayName);
-  const highlightIds = [homeId, awayId].filter((id): id is number => id != null);
-  const teamLabels: Record<number, string> = {};
-  if (homeId != null) teamLabels[homeId] = t1Label;
-  if (awayId != null) teamLabels[awayId] = t2Label;
 
   const competition = useMemo((): Competition | null => {
     if (!seasonId) return null;
@@ -194,6 +200,15 @@ export default function MatchPowerDynamicsPanel({
     ],
   );
 
+  const t1Label = pd.t1.label;
+  const t2Label = pd.t2.label;
+  const homePdLabel = pd.t1.venue === 'home' ? t1Label : t2Label;
+  const awayPdLabel = pd.t1.venue === 'away' ? t1Label : t2Label;
+  const highlightIds = [pd.t1.teamId, pd.t2.teamId].filter((id): id is number => id != null);
+  const teamLabels: Record<number, string> = {};
+  if (pd.t1.teamId != null) teamLabels[pd.t1.teamId] = t1Label;
+  if (pd.t2.teamId != null) teamLabels[pd.t2.teamId] = t2Label;
+
   const loadingForm = form.loading;
 
   const formGate = (node: ReactNode) => {
@@ -213,27 +228,40 @@ export default function MatchPowerDynamicsPanel({
       case 'baseline':
         return (
           <View>
-            <BaselineCards pd={pd} />
-            <FixtureCoreStatsPanel
-              standings={standings}
-              homeId={homeId}
-              awayId={awayId}
-              homeName={homeName}
-              awayName={awayName}
-              seasonProgress={seasonProgress}
-              homeLabel={t1Label}
-              awayLabel={t2Label}
+            <SubTabBar
+              tabs={[...BASELINE_SUBS]}
+              active={baselineSub}
+              onChange={(id) => setBaselineSub(id)}
             />
+            {baselineSub === 'gap' ? (
+              <GapAnalysisCards pd={pd} />
+            ) : baselineSub === 'streamline' ? (
+              <StreamlineCards pd={pd} />
+            ) : (
+              <>
+                <BaselineCards pd={pd} />
+                <FixtureCoreStatsPanel
+                  standings={standings}
+                  homeId={pd.t1.teamId}
+                  awayId={pd.t2.teamId}
+                  homeName={pd.t1.name}
+                  awayName={pd.t2.name}
+                  seasonProgress={seasonProgress}
+                  homeLabel={t1Label}
+                  awayLabel={t2Label}
+                />
+              </>
+            )}
           </View>
         );
       case 'importance_3pts':
         return (
           <FixtureMotivationPanel
             standings={like}
-            homeId={homeId}
-            awayId={awayId}
-            homeName={homeName}
-            awayName={awayName}
+            homeId={pd.t1.teamId}
+            awayId={pd.t2.teamId}
+            homeName={pd.t1.name}
+            awayName={pd.t2.name}
             competitionId={competitionId}
             seasonProgress={seasonProgress}
             homeLabel={t1Label}
@@ -247,20 +275,28 @@ export default function MatchPowerDynamicsPanel({
               title="Last 5"
               note="Graded last-5, Ukulumbana matchup, and last-game flags for T1 vs T2."
             />
-            {form.last5?.ukulumbanaLabel ? (
-              <Callout
-                text={`${form.last5.ukulumbanaLabel}${
-                  form.last5.significantSplit
-                    ? ' — sides look different right now'
-                    : ' — similar recent form'
-                }`}
-                tone={form.last5.significantSplit ? 'warn' : 'info'}
-              />
-            ) : null}
+            {(() => {
+              const t1L5 = pd.t1.venue === 'home' ? form.last5?.home : form.last5?.away;
+              const t2L5 = pd.t2.venue === 'home' ? form.last5?.home : form.last5?.away;
+              const pair =
+                t1L5 && t2L5 ? findUkulumbana(t1L5.option, t2L5.option) : null;
+              const label = pair?.label ?? form.last5?.ukulumbanaLabel;
+              if (!label) return null;
+              return (
+                <Callout
+                  text={`${label}${
+                    form.last5?.significantSplit
+                      ? ' — sides look different right now'
+                      : ' — similar recent form'
+                  }`}
+                  tone={form.last5?.significantSplit ? 'warn' : 'info'}
+                />
+              );
+            })()}
             <Last5Cards pd={pd} home={form.last5?.home} away={form.last5?.away} />
             {form.last5?.lenses.map((l) => (
               <Text key={l.id} style={styles.lens}>
-                {l.id}. {l.label}: {t1Label} {l.homeScore} vs {t2Label} {l.awayScore}
+                {l.id}. {l.label}: {homePdLabel} {l.homeScore} vs {awayPdLabel} {l.awayScore}
                 {l.sameStrength ? ' · same strength' : ' · split'}
               </Text>
             ))}
@@ -332,8 +368,8 @@ export default function MatchPowerDynamicsPanel({
             layers={form.hidden}
             homeName={homeName}
             awayName={awayName}
-            homeLabel={t1Label}
-            awayLabel={t2Label}
+            homeLabel={homePdLabel}
+            awayLabel={awayPdLabel}
           />
         );
       case 'imbangi':
@@ -426,8 +462,8 @@ export default function MatchPowerDynamicsPanel({
   return (
     <View>
       <Text style={styles.blurb}>
-        Power dynamics for {t1Label} vs {t2Label} — open each sector in order. Numbers are live
-        from the table and recent finished games.
+        Power dynamics for {t1Label} vs {t2Label} — T1 has more points. Open each sector in order.
+        Numbers are live from the table and recent finished games.
       </Text>
       <SubTabBar
         tabs={[...POWER_DYNAMICS_TABS]}

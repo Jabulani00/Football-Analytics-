@@ -44,6 +44,8 @@ export type LastGameFlag = {
 
 export type SideSnapshot = {
   side: SideId;
+  /** Fixture venue — not the T1/T2 identity. */
+  venue: 'home' | 'away';
   teamId: number | null;
   name: string;
   label: string;
@@ -117,12 +119,41 @@ export type ChildBeaterSide = {
   method2: string | null;
 };
 
+/** SKM page 3 original six types (A strongest … F weakest). */
+export type BaselineLetter = 'A' | 'B' | 'C' | 'D' | 'E' | 'F';
+
+export type BaselineSideGap = {
+  letter: BaselineLetter | null;
+  recode: BaselineLetter | null;
+  meaning: string;
+  /** Raw strength on the A=10 … F=0 ladder (what the side received). */
+  received: number | null;
+  /** Fixture gap: 0 for the weaker / level side, 1–10 for the stronger. */
+  score: number | null;
+};
+
+export type BaselineGap = {
+  t1: BaselineSideGap;
+  t2: BaselineSideGap;
+  pair: string | null;
+  /** |received T1 − received T2| — 0, 2, 4, 6, 8 or 10. */
+  separation: number | null;
+  /** Gr 1 (max gap) … Gr 6 (none). */
+  grade: number | null;
+  stronger: SideId | 'level' | null;
+  /** Notes: command Gr 3 and up (separation ≥ 6). */
+  supports: boolean;
+  leagueAvgPpg: number | null;
+  call: string;
+};
+
 export type PowerDynamicsBundle = {
   t1: SideSnapshot;
   t2: SideSnapshot;
   pointsDiff: number | null;
   closeOnTable: boolean;
   underdog: SideId | 'level' | null;
+  baselineGap: BaselineGap;
   colour: { t1: ColourSideRead; t2: ColourSideRead; whoFacesWho: string };
   venue: { t1: VenueRead; t2: VenueRead; call: string };
   character: { t1: CharacterSide; t2: CharacterSide };
@@ -142,13 +173,278 @@ export type PowerDynamicsBundle = {
     t1: TeamMotivation | null;
     t2: TeamMotivation | null;
   };
+  streamline: StreamlineRead;
 };
+
+export const STREAMLINE_CLOSE_MAX = 4;
+export const STREAMLINE_FAR_MIN = 4.1;
+
+export type StreamName = 'bateteme' | 'zidanloom' | 'bookie';
+
+export const STREAM_LABEL: Record<StreamName, string> = {
+  bateteme: 'Bateteme stream',
+  zidanloom: 'Zidanloom stream',
+  bookie: 'Bookie',
+};
+
+export const STREAM_ROLE: Record<StreamName, string> = {
+  bateteme: 'Close — ΔP ≤ 4',
+  zidanloom: 'Compliant — ΔP ≥ 4.1',
+  bookie: 'Non-compliant — ΔP ≥ 4.1',
+};
+
+export type StreamlineRead = {
+  t1Points: number | null;
+  t2Points: number | null;
+  /** T1 points − T2 points (T1 has more points). */
+  delta: number | null;
+  close: boolean;
+  far: boolean;
+  t1Stream: StreamName | null;
+  t2Stream: StreamName | null;
+  call: string;
+};
+
+export function evaluateStreamline(opts: {
+  t1Points: number | null;
+  t2Points: number | null;
+  t1Label: string;
+  t2Label: string;
+  t1BaselineScore: number | null;
+  t2BaselineScore: number | null;
+}): StreamlineRead {
+  const { t1Points, t2Points, t1Label, t2Label, t1BaselineScore, t2BaselineScore } = opts;
+  const delta = t1Points != null && t2Points != null ? t1Points - t2Points : null;
+  const close = delta != null && delta <= STREAMLINE_CLOSE_MAX;
+  const far = delta != null && delta >= STREAMLINE_FAR_MIN;
+
+  if (delta == null) {
+    return {
+      t1Points,
+      t2Points,
+      delta: null,
+      close: false,
+      far: false,
+      t1Stream: null,
+      t2Stream: null,
+      call: 'Need both sides on the table to run Streamline (T1 pts − T2 pts).',
+    };
+  }
+
+  if (close) {
+    return {
+      t1Points,
+      t2Points,
+      delta,
+      close: true,
+      far: false,
+      t1Stream: 'bateteme',
+      t2Stream: 'bateteme',
+      call: `${t1Label} − ${t2Label} = ${delta} pts (≤ 4). Both sides sit in Bateteme stream.`,
+    };
+  }
+
+  const t1Compliant = (t1BaselineScore ?? 0) > 0;
+  const t2Compliant = (t2BaselineScore ?? 0) > 0;
+  const t1Stream: StreamName = t1Compliant ? 'zidanloom' : 'bookie';
+  const t2Stream: StreamName = t2Compliant ? 'zidanloom' : 'bookie';
+  return {
+    t1Points,
+    t2Points,
+    delta,
+    close: false,
+    far: true,
+    t1Stream,
+    t2Stream,
+    call: `${t1Label} − ${t2Label} = ${delta} pts (≥ 4.1). Compliant → Zidanloom stream · non-compliant → Bookie.`,
+  };
+}
 
 const VENUE_GAP = 0.3;
 const CLOSE_PTS = 4;
 
+/** A=10 … F=0 — degrees of separation on the baseline ladder. */
+export const BASELINE_LETTER_STRENGTH: Record<BaselineLetter, number> = {
+  A: 10,
+  B: 8,
+  C: 6,
+  D: 4,
+  E: 2,
+  F: 0,
+};
+
+export const BASELINE_LETTER_MEANING: Record<BaselineLetter, string> = {
+  A: 'Strong + above average',
+  B: 'Strong + below average',
+  C: 'Balanced + above average',
+  D: 'Balanced + below average',
+  E: 'Weak + above average',
+  F: 'Weak + below average',
+};
+
+/** Page 3 purple recode of the six types. */
+export const BASELINE_RECODE: Record<BaselineLetter, BaselineLetter> = {
+  A: 'A',
+  B: 'C',
+  C: 'B',
+  D: 'E',
+  E: 'D',
+  F: 'F',
+};
+
+export function leagueAvgPpg(table: StandingLike[]): number | null {
+  let sum = 0;
+  let n = 0;
+  for (const r of table) {
+    if (r.played <= 0) continue;
+    sum += r.points / r.played;
+    n += 1;
+  }
+  return n > 0 ? sum / n : null;
+}
+
+function strengthBand(
+  zone: 'top' | 'mid' | 'bottom' | null,
+  ppg: number | null,
+  avg: number | null,
+): 'strong' | 'balanced' | 'weak' | null {
+  if (zone === 'top') return 'strong';
+  if (zone === 'mid') return 'balanced';
+  if (zone === 'bottom') return 'weak';
+  if (ppg == null || avg == null) return null;
+  if (ppg >= avg + 0.35) return 'strong';
+  if (ppg <= avg - 0.35) return 'weak';
+  return 'balanced';
+}
+
+export function classifyBaselineLetter(
+  zone: 'top' | 'mid' | 'bottom' | null,
+  ppg: number | null,
+  avg: number | null,
+): BaselineLetter | null {
+  const band = strengthBand(zone, ppg, avg);
+  if (band == null || ppg == null || avg == null) return null;
+  const above = ppg >= avg;
+  if (band === 'strong') return above ? 'A' : 'B';
+  if (band === 'balanced') return above ? 'C' : 'D';
+  return above ? 'E' : 'F';
+}
+
+export function separationGrade(separation: number): number {
+  if (separation >= 10) return 1;
+  if (separation >= 8) return 2;
+  if (separation >= 6) return 3;
+  if (separation >= 4) return 4;
+  if (separation >= 2) return 5;
+  return 6;
+}
+
+function emptyBaselineSide(): BaselineSideGap {
+  return {
+    letter: null,
+    recode: null,
+    meaning: 'Need table PPG to grade baseline',
+    received: null,
+    score: null,
+  };
+}
+
+export function baselineGapFor(t1: SideSnapshot, t2: SideSnapshot, table: StandingLike[]): BaselineGap {
+  const avg = leagueAvgPpg(table);
+  const letter1 = classifyBaselineLetter(t1.zone, t1.overall.ppg, avg);
+  const letter2 = classifyBaselineLetter(t2.zone, t2.overall.ppg, avg);
+
+  const side = (letter: BaselineLetter | null): BaselineSideGap => {
+    if (!letter) return emptyBaselineSide();
+    return {
+      letter,
+      recode: BASELINE_RECODE[letter],
+      meaning: BASELINE_LETTER_MEANING[letter],
+      received: BASELINE_LETTER_STRENGTH[letter],
+      score: null,
+    };
+  };
+
+  const s1 = side(letter1);
+  const s2 = side(letter2);
+
+  if (s1.received == null || s2.received == null) {
+    return {
+      t1: s1,
+      t2: s2,
+      pair: null,
+      separation: null,
+      grade: null,
+      stronger: null,
+      supports: false,
+      leagueAvgPpg: avg,
+      call: 'Need both sides on the table with PPG to score the baseline gap.',
+    };
+  }
+
+  const separation = Math.abs(s1.received - s2.received);
+  const grade = separationGrade(separation);
+  let stronger: SideId | 'level' = 'level';
+  if (s1.received > s2.received) stronger = 't1';
+  else if (s2.received > s1.received) stronger = 't2';
+
+  s1.score = stronger === 't1' ? separation : 0;
+  s2.score = stronger === 't2' ? separation : 0;
+
+  const pair = `${letter1}${letter2}`;
+  const supports = separation >= 6;
+  const strongLabel = stronger === 't1' ? t1.label : stronger === 't2' ? t2.label : null;
+  let call: string;
+  if (stronger === 'level') {
+    call = `Same baseline type (${letter1}) — gap 0, no separation.`;
+  } else {
+    call = `${strongLabel} leads ${separation}/10 on baseline strength (${pair}, Gr ${grade})${
+      supports ? ' — Gr 3+ so this gap can support a call' : ''
+    }.`;
+  }
+
+  return {
+    t1: s1,
+    t2: s2,
+    pair,
+    separation,
+    grade,
+    stronger,
+    supports,
+    leagueAvgPpg: avg,
+    call,
+  };
+}
+
 export function sideLabel(side: SideId, name: string): string {
   return side === 't1' ? `T1 (${name})` : `T2 (${name})`;
+}
+
+export function venueWord(venue: 'home' | 'away'): string {
+  return venue === 'home' ? 'Home' : 'Away';
+}
+
+/**
+ * T1 is the side with more points. Equal points → better rank (lower number).
+ * Last resort: fixture home, so we always have a T1.
+ */
+export function t1IsHomeSide(
+  homePoints: number | null | undefined,
+  awayPoints: number | null | undefined,
+  homeRank: number | null | undefined,
+  awayRank: number | null | undefined,
+): boolean {
+  if (homePoints != null && awayPoints != null) {
+    if (homePoints !== awayPoints) return homePoints > awayPoints;
+    if (homeRank != null && awayRank != null && homeRank !== awayRank) {
+      return homeRank < awayRank;
+    }
+  } else if (homePoints != null && awayPoints == null) {
+    return true;
+  } else if (awayPoints != null && homePoints == null) {
+    return false;
+  }
+  return true;
 }
 
 export function colourFromZone(zone?: 'top' | 'mid' | 'bottom' | null): TableColour | null {
@@ -390,21 +686,20 @@ export function lastGameFlags(last: TeamResult | null, avgScored: number | null)
 }
 
 function snapshotFor(
-  side: SideId,
   name: string,
   teamId: number | null,
   row: (StandingLike & { won?: number; drawn?: number; lost?: number }) | null | undefined,
   results: TeamResult[],
   leagueSize: number,
-): SideSnapshot {
+  venue: 'home' | 'away',
+): Omit<SideSnapshot, 'side' | 'label'> {
   const overallResults = recordFromResults(results);
   const overall = overallResults.mp > 0 ? overallResults : row ? recordFromStanding(row) : emptyRecord();
   const { topCut, bottomStart } = thirdCuts(leagueSize);
   return {
-    side,
+    venue,
     teamId,
     name,
-    label: sideLabel(side, name),
     rank: row?.rank ?? null,
     points: row?.points ?? null,
     zone: row?.zone ?? null,
@@ -421,6 +716,10 @@ function snapshotFor(
       results.filter((r) => r.opponentRank != null && r.opponentRank >= bottomStart),
     ),
   };
+}
+
+function asSide(snap: Omit<SideSnapshot, 'side' | 'label'>, side: SideId): SideSnapshot {
+  return { ...snap, side, label: sideLabel(side, snap.name) };
 }
 
 function colourRead(snap: SideSnapshot): ColourSideRead {
@@ -619,8 +918,15 @@ export function evaluatePowerDynamics(opts: {
   const awayRow = awayId != null ? table.find((t) => t.teamId === awayId) : null;
   const n = table.length;
 
-  const t1 = snapshotFor('t1', homeName, homeId ?? null, homeRow, homeResults, n);
-  const t2 = snapshotFor('t2', awayName, awayId ?? null, awayRow, awayResults, n);
+  const homeSnap = snapshotFor(homeName, homeId ?? null, homeRow, homeResults, n, 'home');
+  const awaySnap = snapshotFor(awayName, awayId ?? null, awayRow, awayResults, n, 'away');
+  const t1Home = t1IsHomeSide(homeSnap.points, awaySnap.points, homeSnap.rank, awaySnap.rank);
+  const t1 = asSide(t1Home ? homeSnap : awaySnap, 't1');
+  const t2 = asSide(t1Home ? awaySnap : homeSnap, 't2');
+  const t1Results = t1Home ? homeResults : awayResults;
+  const t2Results = t1Home ? awayResults : homeResults;
+  const t1Id = t1.teamId;
+  const t2Id = t2.teamId;
 
   const pointsDiff =
     t1.points != null && t2.points != null ? Math.abs(t1.points - t2.points) : null;
@@ -641,47 +947,52 @@ export function evaluatePowerDynamics(opts: {
   const c2 = colourRead(t2);
   const v1 = venueRead(t1);
   const v2 = venueRead(t2);
+  const baselineGap = baselineGapFor(t1, t2, table);
 
+  const dog = underdog === 't1' ? t1 : underdog === 't2' ? t2 : null;
+  const dogV = underdog === 't1' ? v1 : underdog === 't2' ? v2 : null;
   let venueCall = 'No underdog-strength call yet';
-  if (underdog === 't1' && v1.homeStrong) {
-    venueCall = `${t1.label} is the underdog and is strong at home`;
-  } else if (underdog === 't2' && v2.awayStrong) {
-    venueCall = `${t2.label} is the underdog and is strong away`;
-  } else if (underdog === 't1' && v1.awayStrong) {
-    venueCall = `${t1.label} is the underdog — away lift, not a home lift`;
-  } else if (underdog === 't2' && v2.homeStrong) {
-    venueCall = `${t2.label} is the underdog — home lift, playing away here`;
+  if (dog && dogV) {
+    const atHome = dog.venue === 'home';
+    if (atHome && dogV.homeStrong) {
+      venueCall = `${dog.label} is the underdog and is strong at home`;
+    } else if (!atHome && dogV.awayStrong) {
+      venueCall = `${dog.label} is the underdog and is strong away`;
+    } else if (atHome && dogV.awayStrong) {
+      venueCall = `${dog.label} is the underdog — away lift, playing at home here`;
+    } else if (!atHome && dogV.homeStrong) {
+      venueCall = `${dog.label} is the underdog — home lift, playing away here`;
+    } else {
+      venueCall = `${dog.label} is the underdog, without a clear venue lift`;
+    }
   } else if (underdog === 'level') {
     venueCall = 'Sides are level on the table — home/away strength is the split';
-  } else if (underdog) {
-    const dog = underdog === 't1' ? t1 : t2;
-    venueCall = `${dog.label} is the underdog, without a clear venue lift`;
   }
 
-  const t1Paths = indlelaPaths(homeResults);
-  const t2Paths = indlelaPaths(awayResults);
-  const t1Win = currentStreak(homeResults, 'W') >= 4;
-  const t2Loss = currentStreak(awayResults, 'L') >= 4;
-  const t2Win = currentStreak(awayResults, 'W') >= 4;
-  const t1Loss = currentStreak(homeResults, 'L') >= 4;
+  const t1Paths = indlelaPaths(t1Results);
+  const t2Paths = indlelaPaths(t2Results);
+  const t1Win = currentStreak(t1Results, 'W') >= 4;
+  const t2Loss = currentStreak(t2Results, 'L') >= 4;
+  const t2Win = currentStreak(t2Results, 'W') >= 4;
+  const t1Loss = currentStreak(t1Results, 'L') >= 4;
   let counterpart = 'No inverse path between the sides';
   if (t1Win && t2Loss) counterpart = `${t1.label} win path vs ${t2.label} loss path (negative counterpart)`;
   else if (t2Win && t1Loss) counterpart = `${t2.label} win path vs ${t1.label} loss path (negative counterpart)`;
 
-  const s1 = struggleLine(homeResults, homeId ?? null, table, seasonProgress);
-  const s2 = struggleLine(awayResults, awayId ?? null, table, seasonProgress);
+  const s1 = struggleLine(t1Results, t1Id, table, seasonProgress);
+  const s2 = struggleLine(t2Results, t2Id, table, seasonProgress);
 
   const contested = contestedLeagueTop(table);
   const t1InPack = t1.rank != null && t1.rank <= 5;
   const t2InPack = t2.rank != null && t2.rank <= 5;
 
   const t1Mot =
-    homeId != null && table.length > 0
-      ? evaluateTeamMotivation(homeId, table, { competitionId, seasonProgress })
+    t1Id != null && table.length > 0
+      ? evaluateTeamMotivation(t1Id, table, { competitionId, seasonProgress })
       : null;
   const t2Mot =
-    awayId != null && table.length > 0
-      ? evaluateTeamMotivation(awayId, table, { competitionId, seasonProgress })
+    t2Id != null && table.length > 0
+      ? evaluateTeamMotivation(t2Id, table, { competitionId, seasonProgress })
       : null;
 
   return {
@@ -690,6 +1001,7 @@ export function evaluatePowerDynamics(opts: {
     pointsDiff,
     closeOnTable,
     underdog,
+    baselineGap,
     colour: {
       t1: c1,
       t2: c2,
@@ -705,28 +1017,36 @@ export function evaluatePowerDynamics(opts: {
       yellow: t1.zone === 'mid' || t2.zone === 'mid',
     },
     streaks: {
-      win: { t1: streakSide(homeResults, 'W'), t2: streakSide(awayResults, 'W') },
-      loss: { t1: streakSide(homeResults, 'L'), t2: streakSide(awayResults, 'L') },
+      win: { t1: streakSide(t1Results, 'W'), t2: streakSide(t2Results, 'W') },
+      loss: { t1: streakSide(t1Results, 'L'), t2: streakSide(t2Results, 'L') },
     },
     swing: {
-      t1: (['overall', 'home', 'away'] as const).map((s) => formSwing(homeResults, s)),
-      t2: (['overall', 'home', 'away'] as const).map((s) => formSwing(awayResults, s)),
+      t1: (['overall', 'home', 'away'] as const).map((s) => formSwing(t1Results, s)),
+      t2: (['overall', 'home', 'away'] as const).map((s) => formSwing(t2Results, s)),
     },
     childBeater: {
-      t1: childBeater(homeResults, t1.zone, n),
-      t2: childBeater(awayResults, t2.zone, n),
+      t1: childBeater(t1Results, t1.zone, n),
+      t2: childBeater(t2Results, t2.zone, n),
     },
     struggle: { t1: s1.text, t2: s2.text, t1Fight: s1.fight, t2Fight: s2.fight },
     contested: { flag: contested, t1InPack, t2InPack },
     lastGame: {
-      t1: lastGameFlags(homeResults[0] ?? null, t1.overall.scored),
-      t2: lastGameFlags(awayResults[0] ?? null, t2.overall.scored),
+      t1: lastGameFlags(t1Results[0] ?? null, t1.overall.scored),
+      t2: lastGameFlags(t2Results[0] ?? null, t2.overall.scored),
     },
     competition: {
       progress: leagueProgressInfo(table, seasonProgress),
       t1: t1Mot,
       t2: t2Mot,
     },
+    streamline: evaluateStreamline({
+      t1Points: t1.points,
+      t2Points: t2.points,
+      t1Label: t1.label,
+      t2Label: t2.label,
+      t1BaselineScore: baselineGap.t1.score,
+      t2BaselineScore: baselineGap.t2.score,
+    }),
   };
 }
 
