@@ -234,6 +234,28 @@ function rankOrNull(v: number | null | undefined): number | null {
  * Gap analysis on the live table. G1 is the largest gap (place 1 through N).
  * Closer sides get G2, G3, … up to G{N-1} for neighbours.
  */
+export type PositionGapGradeRow = {
+  grade: string;
+  gradeIndex: number;
+  /** Inclusive places covered by this grade. */
+  span: number;
+};
+
+/** G1…G{N-1} for a league of N teams. G1 covers the full table. */
+export function positionGapScale(tableSize: number): PositionGapGradeRow[] {
+  const n = Math.max(0, Math.trunc(tableSize));
+  if (n < 2) return [];
+  const rows: PositionGapGradeRow[] = [];
+  for (let gradeIndex = 1; gradeIndex <= n - 1; gradeIndex++) {
+    rows.push({
+      grade: `G${gradeIndex}`,
+      gradeIndex,
+      span: n - gradeIndex + 1,
+    });
+  }
+  return rows;
+}
+
 export function evaluatePositionGap(opts: {
   tableSize: number;
   t1Rank: number | null | undefined;

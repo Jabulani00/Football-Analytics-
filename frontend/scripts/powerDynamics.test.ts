@@ -9,6 +9,7 @@ import {
   evaluatePowerDynamics,
   evaluatePositionGap,
   evaluateStreamline,
+  positionGapScale,
   lastGameFlags,
   mshayiNote,
   neverTwiceInRow,
@@ -412,6 +413,12 @@ console.log('\nposition gap analysis (G1 = largest)');
   check('live T1 is #2', live.t1.rank === 2);
   check('live T2 is #5', live.t2.rank === 5);
   check('live gap is G17', live.positionGap.grade === 'G17' && live.positionGap.span === 4);
+
+  const scale22 = positionGapScale(22);
+  check('22-team scale has 21 grades', scale22.length === 21);
+  check('22-team G1 gap is 22', scale22[0].grade === 'G1' && scale22[0].span === 22);
+  check('22-team last grade is G21 gap 2', scale22[20].grade === 'G21' && scale22[20].span === 2);
+  check('20-team G1 gap is 20', positionGapScale(20)[0].span === 20);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

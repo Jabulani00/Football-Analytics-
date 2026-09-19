@@ -2,12 +2,14 @@
  * Presentational T1 vs T2 blocks used by Power dynamics tabs.
  */
 
-import { type ReactNode, StyleSheet, Text, View } from 'react-native';
+import { type ReactNode, useState } from 'react';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import {
   PPG_BAND_LABEL,
   STREAM_LABEL,
   STREAM_ROLE,
+  positionGapScale,
   colourWord,
   fmtPct,
   fmtPpg,
@@ -126,7 +128,9 @@ function GapScoreRow({
 }
 
 function PositionGapBoard({ pd }: { pd: PowerDynamicsBundle }) {
+  const [open, setOpen] = useState(false);
   const g = pd.positionGap;
+  const scale = positionGapScale(g.tableSize);
   const cols = g.tableSize > 0 && g.tableSize < 10 ? g.tableSize : 10;
   const inSpan = (pos: number) => g.from != null && g.to != null && pos >= g.from && pos <= g.to;
   const cellRole = (pos: number): 't1' | 't2' | 'span' | 'idle' => {
@@ -135,13 +139,19 @@ function PositionGapBoard({ pd }: { pd: PowerDynamicsBundle }) {
     if (inSpan(pos)) return 'span';
     return 'idle';
   };
+  const canOpen = scale.length > 0;
 
   return (
     <View>
       <View style={styles.gapGradeRow}>
-        <View style={styles.gapGradeBox}>
+        <Pressable
+          onPress={() => canOpen && setOpen(true)}
+          disabled={!canOpen}
+          accessibilityRole="button"
+          accessibilityLabel={g.grade ? `Gap grade ${g.grade}` : 'Gap grade'}
+          style={[styles.gapGradeBox, canOpen && styles.gapGradeBoxPress]}>
           <Text style={styles.gapGrade}>{g.grade ?? '—'}</Text>
-        </View>
+        </Pressable>
         {g.grade == null ? (
           <View style={{ flex: 1 }}>
             <Callout text={g.call} tone="info" />
@@ -177,6 +187,42 @@ function PositionGapBoard({ pd }: { pd: PowerDynamicsBundle }) {
           })}
         </View>
       ) : null}
+      <Modal
+        visible={open}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setOpen(false)}>
+        <View style={styles.modalRoot}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setOpen(false)} />
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHead}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalTitle}>Gap grades</Text>
+                <Text style={styles.modalSub}>{g.tableSize} teams</Text>
+              </View>
+              <Pressable onPress={() => setOpen(false)} accessibilityRole="button" accessibilityLabel="Close">
+                <Text style={styles.modalClose}>Close</Text>
+              </Pressable>
+            </View>
+            <Text style={styles.modalLead}>G1 is the largest gap. Each next grade is one place closer.</Text>
+            <View style={styles.modalRowHead}>
+              <Text style={styles.modalHeadCol}>Grade</Text>
+              <Text style={styles.modalHeadCol}>Gap</Text>
+            </View>
+            <ScrollView style={styles.modalList}>
+              {scale.map((row) => {
+                const current = row.grade === g.grade;
+                return (
+                  <View key={row.grade} style={[styles.modalRow, current && styles.modalRowCurrent]}>
+                    <Text style={[styles.modalGrade, current && styles.modalGradeCurrent]}>{row.grade}</Text>
+                    <Text style={[styles.modalGap, current && styles.modalGradeCurrent]}>{row.span}</Text>
+                  </View>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -824,6 +870,9 @@ const styles = StyleSheet.create({
     borderWidth: layout.borderWidth,
     borderColor: theme.border,
   },
+  gapGradeBoxPress: {
+    borderColor: theme.accentBlue,
+  },
   gapGrade: {
     fontFamily: fonts.bodySemiBold,
     fontSize: 22,
@@ -878,4 +927,86 @@ const styles = StyleSheet.create({
   streamRole: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted, marginBottom: spacing.sm },
   streamTeam: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: theme.textPrimary, marginBottom: 2 },
   streamEmpty: { fontFamily: fonts.body, fontSize: 12, color: theme.textFaint },
+  modalRoot: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    justifyContent: 'center',
+    padding: spacing.lg,
+  },
+  modalSheet: {
+    maxHeight: '80%',
+    backgroundColor: theme.surface,
+    borderRadius: layout.borderRadius,
+    borderWidth: layout.borderWidth,
+    borderColor: theme.border,
+    padding: spacing.md,
+  },
+  modalHead: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: spacing.sm,
+    gap: spacing.sm,
+  },
+  modalTitle: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 16,
+    color: theme.textPrimary,
+  },
+  modalSub: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: theme.textMuted,
+    marginTop: 2,
+  },
+  modalClose: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 13,
+    color: theme.accentBlue,
+    paddingVertical: 2,
+  },
+  modalLead: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: theme.textMuted,
+    lineHeight: 17,
+    marginBottom: spacing.sm,
+  },
+  modalRowHead: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.sm,
+    paddingBottom: spacing.xs,
+  },
+  modalHeadCol: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 11,
+    color: theme.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  modalList: { maxHeight: 420 },
+  modalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    borderRadius: layout.borderRadius,
+  },
+  modalRowCurrent: {
+    backgroundColor: '#DBEAFE',
+  },
+  modalGrade: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 14,
+    color: theme.textPrimary,
+  },
+  modalGap: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 14,
+    color: theme.textPrimary,
+  },
+  modalGradeCurrent: {
+    color: theme.accentBlue,
+  },
 });
