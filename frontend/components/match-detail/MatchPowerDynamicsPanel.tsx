@@ -5,7 +5,6 @@ import BhozomaView from '@/components/standings/BhozomaView';
 import ImbangiView from '@/components/standings/ImbangiView';
 import FixtureMotivationPanel from '@/components/standings/FixtureMotivationPanel';
 import { HiddenLayersView } from '@/components/standings/FixtureHiddenLayersPanel';
-import FixtureCoreStatsPanel from '@/components/match-detail/FixtureCoreStatsPanel';
 import H2HPanel from '@/components/match-detail/H2HPanel';
 import {
   BaselineCards,
@@ -262,19 +261,7 @@ export default function MatchPowerDynamicsPanel({
                 <StreamlineCards pd={pd} focus={streamlineSub} />
               </View>
             ) : (
-              <>
-                <BaselineCards pd={pd} />
-                <FixtureCoreStatsPanel
-                  standings={standings}
-                  homeId={pd.t1.teamId}
-                  awayId={pd.t2.teamId}
-                  homeName={pd.t1.name}
-                  awayName={pd.t2.name}
-                  seasonProgress={seasonProgress}
-                  homeLabel={t1Label}
-                  awayLabel={t2Label}
-                />
-              </>
+              <BaselineCards pd={pd} />
             )}
           </View>
         );

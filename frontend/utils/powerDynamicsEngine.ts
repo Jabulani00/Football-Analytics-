@@ -132,7 +132,7 @@ export type BaselineSideGap = {
   meaning: string;
   /** Raw strength on the A=10 … F=0 ladder (what the side received). */
   received: number | null;
-  /** Fixture gap: 0 for the weaker / level side, 1–10 for the stronger. */
+  /** Fixture gap on the 0–10 scale, from the G-grade (may be 2.1 etc.). */
   score: number | null;
 };
 
@@ -140,7 +140,7 @@ export type BaselineGap = {
   t1: BaselineSideGap;
   t2: BaselineSideGap;
   pair: string | null;
-  /** |received T1 − received T2| — 0, 2, 4, 6, 8 or 10. */
+  /** Pair gap from G-grade: (100 − k/(N−1)×100) / 10. */
   separation: number | null;
   /** Gr 1 (max gap) … Gr 6 (none). */
   grade: number | null;
@@ -310,7 +310,7 @@ export function evaluatePositionGap(opts: {
 
   const from = Math.min(t1Rank, t2Rank);
   const to = Math.max(t1Rank, t2Rank);
-  const span = to - from + 1;
+  const span = Math.min(Math.max(to - from + 1, 1), tableSize);
   const gradeIndex = tableSize - span + 1;
   const grade = `G${gradeIndex}`;
   let higher: SideId | 'level' = 'level';
@@ -505,6 +505,28 @@ function strengthBand(
   return 'balanced';
 }
 
+export function gapValueFromPositionGrade(gradeIndex: number, tableSize: number): number | null {
+  const denom = tableSize - 1;
+  if (denom < 1 || !Number.isFinite(gradeIndex) || gradeIndex < 1) return null;
+  const g = Math.min(gradeIndex, denom);
+  const percent = (g / denom) * 100;
+  return Math.round(((100 - percent) / 10) * 10) / 10;
+}
+
+export function letterFromGapValue(value: number): BaselineLetter {
+  if (value >= 9) return 'A';
+  if (value >= 7) return 'B';
+  if (value >= 5) return 'C';
+  if (value >= 3) return 'D';
+  if (value >= 1) return 'E';
+  return 'F';
+}
+
+export function fmtGapScore(v: number | null | undefined): string {
+  if (v == null || Number.isNaN(v)) return '—';
+  return (Math.round(v * 10) / 10).toFixed(1);
+}
+
 export function classifyBaselineLetter(
   zone: 'top' | 'mid' | 'bottom' | null,
   ppg: number | null,
@@ -531,71 +553,72 @@ function emptyBaselineSide(): BaselineSideGap {
   return {
     letter: null,
     recode: null,
-    meaning: 'Need table PPG to grade baseline',
+    meaning: 'Need a G-grade from gap analysis',
     received: null,
     score: null,
   };
 }
 
-export function baselineGapFor(t1: SideSnapshot, t2: SideSnapshot, table: StandingLike[]): BaselineGap {
+export function baselineGapFor(
+  t1: SideSnapshot,
+  t2: SideSnapshot,
+  table: StandingLike[],
+  positionGap: PositionGap,
+): BaselineGap {
   const avg = leagueAvgPpg(table);
-  const letter1 = classifyBaselineLetter(t1.zone, t1.overall.ppg, avg);
-  const letter2 = classifyBaselineLetter(t2.zone, t2.overall.ppg, avg);
+  const value = positionGap.gradeIndex != null
+    ? gapValueFromPositionGrade(positionGap.gradeIndex, positionGap.tableSize)
+    : null;
 
-  const side = (letter: BaselineLetter | null): BaselineSideGap => {
-    if (!letter) return emptyBaselineSide();
+  if (value == null) {
+    const empty = emptyBaselineSide();
     return {
-      letter,
-      recode: BASELINE_RECODE[letter],
-      meaning: BASELINE_LETTER_MEANING[letter],
-      received: BASELINE_LETTER_STRENGTH[letter],
-      score: null,
-    };
-  };
-
-  const s1 = side(letter1);
-  const s2 = side(letter2);
-
-  if (s1.received == null || s2.received == null) {
-    return {
-      t1: s1,
-      t2: s2,
+      t1: empty,
+      t2: empty,
       pair: null,
       separation: null,
       grade: null,
       stronger: null,
       supports: false,
       leagueAvgPpg: avg,
-      call: 'Need both sides on the table with PPG to score the baseline gap.',
+      call: 'Need a G-grade from gap analysis to set A–F types.',
     };
   }
 
-  const separation = Math.abs(s1.received - s2.received);
-  const grade = separationGrade(separation);
-  let stronger: SideId | 'level' = 'level';
-  if (s1.received > s2.received) stronger = 't1';
-  else if (s2.received > s1.received) stronger = 't2';
+  const letter = letterFromGapValue(value);
+  const grade = separationGrade(value);
+  const stronger: SideId | 'level' = value > 0 ? 't1' : 'level';
+  const weakLetter: BaselineLetter = 'F';
 
-  s1.score = stronger === 't1' ? separation : 0;
-  s2.score = stronger === 't2' ? separation : 0;
+  const s1: BaselineSideGap = {
+    letter: stronger === 't1' ? letter : weakLetter,
+    recode: BASELINE_RECODE[stronger === 't1' ? letter : weakLetter],
+    meaning: BASELINE_LETTER_MEANING[stronger === 't1' ? letter : weakLetter],
+    received: stronger === 't1' ? value : 0,
+    score: stronger === 't1' ? value : 0,
+  };
+  const s2: BaselineSideGap = {
+    letter: weakLetter,
+    recode: BASELINE_RECODE[weakLetter],
+    meaning: BASELINE_LETTER_MEANING[weakLetter],
+    received: 0,
+    score: 0,
+  };
 
-  const pair = `${letter1}${letter2}`;
-  const supports = separation >= 6;
-  const strongLabel = stronger === 't1' ? t1.label : stronger === 't2' ? t2.label : null;
-  let call: string;
-  if (stronger === 'level') {
-    call = `Same baseline type (${letter1}) — gap 0, no separation.`;
-  } else {
-    call = `${strongLabel} leads ${separation}/10 on baseline strength (${pair}, Gr ${grade})${
-      supports ? ' — Gr 3+ so this gap can support a call' : ''
-    }.`;
-  }
+  const pair = `${s1.letter}${s2.letter}`;
+  const supports = value >= 6;
+  const denom = Math.max(1, positionGap.tableSize - 1);
+  const g = Math.min(positionGap.gradeIndex ?? denom, denom);
+  const call =
+    stronger === 'level'
+      ? `${positionGap.grade} · ${g}/${denom} · gap ${fmtGapScore(value)} · type ${letter}`
+      : `${positionGap.grade} · ${g}/${denom} · gap ${fmtGapScore(value)} · type ${letter}`;
 
   return {
     t1: s1,
     t2: s2,
     pair,
-    separation,
+    separation: value,
     grade,
     stronger,
     supports,
@@ -1163,7 +1186,14 @@ export function evaluatePowerDynamics(opts: {
   const c2 = colourRead(t2);
   const v1 = venueRead(t1);
   const v2 = venueRead(t2);
-  const baselineGap = baselineGapFor(t1, t2, table);
+  const positionGap = evaluatePositionGap({
+    tableSize: n,
+    t1Rank: t1.rank,
+    t2Rank: t2.rank,
+    t1Label: t1.label,
+    t2Label: t2.label,
+  });
+  const baselineGap = baselineGapFor(t1, t2, table, positionGap);
 
   const dog = underdog === 't1' ? t1 : underdog === 't2' ? t2 : null;
   const dogV = underdog === 't1' ? v1 : underdog === 't2' ? v2 : null;
@@ -1219,13 +1249,7 @@ export function evaluatePowerDynamics(opts: {
     closeOnTable,
     underdog,
     baselineGap,
-    positionGap: evaluatePositionGap({
-      tableSize: n,
-      t1Rank: t1.rank,
-      t2Rank: t2.rank,
-      t1Label: t1.label,
-      t2Label: t2.label,
-    }),
+    positionGap,
     colour: {
       t1: c1,
       t2: c2,

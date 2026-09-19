@@ -3,6 +3,8 @@
  * Run: npx tsx scripts/powerDynamics.test.ts
  */
 import {
+  gapValueFromPositionGrade,
+  letterFromGapValue,
   classifyBaselineLetter,
   colourFromZone,
   currentStreak,
@@ -207,46 +209,48 @@ console.log('\nevaluatePowerDynamics T1 vs T2');
   check('home venue sample', pd.venue.t1.homePpg != null);
   check('character original string', pd.character.t1.original.includes('Original'));
   check('middle guys T2 yellow', pd.middle.t2.yellow === true);
-  check('T1 baseline letter A (green + above avg)', pd.baselineGap.t1.letter === 'A', `got ${pd.baselineGap.t1.letter}`);
-  check('T2 baseline letter D (yellow + below avg)', pd.baselineGap.t2.letter === 'D', `got ${pd.baselineGap.t2.letter}`);
-  check('T1 gap score 6, T2 at 0', pd.baselineGap.t1.score === 6 && pd.baselineGap.t2.score === 0);
-  check('AD pair Gr 3 supports', pd.baselineGap.pair === 'AD' && pd.baselineGap.grade === 3 && pd.baselineGap.supports === true);
+  check('T1 baseline type from G-grade', pd.baselineGap.t1.letter != null);
+  check('T2 sits at 0', pd.baselineGap.t2.score === 0);
+  check('baseline gap is from G-grade', pd.baselineGap.separation != null);
 }
 
-console.log('\nbaseline gap A–F');
+console.log('\nbaseline gap from G-grade');
 {
   check('strong + above = A', classifyBaselineLetter('top', 2.0, 1.5) === 'A');
-  check('strong + below = B', classifyBaselineLetter('top', 1.2, 1.5) === 'B');
-  check('balanced + above = C', classifyBaselineLetter('mid', 1.6, 1.5) === 'C');
-  check('balanced + below = D', classifyBaselineLetter('mid', 1.2, 1.5) === 'D');
-  check('weak + above = E', classifyBaselineLetter('bottom', 1.6, 1.5) === 'E');
   check('weak + below = F', classifyBaselineLetter('bottom', 0.8, 1.5) === 'F');
+  check('G15 / 19 → 2.1', gapValueFromPositionGrade(15, 20) === 2.1);
+  check('2.1 → type E', letterFromGapValue(2.1) === 'E');
+  check('G1 on 20-team → 9.5', gapValueFromPositionGrade(1, 20) === 9.5);
+  check('9.5 → type A', letterFromGapValue(9.5) === 'A');
+  check('G19 on 20-team → 0', gapValueFromPositionGrade(19, 20) === 0);
 
-  const even: StandingLike[] = [
-    row({ teamId: 1, name: 'H', rank: 1, zone: 'top', points: 30, played: 10, won: 10, drawn: 0, lost: 0 }),
-    row({ teamId: 2, name: 'A', rank: 10, zone: 'bottom', points: 5, played: 10, won: 1, drawn: 2, lost: 7 }),
-    row({ teamId: 3, name: 'C', rank: 5, zone: 'mid', points: 15, played: 10, won: 4, drawn: 3, lost: 3 }),
-  ];
-  const af = evaluatePowerDynamics({
-    table: even,
-    homeId: 1,
-    awayId: 2,
-    homeName: 'Top',
-    awayName: 'Bottom',
+  const table20: StandingLike[] = Array.from({ length: 20 }, (_, i) =>
+    row({
+      teamId: i + 1,
+      name: `Club ${i + 1}`,
+      rank: i + 1,
+      points: 60 - i,
+      zone: i < 7 ? 'top' : i < 14 ? 'mid' : 'bottom',
+    }),
+  );
+  const g15 = evaluatePowerDynamics({
+    table: table20,
+    homeId: 3,
+    awayId: 8,
+    homeName: 'Three',
+    awayName: 'Eight',
     homeResults: [],
     awayResults: [],
   });
-  check('AF: T1 received 10', af.baselineGap.t1.received === 10);
-  check('AF: T2 received 0', af.baselineGap.t2.received === 0);
-  check('AF: T1 gap 10, T2 gap 0', af.baselineGap.t1.score === 10 && af.baselineGap.t2.score === 0);
-  check('AF pair', af.baselineGap.pair === 'AF');
-  check('AF Gr 1', af.baselineGap.grade === 1);
+  check('live G15', g15.positionGap.grade === 'G15', `got ${g15.positionGap.grade}`);
+  check('live gap 2.1', g15.baselineGap.t1.score === 2.1 && g15.baselineGap.t2.score === 0);
+  check('live type E', g15.baselineGap.t1.letter === 'E' && g15.baselineGap.pair === 'EF');
 
   const same = evaluatePowerDynamics({
     table: [
       row({ teamId: 1, name: 'H', rank: 2, zone: 'top', points: 22, played: 10 }),
       row({ teamId: 2, name: 'A', rank: 3, zone: 'top', points: 21, played: 10 }),
-      row({ teamId: 3, name: 'C', rank: 10, zone: 'bottom', points: 5, played: 10 }),
+      row({ teamId: 3, name: 'C', rank: 1, zone: 'top', points: 30, played: 10 }),
     ],
     homeId: 1,
     awayId: 2,
@@ -255,8 +259,8 @@ console.log('\nbaseline gap A–F');
     homeResults: [],
     awayResults: [],
   });
-  check('same letter both at 0', same.baselineGap.t1.score === 0 && same.baselineGap.t2.score === 0);
-  check('same letter stronger is level', same.baselineGap.stronger === 'level');
+  check('neighbours on 3-team table gap 0', same.baselineGap.t1.score === 0 && same.baselineGap.t2.score === 0);
+  check('gap 0 stronger is level', same.baselineGap.stronger === 'level');
 }
 
 console.log('\nT1 is the better table side (points, then GD, then GF)');

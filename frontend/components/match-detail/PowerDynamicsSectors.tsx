@@ -11,6 +11,7 @@ import {
   STREAM_ROLE,
   positionGapScale,
   colourWord,
+  fmtGapScore,
   fmtPct,
   fmtPpg,
   wdl,
@@ -19,7 +20,6 @@ import {
   type ColourSideRead,
   type LastGameFlag,
   type PowerDynamicsBundle,
-  type ScopeRecord,
   type ShowRead,
   type SideSnapshot,
   type StreamName,
@@ -80,16 +80,6 @@ function Line({ text, tone }: { text: string; tone?: Tone }) {
   );
 }
 
-export function RecordBlock({ title, rec }: { title: string; rec: ScopeRecord }) {
-  return (
-    <Text style={styles.line}>
-      {title}: {wdl(rec)}
-      {rec.ppg != null ? ` · PPG ${fmtPpg(rec.ppg)}` : ''}
-      {rec.ppga != null ? ` · PPGa ${fmtPpg(rec.ppga)}` : ''}
-    </Text>
-  );
-}
-
 function GapScoreRow({
   s,
   g,
@@ -100,14 +90,14 @@ function GapScoreRow({
   return (
     <View style={styles.gapRow}>
       <View style={styles.gapScoreBox}>
-        <Text style={styles.gapScore}>{g.score != null ? g.score : '—'}</Text>
+        <Text style={styles.gapScore}>{fmtGapScore(g.score)}</Text>
         <Text style={styles.gapScoreCap}>gap / 10</Text>
       </View>
       <View style={{ flex: 1 }}>
         <Line
           text={
             g.letter
-              ? `Received ${g.letter} (${g.received}/10) — ${g.meaning}`
+              ? `Type ${g.letter} (${fmtGapScore(g.received)}/10) — ${g.meaning}`
               : g.meaning
           }
         />
@@ -239,16 +229,13 @@ export function BaselineCards({ pd }: { pd: PowerDynamicsBundle }) {
           : `${s.venue === 'home' ? 'Home' : 'Away'} · not on this table`
       }>
       <GapScoreRow s={s} g={letter} />
-      <RecordBlock title="Original" rec={s.overall} />
-      <RecordBlock title="Home" rec={s.home} />
-      <RecordBlock title="Away" rec={s.away} />
     </SideCard>
   );
   return (
     <View>
       <SectorIntro
         title="Baseline — original state"
-        note="Natural table state before separators. T1 is the better table side (points, then GD, then goals scored); T2 is who they face. Weaker A–F baseline sits at 0; the stronger side gets 2–10."
+        note="Natural table state before separators. T1 is the better table side (points, then GD, then goals scored); T2 is who they face. A–F types come from the G-grade: k/(N−1), then 100 minus that percentage, on the 0–10 gap scale."
       />
       {gap.leagueAvgPpg != null ? (
         <Text style={styles.note}>League average PPG {gap.leagueAvgPpg.toFixed(2)}</Text>
