@@ -74,6 +74,7 @@ const BASELINE_SUBS = [
 
 const STREAMLINE_SUBS = [
   { id: 'bateteme', label: 'Bateteme stream' },
+  { id: 'compliant', label: 'Compliant stream' },
   { id: 'zidane_law', label: 'Zidane Law' },
   { id: 'bookie', label: 'Bookie mistake' },
 ] as const;

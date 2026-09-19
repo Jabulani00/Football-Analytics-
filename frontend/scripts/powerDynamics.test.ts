@@ -362,6 +362,7 @@ console.log('\nstreamline');
     t2Odds: 5.5,
   });
   check('high T1 PPG + lower T1 odds → compliant', compliant.oddsOutcome === 'compliant' && compliant.t1PpgHigh === true);
+  check('compliant stream membership', compliant.inStreams.compliant === true && compliant.t1Stream === 'compliant');
 
   const nonComp = evaluateStreamline({
     t1Points: 28,

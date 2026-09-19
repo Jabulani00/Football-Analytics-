@@ -301,7 +301,7 @@ export function GapAnalysisCards({ pd }: { pd: PowerDynamicsBundle }) {
 }
 
 function streamTone(name: StreamName | null): Tone {
-  if (name === 'zidane_law') return 'good';
+  if (name === 'compliant' || name === 'zidane_law') return 'good';
   if (name === 'bookie') return 'bad';
   if (name === 'bateteme') return 'warn';
   return 'info';
@@ -315,8 +315,8 @@ export function StreamlineCards({
   focus?: StreamName;
 }) {
   const s = pd.streamline;
-  const belong = (sideLabel: string, assigned: StreamName | null, points: number | null, stream: StreamName) => {
-    const inIt = assigned === stream;
+  const belong = (sideLabel: string, points: number | null, stream: StreamName) => {
+    const inIt = s.inStreams[stream];
     return (
       <SideCard
         key={`${stream}-${sideLabel}`}
@@ -327,7 +327,7 @@ export function StreamlineCards({
           tone={inIt ? streamTone(stream) : 'info'}
         />
         <Line
-          text={assigned ? `Assigned stream: ${STREAM_LABEL[assigned]}` : 'Not assigned yet'}
+          text={s.t1Stream ? `Primary stream: ${STREAM_LABEL[s.t1Stream]}` : 'Not assigned yet'}
         />
       </SideCard>
     );
@@ -356,23 +356,25 @@ export function StreamlineCards({
     </View>
   );
 
-  const t1In = s.t1Stream;
-  const t2In = s.t2Stream;
   const inStream = (name: StreamName): string[] => {
     const out: string[] = [];
-    if (t1In === name) out.push(`${pd.t1.label} · ${s.t1Points ?? '—'} pts`);
-    if (t2In === name) out.push(`${pd.t2.label} · ${s.t2Points ?? '—'} pts`);
+    if (s.inStreams[name]) {
+      out.push(`${pd.t1.label} · ${s.t1Points ?? '—'} pts`);
+      out.push(`${pd.t2.label} · ${s.t2Points ?? '—'} pts`);
+    }
     return out;
   };
 
   const introNote =
     focus === 'bateteme'
-      ? 'ΔP ≤ 4. Both sides sit here when the points gap is close and H2H is not Zidane Law or Bookie mistake.'
-      : focus === 'zidane_law'
-        ? 'T1 has never beaten T2 in H2H.'
-        : focus === 'bookie'
-          ? 'T2 does beat T1, but H2H stats still say T1 has never beaten T2.'
-          : 'T1 high PPG expects lower odds than T2. H2H decides Zidane Law vs Bookie mistake.';
+      ? 'ΔP ≤ 4. Both sides sit here when the points gap is close.'
+      : focus === 'compliant'
+        ? 'T1 PPG is high, so T1 odds should be lower than T2.'
+        : focus === 'zidane_law'
+          ? 'T1 has never beaten T2 in H2H.'
+          : focus === 'bookie'
+            ? 'T2 does beat T1, but H2H stats still say T1 has never beaten T2.'
+            : 'Order: Bateteme stream, Compliant stream, Zidane Law, Bookie mistake.';
 
   const oddsTone: Tone =
     s.oddsOutcome === 'compliant' ? 'good' : s.oddsOutcome === 'non_compliant' ? 'bad' : 'info';
@@ -396,8 +398,8 @@ export function StreamlineCards({
       {focus ? (
         <>
           {bucket(focus, inStream(focus))}
-          {belong(pd.t1.label, t1In, s.t1Points, focus)}
-          {belong(pd.t2.label, t2In, s.t2Points, focus)}
+          {belong(pd.t1.label, s.t1Points, focus)}
+          {belong(pd.t2.label, s.t2Points, focus)}
         </>
       ) : s.t1Stream ? (
         bucket(s.t1Stream, inStream(s.t1Stream))

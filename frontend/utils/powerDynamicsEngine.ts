@@ -185,17 +185,21 @@ export type PowerDynamicsBundle = {
 export const STREAMLINE_CLOSE_MAX = 4;
 export const STREAMLINE_FAR_MIN = 4.1;
 
-export type StreamName = 'bateteme' | 'zidane_law' | 'bookie';
+export type StreamName = 'bateteme' | 'compliant' | 'zidane_law' | 'bookie';
 export type OddsOutcome = 'compliant' | 'non_compliant';
+
+export const STREAM_ORDER: StreamName[] = ['bateteme', 'compliant', 'zidane_law', 'bookie'];
 
 export const STREAM_LABEL: Record<StreamName, string> = {
   bateteme: 'Bateteme stream',
+  compliant: 'Compliant stream',
   zidane_law: 'Zidane Law',
   bookie: 'Bookie mistake',
 };
 
 export const STREAM_ROLE: Record<StreamName, string> = {
   bateteme: 'Close — ΔP ≤ 4',
+  compliant: 'T1 PPG is high and T1 odds are lower than T2',
   zidane_law: 'T1 has never beaten T2',
   bookie: 'T2 does beat T1, while stats say T1 has never beaten T2',
 };
@@ -220,6 +224,7 @@ export type StreamlineRead = {
   t2H2hWins: number;
   t1NeverBeatenT2: boolean;
   t2BeatsT1: boolean;
+  inStreams: Record<StreamName, boolean>;
   oddsCall: string;
   call: string;
 };
@@ -395,14 +400,37 @@ export function evaluateStreamline(opts: {
     oddsCall = `T1 PPG ${t1Ppg!.toFixed(2)} vs T2 ${t2Ppg!.toFixed(2)} — expected T1 odds lower, got T1 ${t1Odds} vs T2 ${t2Odds}. Non-compliant.`;
   }
 
-  const empty = (call: string, t1Stream: StreamName | null, t2Stream: StreamName | null): StreamlineRead => ({
+  const inStreams: Record<StreamName, boolean> = {
+    bateteme: close,
+    compliant: oddsOutcome === 'compliant',
+    zidane_law: t1NeverBeatenT2 && !t2BeatsT1,
+    bookie: t1NeverBeatenT2 && t2BeatsT1,
+  };
+  const primary = STREAM_ORDER.find((name) => inStreams[name]) ?? null;
+
+  let call: string;
+  if (delta == null) {
+    call = 'Need both sides on the table to run Streamline (T1 pts − T2 pts).';
+  } else if (inStreams.bookie) {
+    call = `Bookie mistake — ${t2Label} does beat ${t1Label}, but H2H stats still say ${t1Label} has never beaten ${t2Label} (${h2hMeetings} meetings, T1 ${t1H2hWins}W / T2 ${t2H2hWins}W).`;
+  } else if (inStreams.zidane_law) {
+    call = `Zidane Law — ${t1Label} has never beaten ${t2Label} (${h2hMeetings} meetings, T1 ${t1H2hWins}W / T2 ${t2H2hWins}W).`;
+  } else if (inStreams.compliant) {
+    call = `Compliant stream — T1 PPG is higher and T1 odds are lower than T2.`;
+  } else if (inStreams.bateteme) {
+    call = `${t1Label} − ${t2Label} = ${delta} pts (≤ 4). Both sides sit in Bateteme stream.`;
+  } else {
+    call = `${t1Label} − ${t2Label} = ${delta} pts. Not in Bateteme, Compliant stream, Zidane Law, or Bookie mistake.`;
+  }
+
+  return {
     t1Points,
     t2Points,
     delta,
     close,
     far,
-    t1Stream,
-    t2Stream,
+    t1Stream: primary,
+    t2Stream: primary,
     t1Ppg,
     t2Ppg,
     t1Odds,
@@ -414,43 +442,10 @@ export function evaluateStreamline(opts: {
     t2H2hWins,
     t1NeverBeatenT2,
     t2BeatsT1,
+    inStreams,
     oddsCall,
     call,
-  });
-
-  if (delta == null) {
-    return empty('Need both sides on the table to run Streamline (T1 pts − T2 pts).', null, null);
-  }
-
-  if (t1NeverBeatenT2 && t2BeatsT1) {
-    return empty(
-      `Bookie mistake — ${t2Label} does beat ${t1Label}, but H2H stats still say ${t1Label} has never beaten ${t2Label} (${h2hMeetings} meetings, T1 ${t1H2hWins}W / T2 ${t2H2hWins}W).`,
-      'bookie',
-      'bookie',
-    );
-  }
-
-  if (t1NeverBeatenT2) {
-    return empty(
-      `Zidane Law — ${t1Label} has never beaten ${t2Label} (${h2hMeetings} meetings, T1 ${t1H2hWins}W / T2 ${t2H2hWins}W).`,
-      'zidane_law',
-      'zidane_law',
-    );
-  }
-
-  if (close) {
-    return empty(
-      `${t1Label} − ${t2Label} = ${delta} pts (≤ 4). Both sides sit in Bateteme stream.`,
-      'bateteme',
-      'bateteme',
-    );
-  }
-
-  return empty(
-    `${t1Label} − ${t2Label} = ${delta} pts. No Zidane Law / Bookie mistake in H2H (T1 has beaten T2).`,
-    null,
-    null,
-  );
+  };
 }
 
 const VENUE_GAP = 0.3;
