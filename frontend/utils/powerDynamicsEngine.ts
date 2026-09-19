@@ -51,6 +51,8 @@ export type SideSnapshot = {
   label: string;
   rank: number | null;
   points: number | null;
+  goalDiff: number | null;
+  goalsFor: number | null;
   zone: 'top' | 'mid' | 'bottom' | null;
   colour: TableColour | null;
   overall: ScopeRecord;
@@ -424,26 +426,39 @@ export function venueWord(venue: 'home' | 'away'): string {
   return venue === 'home' ? 'Home' : 'Away';
 }
 
+/** League-table keys used to pick T1 (better side) vs T2. */
+export type TableOrderKeys = {
+  points?: number | null;
+  goalDiff?: number | null;
+  goalsFor?: number | null;
+  rank?: number | null;
+};
+
 /**
- * T1 is the side with more points. Equal points → better rank (lower number).
- * Last resort: fixture home, so we always have a T1.
+ * Positive when `a` sits above `b` on the table.
+ * Order: points → goal difference → goals scored → better rank.
  */
-export function t1IsHomeSide(
-  homePoints: number | null | undefined,
-  awayPoints: number | null | undefined,
-  homeRank: number | null | undefined,
-  awayRank: number | null | undefined,
-): boolean {
-  if (homePoints != null && awayPoints != null) {
-    if (homePoints !== awayPoints) return homePoints > awayPoints;
-    if (homeRank != null && awayRank != null && homeRank !== awayRank) {
-      return homeRank < awayRank;
-    }
-  } else if (homePoints != null && awayPoints == null) {
-    return true;
-  } else if (awayPoints != null && homePoints == null) {
-    return false;
+export function compareTableOrder(a: TableOrderKeys, b: TableOrderKeys): number {
+  if (a.points != null && b.points != null && a.points !== b.points) return a.points - b.points;
+  if (a.points != null && b.points == null) return 1;
+  if (b.points != null && a.points == null) return -1;
+  if (a.goalDiff != null && b.goalDiff != null && a.goalDiff !== b.goalDiff) {
+    return a.goalDiff - b.goalDiff;
   }
+  if (a.goalsFor != null && b.goalsFor != null && a.goalsFor !== b.goalsFor) {
+    return a.goalsFor - b.goalsFor;
+  }
+  if (a.rank != null && b.rank != null && a.rank !== b.rank) return b.rank - a.rank;
+  return 0;
+}
+
+/**
+ * T1 is the side with more points. Equal points → better goal difference,
+ * then more goals scored, then better rank. Last resort: fixture home.
+ */
+export function t1IsHomeSide(home: TableOrderKeys, away: TableOrderKeys): boolean {
+  const cmp = compareTableOrder(home, away);
+  if (cmp !== 0) return cmp > 0;
   return true;
 }
 
@@ -685,6 +700,17 @@ export function lastGameFlags(last: TeamResult | null, avgScored: number | null)
   ];
 }
 
+function tallyFromResults(results: TeamResult[]): { goalDiff: number; goalsFor: number } | null {
+  if (results.length === 0) return null;
+  let goalsFor = 0;
+  let goalDiff = 0;
+  for (const r of results) {
+    goalsFor += r.gf;
+    goalDiff += r.goalDiff;
+  }
+  return { goalsFor, goalDiff };
+}
+
 function snapshotFor(
   name: string,
   teamId: number | null,
@@ -695,6 +721,7 @@ function snapshotFor(
 ): Omit<SideSnapshot, 'side' | 'label'> {
   const overallResults = recordFromResults(results);
   const overall = overallResults.mp > 0 ? overallResults : row ? recordFromStanding(row) : emptyRecord();
+  const fromResults = tallyFromResults(results);
   const { topCut, bottomStart } = thirdCuts(leagueSize);
   return {
     venue,
@@ -702,6 +729,8 @@ function snapshotFor(
     name,
     rank: row?.rank ?? null,
     points: row?.points ?? null,
+    goalDiff: row?.goalDiff ?? fromResults?.goalDiff ?? null,
+    goalsFor: row?.goalsFor ?? fromResults?.goalsFor ?? null,
     zone: row?.zone ?? null,
     colour: colourFromZone(row?.zone),
     overall,
@@ -920,7 +949,7 @@ export function evaluatePowerDynamics(opts: {
 
   const homeSnap = snapshotFor(homeName, homeId ?? null, homeRow, homeResults, n, 'home');
   const awaySnap = snapshotFor(awayName, awayId ?? null, awayRow, awayResults, n, 'away');
-  const t1Home = t1IsHomeSide(homeSnap.points, awaySnap.points, homeSnap.rank, awaySnap.rank);
+  const t1Home = t1IsHomeSide(homeSnap, awaySnap);
   const t1 = asSide(t1Home ? homeSnap : awaySnap, 't1');
   const t2 = asSide(t1Home ? awaySnap : homeSnap, 't2');
   const t1Results = t1Home ? homeResults : awayResults;
@@ -933,14 +962,11 @@ export function evaluatePowerDynamics(opts: {
   const closeOnTable = pointsDiff != null && pointsDiff <= CLOSE_PTS;
 
   let underdog: SideId | 'level' | null = null;
-  if (t1.points != null && t2.points != null) {
-    if (t1.points < t2.points) underdog = 't1';
-    else if (t2.points < t1.points) underdog = 't2';
-    else if (t1.rank != null && t2.rank != null) {
-      if (t1.rank > t2.rank) underdog = 't1';
-      else if (t2.rank > t1.rank) underdog = 't2';
-      else underdog = 'level';
-    } else underdog = 'level';
+  const order = compareTableOrder(t1, t2);
+  if (t1.points != null || t2.points != null || t1.goalDiff != null || t2.goalDiff != null) {
+    if (order > 0) underdog = 't2';
+    else if (order < 0) underdog = 't1';
+    else underdog = 'level';
   }
 
   const c1 = colourRead(t1);

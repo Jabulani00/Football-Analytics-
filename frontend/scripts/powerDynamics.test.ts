@@ -71,10 +71,36 @@ console.log('\nlabels / colour / PPG bands');
 {
   check('T1 label', sideLabel('t1', 'Arsenal') === 'T1 (Arsenal)');
   check('T2 label', sideLabel('t2', 'Chelsea') === 'T2 (Chelsea)');
-  check('home more pts → T1 is home', t1IsHomeSide(20, 10, 2, 8) === true);
-  check('away more pts → T1 is away', t1IsHomeSide(10, 20, 8, 2) === false);
-  check('equal pts better rank is T1', t1IsHomeSide(15, 15, 3, 6) === true);
-  check('equal pts worse home rank → T1 is away', t1IsHomeSide(15, 15, 8, 3) === false);
+  check(
+    'home more pts → T1 is home',
+    t1IsHomeSide({ points: 20, rank: 2 }, { points: 10, rank: 8 }) === true,
+  );
+  check(
+    'away more pts → T1 is away',
+    t1IsHomeSide({ points: 10, rank: 8 }, { points: 20, rank: 2 }) === false,
+  );
+  check(
+    'equal pts better GD is T1 even if rank is worse',
+    t1IsHomeSide({ points: 15, goalDiff: 8, rank: 6 }, { points: 15, goalDiff: 2, rank: 3 }) === true,
+  );
+  check(
+    'equal pts worse GD → T1 is away',
+    t1IsHomeSide({ points: 15, goalDiff: 1, rank: 3 }, { points: 15, goalDiff: 9, rank: 6 }) === false,
+  );
+  check(
+    'equal pts and GD → more goals scored is T1',
+    t1IsHomeSide(
+      { points: 15, goalDiff: 4, goalsFor: 22, rank: 8 },
+      { points: 15, goalDiff: 4, goalsFor: 14, rank: 3 },
+    ) === true,
+  );
+  check(
+    'equal pts, GD and GF → better rank is T1',
+    t1IsHomeSide(
+      { points: 15, goalDiff: 4, goalsFor: 14, rank: 3 },
+      { points: 15, goalDiff: 4, goalsFor: 14, rank: 6 },
+    ) === true,
+  );
   check('top → green', colourFromZone('top') === 'green');
   check('mid → yellow', colourFromZone('mid') === 'yellow');
   check('bottom → red', colourFromZone('bottom') === 'red');
@@ -231,7 +257,7 @@ console.log('\nbaseline gap A–F');
   check('same letter stronger is level', same.baselineGap.stronger === 'level');
 }
 
-console.log('\nT1 is the side with more points');
+console.log('\nT1 is the better table side (points, then GD, then GF)');
 {
   const table: StandingLike[] = [
     row({ teamId: 1, name: 'Home', rank: 12, zone: 'mid', points: 14, played: 12, won: 3, drawn: 5, lost: 4 }),
@@ -251,6 +277,41 @@ console.log('\nT1 is the side with more points');
   check('T2 is the home side (14 pts)', swapped.t2.venue === 'home' && swapped.t2.label === 'T2 (Home FC)');
   check('T2 is underdog', swapped.underdog === 't2');
   check('T1 last game is the away team win', swapped.lastGame.t1.some((f) => f.id === 'won' && f.active));
+
+  const tied = evaluatePowerDynamics({
+    table: [
+      row({
+        teamId: 1,
+        name: 'Home',
+        rank: 6,
+        zone: 'mid',
+        points: 22,
+        goalDiff: 9,
+        goalsFor: 30,
+        played: 12,
+      }),
+      row({
+        teamId: 2,
+        name: 'Away',
+        rank: 3,
+        zone: 'top',
+        points: 22,
+        goalDiff: 2,
+        goalsFor: 24,
+        played: 12,
+      }),
+      row({ teamId: 3, name: 'C', rank: 1, zone: 'top', points: 30, played: 12 }),
+    ],
+    homeId: 1,
+    awayId: 2,
+    homeName: 'Home FC',
+    awayName: 'Away FC',
+    homeResults: [],
+    awayResults: [],
+  });
+  check('equal pts better GD → T1 is home', tied.t1.venue === 'home' && tied.t1.goalDiff === 9);
+  check('equal pts worse GD → T2 is away', tied.t2.venue === 'away' && tied.t2.goalDiff === 2);
+  check('GD underdog is T2', tied.underdog === 't2');
 }
 
 console.log('\nstreamline');

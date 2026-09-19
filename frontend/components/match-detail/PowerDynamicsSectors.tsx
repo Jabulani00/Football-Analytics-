@@ -146,7 +146,7 @@ export function BaselineCards({ pd }: { pd: PowerDynamicsBundle }) {
     <View>
       <SectorIntro
         title="Baseline — original state"
-        note="Natural table state before separators. T1 is the side with more points; T2 is who they face. Weaker baseline sits at 0; the stronger side gets the A–F gap (2–10)."
+        note="Natural table state before separators. T1 is the better table side (points, then goal difference, then goals scored); T2 is who they face. Weaker baseline sits at 0; the stronger side gets the A–F gap (2–10)."
       />
       {gap.leagueAvgPpg != null ? (
         <Text style={styles.note}>League average PPG {gap.leagueAvgPpg.toFixed(2)}</Text>
@@ -375,7 +375,7 @@ export function VenueCards({ pd }: { pd: PowerDynamicsBundle }) {
     <View>
       <SectorIntro
         title="Home / Away strong → underdog strength"
-        note="T1 has more points; T2 is the underdog. A venue lift of 0.3+ PPG vs overall counts as strength."
+        note="T1 is the better table side (points, then GD, then goals scored); T2 is the underdog. A venue lift of 0.3+ PPG vs overall counts as strength."
       />
       <Callout text={pd.venue.call} tone="warn" />
       {one(pd.t1, pd.venue.t1)}

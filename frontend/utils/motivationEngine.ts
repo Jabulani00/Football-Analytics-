@@ -38,6 +38,8 @@ export type StandingLike = {
   won?: number;
   drawn?: number;
   lost?: number;
+  goalDiff?: number;
+  goalsFor?: number;
 };
 
 export type CriticalLines = {

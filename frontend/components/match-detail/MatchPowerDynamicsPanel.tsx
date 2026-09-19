@@ -101,6 +101,8 @@ function toStandingLike(rows: StandingRow[]): StandingLike[] {
     won: r.won,
     drawn: r.drawn,
     lost: r.lost,
+    goalDiff: r.goalDiff,
+    goalsFor: r.goalsFor,
   }));
 }
 
@@ -462,7 +464,7 @@ export default function MatchPowerDynamicsPanel({
   return (
     <View>
       <Text style={styles.blurb}>
-        Power dynamics for {t1Label} vs {t2Label} — T1 has more points. Open each sector in order.
+        Power dynamics for {t1Label} vs {t2Label} — T1 is the better table side (points, then GD, then goals scored). Open each sector in order.
         Numbers are live from the table and recent finished games.
       </Text>
       <SubTabBar
