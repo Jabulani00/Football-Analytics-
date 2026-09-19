@@ -125,9 +125,66 @@ function GapScoreRow({
   );
 }
 
+function PositionGapBoard({ pd }: { pd: PowerDynamicsBundle }) {
+  const g = pd.positionGap;
+  const cols = g.tableSize > 0 && g.tableSize < 10 ? g.tableSize : 10;
+  const inSpan = (pos: number) => g.from != null && g.to != null && pos >= g.from && pos <= g.to;
+  const cellRole = (pos: number): 't1' | 't2' | 'span' | 'idle' => {
+    if (g.t1Rank === pos) return 't1';
+    if (g.t2Rank === pos) return 't2';
+    if (inSpan(pos)) return 'span';
+    return 'idle';
+  };
+
+  return (
+    <View>
+      <View style={styles.gapGradeRow}>
+        <View style={styles.gapGradeBox}>
+          <Text style={styles.gapGrade}>{g.grade ?? '—'}</Text>
+          <Text style={styles.gapScoreCap}>
+            {g.span != null ? `${g.span} of ${g.tableSize}` : `1–${g.tableSize || 'N'}`}
+          </Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Callout text={g.call} tone={g.span != null && g.span <= 4 ? 'warn' : 'info'} />
+        </View>
+      </View>
+      {g.tableSize >= 2 ? (
+        <View style={styles.posGrid}>
+          {Array.from({ length: g.tableSize }, (_, i) => i + 1).map((pos) => {
+            const role = cellRole(pos);
+            return (
+              <View key={pos} style={[styles.posSlot, { width: `${100 / cols}%` }]}>
+                <View
+                  style={[
+                    styles.posCell,
+                    role === 't1' && styles.posCellT1,
+                    role === 't2' && styles.posCellT2,
+                    role === 'span' && styles.posCellSpan,
+                  ]}>
+                  <Text
+                    style={[
+                      styles.posNum,
+                      (role === 't1' || role === 't2') && styles.posNumOn,
+                    ]}>
+                    {pos}
+                  </Text>
+                  {role === 't1' || role === 't2' ? (
+                    <Text style={styles.posTag}>{role === 't1' ? 'T1' : 'T2'}</Text>
+                  ) : null}
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 export function BaselineCards({ pd }: { pd: PowerDynamicsBundle }) {
   const gap = pd.baselineGap;
-  const row = (s: SideSnapshot, g: typeof gap.t1) => (
+  const row = (s: SideSnapshot, letter: typeof gap.t1) => (
     <SideCard
       key={s.side}
       label={s.label}
@@ -136,7 +193,7 @@ export function BaselineCards({ pd }: { pd: PowerDynamicsBundle }) {
           ? `${s.venue === 'home' ? 'Home' : 'Away'} · #${s.rank} · ${s.points} pts · ${colourWord(s.colour)}`
           : `${s.venue === 'home' ? 'Home' : 'Away'} · not on this table`
       }>
-      <GapScoreRow s={s} g={g} />
+      <GapScoreRow s={s} g={letter} />
       <RecordBlock title="Original" rec={s.overall} />
       <RecordBlock title="Home" rec={s.home} />
       <RecordBlock title="Away" rec={s.away} />
@@ -146,7 +203,7 @@ export function BaselineCards({ pd }: { pd: PowerDynamicsBundle }) {
     <View>
       <SectorIntro
         title="Baseline — original state"
-        note="Natural table state before separators. T1 is the better table side (points, then goal difference, then goals scored); T2 is who they face. Weaker baseline sits at 0; the stronger side gets the A–F gap (2–10)."
+        note="Natural table state before separators. T1 is the better table side (points, then GD, then goals scored); T2 is who they face. Weaker A–F baseline sits at 0; the stronger side gets 2–10."
       />
       {gap.leagueAvgPpg != null ? (
         <Text style={styles.note}>League average PPG {gap.leagueAvgPpg.toFixed(2)}</Text>
@@ -168,41 +225,35 @@ export function BaselineCards({ pd }: { pd: PowerDynamicsBundle }) {
 }
 
 export function GapAnalysisCards({ pd }: { pd: PowerDynamicsBundle }) {
-  const gap = pd.baselineGap;
-  const one = (s: SideSnapshot, g: typeof gap.t1) => (
+  const g = pd.positionGap;
+  const one = (s: SideSnapshot, rank: number | null) => (
     <SideCard
       key={s.side}
       label={s.label}
       meta={
-        s.rank != null
-          ? `${s.venue === 'home' ? 'Home' : 'Away'} · #${s.rank} · ${s.points} pts`
-          : s.venue === 'home'
-            ? 'Home'
-            : 'Away'
+        rank != null
+          ? `${s.venue === 'home' ? 'Home' : 'Away'} · #${rank} · ${s.points ?? '—'} pts`
+          : `${s.venue === 'home' ? 'Home' : 'Away'} · not on this table`
       }>
-      <GapScoreRow s={s} g={g} />
+      <Line
+        text={
+          rank != null && g.tableSize > 0
+            ? `Place ${rank} on a 1–${g.tableSize} ladder`
+            : 'No table place to plot'
+        }
+      />
     </SideCard>
   );
+
   return (
     <View>
       <SectorIntro
         title="Gap analysis"
-        note="One side sits at 0; the other gets 2–10 from the A–F baseline ladder. Gr 3+ (gap 6–10) can support a call."
+        note={`The scale is 1–${g.tableSize || 'N'} (one slot per team on this table). Inclusive distance between T1 and T2 is the grade.`}
       />
-      {gap.leagueAvgPpg != null ? (
-        <Text style={styles.note}>League average PPG {gap.leagueAvgPpg.toFixed(2)}</Text>
-      ) : null}
-      <Callout
-        text={gap.call}
-        tone={gap.supports ? 'warn' : gap.stronger === 'level' ? 'info' : 'good'}
-      />
-      {gap.pair ? (
-        <Callout
-          text={`Pair ${gap.pair} · separation ${gap.separation ?? '—'}/10 · Gr ${gap.grade ?? '—'}`}
-        />
-      ) : null}
-      {one(pd.t1, gap.t1)}
-      {one(pd.t2, gap.t2)}
+      <PositionGapBoard pd={pd} />
+      {one(pd.t1, g.t1Rank)}
+      {one(pd.t2, g.t2Rank)}
     </View>
   );
 }
@@ -726,6 +777,65 @@ const styles = StyleSheet.create({
     height: 6,
     borderRadius: 3,
     backgroundColor: theme.accentBlue,
+  },
+  gapGradeRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  gapGradeBox: {
+    width: 72,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.sm,
+    borderRadius: layout.borderRadius,
+    backgroundColor: theme.surfaceMuted,
+    borderWidth: layout.borderWidth,
+    borderColor: theme.border,
+  },
+  gapGrade: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 22,
+    color: theme.textPrimary,
+    lineHeight: 26,
+  },
+  posGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginBottom: spacing.sm,
+  },
+  posSlot: { padding: 2 },
+  posCell: {
+    minHeight: 36,
+    borderRadius: 4,
+    borderWidth: layout.borderWidth,
+    borderColor: theme.border,
+    backgroundColor: theme.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
+  },
+  posCellSpan: {
+    backgroundColor: '#DBEAFE',
+    borderColor: theme.accentBlue,
+  },
+  posCellT1: {
+    backgroundColor: theme.accentBlue,
+    borderColor: theme.accentBlue,
+  },
+  posCellT2: {
+    backgroundColor: theme.accentOrange,
+    borderColor: theme.accentOrange,
+  },
+  posNum: { fontFamily: fonts.bodySemiBold, fontSize: 11, color: theme.textMuted, lineHeight: 14 },
+  posNumOn: { color: '#FFFFFF' },
+  posTag: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 8,
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
+    lineHeight: 10,
   },
   streamBucket: {
     borderWidth: layout.borderWidth,

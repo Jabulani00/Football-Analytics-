@@ -156,6 +156,8 @@ export type PowerDynamicsBundle = {
   closeOnTable: boolean;
   underdog: SideId | 'level' | null;
   baselineGap: BaselineGap;
+  /** Table-position gap (1–N scale). Used by the Gap analysis tab. */
+  positionGap: PositionGap;
   colour: { t1: ColourSideRead; t2: ColourSideRead; whoFacesWho: string };
   venue: { t1: VenueRead; t2: VenueRead; call: string };
   character: { t1: CharacterSide; t2: CharacterSide };
@@ -206,6 +208,81 @@ export type StreamlineRead = {
   t2Stream: StreamName | null;
   call: string;
 };
+
+export type PositionGap = {
+  tableSize: number;
+  t1Rank: number | null;
+  t2Rank: number | null;
+  /** Inclusive count of table places from T1 to T2 (pos 2 vs 5 → 4). */
+  span: number | null;
+  /** G{span}. Max grade on this table is G{tableSize}. */
+  grade: string | null;
+  from: number | null;
+  to: number | null;
+  higher: SideId | 'level' | null;
+  call: string;
+};
+
+function rankOrNull(v: number | null | undefined): number | null {
+  if (v == null || !Number.isFinite(v) || v < 1) return null;
+  return Math.trunc(v);
+}
+
+/**
+ * Gap analysis on the live table: scale is 1…N (N = number of teams).
+ * Distance is inclusive, so T1 #2 vs T2 #5 on a 20-team table is G4.
+ */
+export function evaluatePositionGap(opts: {
+  tableSize: number;
+  t1Rank: number | null | undefined;
+  t2Rank: number | null | undefined;
+  t1Label: string;
+  t2Label: string;
+}): PositionGap {
+  const tableSize = Math.max(0, Math.trunc(opts.tableSize));
+  const t1Rank = rankOrNull(opts.t1Rank);
+  const t2Rank = rankOrNull(opts.t2Rank);
+  const empty: PositionGap = {
+    tableSize,
+    t1Rank,
+    t2Rank,
+    span: null,
+    grade: null,
+    from: null,
+    to: null,
+    higher: null,
+    call: 'Need both ranks on the table to run gap analysis.',
+  };
+  if (tableSize < 2) {
+    return { ...empty, call: 'Need a full table to set the 1–N gap scale.' };
+  }
+  if (t1Rank == null || t2Rank == null) {
+    return {
+      ...empty,
+      call: `Need both ranks on a ${tableSize}-team table (scale 1–${tableSize}).`,
+    };
+  }
+
+  const from = Math.min(t1Rank, t2Rank);
+  const to = Math.max(t1Rank, t2Rank);
+  const span = to - from + 1;
+  const grade = `G${span}`;
+  let higher: SideId | 'level' = 'level';
+  if (t1Rank < t2Rank) higher = 't1';
+  else if (t2Rank < t1Rank) higher = 't2';
+
+  return {
+    tableSize,
+    t1Rank,
+    t2Rank,
+    span,
+    grade,
+    from,
+    to,
+    higher,
+    call: `${opts.t1Label} #${t1Rank} to ${opts.t2Label} #${t2Rank} covers ${span} of ${tableSize} places → ${grade}.`,
+  };
+}
 
 export function evaluateStreamline(opts: {
   t1Points: number | null;
@@ -1028,6 +1105,13 @@ export function evaluatePowerDynamics(opts: {
     closeOnTable,
     underdog,
     baselineGap,
+    positionGap: evaluatePositionGap({
+      tableSize: n,
+      t1Rank: t1.rank,
+      t2Rank: t2.rank,
+      t1Label: t1.label,
+      t2Label: t2.label,
+    }),
     colour: {
       t1: c1,
       t2: c2,
