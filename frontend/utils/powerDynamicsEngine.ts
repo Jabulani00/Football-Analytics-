@@ -128,7 +128,6 @@ export type BaselineLetter = 'A' | 'B' | 'C' | 'D' | 'E' | 'F';
 
 export type BaselineSideGap = {
   letter: BaselineLetter | null;
-  recode: BaselineLetter | null;
   meaning: string;
   /** Raw strength on the A=10 … F=0 ladder (what the side received). */
   received: number | null;
@@ -470,16 +469,6 @@ export const BASELINE_LETTER_MEANING: Record<BaselineLetter, string> = {
   F: 'Weak + below average',
 };
 
-/** Page 3 purple recode of the six types. */
-export const BASELINE_RECODE: Record<BaselineLetter, BaselineLetter> = {
-  A: 'A',
-  B: 'C',
-  C: 'B',
-  D: 'E',
-  E: 'D',
-  F: 'F',
-};
-
 export function leagueAvgPpg(table: StandingLike[]): number | null {
   let sum = 0;
   let n = 0;
@@ -552,7 +541,6 @@ export function separationGrade(separation: number): number {
 function emptyBaselineSide(): BaselineSideGap {
   return {
     letter: null,
-    recode: null,
     meaning: 'Need a G-grade from gap analysis',
     received: null,
     score: null,
@@ -592,14 +580,12 @@ export function baselineGapFor(
 
   const s1: BaselineSideGap = {
     letter: stronger === 't1' ? letter : weakLetter,
-    recode: BASELINE_RECODE[stronger === 't1' ? letter : weakLetter],
     meaning: BASELINE_LETTER_MEANING[stronger === 't1' ? letter : weakLetter],
     received: stronger === 't1' ? value : 0,
     score: stronger === 't1' ? value : 0,
   };
   const s2: BaselineSideGap = {
     letter: weakLetter,
-    recode: BASELINE_RECODE[weakLetter],
     meaning: BASELINE_LETTER_MEANING[weakLetter],
     received: 0,
     score: 0,

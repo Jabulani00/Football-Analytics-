@@ -97,13 +97,10 @@ function GapScoreRow({
         <Line
           text={
             g.letter
-              ? `Type ${g.letter} (${fmtGapScore(g.received)}/10) — ${g.meaning}`
+              ? `Type ${g.letter} (${fmtGapScore(g.received)}/10)`
               : g.meaning
           }
         />
-        {g.recode && g.recode !== g.letter ? (
-          <Line text={`Recode type ${g.recode}`} />
-        ) : null}
         <View style={styles.meterTrack}>
           <View
             style={[
