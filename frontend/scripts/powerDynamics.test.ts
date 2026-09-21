@@ -13,6 +13,7 @@ import {
   evaluateStreamline,
   ftOdds,
   impliedOddsFromProb,
+  leaguePpg,
   positionGapScale,
   lastGameFlags,
   mshayiNote,
@@ -20,7 +21,9 @@ import {
   ppgAlignsWithColour,
   ppgBandForColour,
   recordFromResults,
+  recordFromStanding,
   sideLabel,
+  streamlineForMatchup,
   t1IsHomeSide,
 } from '../utils/powerDynamicsEngine';
 import type { TeamResult } from '../utils/teamResults';
@@ -66,9 +69,6 @@ function row(
     played: 10,
     points: 15,
     zone: 'mid',
-    won: 4,
-    drawn: 3,
-    lost: 3,
     ...partial,
   };
 }
@@ -140,6 +140,21 @@ console.log('\nrecords / last game / streaks');
   check('2 wins', rec.won === 2);
   check('PPG 2.0', rec.ppg === 2);
   check('PPGa from 1 loss', rec.ppga === 1);
+  check('league PPG is points / played', leaguePpg(12, 6) === 2);
+  check('league PPG 9 from 5 games', leaguePpg(9, 5) === 1.8);
+  check('league PPG needs games', leaguePpg(12, 0) == null);
+  const tableRec = recordFromStanding({
+    rank: 1,
+    teamId: 1,
+    name: 'Arsenal',
+    points: 12,
+    played: 6,
+    won: 4,
+    drawn: 0,
+    lost: 1,
+  });
+  check('table W+D+L wins over bloated played', tableRec.mp === 5);
+  check('table PPG is 12 / 5', tableRec.ppg === 2.4);
 
   const flags = lastGameFlags(games[0], 1.2);
   check('last game won active', flags.some((f) => f.id === 'won' && f.active));
@@ -197,6 +212,8 @@ console.log('\nevaluatePowerDynamics T1 vs T2');
   check('T1 label on snapshot', pd.t1.label === 'T1 (Home FC)');
   check('T2 label on snapshot', pd.t2.label === 'T2 (Away FC)');
   check('T1 is fixture home (more points)', pd.t1.venue === 'home');
+  check('overall PPG is table points / league games', pd.t1.overall.ppg === 28 / 12);
+  check('T2 overall PPG from table', pd.t2.overall.ppg === 14 / 12);
   check('T2 is fixture away', pd.t2.venue === 'away');
   check('T2 is underdog', pd.underdog === 't2');
   check('ΔP 14', pd.pointsDiff === 14);
@@ -209,6 +226,7 @@ console.log('\nevaluatePowerDynamics T1 vs T2');
   check('T1 in top 5 pack', pd.contested.t1InPack === true);
   check('T2 outside pack', pd.contested.t2InPack === false);
   check('home venue sample', pd.venue.t1.homePpg != null);
+  check('streamline PPG uses table played not form sample', pd.streamline.t1Played === 12);
   check('character original string', pd.character.t1.original.includes('Original'));
   check('middle guys T2 yellow', pd.middle.t2.yellow === true);
   check('T1 baseline type from G-grade', pd.baselineGap.t1.letter != null);
@@ -350,6 +368,34 @@ console.log('\nT1 is the better table side (points, then GD, then GF)');
   check('GD underdog is T2', tied.underdog === 't2');
 }
 
+console.log('\nleague games from this season table, not form lookback');
+{
+  const extraForm: TeamResult[] = [
+    res({ outcome: 'W', isHome: true, gf: 3, ga: 0, unix: 50 }),
+    res({ outcome: 'W', isHome: false, gf: 1, ga: 0, unix: 40 }),
+    res({ outcome: 'W', isHome: true, gf: 2, ga: 1, unix: 30 }),
+    res({ outcome: 'W', isHome: false, gf: 2, ga: 0, unix: 20 }),
+    res({ outcome: 'L', isHome: false, gf: 0, ga: 3, unix: 10 }),
+    res({ outcome: 'L', isHome: true, gf: 0, ga: 1, unix: 1 }),
+  ];
+  const pd = evaluatePowerDynamics({
+    table: [
+      row({ teamId: 1, name: 'Arsenal', rank: 2, zone: 'top', points: 12, played: 5, won: 4, drawn: 0, lost: 1 }),
+      row({ teamId: 2, name: 'Leeds', rank: 6, zone: 'mid', points: 9, played: 5, won: 3, drawn: 0, lost: 2 }),
+      row({ teamId: 3, name: 'C', rank: 1, zone: 'top', points: 13, played: 5, won: 4, drawn: 1, lost: 0 }),
+    ],
+    homeId: 1,
+    awayId: 2,
+    homeName: 'Arsenal',
+    awayName: 'Leeds',
+    homeResults: extraForm,
+    awayResults: extraForm.slice(0, 5).map((r) => ({ ...r, teamId: 2 })),
+  });
+  check('table MP is 5 even if form has 6', pd.t1.overall.mp === 5 && pd.t1.played === 5);
+  check('PPG is 12/5 not 12/6', pd.streamline.t1Ppg === 2.4 && pd.streamline.t1Played === 5);
+  check('T2 PPG is 9/5', pd.streamline.t2Ppg === 1.8 && pd.streamline.t2Played === 5);
+}
+
 console.log('\nstreamline');
 {
   const close = evaluateStreamline({
@@ -485,6 +531,59 @@ console.log('\nstreamline');
   });
   check('model 1X2 still scores compliant', modelOdds.oddsOutcome === 'compliant');
   check('model 1X2 is labelled as model', modelOdds.oddsCall.includes('Model 1X2'), modelOdds.oddsCall);
+}
+
+console.log('\nstreamline on a fixture matchup');
+{
+  const table: StandingLike[] = [
+    row({ teamId: 1, name: 'Arsenal', rank: 2, zone: 'top', points: 12, played: 5, won: 4, drawn: 0, lost: 1 }),
+    row({ teamId: 2, name: 'Leeds', rank: 6, zone: 'mid', points: 9, played: 5, won: 3, drawn: 0, lost: 2 }),
+    row({ teamId: 3, name: 'City', rank: 1, zone: 'top', points: 28, played: 10, won: 9, drawn: 1, lost: 0 }),
+  ];
+  check(
+    'close table gap is Bateteme',
+    streamlineForMatchup({
+      table,
+      homeId: 1,
+      awayId: 2,
+      homeName: 'Arsenal',
+      awayName: 'Leeds',
+    }) === 'bateteme',
+  );
+  check(
+    'far gap with no H2H is unassigned',
+    streamlineForMatchup({
+      table,
+      homeId: 3,
+      awayId: 2,
+      homeName: 'City',
+      awayName: 'Leeds',
+    }) == null,
+  );
+  check(
+    'T1 never beaten T2 is Zidane Law',
+    streamlineForMatchup({
+      table,
+      homeId: 3,
+      awayId: 2,
+      homeName: 'City',
+      awayName: 'Leeds',
+      h2hMatches: [
+        {
+          id: 1,
+          home_name: 'City',
+          away_name: 'Leeds',
+          home_goals: 1,
+          away_goals: 1,
+          ht_score: null,
+          total_goals: 2,
+          btts: true,
+          date: '',
+          league: 'PL',
+        },
+      ],
+    }) === 'zidane_law',
+  );
 }
 
 console.log('\nposition gap analysis (G1 = largest)');

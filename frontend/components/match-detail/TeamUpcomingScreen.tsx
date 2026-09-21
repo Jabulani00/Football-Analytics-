@@ -5,6 +5,7 @@ import CompetitionHeader from '@/components/scores/CompetitionHeader';
 import ScoresMatchRow from '@/components/scores/ScoresMatchRow';
 import PageContainer from '@/components/shared/PageContainer';
 import { useTeamUpcoming } from '@/hooks/useTeamUpcoming';
+import { useFixtureStreamlines } from '@/hooks/useFixtureStreamlines';
 import { groupByCompetition } from '@/services/oddAlerts';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
@@ -18,6 +19,7 @@ export default function TeamUpcomingScreen({ teamId, teamName, onBack }: TeamUpc
   const router = useRouter();
   const { fixtures, loading, error, refresh } = useTeamUpcoming(teamId);
   const groups = groupByCompetition(fixtures);
+  const streams = useFixtureStreamlines(fixtures);
 
   return (
     <PageContainer contentContainerStyle={styles.scroll}>
@@ -50,6 +52,7 @@ export default function TeamUpcomingScreen({ teamId, teamName, onBack }: TeamUpc
                 <ScoresMatchRow
                   key={fixture.id}
                   fixture={fixture}
+                  stream={streams.get(fixture.id)}
                   onPress={() =>
                     router.push({ pathname: '/match/[id]', params: { id: String(fixture.id) } })
                   }

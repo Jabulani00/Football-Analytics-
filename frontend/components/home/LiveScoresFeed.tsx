@@ -17,6 +17,7 @@ import FeedFixtureRow from '@/components/scores/FeedFixtureRow';
 import PageContainer from '@/components/shared/PageContainer';
 import SubTabBar from '@/components/shared/SubTabBar';
 import { useLiveFixtures } from '@/hooks/useLiveFixtures';
+import { useFixtureStreamlines } from '@/hooks/useFixtureStreamlines';
 import { groupByCompetition, type CompetitionGroup, type Fixture } from '@/services/oddAlerts';
 import type { MarketModule } from '@/utils/fixtureRecommendation';
 import {
@@ -191,6 +192,9 @@ export default function LiveScoresFeed() {
         : dateFiltered;
     return groupByDateThenCompetition(list, preferredIds);
   }, [statusFilter, dateFiltered, competitionId, preferredIds]);
+
+  const streamSource = statusFilter === 'ns' ? dateFiltered : scoped;
+  const streams = useFixtureStreamlines(streamSource, { enabled: statusFilter !== 'ft' });
 
   const activeCompetition =
     competitionId != null ? allGroups.find((g) => g.competition.id === competitionId) : null;
@@ -380,6 +384,7 @@ export default function LiveScoresFeed() {
                       key={fixture.id}
                       fixture={fixture}
                       module={recModule}
+                      stream={streams.get(fixture.id)}
                       onOpen={() =>
                         router.push({
                           pathname: '/match/[id]',
@@ -403,6 +408,7 @@ export default function LiveScoresFeed() {
                   key={fixture.id}
                   fixture={fixture}
                   module={recModule}
+                  stream={streams.get(fixture.id)}
                   onOpen={() =>
                     router.push({ pathname: '/match/[id]', params: { id: String(fixture.id) } })
                   }

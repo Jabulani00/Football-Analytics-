@@ -53,6 +53,8 @@ export type SideSnapshot = {
   label: string;
   rank: number | null;
   points: number | null;
+  /** League games played (table W+D+L). */
+  played: number | null;
   goalDiff: number | null;
   goalsFor: number | null;
   zone: 'top' | 'mid' | 'bottom' | null;
@@ -196,6 +198,14 @@ export const STREAM_LABEL: Record<StreamName, string> = {
   bookie: 'Bookie mistake',
 };
 
+/** Short name for fixture-row chips. */
+export const STREAM_CHIP: Record<StreamName, string> = {
+  bateteme: 'Bateteme',
+  compliant: 'Compliant',
+  zidane_law: 'Zidane',
+  bookie: 'Bookie',
+};
+
 export const STREAM_ROLE: Record<StreamName, string> = {
   bateteme: 'Close — ΔP ≤ 4',
   compliant: 'T1 is stronger, so T1’s 1X2 odds should be the lower price',
@@ -214,6 +224,8 @@ export type StreamlineRead = {
   t2Stream: StreamName | null;
   t1Ppg: number | null;
   t2Ppg: number | null;
+  t1Played: number | null;
+  t2Played: number | null;
   t1Odds: number | null;
   t2Odds: number | null;
   /** Where the 1X2 prices came from. */
@@ -456,6 +468,8 @@ export function evaluateStreamline(opts: {
   t2Label: string;
   t1Ppg?: number | null;
   t2Ppg?: number | null;
+  t1Played?: number | null;
+  t2Played?: number | null;
   t1Odds?: number | null;
   t2Odds?: number | null;
   oddsSource?: 'bookmaker' | 'model' | null;
@@ -471,6 +485,8 @@ export function evaluateStreamline(opts: {
   const t2Label = opts.t2Label;
   const t1Ppg = opts.t1Ppg ?? null;
   const t2Ppg = opts.t2Ppg ?? null;
+  const t1Played = opts.t1Played ?? null;
+  const t2Played = opts.t2Played ?? null;
   const t1Odds = opts.t1Odds ?? null;
   const t2Odds = opts.t2Odds ?? null;
   const oddsPending = opts.oddsPending === true;
@@ -543,6 +559,8 @@ export function evaluateStreamline(opts: {
     t2Stream: primary,
     t1Ppg,
     t2Ppg,
+    t1Played,
+    t2Played,
     t1Odds,
     t2Odds,
     oddsSource,
@@ -557,6 +575,81 @@ export function evaluateStreamline(opts: {
     oddsCall,
     call,
   };
+}
+
+function findTableRow(
+  table: StandingLike[],
+  teamId: number | null | undefined,
+  name: string,
+): StandingLike | null {
+  if (teamId != null) {
+    const byId = table.find((t) => t.teamId === teamId || Number(t.teamId) === Number(teamId));
+    if (byId) return byId;
+  }
+  const needle = name.trim().toLowerCase();
+  if (!needle) return null;
+  return table.find((t) => t.name.trim().toLowerCase() === needle) ?? null;
+}
+
+/**
+ * Primary Streamline for a fixture from the league table (+ optional H2H / 1X2).
+ * Same T1/T2 rules as the match screen.
+ */
+export function streamlineForMatchup(opts: {
+  table: StandingLike[];
+  homeId?: number | null;
+  awayId?: number | null;
+  homeName: string;
+  awayName: string;
+  h2hMatches?: H2HMatch[];
+  homeOdds?: number | null;
+  awayOdds?: number | null;
+  oddsSource?: 'bookmaker' | 'model' | null;
+}): StreamName | null {
+  const table = opts.table;
+  if (table.length === 0) return null;
+  const homeRow = findTableRow(table, opts.homeId, opts.homeName);
+  const awayRow = findTableRow(table, opts.awayId, opts.awayName);
+  if (!homeRow && !awayRow) return null;
+
+  const homeKeys: TableOrderKeys = {
+    points: homeRow?.points ?? null,
+    goalDiff: homeRow?.goalDiff ?? null,
+    goalsFor: homeRow?.goalsFor ?? null,
+    rank: homeRow?.rank ?? null,
+  };
+  const awayKeys: TableOrderKeys = {
+    points: awayRow?.points ?? null,
+    goalDiff: awayRow?.goalDiff ?? null,
+    goalsFor: awayRow?.goalsFor ?? null,
+    rank: awayRow?.rank ?? null,
+  };
+  const t1Home = t1IsHomeSide(homeKeys, awayKeys);
+  const t1Row = t1Home ? homeRow : awayRow;
+  const t2Row = t1Home ? awayRow : homeRow;
+  const t1Name = t1Home ? opts.homeName : opts.awayName;
+  const t2Name = t1Home ? opts.awayName : opts.homeName;
+  const meetings = h2hMeetingsForSides(opts.h2hMatches ?? [], t1Name, t2Name);
+  const t1Odds = t1Home ? (opts.homeOdds ?? null) : (opts.awayOdds ?? null);
+  const t2Odds = t1Home ? (opts.awayOdds ?? null) : (opts.homeOdds ?? null);
+
+  return evaluateStreamline({
+    t1Points: t1Row?.points ?? null,
+    t2Points: t2Row?.points ?? null,
+    t1Label: `T1 (${t1Name})`,
+    t2Label: `T2 (${t2Name})`,
+    t1Ppg: leaguePpg(t1Row?.points, leaguePlayedFromRow(t1Row)),
+    t2Ppg: leaguePpg(t2Row?.points, leaguePlayedFromRow(t2Row)),
+    t1Played: leaguePlayedFromRow(t1Row) || null,
+    t2Played: leaguePlayedFromRow(t2Row) || null,
+    t1Odds,
+    t2Odds,
+    oddsSource: t1Odds != null && t2Odds != null ? (opts.oddsSource ?? 'bookmaker') : null,
+    h2hMeetings: meetings.length,
+    t1H2hWins: countH2hWins(meetings, t1Name),
+    t2H2hWins: countH2hWins(meetings, t2Name),
+    t1H2hLosses: countH2hLosses(meetings, t1Name),
+  }).t1Stream;
 }
 
 const VENUE_GAP = 0.3;
@@ -871,12 +964,23 @@ export function recordFromResults(results: TeamResult[]): ScopeRecord {
   };
 }
 
+/** League matches played from the table: W+D+L, else the played column. */
+export function leaguePlayedFromRow(
+  row: { played?: number | null; won?: number | null; drawn?: number | null; lost?: number | null } | null | undefined,
+): number {
+  if (!row) return 0;
+  const fromWdl = (row.won ?? 0) + (row.drawn ?? 0) + (row.lost ?? 0);
+  if (fromWdl > 0) return fromWdl;
+  return row.played ?? 0;
+}
+
 export function recordFromStanding(row: StandingLike & { won?: number; drawn?: number; lost?: number }): ScopeRecord {
-  const mp = row.played;
-  if (mp <= 0) return emptyRecord();
   const won = row.won ?? 0;
   const drawn = row.drawn ?? 0;
-  const lost = row.lost ?? Math.max(0, mp - won - drawn);
+  const fromWdl = won + drawn + (row.lost ?? 0);
+  const mp = leaguePlayedFromRow(row);
+  if (mp <= 0) return emptyRecord();
+  const lost = fromWdl > 0 ? (row.lost ?? 0) : Math.max(0, mp - won - drawn);
   return {
     mp,
     won,
@@ -888,6 +992,14 @@ export function recordFromStanding(row: StandingLike & { won?: number; drawn?: n
     scored: null,
     conceded: null,
   };
+}
+
+/** League PPG = table points ÷ games played in that league. */
+export function leaguePpg(points: number | null | undefined, played: number | null | undefined): number | null {
+  if (points == null || played == null || !Number.isFinite(points) || !Number.isFinite(played) || played <= 0) {
+    return null;
+  }
+  return points / played;
 }
 
 function thirdCuts(n: number): { topCut: number; bottomStart: number } {
@@ -1027,7 +1139,13 @@ function snapshotFor(
   venue: 'home' | 'away',
 ): Omit<SideSnapshot, 'side' | 'label'> {
   const overallResults = recordFromResults(results);
-  const overall = overallResults.mp > 0 ? overallResults : row ? recordFromStanding(row) : emptyRecord();
+  const tableMp = leaguePlayedFromRow(row);
+  const overall =
+    row && tableMp > 0
+      ? recordFromStanding(row)
+      : overallResults.mp > 0
+        ? overallResults
+        : emptyRecord();
   const fromResults = tallyFromResults(results);
   const { topCut, bottomStart } = thirdCuts(leagueSize);
   return {
@@ -1036,6 +1154,7 @@ function snapshotFor(
     name,
     rank: row?.rank ?? null,
     points: row?.points ?? null,
+    played: overall.mp > 0 ? overall.mp : tableMp || (row?.played ?? null),
     goalDiff: row?.goalDiff ?? fromResults?.goalDiff ?? null,
     goalsFor: row?.goalsFor ?? fromResults?.goalsFor ?? null,
     zone: row?.zone ?? null,
@@ -1419,8 +1538,10 @@ export function evaluatePowerDynamics(opts: {
       t2Points: t2.points,
       t1Label: t1.label,
       t2Label: t2.label,
-      t1Ppg: t1.overall.ppg,
-      t2Ppg: t2.overall.ppg,
+      t1Ppg: leaguePpg(t1.points, t1.played),
+      t2Ppg: leaguePpg(t2.points, t2.played),
+      t1Played: t1.played,
+      t2Played: t2.played,
       t1Odds: t1Odds,
       t2Odds: t2Odds,
       oddsSource,

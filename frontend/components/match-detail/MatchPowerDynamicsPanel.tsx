@@ -195,6 +195,8 @@ export default function MatchPowerDynamicsPanel({
     awayId,
     standings: like,
     seasonProgress,
+    competitionId,
+    seasonId,
     enabled: true,
   });
 

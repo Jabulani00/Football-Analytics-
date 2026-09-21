@@ -11,7 +11,9 @@ import {
   UKULUMBANA,
 } from '../utils/last5Analysis';
 import type { TeamResult } from '../utils/teamResults';
+import { teamResultsFromFixtures } from '../utils/teamResults';
 import type { StandingLike } from '../utils/motivationEngine';
+import type { RawFixture } from '../services/oddAlerts';
 
 let passed = 0;
 let failed = 0;
@@ -130,6 +132,69 @@ console.log('\nseparators (Section 4)');
     res({ outcome: 'W', isHome: true, opponentAbove: true, gf: 2, ga: 1, goalDiff: 1 }),
   );
   check('1-goal win vs above = good', one === 'good');
+}
+
+console.log('\nleague-only results (no cups)');
+{
+  const fx = (over: Partial<RawFixture> & Pick<RawFixture, 'id' | 'home_id' | 'away_id'>): RawFixture =>
+    ({
+      home_name: 'A',
+      away_name: 'B',
+      competition_id: 423,
+      competition_country: 'England',
+      competition_name: 'Premier League',
+      competition_type: 'League',
+      competition_predictability: null,
+      season: '2026/2027',
+      season_id: 2263973,
+      status: 'FT',
+      home_goals: 1,
+      away_goals: 0,
+      ht_score: null,
+      elapsed: null,
+      elapsed_seconds: null,
+      time_added: null,
+      home_position: null,
+      away_position: null,
+      unix: 1,
+      has_odds: false,
+      is_friendly: false,
+      is_cup: false,
+      date: '2026-09-01',
+      ko_human: '',
+      ...over,
+    }) as RawFixture;
+  const list = [
+    fx({ id: 1, home_id: 1, away_id: 2, unix: 30 }),
+    fx({
+      id: 2,
+      home_id: 1,
+      away_id: 9,
+      unix: 20,
+      competition_id: 99,
+      competition_name: 'Carabao Cup',
+      is_cup: true,
+      home_goals: 4,
+      away_goals: 0,
+    }),
+    fx({ id: 3, home_id: 2, away_id: 1, unix: 10, home_goals: 0, away_goals: 2 }),
+    fx({
+      id: 4,
+      home_id: 1,
+      away_id: 8,
+      unix: 5,
+      season: '2025/2026',
+      season_id: 111,
+      home_goals: 0,
+      away_goals: 1,
+    }),
+  ];
+  const leagueOnly = teamResultsFromFixtures(list, 1, null, { competitionId: 423 });
+  check('cup fixture dropped from league PPG sample', leagueOnly.length === 3);
+  check('league games only', leagueOnly.every((r) => r.competitionId === 423));
+  const thisSeason = teamResultsFromFixtures(list, 1, null, { competitionId: 423, seasonId: 2263973 });
+  check('last-season league game dropped', thisSeason.length === 2);
+  check('this-season games only', thisSeason.every((r) => r.seasonId === 2263973));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

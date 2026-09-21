@@ -62,6 +62,7 @@ export default function StandingsPanel() {
     seasonId: selectedSeasonId,
     seasonName: season?.seasonName ?? '',
     onMatchPress: openMatch,
+    standings,
   };
 
   return (

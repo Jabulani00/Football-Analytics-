@@ -6,6 +6,7 @@ import ScoresMatchRow from '@/components/scores/ScoresMatchRow';
 import { fetchFixtureDetail, type Fixture, type RawFixtureDetail } from '@/services/oddAlerts';
 import { oddsInputFromApi, predictionFromApiProbability } from '@/utils/apiRecommendationAdapter';
 import { buildRecommendation, type MarketModule } from '@/utils/fixtureRecommendation';
+import type { StreamName } from '@/utils/powerDynamicsEngine';
 import { fonts, spacing, theme } from '@/styles/theme';
 
 type Props = {
@@ -14,6 +15,7 @@ type Props = {
   module: 'all' | MarketModule;
   /** Open the full match detail. */
   onOpen: () => void;
+  stream?: StreamName | null;
 };
 
 const CAN_RECOMMEND = new Set(['NS', 'LIVE', 'HT']);
@@ -23,7 +25,7 @@ const CAN_RECOMMEND = new Set(['NS', 'LIVE', 'HT']);
  * lazy-loaded (fixture detail is only fetched when the row is opened), so the
  * feed stays cheap. Uses the fixture's REAL odds + model probabilities.
  */
-export default function FeedFixtureRow({ fixture, module, onOpen }: Props) {
+export default function FeedFixtureRow({ fixture, module, onOpen, stream }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [detail, setDetail] = useState<RawFixtureDetail | null>(null);
   const [loading, setLoading] = useState(false);
@@ -75,7 +77,7 @@ export default function FeedFixtureRow({ fixture, module, onOpen }: Props) {
 
   return (
     <View style={styles.wrap}>
-      <ScoresMatchRow fixture={fixture} onPress={onOpen} />
+      <ScoresMatchRow fixture={fixture} onPress={onOpen} stream={stream} />
 
       {recommendable ? (
         <Pressable

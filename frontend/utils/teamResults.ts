@@ -30,6 +30,10 @@ export type TeamResult = {
   /** Goals at HT for this side, when `ht_score` is on the fixture. */
   htGf?: number | null;
   htGa?: number | null;
+  competitionId?: number | null;
+  seasonId?: number | null;
+  isCup?: boolean;
+  isFriendly?: boolean;
 };
 
 export type RankLookup = Map<number, { rank: number; name: string; points: number }>;
@@ -46,19 +50,27 @@ function outcomeFor(gf: number, ga: number): ResultOutcome {
   return 'D';
 }
 
-/** Finished matches for one team, newest first. */
+/** Finished matches for one team, newest first. League-only when `competitionId` is set. */
 export function teamResultsFromFixtures(
   fixtures: RawFixture[],
   teamId: number,
   ranks?: RankLookup | null,
+  opts?: { competitionId?: number | null; seasonId?: number | null },
 ): TeamResult[] {
   const teamRank = ranks?.get(teamId)?.rank ?? null;
+  const leagueId = opts?.competitionId ?? null;
+  const seasonId = opts?.seasonId ?? null;
   const out: TeamResult[] = [];
 
   for (const f of fixtures) {
     if (!FINISHED.has(f.status)) continue;
     if (f.home_goals == null || f.away_goals == null) continue;
     if (f.home_id !== teamId && f.away_id !== teamId) continue;
+    if (leagueId != null) {
+      if (f.is_cup || f.is_friendly) continue;
+      if (f.competition_id !== leagueId) continue;
+    }
+    if (seasonId != null && f.season_id != null && f.season_id !== seasonId) continue;
 
     const isHome = f.home_id === teamId;
     const gf = isHome ? f.home_goals : f.away_goals;
@@ -88,6 +100,10 @@ export function teamResultsFromFixtures(
       goalDiff: gf - ga,
       htGf,
       htGa,
+      competitionId: f.competition_id,
+      seasonId: f.season_id ?? null,
+      isCup: f.is_cup,
+      isFriendly: f.is_friendly,
     });
   }
 

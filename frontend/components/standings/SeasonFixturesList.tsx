@@ -8,7 +8,9 @@ import {
   mapFixture,
   seasonWindowUnix,
   type Fixture,
+  type StandingRow,
 } from '@/services/oddAlerts';
+import { useFixtureStreamlines } from '@/hooks/useFixtureStreamlines';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
 export type SeasonFixturesMode = 'upcoming' | 'previous';
@@ -22,6 +24,8 @@ type SeasonFixturesListProps = {
   mode?: SeasonFixturesMode;
   /** Show Upcoming/Previous sub-tabs (default true when mode is omitted). */
   showModeTabs?: boolean;
+  /** League table for this season — used to tag upcoming rows with Streamline. */
+  standings?: StandingRow[];
 };
 
 function isFinished(f: Fixture): boolean {
@@ -64,6 +68,7 @@ export default function SeasonFixturesList({
   onMatchPress,
   mode: controlledMode,
   showModeTabs,
+  standings,
 }: SeasonFixturesListProps) {
   const [fixtures, setFixtures] = useState<Fixture[]>([]);
   const [loading, setLoading] = useState(true);
@@ -124,6 +129,12 @@ export default function SeasonFixturesList({
 
   const byDate = useMemo(() => groupByDate(filtered), [filtered]);
 
+  const streams = useFixtureStreamlines(fixtures, {
+    enabled: mode === 'upcoming',
+    standings,
+    seasonId,
+  });
+
   const upcomingCount = useMemo(
     () => fixtures.filter((f) => isUpcoming(f) || isLiveish(f)).length,
     [fixtures],
@@ -162,7 +173,13 @@ export default function SeasonFixturesList({
             <Text style={styles.dateLabel}>{day}</Text>
             <View style={styles.dateList}>
               {list.map((f) => (
-                <ScoresMatchRow key={f.id} fixture={f} onPress={() => onMatchPress(f.id)} />
+                <ScoresMatchRow
+                  key={f.id}
+                  fixture={f}
+                  onPress={() => onMatchPress(f.id)}
+                  stream={streams.get(f.id)}
+                  showStreamline={mode === 'upcoming'}
+                />
               ))}
             </View>
           </View>

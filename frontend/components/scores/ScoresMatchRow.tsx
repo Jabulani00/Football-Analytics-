@@ -3,12 +3,17 @@ import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import CountryFlag from '@/components/shared/CountryFlag';
 import LivePulse from '@/components/shared/LivePulse';
 import TeamLogo from '@/components/shared/TeamLogo';
+import StreamlineChip from '@/components/scores/StreamlineChip';
 import type { Fixture, FixtureKind } from '@/services/oddAlerts';
+import type { StreamName } from '@/utils/powerDynamicsEngine';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
 type ScoresMatchRowProps = {
   fixture: Fixture;
   onPress?: () => void;
+  /** Primary Streamline for upcoming rows (far right). */
+  stream?: StreamName | null;
+  showStreamline?: boolean;
 };
 
 function StatusColumn({ fixture }: { fixture: Fixture }) {
@@ -36,7 +41,12 @@ function StatusColumn({ fixture }: { fixture: Fixture }) {
   return <Text style={styles.ft}>{fixture.rawStatus}</Text>;
 }
 
-export default function ScoresMatchRow({ fixture, onPress }: ScoresMatchRowProps) {
+export default function ScoresMatchRow({
+  fixture,
+  onPress,
+  stream,
+  showStreamline,
+}: ScoresMatchRowProps) {
   const started = fixture.status === 'LIVE' || fixture.status === 'HT' || fixture.status === 'FT';
   const home = fixture.home.goals ?? 0;
   const away = fixture.away.goals ?? 0;
@@ -44,6 +54,8 @@ export default function ScoresMatchRow({ fixture, onPress }: ScoresMatchRowProps
   const awayWins = started && away > home;
   const isDraw = started && home === away;
   const isLive = fixture.status === 'LIVE' || fixture.status === 'HT';
+  const upcoming = fixture.status === 'NS' || fixture.status === 'LIVE' || fixture.status === 'HT';
+  const streamCol = showStreamline ?? upcoming;
 
   return (
     <Pressable
@@ -83,6 +95,7 @@ export default function ScoresMatchRow({ fixture, onPress }: ScoresMatchRowProps
           {fixture.away.name}
         </Text>
       </View>
+      {streamCol ? <StreamlineChip stream={stream} /> : null}
     </Pressable>
   );
 }
@@ -99,11 +112,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.sm,
+    paddingLeft: spacing.sm,
+    paddingRight: spacing.sm,
     borderBottomWidth: layout.borderWidth,
     borderBottomColor: theme.border,
-    gap: spacing.sm,
-    minHeight: 40,
+    minHeight: 44,
     ...(Platform.OS === 'web'
       ? ({ transition: 'background-color 120ms ease' } as object)
       : {}),
@@ -112,13 +125,18 @@ const styles = StyleSheet.create({
     backgroundColor: theme.surfaceHover,
   },
   statusCol: {
-    width: 50,
-    alignItems: 'center',
+    width: 48,
+    flexShrink: 0,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    marginRight: spacing.sm,
   },
   time: {
-    fontFamily: fonts.body,
+    fontFamily: fonts.bodyMedium,
     fontSize: 12,
     color: theme.textMuted,
+    fontVariant: ['tabular-nums'],
+    ...(Platform.OS === 'web' ? ({ fontFeatureSettings: '"tnum"' } as object) : {}),
   },
   liveCol: {
     flexDirection: 'row',
@@ -149,9 +167,12 @@ const styles = StyleSheet.create({
   },
   homeCell: {
     justifyContent: 'flex-end',
+    paddingRight: 6,
   },
   awayCell: {
     justifyContent: 'flex-start',
+    paddingLeft: 6,
+    paddingRight: 8,
   },
   sideFlag: {
     fontSize: 16,
@@ -173,7 +194,8 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body,
   },
   scoreCol: {
-    width: 52,
+    width: 44,
+    flexShrink: 0,
     alignItems: 'center',
   },
   score: {

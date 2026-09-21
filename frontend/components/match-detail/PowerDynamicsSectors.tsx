@@ -374,6 +374,12 @@ export function StreamlineCards({
         }
         tone={s.close ? 'warn' : 'info'}
       />
+      {(focus == null || focus === 'bateteme') ? (
+        <Callout
+          text={`${pd.t1.label} PPG ${fmtPpg(s.t1Ppg)} (${s.t1Points ?? '—'} pts / ${s.t1Played ?? '—'} league games) · ${pd.t2.label} PPG ${fmtPpg(s.t2Ppg)} (${s.t2Points ?? '—'} pts / ${s.t2Played ?? '—'} league games)`}
+          tone="info"
+        />
+      ) : null}
       <Callout
         text={s.oddsCall}
         tone={oddsTone}

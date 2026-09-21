@@ -354,6 +354,7 @@ export type Fixture = {
   kind: FixtureKind;
   home: { id: number | null; name: string; goals: number | null; position: number | null };
   away: { id: number | null; name: string; goals: number | null; position: number | null };
+  seasonId: number | null;
   competition: {
     id: number;
     name: string;
@@ -416,6 +417,7 @@ export function mapFixture(raw: RawFixture): Fixture {
       goals: raw.away_goals,
       position: raw.away_position,
     },
+    seasonId: raw.season_id ?? null,
     competition: {
       id: raw.competition_id,
       name: raw.competition_name,
@@ -1156,10 +1158,13 @@ export async function fetchSeasonStandings(
   const rows = env.data.map((s) => ({
     teamId: s.team_id,
     name: s.name,
-    played: s.played?.total ?? 0,
     won: s.won?.total ?? 0,
     drawn: s.drawn?.total ?? 0,
     lost: s.lost?.total ?? 0,
+    played: (() => {
+      const wdl = (s.won?.total ?? 0) + (s.drawn?.total ?? 0) + (s.lost?.total ?? 0);
+      return wdl > 0 ? wdl : (s.played?.total ?? 0);
+    })(),
     goalsFor: s.goals_for?.total ?? 0,
     goalsAgainst: s.goals_against?.total ?? 0,
     goalDiff: s.goals_difference?.total ?? (s.goals_for?.total ?? 0) - (s.goals_against?.total ?? 0),

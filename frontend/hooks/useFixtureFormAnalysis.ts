@@ -35,9 +35,13 @@ export function useFixtureFormAnalysis(opts: {
   awayId: number | null | undefined;
   standings: StandingLike[];
   seasonProgress?: number | null;
+  /** When set, only this league — cups and friendlies are dropped. */
+  competitionId?: number | string | null;
+  /** When set, last-season games in the same league are dropped. */
+  seasonId?: number | string | null;
   enabled?: boolean;
 }): State {
-  const { homeId, awayId, standings, seasonProgress, enabled = true } = opts;
+  const { homeId, awayId, standings, seasonProgress, competitionId, seasonId, enabled = true } = opts;
   const [raw, setRaw] = useState<RawFixture[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,7 +63,16 @@ export function useFixtureFormAnalysis(opts: {
     const ids = [homeId, awayId].filter((id): id is number => id != null);
     const teams = [...new Set(ids)].join(',');
 
-    fetchAllFixturesBetween({ fromUnix, toUnix: now, teams, maxPages: 4 }, ctrl.signal)
+    fetchAllFixturesBetween(
+      {
+        fromUnix,
+        toUnix: now,
+        teams,
+        competitions: competitionId != null && competitionId !== '' ? String(competitionId) : undefined,
+        maxPages: 4,
+      },
+      ctrl.signal,
+    )
       .then((rows) => {
         if (!ctrl.signal.aborted) {
           setRaw(rows);
@@ -74,7 +87,7 @@ export function useFixtureFormAnalysis(opts: {
       });
 
     return () => ctrl.abort();
-  }, [canFetch, homeId, awayId]);
+  }, [canFetch, homeId, awayId, competitionId]);
 
   return useMemo(() => {
     if (!canFetch) {
@@ -90,8 +103,19 @@ export function useFixtureFormAnalysis(opts: {
     }
 
     const ranks = ranksFromStandings(standings);
-    const homeResults = homeId != null ? teamResultsFromFixtures(raw, homeId, ranks) : [];
-    const awayResults = awayId != null ? teamResultsFromFixtures(raw, awayId, ranks) : [];
+    const leagueId =
+      competitionId != null && competitionId !== '' ? Number(competitionId) : null;
+    const season =
+      seasonId != null && seasonId !== '' ? Number(seasonId) : null;
+    const leagueOpts =
+      Number.isFinite(leagueId) || Number.isFinite(season)
+        ? {
+            competitionId: Number.isFinite(leagueId) ? leagueId : null,
+            seasonId: Number.isFinite(season) ? season : null,
+          }
+        : undefined;
+    const homeResults = homeId != null ? teamResultsFromFixtures(raw, homeId, ranks, leagueOpts) : [];
+    const awayResults = awayId != null ? teamResultsFromFixtures(raw, awayId, ranks, leagueOpts) : [];
 
     const separators = evaluateFixtureSeparators({
       table: standings,
@@ -121,5 +145,5 @@ export function useFixtureFormAnalysis(opts: {
       last5,
       hidden,
     };
-  }, [canFetch, raw, homeId, awayId, standings, seasonProgress, loading, error]);
+  }, [canFetch, raw, homeId, awayId, standings, seasonProgress, loading, error, competitionId, seasonId]);
 }
