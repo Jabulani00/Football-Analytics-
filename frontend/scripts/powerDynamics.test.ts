@@ -11,6 +11,8 @@ import {
   evaluatePowerDynamics,
   evaluatePositionGap,
   evaluateStreamline,
+  ftOdds,
+  impliedOddsFromProb,
   positionGapScale,
   lastGameFlags,
   mshayiNote,
@@ -212,6 +214,34 @@ console.log('\nevaluatePowerDynamics T1 vs T2');
   check('T1 baseline type from G-grade', pd.baselineGap.t1.letter != null);
   check('T2 sits at 0', pd.baselineGap.t2.score === 0);
   check('baseline gap is from G-grade', pd.baselineGap.separation != null);
+
+  const pdModel = evaluatePowerDynamics({
+    table,
+    homeId: 1,
+    awayId: 2,
+    homeName: 'Home FC',
+    awayName: 'Away FC',
+    homeResults,
+    awayResults,
+    probability: { home_win: 55, draw: 25, away_win: 20 },
+  });
+  check('no book odds → model 1X2 is used', pdModel.streamline.oddsSource === 'model');
+  check('model 1X2 scores the check', pdModel.streamline.oddsOutcome === 'compliant');
+
+  const pdBook = evaluatePowerDynamics({
+    table,
+    homeId: 1,
+    awayId: 2,
+    homeName: 'Home FC',
+    awayName: 'Away FC',
+    homeResults,
+    awayResults,
+    odds: [],
+    book1x2: { home: 1.65, away: 5.2 },
+  });
+  check('empty odds array + Hollywood 1X2 is bookmaker', pdBook.streamline.oddsSource === 'bookmaker');
+  check('Hollywood 1X2 scores compliant', pdBook.streamline.oddsOutcome === 'compliant');
+  check('Hollywood prices shown', pdBook.streamline.oddsCall.includes('1.65') && pdBook.streamline.oddsCall.includes('5.20'));
 }
 
 console.log('\nbaseline gap from G-grade');
@@ -351,9 +381,43 @@ console.log('\nstreamline');
     h2hMeetings: 5,
     t1H2hWins: 0,
     t2H2hWins: 3,
+    t1H2hLosses: 3,
   });
   check('T2 beats T1 + T1 never won → Bookie mistake', bookie.t1Stream === 'bookie' && bookie.t2Stream === 'bookie');
-  check('Bookie T2 beats T1', bookie.t2BeatsT1 === true && bookie.t1NeverBeatenT2 === true);
+  check('Bookie T1 has been beaten', bookie.t2BeatsT1 === true && bookie.t1NeverBeatenT2 === false);
+  check('Bookie is not Zidane Law', bookie.inStreams.zidane_law === false);
+
+  const beatenNotZidane = evaluateStreamline({
+    t1Points: 22,
+    t2Points: 10,
+    t1Label: 'T1 (A)',
+    t2Label: 'T2 (B)',
+    h2hMeetings: 4,
+    t1H2hWins: 0,
+    t2H2hWins: 0,
+    t1H2hLosses: 2,
+  });
+  check('T1 has been beaten → not Zidane Law', beatenNotZidane.inStreams.zidane_law === false);
+  check('T1 has been beaten → Bookie mistake', beatenNotZidane.inStreams.bookie === true);
+
+  const t2WinsCountAsBeaten = evaluateStreamline({
+    t1Points: 22,
+    t2Points: 10,
+    t1Label: 'T1 (A)',
+    t2Label: 'T2 (B)',
+    h2hMeetings: 3,
+    t1H2hWins: 0,
+    t2H2hWins: 2,
+    t1H2hLosses: 0,
+  });
+  check(
+    'T2 wins mean T1 has been beaten → not Zidane Law',
+    t2WinsCountAsBeaten.inStreams.zidane_law === false,
+  );
+  check(
+    'T2 wins + T1 never won → Bookie mistake',
+    t2WinsCountAsBeaten.inStreams.bookie === true,
+  );
 
   const compliant = evaluateStreamline({
     t1Points: 28,
@@ -367,6 +431,12 @@ console.log('\nstreamline');
   });
   check('high T1 PPG + lower T1 odds → compliant', compliant.oddsOutcome === 'compliant' && compliant.t1PpgHigh === true);
   check('compliant stream membership', compliant.inStreams.compliant === true && compliant.t1Stream === 'compliant');
+  check(
+    'odds call shows 1X2 prices not PPG',
+    compliant.oddsCall.includes('Bookmaker 1X2 odds') && !compliant.oddsCall.includes('points per game'),
+    compliant.oddsCall,
+  );
+  check('odds call shows T1 1.55 and T2 5.50', compliant.oddsCall.includes('1.55') && compliant.oddsCall.includes('5.50'));
 
   const nonComp = evaluateStreamline({
     t1Points: 28,
@@ -379,6 +449,42 @@ console.log('\nstreamline');
     t2Odds: 1.7,
   });
   check('high T1 PPG + higher T1 odds → non-compliant', nonComp.oddsOutcome === 'non_compliant');
+
+  const closePpgStillChecksOdds = evaluateStreamline({
+    t1Points: 12,
+    t2Points: 9,
+    t1Label: 'T1 (Arsenal)',
+    t2Label: 'T2 (Leeds United)',
+    t1Ppg: 2.0,
+    t2Ppg: 2.08,
+    t1Odds: 1.7,
+    t2Odds: 4.5,
+  });
+  check(
+    'T1 PPG not higher still runs the 1X2 odds check',
+    closePpgStillChecksOdds.oddsOutcome === 'compliant' && closePpgStillChecksOdds.t1PpgHigh === false,
+  );
+  check(
+    'close PPG odds call is the prices',
+    closePpgStillChecksOdds.oddsCall.includes('1.70') && closePpgStillChecksOdds.oddsCall.includes('4.50'),
+    closePpgStillChecksOdds.oddsCall,
+  );
+
+  check('ftOdds reads 1/2 keys', ftOdds({ ft_result: { '1': 1.7, X: 3.6, '2': 5.1 } } as never, 'home') === 1.7);
+  check('empty odds array is missing', ftOdds([] as never, 'home') == null);
+  check('implied 55% → 1.82', Math.abs((impliedOddsFromProb(55) ?? 0) - 100 / 55) < 1e-9);
+
+  const modelOdds = evaluateStreamline({
+    t1Points: 12,
+    t2Points: 9,
+    t1Label: 'T1 (Arsenal)',
+    t2Label: 'T2 (Leeds United)',
+    t1Odds: impliedOddsFromProb(55) ?? undefined,
+    t2Odds: impliedOddsFromProb(22) ?? undefined,
+    oddsSource: 'model',
+  });
+  check('model 1X2 still scores compliant', modelOdds.oddsOutcome === 'compliant');
+  check('model 1X2 is labelled as model', modelOdds.oddsCall.includes('Model 1X2'), modelOdds.oddsCall);
 }
 
 console.log('\nposition gap analysis (G1 = largest)');

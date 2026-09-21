@@ -29,8 +29,9 @@ import {
 import SubTabBar from '@/components/shared/SubTabBar';
 import { useFixtureFormAnalysis } from '@/hooks/useFixtureFormAnalysis';
 import { useSeasonFixtures } from '@/hooks/useSeasonFixtures';
-import type { Competition, H2HMatch, OddsByMarket, StandingRow } from '@/services/oddAlerts';
-import { evaluatePowerDynamics } from '@/utils/powerDynamicsEngine';
+import { useFixtureBook1x2 } from '@/hooks/useFixtureBook1x2';
+import type { Competition, H2HMatch, OddsByMarket, Probability, StandingRow } from '@/services/oddAlerts';
+import { evaluatePowerDynamics, ftOdds } from '@/utils/powerDynamicsEngine';
 import { findUkulumbana } from '@/utils/last5Analysis';
 import type { StandingLike } from '@/utils/motivationEngine';
 import { fonts, spacing, theme } from '@/styles/theme';
@@ -96,6 +97,8 @@ type Props = {
   awayName: string;
   h2hMatches: H2HMatch[];
   odds?: OddsByMarket;
+  probability?: Probability;
+  kickoffUnix?: number;
 };
 
 function toStandingLike(rows: StandingRow[]): StandingLike[] {
@@ -132,12 +135,21 @@ export default function MatchPowerDynamicsPanel({
   awayName,
   h2hMatches,
   odds,
+  probability,
 }: Props) {
   const [view, setView] = useState<PowerDynamicsTabId>('baseline');
   const [baselineSub, setBaselineSub] = useState<BaselineSubId>('original');
   const [streamlineSub, setStreamlineSub] = useState<StreamlineSubId>('bateteme');
 
   const like = useMemo(() => toStandingLike(standings), [standings]);
+  const oa1x2Ready = ftOdds(odds, 'home') != null && ftOdds(odds, 'away') != null;
+  const book = useFixtureBook1x2({
+    homeName,
+    awayName,
+    country: competitionCountry,
+    competition: competitionName,
+    enabled: !oa1x2Ready,
+  });
 
   const competition = useMemo((): Competition | null => {
     if (!seasonId) return null;
@@ -200,6 +212,9 @@ export default function MatchPowerDynamicsPanel({
         competitionId,
         h2hMatches,
         odds,
+        probability,
+        book1x2: book.prices,
+        oddsPending: !oa1x2Ready && book.loading,
       }),
     [
       like,
@@ -213,6 +228,10 @@ export default function MatchPowerDynamicsPanel({
       competitionId,
       h2hMatches,
       odds,
+      probability,
+      book.prices,
+      book.loading,
+      oa1x2Ready,
     ],
   );
 

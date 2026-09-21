@@ -327,6 +327,8 @@ export default function MatchDetailScreen({ matchId, onBack }: MatchDetailScreen
           awayName={fixture.away.name}
           h2hMatches={detail.h2h ?? []}
           odds={detail.odds}
+          probability={detail.probability}
+          kickoffUnix={detail.unix}
         />
       ) : (
         <H2HPanel

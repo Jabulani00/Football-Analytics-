@@ -3,7 +3,8 @@
  * Run: npx tsx scripts/hiddenH2h.test.ts
  */
 import { evaluateHiddenLayers, polarityCounts, problemPatternFor } from '../utils/hiddenLayers';
-import { evaluateH2HOptions, formatNeverBeatenSequence, matchPolarSequences, outcomeForSide } from '../utils/h2hOptions';
+import { evaluateH2HOptions, formatNeverBeatenSequence, hasBeenBeaten, matchPolarSequences, outcomeForSide } from '../utils/h2hOptions';
+import { h2hOutcomeForTeam } from '../utils/h2hDisplay';
 import type { TeamResult } from '../utils/teamResults';
 import type { StandingLike } from '../utils/motivationEngine';
 import type { H2HMatch } from '../services/oddAlerts';
@@ -154,6 +155,8 @@ console.log('\nSection 7 — H2H options');
     `max=${opts.pointsShare?.max}`,
   );
   check('Alpha never beaten overall', opts.tags.some((t) => t.id === 'never_beaten_home_overall'));
+  check('Alpha never beaten at home', opts.tags.some((t) => t.id === 'never_beaten_home_home'));
+  check('Alpha never beaten away', opts.tags.some((t) => t.id === 'never_beaten_home_away'));
   const neverTag = opts.tags.find((t) => t.id === 'never_beaten_home_overall');
   check(
     'never beaten shows W/D sequence',
@@ -171,6 +174,57 @@ console.log('\nSection 7 — H2H options');
   check('outcome for side', outcomeForSide(meetings[3], 'Alpha') === 'W');
   check('polar WWWWL hit', matchPolarSequences(['W', 'W', 'W', 'W', 'L'])[0]?.pattern === 'WWWWL');
   check('high or low avg goals tagged when extreme', opts.avgGoals != null);
+
+  const mixed: H2HMatch[] = [
+    h2h({ home_name: 'Alpha', away_name: 'Beta', home_goals: 2, away_goals: 0, date: '2026-04-01', id: 10 }),
+    h2h({ home_name: 'Beta', away_name: 'Alpha', home_goals: 3, away_goals: 0, date: '2026-03-01', id: 11 }),
+  ];
+  const mixedOpts = evaluateH2HOptions({ matches: mixed, homeName: 'Alpha', awayName: 'Beta' });
+  const mixedIds = mixedOpts.tags.map((t) => t.id);
+  check('Alpha has been beaten overall', hasBeenBeaten(mixed, 'Alpha') === true);
+  check('Beta has been beaten overall', hasBeenBeaten(mixed, 'Beta') === true);
+  check('overall never-beaten dropped after a loss', mixedIds.every((id) => !id.endsWith('_overall') || !id.includes('never_beaten')));
+  check('Alpha still never beaten at home', mixedIds.includes('never_beaten_home_home'));
+  check('Beta still never beaten at home', mixedIds.includes('never_beaten_away_home'));
+  check('Alpha not tagged never beaten away', mixedIds.includes('never_beaten_home_away') === false);
+  check('Beta not tagged never beaten away', mixedIds.includes('never_beaten_away_away') === false);
+
+  const flagLoss: H2HMatch[] = [
+    h2h({ home_name: 'Alpha', away_name: 'Beta', home_goals: 2, away_goals: 0, date: '2026-05-01', id: 20 }),
+    {
+      ...h2h({
+        home_name: 'Beta',
+        away_name: 'Alpha',
+        home_goals: null,
+        away_goals: null,
+        date: '2026-04-01',
+        id: 21,
+      }),
+      draw: true,
+      home_win: true,
+      away_win: false,
+    },
+  ];
+  check('flag loss is L for Alpha even with null scores', h2hOutcomeForTeam(flagLoss[1], 'Alpha') === 'L');
+  const flagOpts = evaluateH2HOptions({ matches: flagLoss, homeName: 'Alpha', awayName: 'Beta' });
+  const flagIds = flagOpts.tags.map((t) => t.id);
+  check('flagged away loss blocks never beaten overall', flagIds.includes('never_beaten_home_overall') === false);
+  check('flagged away loss still allows never beaten at home', flagIds.includes('never_beaten_home_home'));
+  check('flagged away loss blocks never beaten away', flagIds.includes('never_beaten_home_away') === false);
+
+  const olderLoss: H2HMatch[] = [
+    h2h({ home_name: 'Alpha', away_name: 'Beta', home_goals: 1, away_goals: 0, date: '2026-06-01', id: 30 }),
+    h2h({ home_name: 'Alpha', away_name: 'Beta', home_goals: 2, away_goals: 1, date: '2026-05-01', id: 31 }),
+    h2h({ home_name: 'Beta', away_name: 'Alpha', home_goals: 0, away_goals: 1, date: '2026-04-01', id: 32 }),
+    h2h({ home_name: 'Alpha', away_name: 'Beta', home_goals: 3, away_goals: 1, date: '2026-03-01', id: 33 }),
+    h2h({ home_name: 'Alpha', away_name: 'Beta', home_goals: 2, away_goals: 0, date: '2026-02-01', id: 34 }),
+    h2h({ home_name: 'Beta', away_name: 'Alpha', home_goals: 4, away_goals: 0, date: '2025-01-01', id: 35 }),
+  ];
+  const olderOpts = evaluateH2HOptions({ matches: olderLoss, homeName: 'Alpha', awayName: 'Beta' });
+  const olderIds = olderOpts.tags.map((t) => t.id);
+  check('older loss blocks never beaten overall', olderIds.includes('never_beaten_home_overall') === false);
+  check('older away loss still allows never beaten at home', olderIds.includes('never_beaten_home_home'));
+  check('older away loss blocks never beaten away', olderIds.includes('never_beaten_home_away') === false);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

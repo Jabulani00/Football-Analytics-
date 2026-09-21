@@ -16,8 +16,8 @@ import {
   type ResultOutcome,
   type TeamResult,
 } from '@/utils/teamResults';
-import { h2hOutcomeForTeam, teamsMatch } from '@/utils/h2hDisplay';
-import type { H2HMatch, OddsByMarket } from '@/services/oddAlerts';
+import { h2hOutcomeForTeam, teamInH2hMatch, teamsMatch } from '@/utils/h2hDisplay';
+import type { H2HMatch, OddsByMarket, Probability } from '@/services/oddAlerts';
 
 export type SideId = 't1' | 't2';
 export type TableColour = 'green' | 'yellow' | 'red';
@@ -198,7 +198,7 @@ export const STREAM_LABEL: Record<StreamName, string> = {
 
 export const STREAM_ROLE: Record<StreamName, string> = {
   bateteme: 'Close — ΔP ≤ 4',
-  compliant: 'T1 PPG is high and T1 odds are lower than T2',
+  compliant: 'T1 is stronger, so T1’s 1X2 odds should be the lower price',
   zidane_law: 'T1 has never beaten T2',
   bookie: 'T2 does beat T1, while stats say T1 has never beaten T2',
 };
@@ -216,6 +216,8 @@ export type StreamlineRead = {
   t2Ppg: number | null;
   t1Odds: number | null;
   t2Odds: number | null;
+  /** Where the 1X2 prices came from. */
+  oddsSource: 'bookmaker' | 'model' | null;
   t1PpgHigh: boolean;
   oddsOutcome: OddsOutcome | null;
   h2hMeetings: number;
@@ -343,12 +345,108 @@ export function h2hMeetingsForSides(
 }
 
 export function countH2hWins(matches: H2HMatch[], teamName: string): number {
-  return matches.filter((m) => h2hOutcomeForTeam(m, teamName) === 'W').length;
+  return matches.filter(
+    (m) => teamInH2hMatch(m, teamName) && h2hOutcomeForTeam(m, teamName) === 'W',
+  ).length;
 }
 
-function ftOdds(odds: OddsByMarket | undefined, venue: 'home' | 'away'): number | null {
-  const n = odds?.ft_result?.[venue];
-  return typeof n === 'number' && Number.isFinite(n) ? n : null;
+export function countH2hLosses(matches: H2HMatch[], teamName: string): number {
+  return matches.filter(
+    (m) => teamInH2hMatch(m, teamName) && h2hOutcomeForTeam(m, teamName) === 'L',
+  ).length;
+}
+
+function asPrice(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 1) return value;
+  if (typeof value === 'string') {
+    const n = Number(value);
+    return Number.isFinite(n) && n > 1 ? n : null;
+  }
+  if (value && typeof value === 'object') {
+    const row = value as Record<string, unknown>;
+    return asPrice(row.odd ?? row.odds ?? row.value ?? row.decimal ?? row.price);
+  }
+  return null;
+}
+
+const FT_MARKET_KEYS = [
+  'ft_result',
+  '1x2',
+  'match_result',
+  'full_time',
+  'full_time_result',
+  'match_winner',
+  'ft',
+];
+
+/** OddAlerts sometimes sends `odds: []` on upcoming games even when has_odds is true. */
+export function normalizeOddsBoard(odds: unknown): OddsByMarket | undefined {
+  if (odds == null) return undefined;
+  if (Array.isArray(odds)) {
+    if (odds.length === 0) return undefined;
+    const board: OddsByMarket = {};
+    for (const row of odds) {
+      if (!row || typeof row !== 'object') continue;
+      const rec = row as Record<string, unknown>;
+      const market = String(rec.market ?? rec.key ?? rec.name ?? '');
+      if (!market) continue;
+      const outcomes: Record<string, number> = {};
+      for (const [k, v] of Object.entries(rec)) {
+        if (k === 'market' || k === 'key' || k === 'name') continue;
+        const n = asPrice(v);
+        if (n != null) outcomes[k] = n;
+      }
+      if (Object.keys(outcomes).length > 0) board[market] = outcomes;
+    }
+    return Object.keys(board).length > 0 ? board : undefined;
+  }
+  if (typeof odds !== 'object') return undefined;
+  if (Object.keys(odds as object).length === 0) return undefined;
+  return odds as OddsByMarket;
+}
+
+function ftMarket(odds: unknown): Record<string, unknown> | null {
+  const bag = normalizeOddsBoard(odds);
+  if (!bag) return null;
+  const rec = bag as unknown as Record<string, unknown>;
+  for (const key of FT_MARKET_KEYS) {
+    const market = rec[key];
+    if (market && typeof market === 'object' && !Array.isArray(market)) {
+      return market as Record<string, unknown>;
+    }
+  }
+  for (const market of Object.values(rec)) {
+    if (!market || typeof market !== 'object' || Array.isArray(market)) continue;
+    const row = market as Record<string, unknown>;
+    if (asPrice(row.home) != null && asPrice(row.away) != null) return row;
+    if (asPrice(row['1']) != null && asPrice(row['2']) != null) return row;
+  }
+  return null;
+}
+
+/** Decimal 1X2 price for fixture home or away from the odds board. */
+export function ftOdds(odds: OddsByMarket | undefined, venue: 'home' | 'away'): number | null {
+  const market = ftMarket(odds);
+  if (!market) return null;
+  const keys =
+    venue === 'home' ? ['home', '1', 'home_win', 'Home'] : ['away', '2', 'away_win', 'Away'];
+  for (const key of keys) {
+    const n = asPrice(market[key]);
+    if (n != null) return n;
+  }
+  return null;
+}
+
+/** Decimal price implied by a 0–100 or 0–1 win probability. */
+export function impliedOddsFromProb(pct: number | undefined): number | null {
+  if (pct == null || !Number.isFinite(pct) || pct <= 0) return null;
+  const p = pct > 1 ? pct / 100 : pct;
+  if (p <= 0 || p >= 1) return null;
+  return 1 / p;
+}
+
+function fmtOdds(n: number): string {
+  return n.toFixed(2);
 }
 
 export function evaluateStreamline(opts: {
@@ -360,9 +458,12 @@ export function evaluateStreamline(opts: {
   t2Ppg?: number | null;
   t1Odds?: number | null;
   t2Odds?: number | null;
+  oddsSource?: 'bookmaker' | 'model' | null;
+  oddsPending?: boolean;
   h2hMeetings?: number;
   t1H2hWins?: number;
   t2H2hWins?: number;
+  t1H2hLosses?: number;
 }): StreamlineRead {
   const t1Points = opts.t1Points;
   const t2Points = opts.t2Points;
@@ -372,38 +473,48 @@ export function evaluateStreamline(opts: {
   const t2Ppg = opts.t2Ppg ?? null;
   const t1Odds = opts.t1Odds ?? null;
   const t2Odds = opts.t2Odds ?? null;
+  const oddsPending = opts.oddsPending === true;
+  const oddsSource =
+    t1Odds != null && t2Odds != null ? (opts.oddsSource ?? 'bookmaker') : null;
   const h2hMeetings = opts.h2hMeetings ?? 0;
   const t1H2hWins = opts.t1H2hWins ?? 0;
   const t2H2hWins = opts.t2H2hWins ?? 0;
+  const t1H2hLosses = opts.t1H2hLosses ?? 0;
   const delta = t1Points != null && t2Points != null ? t1Points - t2Points : null;
   const close = delta != null && delta <= STREAMLINE_CLOSE_MAX;
   const far = delta != null && delta >= STREAMLINE_FAR_MIN;
-  const t1NeverBeatenT2 = h2hMeetings > 0 && t1H2hWins === 0;
-  const t2BeatsT1 = h2hMeetings > 0 && t2H2hWins > 0;
+  const t1HasBeenBeaten = h2hMeetings > 0 && (t1H2hLosses > 0 || t2H2hWins > 0);
+  const t1NeverWon = h2hMeetings > 0 && t1H2hWins === 0;
+  const t1NeverBeatenT2 = t1NeverWon && !t1HasBeenBeaten;
+  const t2BeatsT1 = h2hMeetings > 0 && (t2H2hWins > 0 || t1HasBeenBeaten);
+  // T1 is already the stronger table side. High PPG and short odds are one bundle:
+  // T1’s 1X2 price should be lower than T2. Do not skip the check when PPG is close.
   const t1PpgHigh = t1Ppg != null && t2Ppg != null && t1Ppg > t2Ppg;
+
+  const oddsLabel =
+    oddsSource === 'model'
+      ? 'Model 1X2 (no bookmaker price)'
+      : 'Bookmaker 1X2 odds';
 
   let oddsOutcome: OddsOutcome | null = null;
   let oddsCall: string;
-  if (!t1PpgHigh) {
-    oddsCall =
-      t1Ppg != null && t2Ppg != null
-        ? `T1 PPG ${t1Ppg.toFixed(2)} is not higher than T2 ${t2Ppg.toFixed(2)}, so the high-PPG odds check does not apply.`
-        : 'Need both sides\' PPG to check odds compliance.';
-  } else if (t1Odds == null || t2Odds == null) {
-    oddsCall = `T1 PPG ${t1Ppg!.toFixed(2)} is higher than T2 ${t2Ppg!.toFixed(2)}, so T1 odds should be lower. Need 1X2 odds to score compliant vs non-compliant.`;
+  if (t1Odds == null || t2Odds == null) {
+    oddsCall = oddsPending
+      ? `Loading bookmaker 1X2 odds for ${t1Label} vs ${t2Label}…`
+      : `No 1X2 odds on this fixture yet, so compliant vs non-compliant cannot be scored. ${t1Label} is the stronger table side, so T1’s 1X2 price should be lower than ${t2Label}.`;
   } else if (t1Odds < t2Odds) {
     oddsOutcome = 'compliant';
-    oddsCall = `T1 PPG ${t1Ppg!.toFixed(2)} vs T2 ${t2Ppg!.toFixed(2)} — T1 odds ${t1Odds} < T2 ${t2Odds}. Compliant.`;
+    oddsCall = `${oddsLabel}: ${t1Label} ${fmtOdds(t1Odds)}, ${t2Label} ${fmtOdds(t2Odds)}. T1 is the shorter price, as expected. Compliant.`;
   } else {
     oddsOutcome = 'non_compliant';
-    oddsCall = `T1 PPG ${t1Ppg!.toFixed(2)} vs T2 ${t2Ppg!.toFixed(2)} — expected T1 odds lower, got T1 ${t1Odds} vs T2 ${t2Odds}. Non-compliant.`;
+    oddsCall = `${oddsLabel}: ${t1Label} ${fmtOdds(t1Odds)}, ${t2Label} ${fmtOdds(t2Odds)}. T1 should be the shorter price. Non-compliant.`;
   }
 
   const inStreams: Record<StreamName, boolean> = {
     bateteme: close,
     compliant: oddsOutcome === 'compliant',
-    zidane_law: t1NeverBeatenT2 && !t2BeatsT1,
-    bookie: t1NeverBeatenT2 && t2BeatsT1,
+    zidane_law: t1NeverBeatenT2,
+    bookie: t1NeverWon && t1HasBeenBeaten,
   };
   const primary = STREAM_ORDER.find((name) => inStreams[name]) ?? null;
 
@@ -415,7 +526,7 @@ export function evaluateStreamline(opts: {
   } else if (inStreams.zidane_law) {
     call = `Zidane Law — ${t1Label} has never beaten ${t2Label} (${h2hMeetings} meetings, T1 ${t1H2hWins}W / T2 ${t2H2hWins}W).`;
   } else if (inStreams.compliant) {
-    call = `Compliant stream — T1 PPG is higher and T1 odds are lower than T2.`;
+    call = `Compliant stream — T1’s 1X2 odds are lower than T2, as expected.`;
   } else if (inStreams.bateteme) {
     call = `${t1Label} − ${t2Label} = ${delta} pts (≤ 4). Both sides sit in Bateteme stream.`;
   } else {
@@ -434,6 +545,7 @@ export function evaluateStreamline(opts: {
     t2Ppg,
     t1Odds,
     t2Odds,
+    oddsSource,
     t1PpgHigh,
     oddsOutcome,
     h2hMeetings,
@@ -1126,7 +1238,11 @@ export function evaluatePowerDynamics(opts: {
   seasonProgress?: number | null;
   competitionId?: number | string | null;
   h2hMatches?: H2HMatch[];
-  odds?: OddsByMarket;
+  odds?: OddsByMarket | unknown;
+  probability?: Probability;
+  /** Extra 1X2 board (e.g. Hollywoodbets) when OddAlerts `odds` is empty. */
+  book1x2?: { home: number; away: number } | null;
+  oddsPending?: boolean;
 }): PowerDynamicsBundle {
   const {
     table,
@@ -1140,6 +1256,9 @@ export function evaluatePowerDynamics(opts: {
     competitionId,
     h2hMatches = [],
     odds,
+    probability,
+    book1x2 = null,
+    oddsPending = false,
   } = opts;
 
   const homeRow = homeId != null ? table.find((t) => t.teamId === homeId) : null;
@@ -1227,6 +1346,28 @@ export function evaluatePowerDynamics(opts: {
       ? evaluateTeamMotivation(t2Id, table, { competitionId, seasonProgress })
       : null;
   const meetings = h2hMeetingsForSides(h2hMatches, t1.name, t2.name);
+  let t1Odds = ftOdds(odds, t1.venue);
+  let t2Odds = ftOdds(odds, t2.venue);
+  let oddsSource: 'bookmaker' | 'model' | null =
+    t1Odds != null && t2Odds != null ? 'bookmaker' : null;
+  if (oddsSource == null && book1x2) {
+    t1Odds = t1.venue === 'home' ? book1x2.home : book1x2.away;
+    t2Odds = t2.venue === 'home' ? book1x2.home : book1x2.away;
+    if (t1Odds != null && t2Odds != null) oddsSource = 'bookmaker';
+  }
+  if (oddsSource == null && probability) {
+    const t1Implied = impliedOddsFromProb(
+      t1.venue === 'home' ? probability.home_win : probability.away_win,
+    );
+    const t2Implied = impliedOddsFromProb(
+      t2.venue === 'home' ? probability.home_win : probability.away_win,
+    );
+    if (t1Implied != null && t2Implied != null) {
+      t1Odds = t1Implied;
+      t2Odds = t2Implied;
+      oddsSource = 'model';
+    }
+  }
 
   return {
     t1,
@@ -1280,11 +1421,17 @@ export function evaluatePowerDynamics(opts: {
       t2Label: t2.label,
       t1Ppg: t1.overall.ppg,
       t2Ppg: t2.overall.ppg,
-      t1Odds: ftOdds(odds, t1.venue),
-      t2Odds: ftOdds(odds, t2.venue),
+      t1Odds: t1Odds,
+      t2Odds: t2Odds,
+      oddsSource,
+      oddsPending: oddsSource == null && oddsPending,
       h2hMeetings: meetings.length,
       t1H2hWins: countH2hWins(meetings, t1.name),
       t2H2hWins: countH2hWins(meetings, t2.name),
+      t1H2hLosses: Math.max(
+        countH2hLosses(meetings, t1.name),
+        countH2hWins(meetings, t2.name),
+      ),
     }),
   };
 }

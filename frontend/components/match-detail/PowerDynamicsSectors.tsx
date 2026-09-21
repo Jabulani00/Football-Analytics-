@@ -353,7 +353,7 @@ export function StreamlineCards({
     focus === 'bateteme'
       ? 'ΔP ≤ 4. Both sides sit here when the points gap is close.'
       : focus === 'compliant'
-        ? 'T1 PPG is high, so T1 odds should be lower than T2.'
+        ? 'T1 is the stronger table side, so T1’s bookmaker 1X2 odds should be lower than T2. That bundle is compliant or non-compliant.'
         : focus === 'zidane_law'
           ? 'T1 has never beaten T2 in H2H.'
           : focus === 'bookie'

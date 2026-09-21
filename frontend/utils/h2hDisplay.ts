@@ -34,28 +34,41 @@ export function teamsMatch(a: string, b: string): boolean {
   return false;
 }
 
+export function teamInH2hMatch(m: H2HMatch, teamName: string): boolean {
+  return teamsMatch(m.home_name, teamName) || teamsMatch(m.away_name, teamName);
+}
+
+/** Do not treat missing scores as 0–0. */
+function readGoals(value: unknown): number | null {
+  if (value == null || value === '') return null;
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
 /** W/D/L from a named team's point of view in that meeting. */
 export function h2hOutcomeForTeam(m: H2HMatch, teamName: string): H2HOutcome {
-  const hg = m.home_goals ?? 0;
-  const ag = m.away_goals ?? 0;
   const wasHome = teamsMatch(m.home_name, teamName);
   const wasAway = teamsMatch(m.away_name, teamName);
+  if (!wasHome && !wasAway) return 'D';
 
-  if (wasHome || wasAway) {
+  const hg = readGoals(m.home_goals);
+  const ag = readGoals(m.away_goals);
+  if (hg != null && ag != null) {
     if (hg === ag) return 'D';
     const teamGoals = wasHome ? hg : ag;
     const oppGoals = wasHome ? ag : hg;
-    if (teamGoals > oppGoals) return 'W';
-    if (teamGoals < oppGoals) return 'L';
-    return 'D';
+    return teamGoals > oppGoals ? 'W' : 'L';
   }
 
-  // OddAlerts team1/team2 flags when names don't match cleanly.
-  if (m.team1_win) return 'W';
-  if (m.team2_win) return 'L';
-  if (m.draw) return 'D';
-  if (hg === ag) return 'D';
-  return hg > ag ? 'W' : 'L';
+  // Win flags beat a stale/empty draw flag (null scores often serialize as draw).
+  const homeWon = m.home_win === true;
+  const awayWon = m.away_win === true;
+  if (homeWon !== awayWon) {
+    if (homeWon) return wasHome ? 'W' : 'L';
+    return wasHome ? 'L' : 'W';
+  }
+  if (m.draw === true) return 'D';
+  return 'D';
 }
 
 /** W/D/L for the **current fixture home team** (team1 in OddAlerts h2h). */

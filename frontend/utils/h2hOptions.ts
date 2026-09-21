@@ -8,6 +8,7 @@ import {
   H2H_MEETINGS_LIMIT,
   h2hOutcomeForTeam,
   recentH2hMeetings,
+  teamInH2hMatch,
   teamsMatch,
   type H2HOutcome,
   type H2HSplit,
@@ -66,7 +67,32 @@ function outcomesInSplit(
   viewer: string,
   split: H2HSplit,
 ): H2HOutcome[] {
-  return matchesInSplit(matches, viewer, split).map((m) => outcomeForSide(m, viewer));
+  return matchesInSplit(matches, viewer, split)
+    .filter((m) => teamInH2hMatch(m, viewer))
+    .map((m) => outcomeForSide(m, viewer));
+}
+
+/** True if this side has any H2H loss in the full set (any venue). */
+export function hasBeenBeaten(matches: H2HMatch[], viewer: string): boolean {
+  return matches.some((m) => {
+    if (!teamInH2hMatch(m, viewer)) return false;
+    if (h2hOutcomeForTeam(m, viewer) === 'L') return true;
+    const opp = teamsMatch(m.home_name, viewer) ? m.away_name : m.home_name;
+    return h2hOutcomeForTeam(m, opp) === 'W';
+  });
+}
+
+function neverBeaten(
+  matches: H2HMatch[],
+  viewer: string,
+  split: H2HSplit,
+): H2HOutcome[] | null {
+  // Overall is unbeaten only with no losses anywhere. Home / away stay venue-specific.
+  if (split === 'overall' && hasBeenBeaten(matches, viewer)) return null;
+  const outcomes = outcomesInSplit(matches, viewer, split);
+  if (outcomes.length === 0) return null;
+  if (outcomes.some((o) => o === 'L')) return null;
+  return outcomes;
 }
 
 /** Max results shown inside the never-beaten brackets. */
@@ -106,18 +132,6 @@ export function filterH2hByCompetition(
     return teamsMatch(league, name);
   });
   return inLeague.length > 0 ? inLeague : matches;
-}
-
-function neverBeaten(
-  matches: H2HMatch[],
-  viewer: string,
-  split: H2HSplit,
-): H2HOutcome[] | null {
-  const outcomes = outcomesInSplit(matches, viewer, split);
-  if (outcomes.length === 0) return null;
-  // Viewer has no losses in this split.
-  if (outcomes.some((o) => o === 'L')) return null;
-  return outcomes;
 }
 
 function pointsFromOutcomes(outcomes: H2HOutcome[]): number {
@@ -184,34 +198,35 @@ export function evaluateH2HOptions(opts: {
   const tags: H2HOptionTag[] = [];
   /** Points share / polar use last 5 meetings only (max 15 pts each). */
   const overall = recentH2hMeetings(matches, H2H_MEETINGS_LIMIT);
-  const leagueMatches = filterH2hByCompetition(matches, competitionName);
   const leagueLabel = competitionName?.trim() || 'these meetings';
 
-  // Never beaten — both lenses (overall / home / away splits), with W/D sequence
+  // Never beaten — overall is unbeaten everywhere; home / away are that venue only.
   for (const split of ['overall', 'home', 'away'] as const) {
     const homeSeq = neverBeaten(matches, homeName, split);
     if (homeSeq) {
       const seq = formatNeverBeatenSequence(homeSeq);
-      const leagueOutcomes = outcomesInSplit(leagueMatches, homeName, split);
-      const { w, d, l } = countWdl(leagueOutcomes.length > 0 ? leagueOutcomes : homeSeq);
-      tags.push({
-        id: `never_beaten_home_${split}`,
-        label: `${homeName} never beaten (${split}) ${seq}`,
-        kind: 'good',
-        detail: `In ${leagueLabel}: ${w} win${w === 1 ? '' : 's'}, ${d} draw${d === 1 ? '' : 's'}, ${l} loss${l === 1 ? '' : 'es'} (${split})`,
-      });
+      const { w, d, l } = countWdl(homeSeq);
+      if (l === 0) {
+        tags.push({
+          id: `never_beaten_home_${split}`,
+          label: `${homeName} never beaten (${split}) ${seq}`,
+          kind: 'good',
+          detail: `In ${leagueLabel}: ${w} win${w === 1 ? '' : 's'}, ${d} draw${d === 1 ? '' : 's'}, ${l} loss${l === 1 ? '' : 'es'} (${split})`,
+        });
+      }
     }
     const awaySeq = neverBeaten(matches, awayName, split);
     if (awaySeq) {
       const seq = formatNeverBeatenSequence(awaySeq);
-      const leagueOutcomes = outcomesInSplit(leagueMatches, awayName, split);
-      const { w, d, l } = countWdl(leagueOutcomes.length > 0 ? leagueOutcomes : awaySeq);
-      tags.push({
-        id: `never_beaten_away_${split}`,
-        label: `${awayName} never beaten (${split}) ${seq}`,
-        kind: 'bad',
-        detail: `In ${leagueLabel}: ${w} win${w === 1 ? '' : 's'}, ${d} draw${d === 1 ? '' : 's'}, ${l} loss${l === 1 ? '' : 'es'} (${split})`,
-      });
+      const { w, d, l } = countWdl(awaySeq);
+      if (l === 0) {
+        tags.push({
+          id: `never_beaten_away_${split}`,
+          label: `${awayName} never beaten (${split}) ${seq}`,
+          kind: 'bad',
+          detail: `In ${leagueLabel}: ${w} win${w === 1 ? '' : 's'}, ${d} draw${d === 1 ? '' : 's'}, ${l} loss${l === 1 ? '' : 'es'} (${split})`,
+        });
+      }
     }
   }
 
