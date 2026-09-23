@@ -11,7 +11,7 @@ function streamColor(stream: StreamName | null | undefined): string {
   if (stream === 'bateteme') return theme.yellow;
   if (stream === 'compliant') return theme.accentGreen;
   if (stream === 'zidane_law') return theme.accentBlue;
-  if (stream === 'bookie') return theme.loss;
+  if (stream === 'bookie' || stream === 'bookie2') return theme.loss;
   return theme.textFaint;
 }
 

@@ -77,6 +77,7 @@ const STREAMLINE_SUBS = [
   { id: 'compliant', label: 'Compliant stream' },
   { id: 'zidane_law', label: 'Zidane Law' },
   { id: 'bookie', label: 'Bookie mistake' },
+  { id: 'bookie2', label: 'Bookie mistake 2' },
 ] as const;
 
 type BaselineSubId = (typeof BASELINE_SUBS)[number]['id'];

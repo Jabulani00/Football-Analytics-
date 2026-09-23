@@ -14,6 +14,7 @@ import {
   ftOdds,
   impliedOddsFromProb,
   leaguePpg,
+  ppgOddsZidaneAligned,
   positionGapScale,
   lastGameFlags,
   mshayiNote,
@@ -412,63 +413,73 @@ console.log('\nstreamline');
     t2Points: 14,
     t1Label: 'T1 (A)',
     t2Label: 'T2 (B)',
+    t1Ppg: 2.3,
+    t2Ppg: 1.1,
+    t1Odds: 3.8,
+    t2Odds: 1.7,
     h2hMeetings: 4,
     t1H2hWins: 0,
     t2H2hWins: 0,
+    t1H2hDraws: 4,
+    t1H2hLosses: 0,
   });
-  check('T1 never beaten T2 → Zidane Law', zidane.t1Stream === 'zidane_law' && zidane.t2Stream === 'zidane_law');
-  check('Zidane Law flag', zidane.t1NeverBeatenT2 === true && zidane.t2BeatsT1 === false);
+  check('high PPG + high odds + T1 never beaten T2 → Zidane Law', zidane.t1Stream === 'zidane_law');
+  check('Zidane shows draws', zidane.t1H2hDraws === 4 && zidane.call.includes('4D'));
+  check('Zidane Law flag', zidane.t1NeverBeatenT2 === true && zidane.t1DidBeatT2 === false);
 
   const bookie = evaluateStreamline({
     t1Points: 22,
     t2Points: 10,
     t1Label: 'T1 (A)',
     t2Label: 'T2 (B)',
+    t1Ppg: 2.2,
+    t2Ppg: 1.0,
+    t1Odds: 3.4,
+    t2Odds: 1.8,
     h2hMeetings: 5,
-    t1H2hWins: 0,
-    t2H2hWins: 3,
-    t1H2hLosses: 3,
+    t1H2hWins: 2,
+    t2H2hWins: 1,
+    t1H2hDraws: 2,
+    t1H2hLosses: 1,
   });
-  check('T2 beats T1 + T1 never won → Bookie mistake', bookie.t1Stream === 'bookie' && bookie.t2Stream === 'bookie');
-  check('Bookie T1 has been beaten', bookie.t2BeatsT1 === true && bookie.t1NeverBeatenT2 === false);
-  check('Bookie is not Zidane Law', bookie.inStreams.zidane_law === false);
+  check('same PPG/odds rule + T1 did beat T2 → Bookie mistake', bookie.t1Stream === 'bookie');
+  check('Bookie is not Zidane Law', bookie.inStreams.zidane_law === false && bookie.t1DidBeatT2 === true);
+  check('Bookie call names T1 beating T2', bookie.call.includes('did beat') && bookie.call.includes('2D'));
+
+  const noH2h = evaluateStreamline({
+    t1Points: 22,
+    t2Points: 10,
+    t1Label: 'T1 (A)',
+    t2Label: 'T2 (B)',
+    t1Ppg: 2.2,
+    t2Ppg: 1.0,
+    t1Odds: 3.4,
+    t2Odds: 1.8,
+    h2hMeetings: 0,
+  });
+  check('same PPG/odds rule + no H2H → Bookie mistake 2', noH2h.t1Stream === 'bookie2');
+  check('Bookie 2 is not Bookie', noH2h.inStreams.bookie === false && noH2h.inStreams.zidane_law === false);
 
   const beatenNotZidane = evaluateStreamline({
     t1Points: 22,
     t2Points: 10,
     t1Label: 'T1 (A)',
     t2Label: 'T2 (B)',
+    t1Ppg: 2.2,
+    t2Ppg: 1.0,
+    t1Odds: 3.4,
+    t2Odds: 1.8,
     h2hMeetings: 4,
-    t1H2hWins: 0,
+    t1H2hWins: 1,
     t2H2hWins: 0,
-    t1H2hLosses: 2,
-  });
-  check('T1 has been beaten → not Zidane Law', beatenNotZidane.inStreams.zidane_law === false);
-  check('T1 has been beaten → Bookie mistake', beatenNotZidane.inStreams.bookie === true);
-
-  const t2WinsCountAsBeaten = evaluateStreamline({
-    t1Points: 22,
-    t2Points: 10,
-    t1Label: 'T1 (A)',
-    t2Label: 'T2 (B)',
-    h2hMeetings: 3,
-    t1H2hWins: 0,
-    t2H2hWins: 2,
+    t1H2hDraws: 3,
     t1H2hLosses: 0,
   });
-  check(
-    'T2 wins mean T1 has been beaten → not Zidane Law',
-    t2WinsCountAsBeaten.inStreams.zidane_law === false,
-  );
-  check(
-    'T2 wins + T1 never won → Bookie mistake',
-    t2WinsCountAsBeaten.inStreams.bookie === true,
-  );
-  check(
-    'Bookie call does not claim stats still say never beaten',
-    bookie.call.includes('has never won this H2H') && !bookie.call.includes('H2H stats still say'),
-    bookie.call,
-  );
+  check('T1 did beat T2 → not Zidane Law', beatenNotZidane.inStreams.zidane_law === false);
+  check('T1 did beat T2 → Bookie mistake', beatenNotZidane.inStreams.bookie === true);
+
+  check('PPG/odds zidane: high PPG with high odds', ppgOddsZidaneAligned(2.4, 1.5, 3.2, 1.6) === true);
+  check('PPG/odds zidane false when high PPG has low odds', ppgOddsZidaneAligned(2.4, 1.5, 1.35, 8) === false);
 
   const arsenalLeeds = evaluateStreamline({
     t1Points: 12,
@@ -479,14 +490,16 @@ console.log('\nstreamline');
     t2Ppg: 1.8,
     t1Odds: 1.35,
     t2Odds: 8,
-    h2hMeetings: 6,
+    h2hMeetings: 5,
     t1H2hWins: 3,
     t2H2hWins: 0,
+    t1H2hDraws: 2,
     t1H2hLosses: 0,
   });
   check('close + compliant stays Bateteme as primary', arsenalLeeds.t1Stream === 'bateteme');
   check('odds still score Compliant', arsenalLeeds.inStreams.compliant === true && arsenalLeeds.oddsOutcome === 'compliant');
-  check('T2 never beat T1 → not Bookie', arsenalLeeds.inStreams.bookie === false && arsenalLeeds.t2BeatsT1 === false);
+  check('high PPG with low odds is not Bookie', arsenalLeeds.inStreams.bookie === false);
+  check('draws are on the record', arsenalLeeds.t1H2hDraws === 2);
   check('primary call is Bateteme not Compliant or Bookie', arsenalLeeds.call.includes('Bateteme') && !arsenalLeeds.call.includes('Compliant') && !arsenalLeeds.call.includes('Bookie'));
 
   const compliant = evaluateStreamline({
@@ -592,6 +605,8 @@ console.log('\nstreamline on a fixture matchup');
       awayId: 2,
       homeName: 'City',
       awayName: 'Leeds',
+      homeOdds: 4.2,
+      awayOdds: 1.7,
       h2hMatches: [
         {
           id: 1,
@@ -602,10 +617,48 @@ console.log('\nstreamline on a fixture matchup');
           ht_score: null,
           total_goals: 2,
           btts: true,
-          date: '',
+          date: '2026-09-01',
           league: 'PL',
         },
       ],
+    }) === 'zidane_law',
+  );
+
+  const olderWin = {
+    id: 99,
+    home_name: 'City',
+    away_name: 'Leeds',
+    home_goals: 3,
+    away_goals: 0,
+    ht_score: null,
+    total_goals: 3,
+    btts: false,
+    date: '2020-01-01',
+    league: 'PL',
+  };
+  const fiveDraws = Array.from({ length: 5 }, (_, i) => ({
+    id: i + 1,
+    home_name: 'City',
+    away_name: 'Leeds',
+    home_goals: 1,
+    away_goals: 1,
+    ht_score: null,
+    total_goals: 2,
+    btts: true,
+    date: `2026-0${i + 1}-01`,
+    league: 'PL',
+  }));
+  check(
+    'Streamline uses last 5 H2H not older wins',
+    streamlineForMatchup({
+      table,
+      homeId: 3,
+      awayId: 2,
+      homeName: 'City',
+      awayName: 'Leeds',
+      homeOdds: 4.2,
+      awayOdds: 1.7,
+      h2hMatches: [...fiveDraws, olderWin],
     }) === 'zidane_law',
   );
 }
