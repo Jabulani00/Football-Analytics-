@@ -193,7 +193,15 @@ export default function LiveScoresFeed() {
     return groupByDateThenCompetition(list, preferredIds);
   }, [statusFilter, dateFiltered, competitionId, preferredIds]);
 
-  const streamSource = statusFilter === 'ns' ? dateFiltered : scoped;
+  const streamSource = useMemo(() => {
+    if (statusFilter === 'ft') return [];
+    if (statusFilter === 'ns') {
+      return competitionId != null
+        ? dateFiltered.filter((f) => f.competition.id === competitionId)
+        : dateFiltered;
+    }
+    return scoped;
+  }, [statusFilter, dateFiltered, competitionId, scoped]);
   const streams = useFixtureStreamlines(streamSource, { enabled: statusFilter !== 'ft' });
 
   const activeCompetition =

@@ -645,11 +645,12 @@ function findTableRow(
   return table.find((t) => t.name.trim().toLowerCase() === needle) ?? null;
 }
 
-/**
- * Primary Streamline for a fixture from the league table (+ optional H2H / 1X2).
- * Same T1/T2 rules as the match screen.
- */
-export function streamlineForMatchup(opts: {
+/** Streams this fixture is in, in tab order. */
+export function listedStreams(inStreams: Record<StreamName, boolean>): StreamName[] {
+  return STREAM_ORDER.filter((name) => inStreams[name]);
+}
+
+type StreamlineMatchupOpts = {
   table: StandingLike[];
   homeId?: number | null;
   awayId?: number | null;
@@ -659,7 +660,13 @@ export function streamlineForMatchup(opts: {
   homeOdds?: number | null;
   awayOdds?: number | null;
   oddsSource?: 'bookmaker' | 'model' | null;
-}): StreamName | null {
+};
+
+/**
+ * Full Streamline read for a fixture from the league table (+ optional H2H / 1X2).
+ * Same T1/T2 rules as the match screen.
+ */
+export function streamlineReadForMatchup(opts: StreamlineMatchupOpts): StreamlineRead | null {
   const table = opts.table;
   if (table.length === 0) return null;
   const homeRow = findTableRow(table, opts.homeId, opts.homeName);
@@ -704,7 +711,22 @@ export function streamlineForMatchup(opts: {
     t2H2hWins: countH2hWins(meetings, t2Name),
     t1H2hLosses: countH2hLosses(meetings, t1Name),
     t1H2hDraws: countH2hDraws(meetings, t1Name),
-  }).t1Stream;
+  });
+}
+
+/** Every matching Streamline for a fixture (tab order). */
+export function streamsForMatchup(opts: StreamlineMatchupOpts): StreamName[] {
+  const read = streamlineReadForMatchup(opts);
+  if (!read) return [];
+  return listedStreams(read.inStreams);
+}
+
+/**
+ * Primary Streamline for a fixture from the league table (+ optional H2H / 1X2).
+ * Same T1/T2 rules as the match screen.
+ */
+export function streamlineForMatchup(opts: StreamlineMatchupOpts): StreamName | null {
+  return streamsForMatchup(opts)[0] ?? null;
 }
 
 const VENUE_GAP = 0.3;

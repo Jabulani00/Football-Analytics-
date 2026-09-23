@@ -25,6 +25,7 @@ import {
   recordFromStanding,
   sideLabel,
   streamlineForMatchup,
+  streamsForMatchup,
   t1IsHomeSide,
 } from '../utils/powerDynamicsEngine';
 import type { TeamResult } from '../utils/teamResults';
@@ -588,7 +589,7 @@ console.log('\nstreamline on a fixture matchup');
     }) === 'bateteme',
   );
   check(
-    'far gap with no H2H is unassigned',
+    'far gap with no H2H/odds is unassigned until Power Dynamics inputs exist',
     streamlineForMatchup({
       table,
       homeId: 3,
@@ -596,6 +597,20 @@ console.log('\nstreamline on a fixture matchup');
       homeName: 'City',
       awayName: 'Leeds',
     }) == null,
+  );
+  check(
+    'close + T1 shorter 1X2 lists Bateteme and Compliant',
+    JSON.stringify(
+      streamsForMatchup({
+        table,
+        homeId: 1,
+        awayId: 2,
+        homeName: 'Arsenal',
+        awayName: 'Leeds',
+        homeOdds: 1.55,
+        awayOdds: 5.4,
+      }),
+    ) === JSON.stringify(['bateteme', 'compliant']),
   );
   check(
     'T1 never beaten T2 is Zidane Law',

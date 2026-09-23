@@ -15,7 +15,7 @@ type Props = {
   module: 'all' | MarketModule;
   /** Open the full match detail. */
   onOpen: () => void;
-  stream?: StreamName | null;
+  stream?: StreamName | StreamName[] | null;
 };
 
 const CAN_RECOMMEND = new Set(['NS', 'LIVE', 'HT']);

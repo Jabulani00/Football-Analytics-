@@ -11,8 +11,8 @@ import { fonts, layout, spacing, theme } from '@/styles/theme';
 type ScoresMatchRowProps = {
   fixture: Fixture;
   onPress?: () => void;
-  /** Primary Streamline for upcoming rows (far right). */
-  stream?: StreamName | null;
+  /** Streamline(s) for upcoming rows (far right). */
+  stream?: StreamName | StreamName[] | null;
   showStreamline?: boolean;
 };
 

@@ -4,10 +4,15 @@ import { STREAM_CHIP, type StreamName } from '@/utils/powerDynamicsEngine';
 import { fonts, theme } from '@/styles/theme';
 
 type Props = {
-  stream: StreamName | null | undefined;
+  stream?: StreamName | StreamName[] | null;
 };
 
-function streamColor(stream: StreamName | null | undefined): string {
+function asList(stream: StreamName | StreamName[] | null | undefined): StreamName[] {
+  if (stream == null) return [];
+  return Array.isArray(stream) ? stream : [stream];
+}
+
+function streamColor(stream: StreamName): string {
   if (stream === 'bateteme') return theme.yellow;
   if (stream === 'compliant') return theme.accentGreen;
   if (stream === 'zidane_law') return theme.accentBlue;
@@ -17,21 +22,31 @@ function streamColor(stream: StreamName | null | undefined): string {
 
 /** Fixed far-right Streamline column so fixture rows stay aligned. */
 export default function StreamlineChip({ stream }: Props) {
+  const streams = asList(stream);
+  const label =
+    streams.length > 0
+      ? `Streamline ${streams.map((s) => STREAM_CHIP[s]).join(', ')}`
+      : 'Streamline loading';
+
   return (
-    <View
-      style={styles.col}
-      accessibilityLabel={stream ? `Streamline ${STREAM_CHIP[stream]}` : 'Streamline not yet'}>
+    <View style={styles.col} accessibilityLabel={label}>
       <Text style={styles.kicker}>Streamline</Text>
-      <Text style={[styles.name, { color: streamColor(stream) }]} numberOfLines={1}>
-        {stream ? STREAM_CHIP[stream] : 'Not yet'}
-      </Text>
+      {streams.length === 0 ? (
+        <Text style={[styles.name, { color: theme.textFaint }]}>—</Text>
+      ) : (
+        streams.map((name) => (
+          <Text key={name} style={[styles.name, { color: streamColor(name) }]}>
+            {STREAM_CHIP[name]}
+          </Text>
+        ))
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   col: {
-    width: 72,
+    width: 86,
     flexShrink: 0,
     alignItems: 'flex-end',
     justifyContent: 'center',

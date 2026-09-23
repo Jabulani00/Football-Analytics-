@@ -1,5 +1,15 @@
-import type { Fixture, H2HMatch, StandingRow } from '@/services/oddAlerts';
-import { streamlineForMatchup, type StreamName } from '@/utils/powerDynamicsEngine';
+import type {
+  Fixture,
+  H2HMatch,
+  OddsByMarket,
+  Probability,
+  StandingRow,
+} from '@/services/oddAlerts';
+import {
+  evaluatePowerDynamics,
+  listedStreams,
+  type StreamName,
+} from '@/utils/powerDynamicsEngine';
 import type { StandingLike } from '@/utils/motivationEngine';
 
 const FINISHED = new Set(['FT']);
@@ -41,40 +51,56 @@ export function h2hFromFinishedFixtures(fixtures: Fixture[]): H2HMatch[] {
       home_win: hg > ag,
       away_win: ag > hg,
       draw: hg === ag,
-      date: '',
+      date: f.kickoffUnix > 0 ? new Date(f.kickoffUnix * 1000).toISOString().slice(0, 10) : '',
       league: f.competition.name,
     });
   }
   return out;
 }
 
+export type FixtureStreamInputs = {
+  h2hMatches?: H2HMatch[];
+  odds?: OddsByMarket;
+  probability?: Probability;
+  book1x2?: { home: number; away: number } | null;
+};
+
+/**
+ * Same Streamline membership as Power Dynamics on the match screen.
+ * Needs the same table + H2H + 1X2 inputs — do not invent a stream without them.
+ */
 export function streamForFixture(
   fixture: Fixture,
   table: StandingLike[],
-  h2hMatches: H2HMatch[] = [],
-): StreamName | null {
-  if (table.length === 0) return null;
-  if (fixture.competition.isCup || fixture.competition.isFriendly) return null;
-  return streamlineForMatchup({
+  inputs: FixtureStreamInputs = {},
+): StreamName[] {
+  if (table.length === 0) return [];
+  const pd = evaluatePowerDynamics({
     table,
     homeId: fixture.home.id,
     awayId: fixture.away.id,
     homeName: fixture.home.name,
     awayName: fixture.away.name,
-    h2hMatches,
+    homeResults: [],
+    awayResults: [],
+    h2hMatches: inputs.h2hMatches ?? [],
+    odds: inputs.odds,
+    probability: inputs.probability,
+    book1x2: inputs.book1x2 ?? null,
   });
+  return listedStreams(pd.streamline.inStreams);
 }
 
 export function streamsForFixtures(
   fixtures: Fixture[],
   tableBySeason: Map<number, StandingLike[]>,
-  h2hMatches: H2HMatch[] = [],
-): Map<number, StreamName | null> {
-  const out = new Map<number, StreamName | null>();
+  inputsById: Map<number, FixtureStreamInputs> = new Map(),
+): Map<number, StreamName[]> {
+  const out = new Map<number, StreamName[]>();
   for (const f of fixtures) {
     const seasonId = f.seasonId;
     const table = seasonId != null ? (tableBySeason.get(seasonId) ?? []) : [];
-    out.set(f.id, streamForFixture(f, table, h2hMatches));
+    out.set(f.id, streamForFixture(f, table, inputsById.get(f.id)));
   }
   return out;
 }
