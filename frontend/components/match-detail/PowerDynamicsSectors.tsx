@@ -349,45 +349,87 @@ export function StreamlineCards({
     return out;
   };
 
+  const inFocus = focus != null && s.inStreams[focus];
   const introNote =
-    focus === 'bateteme'
-      ? 'ΔP ≤ 4. Both sides sit here when the points gap is close.'
-      : focus === 'compliant'
-        ? 'T1 is the stronger table side, so T1’s bookmaker 1X2 odds should be lower than T2. That bundle is compliant or non-compliant.'
-        : focus === 'zidane_law'
-          ? 'T1 has never beaten T2 in H2H.'
-          : focus === 'bookie'
-            ? 'T2 does beat T1, but H2H stats still say T1 has never beaten T2.'
-            : 'Order: Bateteme stream, Compliant stream, Zidane Law, Bookie mistake.';
+    focus == null
+      ? 'Order: Bateteme stream, Compliant stream, Zidane Law, Bookie mistake.'
+      : !inFocus
+        ? undefined
+        : focus === 'bateteme'
+          ? 'ΔP ≤ 4. Both sides sit here when the points gap is close.'
+          : focus === 'compliant'
+            ? 'T1 is the stronger table side, so T1’s bookmaker 1X2 odds should be lower than T2.'
+            : focus === 'zidane_law'
+              ? 'T1 has never beaten T2, and T1 has never been beaten by T2.'
+              : 'T1 has never won this H2H, and T2 has beaten T1.';
+
+  const h2hRec = `${s.h2hMeetings} H2H, T1 ${s.t1H2hWins}W / T2 ${s.t2H2hWins}W`;
+  const h2hNote =
+    focus === 'bookie'
+      ? s.h2hMeetings === 0
+        ? 'No H2H meetings yet, so Bookie mistake cannot be scored.'
+        : s.inStreams.bookie
+          ? `${pd.t1.label} has never won this H2H, and ${pd.t2.label} has beaten ${pd.t1.label} (${h2hRec}).`
+          : s.t1H2hWins > 0
+            ? `${pd.t1.label} has won this H2H (${h2hRec}). Not Bookie mistake.`
+            : `${pd.t2.label} has not beaten ${pd.t1.label} in the H2H we have (${h2hRec}). Not Bookie mistake.`
+      : focus === 'zidane_law'
+        ? s.h2hMeetings === 0
+          ? 'No H2H meetings yet, so Zidane Law cannot be scored.'
+          : s.inStreams.zidane_law
+            ? `${pd.t1.label} has never beaten ${pd.t2.label} and has never been beaten (${h2hRec}).`
+            : s.t2BeatsT1 || s.t1H2hLosses > 0
+              ? `${pd.t2.label} has beaten ${pd.t1.label} (${h2hRec}). Not Zidane Law.`
+              : `${pd.t1.label} has beaten ${pd.t2.label} (${h2hRec}). Not Zidane Law.`
+        : null;
 
   const oddsTone: Tone =
     s.oddsOutcome === 'compliant' ? 'good' : s.oddsOutcome === 'non_compliant' ? 'bad' : 'info';
+  const showDelta = focus == null || focus === 'bateteme';
+  const showPpg = focus == null || focus === 'bateteme';
+  const showOdds = focus == null || focus === 'compliant';
+  const showCall = focus == null || s.t1Stream === focus;
 
   return (
     <View>
       <SectorIntro title={focus ? STREAM_LABEL[focus] : 'Streamline'} note={introNote} />
-      <Callout
-        text={
-          s.delta != null
-            ? `${pd.t1.label} ${s.t1Points} − ${pd.t2.label} ${s.t2Points} = ${s.delta}`
-            : 'Need both sides\' points'
-        }
-        tone={s.close ? 'warn' : 'info'}
-      />
-      {(focus == null || focus === 'bateteme') ? (
+      {showDelta ? (
+        <Callout
+          text={
+            s.delta != null
+              ? `${pd.t1.label} ${s.t1Points} − ${pd.t2.label} ${s.t2Points} = ${s.delta}`
+              : 'Need both sides\' points'
+          }
+          tone={s.close ? 'warn' : 'info'}
+        />
+      ) : null}
+      {showPpg ? (
         <Callout
           text={`${pd.t1.label} PPG ${fmtPpg(s.t1Ppg)} (${s.t1Points ?? '—'} pts / ${s.t1Played ?? '—'} league games) · ${pd.t2.label} PPG ${fmtPpg(s.t2Ppg)} (${s.t2Points ?? '—'} pts / ${s.t2Played ?? '—'} league games)`}
           tone="info"
         />
       ) : null}
-      <Callout
-        text={s.oddsCall}
-        tone={oddsTone}
-      />
-      <Callout text={s.call} tone={s.close ? 'warn' : s.t1Stream === 'bookie' ? 'bad' : 'info'} />
+      {showOdds ? (
+        <Callout text={s.oddsCall} tone={oddsTone} />
+      ) : null}
+      {h2hNote ? (
+        <Callout
+          text={h2hNote}
+          tone={
+            (focus === 'bookie' && s.inStreams.bookie) || (focus === 'zidane_law' && s.inStreams.zidane_law)
+              ? focus === 'bookie'
+                ? 'bad'
+                : 'good'
+              : 'info'
+          }
+        />
+      ) : null}
+      {showCall ? (
+        <Callout text={s.call} tone={s.close ? 'warn' : s.t1Stream === 'bookie' ? 'bad' : 'info'} />
+      ) : null}
       {focus ? (
         <>
-          {bucket(focus, inStream(focus))}
+          {inFocus ? bucket(focus, inStream(focus)) : null}
           {belong(pd.t1.label, s.t1Points, focus)}
           {belong(pd.t2.label, s.t2Points, focus)}
         </>

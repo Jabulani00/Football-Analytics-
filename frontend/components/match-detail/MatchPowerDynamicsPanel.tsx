@@ -31,7 +31,7 @@ import { useFixtureFormAnalysis } from '@/hooks/useFixtureFormAnalysis';
 import { useSeasonFixtures } from '@/hooks/useSeasonFixtures';
 import { useFixtureBook1x2 } from '@/hooks/useFixtureBook1x2';
 import type { Competition, H2HMatch, OddsByMarket, Probability, StandingRow } from '@/services/oddAlerts';
-import { evaluatePowerDynamics, ftOdds } from '@/utils/powerDynamicsEngine';
+import { evaluatePowerDynamics, ftOdds, STREAM_ORDER } from '@/utils/powerDynamicsEngine';
 import { findUkulumbana } from '@/utils/last5Analysis';
 import type { StandingLike } from '@/utils/motivationEngine';
 import { fonts, spacing, theme } from '@/styles/theme';
@@ -277,6 +277,7 @@ export default function MatchPowerDynamicsPanel({
                 <SubTabBar
                   tabs={[...STREAMLINE_SUBS]}
                   active={streamlineSub}
+                  highlighted={STREAM_ORDER.filter((id) => pd.streamline.inStreams[id])}
                   onChange={(id) => setStreamlineSub(id)}
                 />
                 <StreamlineCards pd={pd} focus={streamlineSub} />

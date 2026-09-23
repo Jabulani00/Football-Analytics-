@@ -464,6 +464,30 @@ console.log('\nstreamline');
     'T2 wins + T1 never won → Bookie mistake',
     t2WinsCountAsBeaten.inStreams.bookie === true,
   );
+  check(
+    'Bookie call does not claim stats still say never beaten',
+    bookie.call.includes('has never won this H2H') && !bookie.call.includes('H2H stats still say'),
+    bookie.call,
+  );
+
+  const arsenalLeeds = evaluateStreamline({
+    t1Points: 12,
+    t2Points: 9,
+    t1Label: 'T1 (Arsenal)',
+    t2Label: 'T2 (Leeds United)',
+    t1Ppg: 2.4,
+    t2Ppg: 1.8,
+    t1Odds: 1.35,
+    t2Odds: 8,
+    h2hMeetings: 6,
+    t1H2hWins: 3,
+    t2H2hWins: 0,
+    t1H2hLosses: 0,
+  });
+  check('close + compliant stays Bateteme as primary', arsenalLeeds.t1Stream === 'bateteme');
+  check('odds still score Compliant', arsenalLeeds.inStreams.compliant === true && arsenalLeeds.oddsOutcome === 'compliant');
+  check('T2 never beat T1 → not Bookie', arsenalLeeds.inStreams.bookie === false && arsenalLeeds.t2BeatsT1 === false);
+  check('primary call is Bateteme not Compliant or Bookie', arsenalLeeds.call.includes('Bateteme') && !arsenalLeeds.call.includes('Compliant') && !arsenalLeeds.call.includes('Bookie'));
 
   const compliant = evaluateStreamline({
     t1Points: 28,

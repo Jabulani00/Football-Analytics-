@@ -209,8 +209,8 @@ export const STREAM_CHIP: Record<StreamName, string> = {
 export const STREAM_ROLE: Record<StreamName, string> = {
   bateteme: 'Close — ΔP ≤ 4',
   compliant: 'T1 is stronger, so T1’s 1X2 odds should be the lower price',
-  zidane_law: 'T1 has never beaten T2',
-  bookie: 'T2 does beat T1, while stats say T1 has never beaten T2',
+  zidane_law: 'T1 has never beaten T2, and T1 has never been beaten by T2',
+  bookie: 'T1 has never won this H2H, and T2 has beaten T1',
 };
 
 export type StreamlineRead = {
@@ -235,6 +235,7 @@ export type StreamlineRead = {
   h2hMeetings: number;
   t1H2hWins: number;
   t2H2hWins: number;
+  t1H2hLosses: number;
   t1NeverBeatenT2: boolean;
   t2BeatsT1: boolean;
   inStreams: Record<StreamName, boolean>;
@@ -502,7 +503,7 @@ export function evaluateStreamline(opts: {
   const t1HasBeenBeaten = h2hMeetings > 0 && (t1H2hLosses > 0 || t2H2hWins > 0);
   const t1NeverWon = h2hMeetings > 0 && t1H2hWins === 0;
   const t1NeverBeatenT2 = t1NeverWon && !t1HasBeenBeaten;
-  const t2BeatsT1 = h2hMeetings > 0 && (t2H2hWins > 0 || t1HasBeenBeaten);
+  const t2BeatsT1 = h2hMeetings > 0 && t2H2hWins > 0;
   // T1 is already the stronger table side. High PPG and short odds are one bundle:
   // T1’s 1X2 price should be lower than T2. Do not skip the check when PPG is close.
   const t1PpgHigh = t1Ppg != null && t2Ppg != null && t1Ppg > t2Ppg;
@@ -537,14 +538,14 @@ export function evaluateStreamline(opts: {
   let call: string;
   if (delta == null) {
     call = 'Need both sides on the table to run Streamline (T1 pts − T2 pts).';
-  } else if (inStreams.bookie) {
-    call = `Bookie mistake — ${t2Label} does beat ${t1Label}, but H2H stats still say ${t1Label} has never beaten ${t2Label} (${h2hMeetings} meetings, T1 ${t1H2hWins}W / T2 ${t2H2hWins}W).`;
-  } else if (inStreams.zidane_law) {
-    call = `Zidane Law — ${t1Label} has never beaten ${t2Label} (${h2hMeetings} meetings, T1 ${t1H2hWins}W / T2 ${t2H2hWins}W).`;
-  } else if (inStreams.compliant) {
-    call = `Compliant stream — T1’s 1X2 odds are lower than T2, as expected.`;
-  } else if (inStreams.bateteme) {
+  } else if (primary === 'bateteme') {
     call = `${t1Label} − ${t2Label} = ${delta} pts (≤ 4). Both sides sit in Bateteme stream.`;
+  } else if (primary === 'compliant') {
+    call = `Compliant stream — T1’s 1X2 odds are lower than T2, as expected.`;
+  } else if (primary === 'zidane_law') {
+    call = `Zidane Law — ${t1Label} has never beaten ${t2Label} (${h2hMeetings} meetings, T1 ${t1H2hWins}W / T2 ${t2H2hWins}W).`;
+  } else if (primary === 'bookie') {
+    call = `Bookie mistake — ${t1Label} has never won this H2H, and ${t2Label} has beaten ${t1Label} (${h2hMeetings} meetings, T1 ${t1H2hWins}W / T2 ${t2H2hWins}W).`;
   } else {
     call = `${t1Label} − ${t2Label} = ${delta} pts. Not in Bateteme, Compliant stream, Zidane Law, or Bookie mistake.`;
   }
@@ -569,6 +570,7 @@ export function evaluateStreamline(opts: {
     h2hMeetings,
     t1H2hWins,
     t2H2hWins,
+    t1H2hLosses,
     t1NeverBeatenT2,
     t2BeatsT1,
     inStreams,
