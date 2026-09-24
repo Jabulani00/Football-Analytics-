@@ -96,6 +96,40 @@ export type MatchStats = Record<string, number | null>;
 /** Pre-match odds grouped by market, e.g. odds.ft_result.home. */
 export type OddsByMarket = Record<string, Record<string, number>>;
 
+export type OddAlertsBookmaker = {
+  id: number;
+  name: string;
+  slug: string;
+};
+
+/** The value endpoint varies by market, so retain unknown provider fields. */
+export type RawValueOddsLine = {
+  bookmaker?: OddAlertsBookmaker | string;
+  bookmaker_id?: number;
+  bookmaker_name?: string;
+  bookmaker_slug?: string;
+  opening?: number;
+  peak?: number;
+  latest?: number;
+  latest_odds?: number;
+  odds?: number;
+  value?: number;
+  [key: string]: unknown;
+};
+
+export type RawValueBet = {
+  id: number;
+  market?: string;
+  selection?: string;
+  home_name?: string;
+  away_name?: string;
+  unix?: number;
+  date?: string;
+  odds?: RawValueOddsLine[];
+  probability?: number | Record<string, number>;
+  [key: string]: unknown;
+};
+
 export type H2HMatch = {
   id: number;
   home_name: string;
@@ -232,6 +266,46 @@ export async function fetchAllUpcomingFixtures(
     );
     all.push(...env.data);
     if (!env.info?.next_page_url) break;
+  }
+  return all;
+}
+
+/** Bookmakers exposed by the account's OddAlerts plan. */
+export async function fetchBookmakers(signal?: AbortSignal): Promise<OddAlertsBookmaker[]> {
+  return (await getJson<OddAlertsBookmaker>('bookmakers', {}, signal)).data;
+}
+
+/** Multi-bookmaker upcoming value feed (Bet365/Pinnacle/etc. when available). */
+export async function fetchUpcomingValue(
+  opts: { page?: number; market?: string; bookmaker?: string } = {},
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<RawValueBet>> {
+  return getJson<RawValueBet>(
+    'value/upcoming',
+    { page: opts.page, market: opts.market, bookmaker: opts.bookmaker },
+    signal,
+  );
+}
+
+/** Paginate the multi-book value feed so quieter fixtures are not lost on page 1. */
+export async function fetchAllUpcomingValue(
+  opts: { market?: string; bookmaker?: string; maxPages?: number } = {},
+  signal?: AbortSignal,
+): Promise<RawValueBet[]> {
+  const all: RawValueBet[] = [];
+  const seen = new Set<number>();
+  const maxPages = Math.max(1, Math.min(20, opts.maxPages ?? 5));
+  for (let page = 1; page <= maxPages; page += 1) {
+    const envelope = await fetchUpcomingValue(
+      { page, market: opts.market, bookmaker: opts.bookmaker },
+      signal,
+    );
+    for (const row of envelope.data) {
+      if (seen.has(row.id)) continue;
+      seen.add(row.id);
+      all.push(row);
+    }
+    if (!envelope.info?.next_page_url) break;
   }
   return all;
 }

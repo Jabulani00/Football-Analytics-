@@ -72,7 +72,7 @@ async function loadFixtures(
     fetchLiveFixtures(signal),
     fetchAllUpcomingFixtures({ days: Math.max(2, opts.upcomingDays), maxPages: 8 }, signal),
   ]);
-  return [...live.data.map(mapFixture), ...upcoming.data.map(mapFixture)];
+  return [...live.data.map(mapFixture), ...upcoming.map(mapFixture)];
 }
 
 export function useLiveFixtures(

@@ -86,15 +86,6 @@ const styles = StyleSheet.create({
     color: theme.textPrimary,
     fontFamily: fonts.bodySemiBold,
   },
-  text: {
-    fontFamily: fonts.body,
-    fontSize: 12,
-    color: theme.textMuted,
-  },
-  textActive: {
-    color: theme.accentGreen,
-    fontFamily: fonts.bodySemiBold,
-  },
   chipHighlight: {
     borderColor: theme.accentGreen,
     backgroundColor: 'rgba(5, 150, 105, 0.14)',

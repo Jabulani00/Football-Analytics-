@@ -481,7 +481,7 @@ function ftMarket(odds: unknown): Record<string, unknown> | null {
 }
 
 /** Decimal 1X2 price for fixture home or away from the odds board. */
-export function ftOdds(odds: OddsByMarket | undefined, venue: 'home' | 'away'): number | null {
+export function ftOdds(odds: unknown, venue: 'home' | 'away'): number | null {
   const market = ftMarket(odds);
   if (!market) return null;
   const keys =

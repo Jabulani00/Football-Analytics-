@@ -13,6 +13,8 @@ import StrategiesPanel from '@/components/analytics/StrategiesPanel';
 import StreamsPanel from '@/components/analytics/StreamsPanel';
 import AppShell from '@/components/shared/AppShell';
 import StickyBack from '@/components/shared/StickyBack';
+import { useAnalyticsBetSlip } from '@/hooks/useAnalyticsBetSlip';
+import { useHollywoodPopularOdds } from '@/hooks/useHollywoodPopularOdds';
 import type { AnalyticsTab } from '@/types/analytics';
 import { fonts, spacing, theme } from '@/styles/theme';
 import { formatTopBarDate } from '@/utils/dates';
@@ -21,7 +23,15 @@ type AnalyticsHubProps = {
   onBack: () => void;
 };
 
-function PanelForTab({ tab }: { tab: AnalyticsTab }) {
+function PanelForTab({
+  tab,
+  live,
+  slip,
+}: {
+  tab: AnalyticsTab;
+  live: ReturnType<typeof useHollywoodPopularOdds>;
+  slip: ReturnType<typeof useAnalyticsBetSlip>;
+}) {
   switch (tab) {
     case 'overview':
       return <OverviewPanel />;
@@ -34,18 +44,21 @@ function PanelForTab({ tab }: { tab: AnalyticsTab }) {
     case 'streams':
       return <StreamsPanel />;
     case 'strategies':
-      return <StrategiesPanel />;
+      return <StrategiesPanel live={live} onAddLeg={slip.addLeg} />;
     case 'odds':
-      return <OddsFusionPanel />;
+      return <OddsFusionPanel live={live} onAddLeg={slip.addLeg} />;
     case 'hollywood':
-      return <HollywoodOddsPanel />;
+      return <HollywoodOddsPanel onAddLeg={slip.addLeg} />;
     case 'betslip':
-      return <BetSlipPanel />;
+      return <BetSlipPanel legs={slip.legs} onRemove={slip.removeLeg} onClear={slip.clear} />;
   }
 }
 
 export default function AnalyticsHub({ onBack }: AnalyticsHubProps) {
   const [activeTab, setActiveTab] = useState<AnalyticsTab>('overview');
+  const needsPopularOdds = activeTab === 'strategies' || activeTab === 'odds';
+  const live = useHollywoodPopularOdds(needsPopularOdds);
+  const slip = useAnalyticsBetSlip();
 
   return (
     <AppShell>
@@ -72,7 +85,7 @@ export default function AnalyticsHub({ onBack }: AnalyticsHubProps) {
         <AnalyticsNav active={activeTab} onChange={setActiveTab} />
 
         <View style={styles.panel}>
-          <PanelForTab tab={activeTab} />
+          <PanelForTab tab={activeTab} live={live} slip={slip} />
         </View>
       </ScrollView>
     </AppShell>

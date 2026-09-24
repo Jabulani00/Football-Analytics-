@@ -211,7 +211,7 @@ export function evaluateH2HOptions(opts: {
           id: `never_beaten_home_${split}`,
           label: `${homeName} never beaten (${split}) ${seq}`,
           kind: 'good',
-          detail: `In ${leagueLabel}: ${w} win${w === 1 ? '' : 's'}, ${d} draw${d === 1 ? '' : 's'}, ${l} loss${l === 1 ? '' : 'es'} (${split})`,
+          detail: `In ${leagueLabel}: ${w} win${w === 1 ? '' : 's'}, ${d} draw${d === 1 ? '' : 's'}, ${l} losses (${split})`,
         });
       }
     }
@@ -224,7 +224,7 @@ export function evaluateH2HOptions(opts: {
           id: `never_beaten_away_${split}`,
           label: `${awayName} never beaten (${split}) ${seq}`,
           kind: 'bad',
-          detail: `In ${leagueLabel}: ${w} win${w === 1 ? '' : 's'}, ${d} draw${d === 1 ? '' : 's'}, ${l} loss${l === 1 ? '' : 'es'} (${split})`,
+          detail: `In ${leagueLabel}: ${w} win${w === 1 ? '' : 's'}, ${d} draw${d === 1 ? '' : 's'}, ${l} losses (${split})`,
         });
       }
     }

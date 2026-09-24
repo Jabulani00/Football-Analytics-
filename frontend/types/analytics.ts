@@ -75,6 +75,9 @@ export type BetSlipLeg = {
   selection: string;
   odds: number;
   stake?: number;
+  /** Price source retained for review and generic sharing. */
+  bookmaker?: string;
+  kickoff?: string;
   /**
    * Hollywoodbets Share-A-Bet leg metadata. Present when the selection came
    * from live Hollywoodbets odds — required to generate a booking code. Typed

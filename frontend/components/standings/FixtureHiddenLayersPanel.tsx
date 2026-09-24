@@ -27,7 +27,7 @@ function SignalLine({
 }
 
 function ProblemLine({ p }: { p: ProblemRow }) {
-  const tone = p.polarity === 'strength' ? 'strength' : 'weakness';
+  const tone = p.polarity === 'positive' ? 'strength' : p.polarity === 'negative' ? 'weakness' : 'neutral';
   return (
     <View style={styles.problemRow}>
       <View style={styles.problemBody}>

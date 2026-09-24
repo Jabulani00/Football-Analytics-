@@ -1,5 +1,17 @@
 import { Platform } from 'react-native';
 
+import {
+  BET_TYPE,
+  bookingUrl,
+  CORE_BET_TYPE_IDS,
+  SPORT_SOCCER,
+  type HbCategory,
+  type HbEvent,
+  type HbSport,
+  type HbTournament,
+  type ShareLeg,
+} from '@/services/hollywoodTypes';
+
 /**
  * Client for the Hollywoodbets sportsbook (reverse-engineered from the public
  * web app's network traffic — all endpoints are unauthenticated public GET/POST).
@@ -9,13 +21,15 @@ import { Platform } from 'react-native';
  * because every Hollywoodbets host locks CORS to their own origin. On native
  * there is no CORS, so requests hit the hosts directly.
  *
- * ODDS FORMAT — important. Hollywoodbets returns FRACTIONAL net odds in the
- * `odds` field (winnings per 1 unit staked), e.g. 0.6 with ratio "6/10". True
- * decimal odds = `odds + 1`. `toDecimal()` does this conversion; always feed
- * DECIMAL odds to the de-vig / edge math.
+ * Data shapes and the pure helpers over them (`toDecimal`, `decimal1x2`,
+ * `toShareLeg`, `bookingUrl`) live in `services/hollywoodTypes.ts` so they can
+ * be used without pulling in `react-native`. They are re-exported here, so
+ * importing from this module keeps working exactly as before.
  *
  * Pure data layer: no React. Fixture matching + edge live in separate helpers.
  */
+
+export * from '@/services/hollywoodTypes';
 
 const PROXY_URL = process.env.EXPO_PUBLIC_HOLLYWOOD_PROXY ?? '/hollywood';
 const USE_PROXY = Platform.OS === 'web';
@@ -28,63 +42,6 @@ const DIRECT_HOSTS: Record<HostKey, string> = {
 };
 
 type HostKey = 'events' | 'settings' | 'live' | 'bet';
-
-/** Soccer is sport id 1 across every Hollywoodbets endpoint. */
-export const SPORT_SOCCER = 1;
-
-/** Bet-type ids (soccer). Swap into `withBetTypeId` to fetch a given market. */
-export const BET_TYPE = {
-  FULL_TIME: 15, // 1X2
-  BTTS: 22, // Both Teams to Score
-  TOTALS: 27, // Over/Under
-  DOUBLE_CHANCE: 19,
-  CORRECT_SCORE: 20,
-  HT_FT: 23,
-} as const;
-
-// ---- Raw response shapes (from captured traffic) ----------------------------
-export type HbSport = { id: number; name: string; liveEventCount?: number };
-export type HbCategory = { id: number; name: string };
-export type HbTournament = {
-  id: number;
-  name: string;
-  countryId?: number;
-  countryName?: string;
-  countryCode?: string;
-  priority?: number;
-};
-
-/** A single selection/outcome within a market. `odds` is FRACTIONAL. */
-export type HbMarket = {
-  id: number;
-  eventId: number;
-  eventBetTypeMapId: number;
-  eventDetailId: number;
-  status: string;
-  number: number; // 1X2: 1 = home, 2 = draw, 3 = away
-  name: string; // team short name or "Draw"
-  odds: number; // FRACTIONAL net odds — decimal = odds + 1
-  ratio: string; // e.g. "6/10"
-};
-
-export type HbBetType = {
-  id: number; // e.g. 15 = Full Time
-  name: string;
-  status: string;
-  eventBetTypeMapID: number;
-  markets: HbMarket[];
-};
-
-export type HbEvent = {
-  id: number;
-  name: string; // "Home vs Away"
-  startTime: string; // ISO
-  categoryId: number;
-  category: string;
-  tournament: string;
-  isOutright: boolean;
-  betTypes: HbBetType[];
-};
 
 // ---- Transport --------------------------------------------------------------
 function buildUrl(host: HostKey, path: string, params: Record<string, string | number | undefined>): string {
@@ -105,12 +62,6 @@ async function getJson<T>(host: HostKey, path: string, params: Record<string, st
   const res = await fetch(buildUrl(host, path, params), { headers: { Accept: 'application/json' }, signal });
   if (!res.ok) throw new Error(`Hollywoodbets ${host}/${path} → HTTP ${res.status}`);
   return (await res.json()) as T;
-}
-
-// ---- Odds helpers -----------------------------------------------------------
-/** Convert a Hollywoodbets fractional `odds` value to true decimal odds. */
-export function toDecimal(fractionalOdds: number): number {
-  return fractionalOdds + 1;
 }
 
 // ---- Navigation reads -------------------------------------------------------
@@ -146,60 +97,84 @@ export async function fetchEvents(
   return j.events ?? [];
 }
 
-// ---- Convenience: extract 1X2 decimal odds from an event --------------------
-export type Decimal1x2 = { home: number; draw: number; away: number } | null;
+/**
+ * Events for a tournament carrying MANY markets, not just 1X2.
+ *
+ * Hollywood accepts exactly one `withBetTypeId` per request — comma lists,
+ * repeated params and omitting it all return zero events (probed 2026-09-10) —
+ * so this issues one call per market and merges them onto a single event list
+ * keyed by event id. Requests are sequential on purpose: `CORE_BET_TYPE_IDS` is
+ * already 6 round trips per tournament and `ALL_BET_TYPE_IDS` is 23, so firing
+ * them in parallel is how you get the resource exhaustion seen elsewhere.
+ *
+ * A market that fails or is unpriced for this tournament is skipped rather than
+ * failing the batch, so callers always get whatever the book did offer.
+ */
+export async function fetchEventsAllMarkets(
+  categoryId: number,
+  tournamentId: number,
+  betTypeIds: readonly number[] = CORE_BET_TYPE_IDS,
+  signal?: AbortSignal,
+): Promise<HbEvent[]> {
+  const byId = new Map<number, HbEvent>();
 
-/** Pull decimal 1X2 odds from an event's Full Time (id 15) bet type. */
-export function decimal1x2(event: HbEvent): Decimal1x2 {
-  const ft = event.betTypes.find((b) => b.id === BET_TYPE.FULL_TIME);
-  if (!ft) return null;
-  const byNumber = (n: number) => ft.markets.find((m) => m.number === n);
-  const h = byNumber(1);
-  const d = byNumber(2);
-  const a = byNumber(3);
-  if (!h || !d || !a) return null;
-  return { home: toDecimal(h.odds), draw: toDecimal(d.odds), away: toDecimal(a.odds) };
+  for (const betTypeId of betTypeIds) {
+    if (signal?.aborted) break;
+    let events: HbEvent[];
+    try {
+      events = await fetchEvents(categoryId, tournamentId, betTypeId, signal);
+    } catch {
+      continue; // one market must not sink the rest
+    }
+
+    for (const event of events) {
+      const existing = byId.get(event.id);
+      if (!existing) {
+        byId.set(event.id, { ...event, betTypes: [...event.betTypes] });
+        continue;
+      }
+      // Keyed on eventBetTypeMapID, which is unique per group. `id` is not:
+      // one market can arrive as several groups (Additional Totals is five).
+      for (const bt of event.betTypes) {
+        const dupe = existing.betTypes.some(
+          (b) => b.eventBetTypeMapID === bt.eventBetTypeMapID,
+        );
+        if (!dupe) existing.betTypes.push(bt);
+      }
+    }
+  }
+
+  return [...byId.values()];
+}
+
+/**
+ * EVERY market for a single event — the payload behind Hollywood's own "more"
+ * expander on a fixture.
+ *
+ * The tournament listing returns one bet type per request and only a handful of
+ * markets; this returns the lot in one call (130 bet-type groups / 605
+ * selections on a sampled fixture), including corners, bookings, shots and
+ * goalscorers that the listing never exposes. Costly enough that it belongs
+ * behind a per-fixture expand rather than being loaded for a whole league.
+ *
+ * Note the shape difference: here a market can be split across several groups
+ * sharing one `id` and differing by `eventBetTypeMapID`, so read selections with
+ * `marketOdds` / `marketGroups` rather than finding a single bet type.
+ */
+export async function fetchEventDetail(
+  eventId: number,
+  signal?: AbortSignal,
+): Promise<HbEvent | null> {
+  const j = await getJson<{ event?: HbEvent }>(
+    'events',
+    `api/events/eps/events/${eventId}`,
+    { lang: 'en' },
+    signal,
+  );
+  return j.event ?? null;
 }
 
 // ---- Share A Bet (booking code + deep link) ---------------------------------
-/** One leg of a Share-A-Bet request. Every field comes from an `HbEvent`. */
-export type ShareLeg = {
-  eventID: number;
-  eventName: string;
-  eventDate: string;
-  eventBetTypeMapID: number;
-  eventDetailOfferedOdd: number; // FRACTIONAL odds, as the API returns them
-  sportId: number;
-  tournamentName: string;
-  betTypeID: number;
-  betTypeName: string;
-  eventDetailId: number;
-  countryId: number;
-  tournamentId: number;
-};
-
-/** Build a Share-A-Bet leg from an event + a chosen market/selection. */
-export function toShareLeg(
-  event: HbEvent,
-  betType: HbBetType,
-  market: HbMarket,
-  ctx: { tournamentId: number; tournamentName: string; countryId: number },
-): ShareLeg {
-  return {
-    eventID: event.id,
-    eventName: event.name,
-    eventDate: event.startTime,
-    eventBetTypeMapID: betType.eventBetTypeMapID,
-    eventDetailOfferedOdd: market.odds,
-    sportId: SPORT_SOCCER,
-    tournamentName: ctx.tournamentName,
-    betTypeID: betType.id,
-    betTypeName: betType.name,
-    eventDetailId: market.eventDetailId,
-    countryId: ctx.countryId,
-    tournamentId: ctx.tournamentId,
-  };
-}
 
 export type ShareABetResult = {
   /** The booking code punters enter / the slip deep link resolves to. */
@@ -241,9 +216,4 @@ export async function createShareABet(legs: ShareLeg[], punterId = 0): Promise<S
   const code = json.responseType;
   if (!code) throw new Error(`ShareABet: no code in response (${json.responseMessage ?? 'unknown'})`);
   return { code, url: bookingUrl(code), raw: json };
-}
-
-/** The public URL that opens a booked betslip by its code. */
-export function bookingUrl(code: number): string {
-  return `https://www.hollywoodbets.net/betting/${code}/code`;
 }

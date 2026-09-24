@@ -50,6 +50,10 @@ frontend/.env.*
 app-example
 .cursor
 
+# Local agent/editor state and generated review artifacts
+.claude/settings.local.json
+tmp/
+
 # Backend — local SQLite (regenerate via npm run db:setup)
 backend/scoreline.db
 backend/__pycache__/
