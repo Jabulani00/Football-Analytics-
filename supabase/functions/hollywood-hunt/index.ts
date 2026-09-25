@@ -10,6 +10,7 @@
 import {
   canStartTournament,
   completeEventsArray,
+  hollywoodRequestUrl,
   remainingBudgetMs,
   rotatingWindow,
 } from '../_shared/hollywoodHuntRunner.ts';
@@ -20,6 +21,11 @@ const SOCCER = 1;
 const FULL_TIME = 15;
 const DEFAULT_RUN_BUDGET_MS = 45_000;
 const MIN_REQUEST_BUDGET_MS = 5_000;
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, x-cron-secret',
+};
 
 type HbMarket = { number: number; odds: number; status?: string };
 type HbBetType = { id: number; status?: string; markets?: HbMarket[] };
@@ -62,7 +68,21 @@ type ApplyResult = {
 const CLOSED = new Set(['suspended', 'closed', 'inactive', 'deactivated', 'settled']);
 
 function json(data: unknown, status = 200): Response {
-  return Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
+  return Response.json(data, { status, headers: { ...CORS, 'Cache-Control': 'no-store' } });
+}
+
+function serviceEnvironment(): { url: string; key: string } | null {
+  const url = Deno.env.get('SUPABASE_URL');
+  let key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  if (!key) {
+    try {
+      const keys = JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS') ?? '{}') as Record<string, string>;
+      key = keys.default;
+    } catch {
+      return null;
+    }
+  }
+  return url && key ? { url, key } : null;
 }
 
 function positiveInt(value: string | undefined, fallback: number): number {
@@ -101,7 +121,8 @@ function decimal1x2(event: HbEvent): Odds | null {
 }
 
 async function hollywood<T>(path: string, timeoutMs: number): Promise<T> {
-  const response = await fetch(`${HB_BASE}/${path}`, {
+  const requestUrl = hollywoodRequestUrl(path, HB_BASE, Deno.env.get('HUNT_HOLLYWOOD_PROXY_URL'));
+  const response = await fetch(requestUrl, {
     headers: { Accept: 'application/json', Origin: HB_ORIGIN, Referer: `${HB_ORIGIN}/` },
     signal: AbortSignal.timeout(Math.max(1_000, Math.min(12_000, timeoutMs))),
   });
@@ -184,6 +205,49 @@ function createStore(url: string, key: string) {
   };
 }
 
+async function publicSnapshot(url: string, key: string) {
+  const base = `${url.replace(/\/+$/, '')}/rest/v1`;
+  const headers = {
+    apikey: key,
+    ...(key.startsWith('eyJ') ? { Authorization: `Bearer ${key}` } : {}),
+  };
+  const read = async <T>(path: string): Promise<T> => {
+    const response = await fetch(`${base}${path}`, {
+      headers,
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) throw new Error(`Public hunt read ${path}: HTTP ${response.status}`);
+    return (await response.json()) as T;
+  };
+  const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const changesQuery = new URLSearchParams({
+    select: '*',
+    observed_at: `gte.${since}`,
+    order: 'observed_at.desc',
+    limit: '200',
+  });
+  const stateQuery = new URLSearchParams({ select: '*' });
+  const currentQuery = new URLSearchParams({
+    select: '*',
+    removed_at: 'is.null',
+    order: 'start_time.asc',
+    limit: '1000',
+  });
+  const removedQuery = new URLSearchParams({
+    select: '*',
+    removed_at: 'not.is.null',
+    order: 'removed_at.desc',
+    limit: '100',
+  });
+  const [changes, crawlState, currentEvents, removedEvents] = await Promise.all([
+    read(`/hw_change?${changesQuery}`),
+    read(`/hw_crawl_state?${stateQuery}`),
+    read(`/hw_event?${currentQuery}`),
+    read(`/hw_event?${removedQuery}`),
+  ]);
+  return { changes, crawlState, currentEvents, removedEvents };
+}
+
 function crawlRow(event: HbEvent, category: Category): CrawlEvent {
   const odds = decimal1x2(event);
   const teams = splitTeams(event.name);
@@ -203,25 +267,27 @@ function crawlRow(event: HbEvent, category: Category): CrawlEvent {
 }
 
 Deno.serve(async (request) => {
-  if (request.method !== 'POST') return json({ error: 'POST required' }, 405);
+  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
+  if (request.method !== 'GET' && request.method !== 'POST') {
+    return json({ error: 'GET or POST required' }, 405);
+  }
+
+  const environment = serviceEnvironment();
+  if (!environment) return json({ error: 'Supabase service environment is missing' }, 500);
+
+  if (request.method === 'GET') {
+    try {
+      return json(await publicSnapshot(environment.url, environment.key));
+    } catch (error) {
+      return json({ error: error instanceof Error ? error.message : String(error) }, 502);
+    }
+  }
 
   const expectedSecret = Deno.env.get('HUNT_CRON_SECRET');
   if (!expectedSecret) return json({ error: 'HUNT_CRON_SECRET is not configured' }, 500);
   if (request.headers.get('x-cron-secret') !== expectedSecret) return json({ error: 'Unauthorized' }, 401);
 
-  const supabaseUrl = Deno.env.get('SUPABASE_URL');
-  let serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  if (!serviceKey) {
-    try {
-      const keys = JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS') ?? '{}') as Record<string, string>;
-      serviceKey = keys.default;
-    } catch {
-      // The missing-key response below is safer than logging malformed secrets.
-    }
-  }
-  if (!supabaseUrl || !serviceKey) return json({ error: 'Supabase service environment is missing' }, 500);
-
-  const store = createStore(supabaseUrl, serviceKey);
+  const store = createStore(environment.url, environment.key);
   const startedAtMs = Date.now();
   const startedAt = new Date(startedAtMs).toISOString();
   const holder = crypto.randomUUID();

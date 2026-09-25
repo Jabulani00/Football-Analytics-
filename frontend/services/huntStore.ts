@@ -193,6 +193,60 @@ export function createHuntStore(config: HuntStoreConfig) {
 }
 
 export type HuntStore = ReturnType<typeof createHuntStore>;
+export type HuntReadStore = Pick<
+  HuntStore,
+  'recentChanges' | 'removedEvents' | 'currentListing' | 'crawlState'
+>;
+
+type PublicHuntSnapshot = {
+  changes: HwChangeRow[];
+  crawlState: CrawlStateRow[];
+  currentEvents: HwEventRow[];
+  removedEvents: HwEventRow[];
+};
+
+export function createPublicHuntStore(endpoint: string, fetchImpl: typeof fetch = fetch): HuntReadStore {
+  let pending: Promise<PublicHuntSnapshot> | null = null;
+  const load = (): Promise<PublicHuntSnapshot> => {
+    if (!pending) {
+      pending = fetchImpl(endpoint, { headers: { Accept: 'application/json' } })
+        .then(async (response) => {
+          if (!response.ok) {
+            const body = await response.text().catch(() => '');
+            throw new HuntStoreError(`Hollywood Hunt public endpoint → HTTP ${response.status}`, response.status, body);
+          }
+          return (await response.json()) as PublicHuntSnapshot;
+        })
+        .finally(() => {
+          pending = null;
+        });
+    }
+    return pending;
+  };
+
+  return {
+    async recentChanges(sinceIso: string, limit = 200) {
+      const since = Date.parse(sinceIso);
+      const { changes } = await load();
+      return changes
+        .filter((row) => !Number.isFinite(since) || Date.parse(row.observed_at) >= since)
+        .slice(0, limit);
+    },
+    async removedEvents(limit = 100) {
+      return (await load()).removedEvents.slice(0, limit);
+    },
+    async currentListing(opts: { includeRemoved?: boolean; limit?: number } = {}) {
+      const snapshot = await load();
+      const rows = opts.includeRemoved
+        ? [...snapshot.currentEvents, ...snapshot.removedEvents]
+        : snapshot.currentEvents;
+      return rows.slice(0, opts.limit ?? 500);
+    },
+    async crawlState() {
+      return (await load()).crawlState;
+    },
+  };
+}
 
 /**
  * Read-only store from public env, or null when the project is not configured.
@@ -201,9 +255,12 @@ export type HuntStore = ReturnType<typeof createHuntStore>;
  * notes require the app to keep working with the Hollywood script stopped
  * (p76), and an unconfigured store is exactly that case.
  */
-export function huntStoreFromEnv(): HuntStore | null {
+export function huntStoreFromEnv(): HuntReadStore {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
   const key = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) return null;
-  return createHuntStore({ url, key });
+  if (url && key) return createHuntStore({ url, key });
+  const endpoint =
+    process.env.EXPO_PUBLIC_HOLLYWOOD_HUNT_URL ??
+    'https://zymspnykcnqczqdnernb.supabase.co/functions/v1/hollywood-hunt';
+  return createPublicHuntStore(endpoint);
 }

@@ -44,11 +44,6 @@ export function useHollywoodHunt(): HuntState & {
 
   useEffect(() => {
     const store = huntStoreFromEnv();
-    if (!store) {
-      setState(EMPTY);
-      return;
-    }
-
     let active = true;
     let firstLoad = true;
 

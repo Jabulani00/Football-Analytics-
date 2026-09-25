@@ -37,10 +37,12 @@ import {
   type ListedEvent,
 } from '../services/hollywoodHunt';
 import { leagueCoverage, statsCoverage } from '../utils/statsCoverage';
+import { createPublicHuntStore } from '../services/huntStore';
 import type { TeamResult } from '../utils/teamResults';
 import {
   canStartTournament,
   completeEventsArray,
+  hollywoodRequestUrl,
   remainingBudgetMs,
   rotatingWindow,
 } from '../../supabase/functions/_shared/hollywoodHuntRunner';
@@ -773,7 +775,45 @@ console.log('\nSection 10 — hosted runner safety guards');
   check('remaining run budget is clamped at zero', remainingBudgetMs(1_000, 50_000, 45_000) === 0);
   check('runner starts while request budget remains', canStartTournament(1_000, 40_000, 45_000, 5_000));
   check('runner defers at the request-budget boundary', !canStartTournament(1_000, 41_001, 45_000, 5_000));
+
+  check(
+    'crawler proxy URL preserves the Hollywood path as one query value',
+    hollywoodRequestUrl(
+      'api/events/eps/sports/1/categories/2/tournaments?lang=en',
+      'https://sport-events-api.hollywoodbets.net',
+      'https://football-analytics-rose.vercel.app/hollywood',
+    ) ===
+      'https://football-analytics-rose.vercel.app/hollywood?host=events&path=api%2Fevents%2Feps%2Fsports%2F1%2Fcategories%2F2%2Ftournaments%3Flang%3Den',
+  );
 }
 
-console.log(`\n${passed} passed, ${failed} failed`);
-if (failed > 0) process.exit(1);
+async function testPublicHuntFallback(): Promise<void> {
+  console.log('\nSection 10 — public Hunt fallback');
+  let requests = 0;
+  const fetchMock = (async () => {
+    requests += 1;
+    return Response.json({ changes: [], crawlState: [], currentEvents: [], removedEvents: [] });
+  }) as typeof fetch;
+  const store = createPublicHuntStore('https://example.test/functions/v1/hollywood-hunt', fetchMock);
+  const [changes, state, current, removed] = await Promise.all([
+    store.recentChanges(new Date(0).toISOString()),
+    store.crawlState(),
+    store.currentListing(),
+    store.removedEvents(),
+  ]);
+  check('one public snapshot serves all four Hunt reads', requests === 1, `${requests}`);
+  check(
+    'empty public snapshot maps to empty store collections',
+    changes.length + state.length + current.length + removed.length === 0,
+  );
+}
+
+void testPublicHuntFallback()
+  .then(() => {
+    console.log(`\n${passed} passed, ${failed} failed`);
+    if (failed > 0) process.exit(1);
+  })
+  .catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });

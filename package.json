@@ -15,12 +15,23 @@
     "db:export": "npm run db:export --prefix frontend",
     "train:btts": "node scripts/run-backend.js train_btts.py",
     "build": "npm run build --prefix frontend",
-    "lint": "npm run lint --prefix frontend"
+    "lint": "npm run lint --prefix frontend",
+    "supabase": "supabase",
+    "supabase:version": "supabase --version",
+    "supabase:login": "supabase login",
+    "supabase:projects": "supabase projects list",
+    "supabase:link": "supabase link --project-ref zymspnykcnqczqdnernb",
+    "supabase:db:dry-run": "supabase db push --dry-run",
+    "supabase:db:push": "supabase db push",
+    "supabase:function:deploy": "supabase functions deploy hollywood-hunt"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
     "@expo/server": "0.7.5"
+  },
+  "devDependencies": {
+    "supabase": "2.117.0"
   }
 }

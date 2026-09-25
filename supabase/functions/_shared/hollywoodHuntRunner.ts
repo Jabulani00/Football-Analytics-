@@ -25,3 +25,12 @@ export function completeEventsArray<T>(value: unknown): T[] | null {
   const events = (value as { events?: unknown }).events;
   return Array.isArray(events) ? (events as T[]) : null;
 }
+
+export function hollywoodRequestUrl(path: string, directBase: string, proxyUrl?: string): string {
+  const cleanPath = path.replace(/^\/+/, '');
+  if (!proxyUrl?.trim()) return `${directBase.replace(/\/+$/, '')}/${cleanPath}`;
+  const url = new URL(proxyUrl);
+  url.searchParams.set('host', 'events');
+  url.searchParams.set('path', cleanPath);
+  return url.toString();
+}
