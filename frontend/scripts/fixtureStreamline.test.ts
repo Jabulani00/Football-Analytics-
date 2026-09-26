@@ -32,6 +32,7 @@ function fx(over: Partial<Fixture> & Pick<Fixture, 'id' | 'status'>): Fixture {
     home: { id: 1, name: 'Arsenal', goals: null, position: 2 },
     away: { id: 2, name: 'Leeds', goals: null, position: 6 },
     seasonId: 2263973,
+    season: '2024/2025',
     competition: {
       id: 423,
       name: 'Premier League',

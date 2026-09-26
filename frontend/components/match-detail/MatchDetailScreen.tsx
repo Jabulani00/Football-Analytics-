@@ -16,6 +16,8 @@ import H2HPanel from '@/components/match-detail/H2HPanel';
 import PressureMonitorPanel from '@/components/match-detail/PressureMonitorPanel';
 import PitchLineup from '@/components/match-detail/PitchLineup';
 import FixtureCoreStatsPanel from '@/components/match-detail/FixtureCoreStatsPanel';
+import FixtureSeriesPanel from '@/components/match-detail/FixtureSeriesPanel';
+import FixtureRfsPanel from '@/components/match-detail/FixtureRfsPanel';
 import MatchPowerDynamicsPanel from '@/components/match-detail/MatchPowerDynamicsPanel';
 import FixtureMotivationPanel from '@/components/standings/FixtureMotivationPanel';
 import FixtureFormAnalysisPanel from '@/components/standings/FixtureFormAnalysisPanel';
@@ -657,6 +659,29 @@ function GoalDistributionsTab({
             seasonProgress={detail.season_progress}
           />
 
+          <FixtureSeriesPanel
+            homeId={homeId}
+            awayId={awayId}
+            homeName={homeName}
+            awayName={awayName}
+            competitionId={detail.competition_id ?? null}
+            seasonId={detail.season_id ?? null}
+            seasonName={detail.season ?? null}
+            isCup={detail.is_cup}
+            fixtureId={detail.id}
+          />
+
+          <FixtureRfsPanel
+            homeId={homeId}
+            awayId={awayId}
+            homeName={homeName}
+            awayName={awayName}
+            competitionId={detail.competition_id ?? null}
+            seasonId={detail.season_id ?? null}
+            seasonName={detail.season ?? null}
+            isCup={detail.is_cup}
+          />
+
           {byCat.size === 0 ? (
             <Text style={styles.muted}>
               In-play match stats (shots, possession, cards…) appear once the game is live or finished.
@@ -1010,6 +1035,7 @@ function TableOddsTab({
           odds={detail.odds}
           probability={detail.probability}
           competitionId={detail.competition_id ?? null}
+          seasonName={detail.season ?? null}
         />
       ) : view === 'tiers' ? (
         canTier ? (
@@ -1044,6 +1070,7 @@ function StandingsTab({
   odds,
   probability,
   competitionId,
+  seasonName,
 }: {
   standings: StandingRow[];
   groupCompetition: Competition | null;
@@ -1056,6 +1083,7 @@ function StandingsTab({
   odds: OddsByMarket | undefined;
   probability: Probability | undefined;
   competitionId: number | null;
+  seasonName: string | null;
 }) {
   if (groupCompetition) {
     return (
@@ -1112,6 +1140,7 @@ function StandingsTab({
         onTeamPress={(team) => onTeamPress(idByName.get(team) ?? null, team)}
         timing={timing}
         competitionId={competitionId}
+        seasonName={seasonName}
       />
     </>
   );

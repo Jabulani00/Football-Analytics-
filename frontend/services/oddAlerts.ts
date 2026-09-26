@@ -429,6 +429,8 @@ export type Fixture = {
   home: { id: number | null; name: string; goals: number | null; position: number | null };
   away: { id: number | null; name: string; goals: number | null; position: number | null };
   seasonId: number | null;
+  /** Season name (e.g. "2024/2025") — drives season-window lookups. */
+  season: string | null;
   competition: {
     id: number;
     name: string;
@@ -492,6 +494,7 @@ export function mapFixture(raw: RawFixture): Fixture {
       position: raw.away_position,
     },
     seasonId: raw.season_id ?? null,
+    season: raw.season ?? null,
     competition: {
       id: raw.competition_id,
       name: raw.competition_name,

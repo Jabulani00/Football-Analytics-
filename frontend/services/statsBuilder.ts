@@ -372,4 +372,4 @@ export async function buildLeagueStatsLive(
 }
 
 // Exposed for tests / reuse.
-export const __internals = { computeStats, periodGoals, parseHtScore, statSignal, ORDINARY_STATS };
+export const __internals = { computeStats, periodGoals, parseHtScore, statSignal, ORDINARY_STATS, NOT_DERIVABLE };

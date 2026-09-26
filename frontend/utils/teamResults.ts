@@ -50,12 +50,16 @@ function outcomeFor(gf: number, ga: number): ResultOutcome {
   return 'D';
 }
 
-/** Finished matches for one team, newest first. League-only when `competitionId` is set. */
+/**
+ * Finished matches for one team, newest first. League-only when `competitionId`
+ * is set — friendlies always drop, cups drop unless `includeCup` is on (so a cup
+ * fixture can still report its own competition's history).
+ */
 export function teamResultsFromFixtures(
   fixtures: RawFixture[],
   teamId: number,
   ranks?: RankLookup | null,
-  opts?: { competitionId?: number | null; seasonId?: number | null },
+  opts?: { competitionId?: number | null; seasonId?: number | null; includeCup?: boolean },
 ): TeamResult[] {
   const teamRank = ranks?.get(teamId)?.rank ?? null;
   const leagueId = opts?.competitionId ?? null;
@@ -67,7 +71,8 @@ export function teamResultsFromFixtures(
     if (f.home_goals == null || f.away_goals == null) continue;
     if (f.home_id !== teamId && f.away_id !== teamId) continue;
     if (leagueId != null) {
-      if (f.is_cup || f.is_friendly) continue;
+      if (f.is_friendly) continue;
+      if (f.is_cup && !opts?.includeCup) continue;
       if (f.competition_id !== leagueId) continue;
     }
     if (seasonId != null && f.season_id != null && f.season_id !== seasonId) continue;
@@ -121,6 +126,18 @@ export function filterScope(
 
 export function lastN(results: TeamResult[], n: number): TeamResult[] {
   return results.slice(0, n);
+}
+
+/**
+ * Drop one fixture from a result feed. A finished match sits inside its own
+ * season window, so form "going into" it must exclude its own result.
+ */
+export function excludeFixture(
+  results: TeamResult[],
+  fixtureId: number | null | undefined,
+): TeamResult[] {
+  if (fixtureId == null) return results;
+  return results.filter((r) => r.fixtureId !== fixtureId);
 }
 
 /** Points from a W/D/L sequence (3/1/0). */

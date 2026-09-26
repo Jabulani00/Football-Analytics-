@@ -182,6 +182,7 @@ export default function StandingsPanel() {
               seasonLabel={competition.name}
               timing={timingByName(standings)}
               competitionId={competition.id}
+              seasonName={season?.seasonName ?? null}
               onTeamPress={(team) => {
                 const id = teamIdByName(standings).get(team);
                 if (id != null)

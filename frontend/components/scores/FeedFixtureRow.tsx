@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import RecommendationCard from '@/components/analytics/RecommendationCard';
+import FixtureSeriesPanel from '@/components/match-detail/FixtureSeriesPanel';
 import ScoresMatchRow from '@/components/scores/ScoresMatchRow';
 import { fetchFixtureDetail, type Fixture, type RawFixtureDetail } from '@/services/oddAlerts';
 import { oddsInputFromApi, predictionFromApiProbability } from '@/utils/apiRecommendationAdapter';
@@ -27,6 +28,7 @@ const CAN_RECOMMEND = new Set(['NS', 'LIVE', 'HT']);
  */
 export default function FeedFixtureRow({ fixture, module, onOpen, stream }: Props) {
   const [expanded, setExpanded] = useState(false);
+  const [seriesOpen, setSeriesOpen] = useState(false);
   const [detail, setDetail] = useState<RawFixtureDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -36,6 +38,9 @@ export default function FeedFixtureRow({ fixture, module, onOpen, stream }: Prop
   const startedRef = useRef(false);
 
   const recommendable = CAN_RECOMMEND.has(fixture.status);
+  // Series need both team ids to query results, and a real competition to scope to.
+  const canSeries =
+    fixture.home.id != null && fixture.away.id != null && !fixture.competition.isFriendly;
 
   useEffect(() => {
     if (!expanded || startedRef.current) return;
@@ -79,22 +84,41 @@ export default function FeedFixtureRow({ fixture, module, onOpen, stream }: Prop
     <View style={styles.wrap}>
       <ScoresMatchRow fixture={fixture} onPress={onOpen} stream={stream} />
 
-      {recommendable ? (
-        <Pressable
-          onPress={() => setExpanded((e) => !e)}
-          style={({ hovered }) => [
-            styles.toggle,
-            Platform.OS === 'web' && hovered ? styles.toggleHover : null,
-          ]}>
-          <Text style={styles.toggleText}>
-            {expanded ? '▾ Hide best bet' : '⚡ Best bet'}
-          </Text>
-          {rec && !expanded ? (
-            <Text style={styles.peek} numberOfLines={1}>
-              {rec.best?.selection} · {Math.round((rec.best?.probability ?? 0) * 100)}%
-            </Text>
+      {recommendable || canSeries ? (
+        <View style={styles.toggleRow}>
+          {recommendable ? (
+            <Pressable
+              onPress={() => setExpanded((e) => !e)}
+              style={({ hovered }) => [
+                styles.toggle,
+                styles.toggleGrow,
+                Platform.OS === 'web' && hovered ? styles.toggleHover : null,
+              ]}>
+              <Text style={styles.toggleText}>
+                {expanded ? '▾ Hide best bet' : '⚡ Best bet'}
+              </Text>
+              {rec && !expanded ? (
+                <Text style={styles.peek} numberOfLines={1}>
+                  {rec.best?.selection} · {Math.round((rec.best?.probability ?? 0) * 100)}%
+                </Text>
+              ) : null}
+            </Pressable>
           ) : null}
-        </Pressable>
+
+          {canSeries ? (
+            <Pressable
+              onPress={() => setSeriesOpen((s) => !s)}
+              style={({ hovered }) => [
+                styles.toggle,
+                !recommendable && styles.toggleGrow,
+                Platform.OS === 'web' && hovered ? styles.toggleHover : null,
+              ]}>
+              <Text style={styles.toggleTextAlt}>
+                {seriesOpen ? '▾ Hide series' : '📈 Series'}
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
       ) : null}
 
       {expanded ? (
@@ -115,12 +139,30 @@ export default function FeedFixtureRow({ fixture, module, onOpen, stream }: Prop
           )}
         </View>
       ) : null}
+
+      {seriesOpen ? (
+        <View style={styles.body}>
+          <FixtureSeriesPanel
+            homeId={fixture.home.id}
+            awayId={fixture.away.id}
+            homeName={fixture.home.name}
+            awayName={fixture.away.name}
+            competitionId={fixture.competition.id}
+            seasonId={fixture.seasonId}
+            seasonName={fixture.season}
+            isCup={fixture.competition.isCup}
+            fixtureId={fixture.id}
+            compact
+          />
+        </View>
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: { width: '100%' },
+  toggleRow: { flexDirection: 'row', alignItems: 'center' },
   toggle: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -130,12 +172,20 @@ const styles = StyleSheet.create({
     paddingTop: 2,
     ...(Platform.OS === 'web' ? ({ cursor: 'pointer' } as object) : {}),
   },
+  toggleGrow: { flex: 1 },
   toggleHover: { backgroundColor: theme.surfaceHover },
   toggleText: {
     fontFamily: fonts.bodySemiBold,
     fontSize: 10,
     letterSpacing: 0.4,
     color: theme.accentGreen,
+    textTransform: 'uppercase',
+  },
+  toggleTextAlt: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 10,
+    letterSpacing: 0.4,
+    color: theme.accentBlue,
     textTransform: 'uppercase',
   },
   peek: { flex: 1, fontFamily: fonts.body, fontSize: 11, color: theme.textMuted },

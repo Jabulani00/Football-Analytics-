@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import LeagueStatsPanel from '@/components/league/LeagueStatsPanel';
 import StandingsTable from '@/components/match/StandingsTable';
 import SubTabBar from '@/components/shared/SubTabBar';
+import { useLiveStatsTables } from '@/hooks/useLiveStatsTables';
 import type { StandingRow } from '@/mock/matchData';
 import { fonts, spacing, theme } from '@/styles/theme';
 import {
@@ -20,7 +22,7 @@ import {
   type TeamTiming,
 } from '@/utils/standingsAnalytics';
 
-type Group = 'standard' | 'ppg' | 'last6' | 'form' | 'prob' | 'insights';
+type Group = 'standard' | 'ppg' | 'last6' | 'form' | 'prob' | 'insights' | 'leaguestats';
 
 const GROUPS: { id: Group; label: string }[] = [
   { id: 'standard', label: 'Standard' },
@@ -29,7 +31,11 @@ const GROUPS: { id: Group; label: string }[] = [
   { id: 'form', label: 'Recent Form' },
   { id: 'prob', label: 'Probability' },
   { id: 'insights', label: '🎯 Bet Finder' },
+  { id: 'leaguestats', label: 'League Stats' },
 ];
+
+/** The live builder names the first half `ht`, the analytics engine `1h`. */
+const BUILDER_PERIOD: Record<Period, string> = { ft: 'ft', '1h': 'ht', '2h': '2h' };
 
 const MARKET_TABS = INSIGHT_MARKETS.map((m) => ({ id: m.key, label: m.short }));
 
@@ -82,6 +88,8 @@ type Props = {
   timing?: Map<string, TeamTiming>;
   /** OddAlerts competition id, for qualification / relegation dividers. */
   competitionId?: number | string | null;
+  /** Season the table covers, e.g. "2025/2026" — bounds the League Stats fetch. */
+  seasonName?: string | null;
 };
 
 export default function StandingsAnalyticsView({
@@ -91,6 +99,7 @@ export default function StandingsAnalyticsView({
   onTeamPress,
   timing,
   competitionId,
+  seasonName,
 }: Props) {
   const [group, setGroup] = useState<Group>('standard');
   const [period, setPeriod] = useState<Period>('ft');
@@ -122,12 +131,25 @@ export default function StandingsAnalyticsView({
   );
 
   const isInsights = group === 'insights';
-  const showPeriodScope = group === 'ppg' || group === 'last6' || group === 'form';
+  const isLeagueStats = group === 'leaguestats';
+  const showPeriodScope =
+    group === 'ppg' || group === 'last6' || group === 'form' || isLeagueStats;
+
+  // Spec §4.7 needs per-fixture results the standings rows don't carry, so the
+  // League Stats group builds the live stat tables — only once it is opened.
+  const liveStats = useLiveStatsTables({
+    competitionId: isLeagueStats ? competitionId : undefined,
+    seasonName: seasonName ?? undefined,
+  });
+  const statsSuffix = `${BUILDER_PERIOD[period]}_${scope}`;
+
+  // Without a competition id there is nothing to build League Stats from.
+  const groups = competitionId == null ? GROUPS.filter((g) => g.id !== 'leaguestats') : GROUPS;
 
   return (
     <View style={styles.wrap}>
       {/* New tab row: table group */}
-      <SubTabBar tabs={GROUPS} active={group} onChange={setGroup} />
+      <SubTabBar tabs={groups} active={group} onChange={setGroup} />
 
       {group === 'form' ? (
         <SubTabBar
@@ -165,7 +187,17 @@ export default function StandingsAnalyticsView({
         />
       ) : null}
 
-      {isInsights ? (
+      {isLeagueStats ? (
+        <LeagueStatsPanel
+          teamRows={liveStats.data?.tables[`ordinary_${statsSuffix}`]}
+          leagueRow={liveStats.data?.tables[`league_avg_${statsSuffix}`]?.[0]}
+          loading={liveStats.loading}
+          error={liveStats.error}
+          highlightTeams={highlightTeams}
+          onTeamPress={onTeamPress}
+          contextLabel={`${PERIOD_LABEL[period]} ${SCOPE_LABEL[scope].toLowerCase()}`}
+        />
+      ) : isInsights ? (
         <InsightsPanel
           base={base}
           market={market}
@@ -199,6 +231,7 @@ const MARKET_LABEL: Record<InsightMarket, string> = INSIGHT_MARKETS.reduce(
   {} as Record<InsightMarket, string>,
 );
 const SCOPE_LABEL: Record<Split, string> = { overall: 'Overall', home: 'Home', away: 'Away' };
+const PERIOD_LABEL: Record<Period, string> = { ft: 'Full-time', '1h': '1st half', '2h': '2nd half' };
 
 function confidenceColor(v: number): string {
   if (v >= 66) return theme.accentGreen;

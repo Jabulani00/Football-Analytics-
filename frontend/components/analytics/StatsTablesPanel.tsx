@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import LeagueStatsPanel from '@/components/league/LeagueStatsPanel';
 import CompetitionPicker from '@/components/shared/CompetitionPicker';
 import { useLiveCompetitions } from '@/hooks/useLiveCompetitions';
 import { useLiveStatsTables } from '@/hooks/useLiveStatsTables';
@@ -18,7 +19,7 @@ const FAMILIES: FamilyOption[] = [
   { key: 'ppg', label: 'PPG', family: 'ppg', blurb: 'Points per game, plus form and result rates.' },
   { key: 'series', label: 'Series', family: 'series', blurb: 'Current streaks — consecutive wins, unbeaten, BTTS, overs…' },
   { key: 'ft_only', label: 'FT-Only', family: 'ft_only', blurb: 'Full-time patterns — won both halves, win-to-nil, led at HT.' },
-  { key: 'league_avg', label: 'League Avg', family: 'league_avg', blurb: 'League-wide averages across every team.' },
+  { key: 'league_avg', label: 'League Stats', family: 'league_avg', blurb: 'Spec §4.7 — every team ranked on one stat, with the league average pinned underneath.' },
   { key: 'last10', label: 'Last 10', family: 'ordinary', blurb: 'Core stats over each team’s last 10 games.' },
   { key: 'last8', label: 'Last 8', family: 'ordinary', blurb: 'Core stats over each team’s last 8 games.' },
   { key: 'last6', label: 'Last 6', family: 'ordinary', blurb: 'Core stats over each team’s last 6 games.' },
@@ -58,7 +59,15 @@ export default function StatsTablesPanel() {
 
   const tableName = `${familyKey}_${PERIOD_TO_BUILDER[period]}_${scope}`;
   const liveTable = competitionId != null ? live.data?.tables[tableName] : undefined;
-  const isLive = !!(liveTable && liveTable.length);
+  // League Stats ranks the teams, so it reads the ordinary table too — the
+  // league_avg table is only the single averaged row.
+  const isLeagueStats = familyKey === 'league_avg';
+  const leagueTeamRows =
+    competitionId != null && isLeagueStats
+      ? live.data?.tables[`ordinary_${PERIOD_TO_BUILDER[period]}_${scope}`]
+      : undefined;
+  const liveRows = isLeagueStats ? leagueTeamRows : liveTable;
+  const isLive = !!(liveRows && liveRows.length);
 
   const teams = useMemo(
     () =>
@@ -86,7 +95,7 @@ export default function StatsTablesPanel() {
           </>
         ) : isLive ? (
           <Text style={[styles.statusText, styles.statusLive]}>
-            ● LIVE · {activeComp?.name ?? ''} · {liveTable!.length} teams
+            ● LIVE · {activeComp?.name ?? ''} · {liveRows!.length} teams
           </Text>
         ) : (
           <Text style={styles.statusMuted}>
@@ -114,49 +123,61 @@ export default function StatsTablesPanel() {
       </View>
 
       {/* Table */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={Platform.OS === 'web'}
-        style={styles.tableScroll}
-        contentContainerStyle={styles.tableScrollContent}>
-        <View style={styles.dataTable}>
-          <View style={styles.tableHeader}>
-            <Text style={[styles.cell, styles.cellRank, styles.headText]}>#</Text>
-            <Text style={[styles.cell, styles.cellTeam, styles.headText]}>Team</Text>
-            {teams[0]?.metrics.map((m) => (
-              <Text key={m.key} style={[styles.cell, styles.headText]}>
-                {m.label}
-              </Text>
-            ))}
-          </View>
-          {teams.map((row, i) => (
-            <View key={row.team} style={[styles.tableRow, i % 2 === 1 && styles.tableRowAlt]}>
-              <Text style={[styles.cell, styles.cellRank, styles.rankText]}>{i + 1}</Text>
-              <Text style={[styles.cell, styles.cellTeam, styles.teamName]} numberOfLines={1}>
-                {row.team}
-              </Text>
-              {row.metrics.map((m, j) => (
-                <View key={m.key} style={styles.cell}>
-                  <Text
-                    style={[
-                      styles.cellValue,
-                      j === 0 && styles.cellValuePrimary,
-                      { color: complianceColor(m.compliance) },
-                    ]}>
-                    {m.value}
-                    {m.raw ? '' : '%'}
+      {isLeagueStats ? (
+        <LeagueStatsPanel
+          teamRows={leagueTeamRows}
+          leagueRow={liveTable?.[0]}
+          loading={live.loading}
+          error={live.error}
+          contextLabel={`${PERIODS.find((p) => p.key === period)?.label} ${scope}`}
+        />
+      ) : (
+        <>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={Platform.OS === 'web'}
+            style={styles.tableScroll}
+            contentContainerStyle={styles.tableScrollContent}>
+            <View style={styles.dataTable}>
+              <View style={styles.tableHeader}>
+                <Text style={[styles.cell, styles.cellRank, styles.headText]}>#</Text>
+                <Text style={[styles.cell, styles.cellTeam, styles.headText]}>Team</Text>
+                {teams[0]?.metrics.map((m) => (
+                  <Text key={m.key} style={[styles.cell, styles.headText]}>
+                    {m.label}
                   </Text>
+                ))}
+              </View>
+              {teams.map((row, i) => (
+                <View key={row.team} style={[styles.tableRow, i % 2 === 1 && styles.tableRowAlt]}>
+                  <Text style={[styles.cell, styles.cellRank, styles.rankText]}>{i + 1}</Text>
+                  <Text style={[styles.cell, styles.cellTeam, styles.teamName]} numberOfLines={1}>
+                    {row.team}
+                  </Text>
+                  {row.metrics.map((m, j) => (
+                    <View key={m.key} style={styles.cell}>
+                      <Text
+                        style={[
+                          styles.cellValue,
+                          j === 0 && styles.cellValuePrimary,
+                          { color: complianceColor(m.compliance) },
+                        ]}>
+                        {m.value}
+                        {m.raw ? '' : '%'}
+                      </Text>
+                    </View>
+                  ))}
                 </View>
               ))}
             </View>
-          ))}
-        </View>
-      </ScrollView>
+          </ScrollView>
 
-      <Text style={styles.footHint}>
-        Colour = performance band · green strong · yellow mid · red weak. Tap a
-        table, period or scope above to explore all 72 views.
-      </Text>
+          <Text style={styles.footHint}>
+            Colour = performance band · green strong · yellow mid · red weak. Tap a
+            table, period or scope above to explore all 72 views.
+          </Text>
+        </>
+      )}
     </View>
   );
 }
