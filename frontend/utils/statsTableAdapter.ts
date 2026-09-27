@@ -8,7 +8,7 @@
  */
 import type { ComplianceLevel, StatFamily, StatsTableMeta, TeamStatsRow } from '@/types/analytics';
 import type { TeamStatRow } from '@/types/data';
-import { complianceFromPercent } from '@/utils/compliance';
+import { complianceFromPercent, complianceFromPpg } from '@/utils/compliance';
 
 type Col = { key: string; label: string; raw?: boolean };
 
@@ -90,10 +90,15 @@ export function metaToLiveTableName(meta: StatsTableMeta): string {
   return `${prefix}_${period}_${meta.split}`;
 }
 
-/** Traffic-light for raw (non-percentage) stats. */
+/**
+ * Traffic-light for the stats that are not percentages, so the shared
+ * `complianceFromPercent` cut-offs do not apply to them: a streak is a count of
+ * matches (3+ is a run worth naming) and PPG has its own 0–3 scale. Anything
+ * that *is* a percentage falls through to the one shared rule.
+ */
 function rawCompliance(key: string, v: number): ComplianceLevel {
   if (key.includes('streak')) return v >= 3 ? 'green' : v >= 1 ? 'yellow' : 'red';
-  if (key === 'ppg' || key === 'avg_pts') return v >= 1.8 ? 'green' : v >= 1.2 ? 'yellow' : 'red';
+  if (key === 'ppg' || key === 'avg_pts') return complianceFromPpg(v);
   return complianceFromPercent(v);
 }
 

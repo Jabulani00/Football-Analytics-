@@ -3,7 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import type { ComplianceLevel } from '@/types/analytics';
 import type { StatDisplayUnit } from '@/types/stats';
 import { complianceColor } from '@/utils/compliance';
-import { fonts } from '@/styles/theme';
+import { fonts, theme } from '@/styles/theme';
 
 type StatValueCellProps = {
   value: number;
@@ -18,11 +18,13 @@ function formatValue(value: number, unit: StatDisplayUnit = 'percent'): string {
 }
 
 export default function StatValueCell({ value, level, unit = 'percent' }: StatValueCellProps) {
-  const color = complianceColor(level);
+  // Nothing measured: read it as absent, not as a yellow "moderate" signal.
+  const measured = Number.isFinite(value);
+  const color = measured ? complianceColor(level) : theme.textMuted;
 
   return (
-    <View style={[styles.cell, { borderColor: color }]}>
-      <View style={[styles.dot, { backgroundColor: color }]} />
+    <View style={[styles.cell, { borderColor: measured ? color : theme.border }]}>
+      {measured ? <View style={[styles.dot, { backgroundColor: color }]} /> : null}
       <Text style={[styles.value, { color }]}>{formatValue(value, unit)}</Text>
     </View>
   );

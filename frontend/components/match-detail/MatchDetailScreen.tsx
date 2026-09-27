@@ -25,6 +25,7 @@ import SubTabBar from '@/components/shared/SubTabBar';
 import { useMatchDetail } from '@/hooks/useMatchDetail';
 import {
   computeTieredTables,
+  fetchSeasonResults,
   mapFixture,
   standingsMovement,
   type Competition,
@@ -52,6 +53,7 @@ import {
   statsByCategory,
 } from '@/utils/matchDetailDisplay';
 import { isGroupStageTournament } from '@/utils/groupStandings';
+import { buildMatchFeed, type MatchFeed } from '@/utils/leagueTables';
 import { timingByName } from '@/utils/standingsAdapter';
 
 type MatchDetailScreenProps = {
@@ -985,6 +987,7 @@ function TableOddsTab({
 }) {
   const [view, setView] = useState<TableOddsView>('table');
   const [tiered, setTiered] = useState<TieredTables | null>(null);
+  const [feed, setFeed] = useState<MatchFeed | null>(null);
   const [tiersLoading, setTiersLoading] = useState(false);
 
   const seasonId = detail.season_id;
@@ -993,6 +996,7 @@ function TableOddsTab({
   useEffect(() => {
     if (!canTier || seasonId == null) {
       setTiered(null);
+      setFeed(null);
       return;
     }
     const controller = new AbortController();
@@ -1004,10 +1008,29 @@ function TableOddsTab({
       progress: detail.season_progress ?? null,
       isCurrent: true,
     };
-    computeTieredTables(
-      { competitionId: detail.competition_id, season, standings },
-      controller.signal,
-    )
+    const opts = { competitionId: detail.competition_id, season, standings };
+
+    // One cached fetch of the season's results feeds both the colour tiers and
+    // the league-table analytics.
+    fetchSeasonResults(opts, controller.signal)
+      .then((results) => {
+        if (controller.signal.aborted) return;
+        setFeed(
+          buildMatchFeed({
+            competitionId: detail.competition_id,
+            seasonId,
+            standings: standings.map((r) => ({
+              teamId: r.teamId,
+              name: r.name,
+              rank: r.rank,
+            })),
+            results,
+          }),
+        );
+      })
+      .catch(() => {});
+
+    computeTieredTables(opts, controller.signal)
       .then((t) => {
         if (!controller.signal.aborted) setTiered(t);
       })
@@ -1036,6 +1059,7 @@ function TableOddsTab({
           probability={detail.probability}
           competitionId={detail.competition_id ?? null}
           seasonName={detail.season ?? null}
+          feed={feed}
         />
       ) : view === 'tiers' ? (
         canTier ? (
@@ -1071,6 +1095,7 @@ function StandingsTab({
   probability,
   competitionId,
   seasonName,
+  feed,
 }: {
   standings: StandingRow[];
   groupCompetition: Competition | null;
@@ -1084,6 +1109,7 @@ function StandingsTab({
   probability: Probability | undefined;
   competitionId: number | null;
   seasonName: string | null;
+  feed: MatchFeed | null;
 }) {
   if (groupCompetition) {
     return (
@@ -1127,7 +1153,7 @@ function StandingsTab({
   }));
   const idByName = new Map(standings.map((row) => [row.name, row.teamId]));
   // The season-stats endpoint carries recorded goal timing per team, so the
-  // goal-timing metrics can use measured minutes rather than an estimate.
+  // goal-timing metrics use measured minutes.
   const timing = timingByName(standings);
 
   return (
@@ -1141,6 +1167,7 @@ function StandingsTab({
         timing={timing}
         competitionId={competitionId}
         seasonName={seasonName}
+        feed={feed}
       />
     </>
   );

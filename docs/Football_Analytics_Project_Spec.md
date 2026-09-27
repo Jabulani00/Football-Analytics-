@@ -84,13 +84,34 @@ The 27 variation tables are built from 3 recency windows × 3 splits × 3 time p
 
 ### 3.3 Colour-Coding Convention
 
-Tables will use a traffic-light colour scheme based on percentage compliance thresholds:
+Tables use a traffic-light colour scheme on **how often a stat lands**:
 
 | Colour | Threshold | Meaning |
 |---|---|---|
-| 🟢 Green | ≥ 33% | Strong / high compliance |
-| 🟡 Yellow | 33% | Medium / moderate |
-| 🔴 Red | 33% | Low / caution |
+| 🟢 Green | ≥ 65% | Reliable / high compliance |
+| 🟡 Yellow | 45–64% | Moderate |
+| 🔴 Red | < 45% | Low / caution |
+
+Green means *reliable*, not *good* — a high "fails to score" is still green.
+
+These are the only cut-offs. They live in one place, `frontend/utils/compliance.ts`
+(`COMPLIANCE_THRESHOLDS`), and are mirrored by `stat_signal` in
+`backend/schema.py` and the `_signal` columns the stats builder emits. Two
+scales are deliberately **not** percentages and keep their own cut-offs:
+
+| Stat | 🟢 | 🟡 | 🔴 | Defined in |
+|---|---|---|---|---|
+| Streaks (matches) | 3+ | 1–2 | 0 | `statsTableAdapter.ts` |
+| PPG / avg points (0–3) | ≥ 1.80 | 1.20–1.79 | < 1.20 | `PPG_THRESHOLDS` in `compliance.ts` |
+
+On the PPG scale green *does* mean good — points per game only ever measures one
+thing. Applying the percentage rule to it would call every possible PPG red,
+which is why `complianceFromPpg` is a separate function.
+
+Separately, the **table thirds** (also called green / yellow / red) are a
+position band, not a signal: the top third of the league table is green, the
+bottom third red, the remainder yellow. One rule, `bandOf` in
+`frontend/utils/leagueTables.ts`, decides it everywhere.
 
 ---
 
@@ -119,7 +140,11 @@ The following 34 standard metrics apply to every table. SC% = Scoring %, Conc% =
 
 ### 4.2 PPG (Points Per Game) Tables — 45 Stats
 
-PPG is tracked across Overall, Half-time, and 2nd Half contexts. The 45 PPG stats cover:
+PPG is tracked across Overall, Half-time, and 2nd Half contexts. "Green / Yellow
+/ Red PPG" name the **opponent's third of the table**, so each is its own average
+on the 0–3 scale: points earned against that third ÷ games played against it.
+A scope's plain PPG is therefore the games-weighted mean of the three, never
+their total. The 45 PPG stats cover:
 
 | Scope | Sub-stats (× 4 card variants each) | Stats # |
 |---|---|---|

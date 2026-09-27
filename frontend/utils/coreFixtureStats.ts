@@ -6,16 +6,10 @@
 import type { StandingRow } from '@/services/oddAlerts';
 import type { ComplianceLevel } from '@/types/analytics';
 import type { StatReading } from '@/types/stats';
-import { complianceFromPercent } from '@/utils/compliance';
+import { complianceFromPercent, complianceFromPpg } from '@/utils/compliance';
 import { filterScope, type TeamResult } from '@/utils/teamResults';
 
 export type CoreStatScope = 'overall' | 'home' | 'away';
-
-function levelPpg(v: number): ComplianceLevel {
-  if (v >= 1.8) return 'green';
-  if (v >= 1.2) return 'yellow';
-  return 'red';
-}
 
 function levelScored(v: number): ComplianceLevel {
   if (v >= 1.5) return 'green';
@@ -107,6 +101,7 @@ function row(
   return {
     key,
     label,
+    // NaN makes the cell render a muted dash; its level is then never read.
     home: home ?? Number.NaN,
     away: away ?? Number.NaN,
     homeLevel: home == null ? 'yellow' : homeLevel,
@@ -162,8 +157,8 @@ export function buildCoreFixtureStats(opts: {
       homePpg,
       awayPpg,
       'decimal',
-      homePpg != null ? levelPpg(homePpg) : 'yellow',
-      awayPpg != null ? levelPpg(awayPpg) : 'yellow',
+      homePpg != null ? complianceFromPpg(homePpg) : 'yellow',
+      awayPpg != null ? complianceFromPpg(awayPpg) : 'yellow',
     ),
     row(
       'scored',

@@ -8,7 +8,28 @@ import {
   PROJECT_PHASES,
   PROJECT_SUMMARY,
 } from '@/mock/analyticsData';
+import {
+  complianceColor,
+  complianceFromPpg,
+  COMPLIANCE_THRESHOLDS,
+  PPG_RULE_TEXT,
+} from '@/utils/compliance';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
+
+/** Points per game, coloured on the PPG scale rather than by the column it sits in. */
+function PpgCell({ value }: { value: number }) {
+  return (
+    <Text
+      style={[
+        styles.ppgCell,
+        styles.ppgBody,
+        { color: complianceColor(complianceFromPpg(value)) },
+      ]}
+    >
+      {value.toFixed(2)}
+    </Text>
+  );
+}
 
 export default function OverviewPanel() {
   const { width } = useWindowDimensions();
@@ -69,30 +90,40 @@ export default function OverviewPanel() {
         <View style={styles.ppgHeader}>
           <Text style={[styles.ppgCell, styles.ppgCellScope]}>Scope</Text>
           <Text style={styles.ppgCell}>PPG</Text>
-          <Text style={[styles.ppgCell, styles.ppgGreen]}>Green</Text>
-          <Text style={[styles.ppgCell, styles.ppgYellow]}>Yellow</Text>
-          <Text style={[styles.ppgCell, styles.ppgRed]}>Red</Text>
+          <Text style={[styles.ppgCell, styles.ppgGreen]}>vs Green</Text>
+          <Text style={[styles.ppgCell, styles.ppgYellow]}>vs Yellow</Text>
+          <Text style={[styles.ppgCell, styles.ppgRed]}>vs Red</Text>
         </View>
         {PPG_STATS_PREVIEW.map((row) => (
           <View key={row.scope} style={styles.ppgRow}>
             <Text style={[styles.ppgCell, styles.ppgCellScope, styles.ppgBody]}>{row.scope}</Text>
-            <Text style={[styles.ppgCell, styles.ppgBody]}>{row.ppg.toFixed(1)}</Text>
-            <Text style={[styles.ppgCell, styles.ppgBody, styles.ppgGreen]}>{row.green.toFixed(1)}</Text>
-            <Text style={[styles.ppgCell, styles.ppgBody, styles.ppgYellow]}>{row.yellow.toFixed(1)}</Text>
-            <Text style={[styles.ppgCell, styles.ppgBody, styles.ppgRed]}>{row.red.toFixed(1)}</Text>
+            <PpgCell value={row.ppg} />
+            <PpgCell value={row.green} />
+            <PpgCell value={row.yellow} />
+            <PpgCell value={row.red} />
           </View>
         ))}
       </View>
+      <Text style={styles.ppgNote}>
+        Green / Yellow / Red name the opponent&apos;s third of the table. Each cell is
+        points ÷ games against that third, so PPG is the average of the three, not their
+        total. Number colour reads the PPG scale: {PPG_RULE_TEXT}.
+      </Text>
 
       <View style={styles.legend}>
         <SectionLabel>Colour compliance</SectionLabel>
+        <Text style={styles.legendText}>
+          How often a percentage stat lands — green means reliable, not good.
+        </Text>
         <View style={styles.legendRow}>
           <ComplianceBadge level="green" />
-          <Text style={styles.legendText}>≥66% Strong</Text>
+          <Text style={styles.legendText}>{`${COMPLIANCE_THRESHOLDS.green}%+ Strong`}</Text>
           <ComplianceBadge level="yellow" />
-          <Text style={styles.legendText}>33–65% Moderate</Text>
+          <Text style={styles.legendText}>
+            {`${COMPLIANCE_THRESHOLDS.yellow}–${COMPLIANCE_THRESHOLDS.green - 1}% Moderate`}
+          </Text>
           <ComplianceBadge level="red" />
-          <Text style={styles.legendText}>{'<33% Caution'}</Text>
+          <Text style={styles.legendText}>{`under ${COMPLIANCE_THRESHOLDS.yellow}% Caution`}</Text>
         </View>
       </View>
     </View>
@@ -307,6 +338,14 @@ const styles = StyleSheet.create({
   ppgGreen: { color: theme.accentGreen },
   ppgYellow: { color: theme.yellow },
   ppgRed: { color: theme.loss },
+  ppgNote: {
+    fontFamily: fonts.body,
+    fontSize: 10,
+    lineHeight: 14,
+    color: theme.textMuted,
+    marginTop: spacing.xs,
+    width: '100%',
+  },
   legend: {
     marginTop: spacing.xl,
     alignItems: 'center',

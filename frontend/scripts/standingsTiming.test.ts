@@ -2,9 +2,9 @@
  * Unit tests for the goal-timing metrics in utils/standingsAnalytics.
  * Run: npx tsx scripts/standingsTiming.test.ts
  *
- * Covers the split that matters: recorded timings from the provider are used
- * verbatim, and the estimate only stands in where none exist — without the
- * column changing shape between the two.
+ * Covers the rule that matters: a goal's minute is not in a final score, so
+ * these metrics are answered by the provider's recorded timings or reported
+ * unavailable. Nothing is ever estimated into the ranking.
  */
 import { buildStandingsView, type TeamTiming } from '../utils/standingsAnalytics';
 import type { StandingRow } from '../mock/matchData';
@@ -87,17 +87,22 @@ console.log('A team with no recorded value is shown as unknown, never estimated 
     v.caption.includes('recorded timings') && v.caption.includes('2 without a value yet'), v.caption);
 }
 
-console.log('Measured and estimated values never share one column');
+console.log('No estimate is ever mixed into a measured column');
 {
-  // One team measured, the rest not: the column must stay wholly measured.
+  // One team measured, the rest not: the others read "—", never a guess.
   for (const metric of ['early1h', 'earlyConc', 'late', 'early2h'] as const) {
     const timing = new Map<string, TeamTiming>([
       ['Early', timed({ firstGoalFor: 12, firstGoalAgainst: 12, scoredAfter70: { count: 1, pct: 10 }, concededAfter70: { count: 1, pct: 10 } })],
     ]);
     const v = buildStandingsView(base, { kind: 'prob', metric, period: 'ft' }, { timing });
     const subs = v.rows.map((r) => cell(v, r.team).sub);
-    const mixed = subs.some((x) => x.includes('est.')) && subs.some((x) => !x.includes('est.') && x !== 'not yet');
-    check(`${metric}: column is not mixed`, !mixed, subs.join(' | '));
+    check(`${metric}: nothing is marked as an estimate`, !subs.some((x) => x.includes('est.')), subs.join(' | '));
+    check(`${metric}: the measured team leads`, v.rows[0].team === 'Early', v.rows[0].team);
+    check(
+      `${metric}: the rest read as a dash`,
+      v.rows.slice(1).every((r) => cell(v, r.team).display === '—'),
+      v.rows.slice(1).map((r) => cell(v, r.team).display).join(' | '),
+    );
   }
 }
 
@@ -120,39 +125,41 @@ console.log('Thin samples report the sample size instead of a meaningless rate')
   check('caption does not flag a full sample', !v2.caption.includes('under 3 matches'), v2.caption);
 }
 
-console.log('Without recorded timings the estimate stands in, and says so');
+console.log('Without recorded timings the metric is unavailable, not invented');
 {
   const v = buildStandingsView(base, { kind: 'prob', metric: 'early1h', period: 'ft' });
-  check('source is estimated', v.timingSource === 'estimated', String(v.timingSource));
-  check('caption admits the estimate', v.caption.includes('estimated'), v.caption);
-  check('sub is marked est.', cell(v, 'Early').sub.endsWith('est.'), cell(v, 'Early').sub);
+  check('source is unavailable', v.timingSource === 'unavailable', String(v.timingSource));
+  check('caption says there are no recorded timings',
+    v.caption.includes('no recorded timings'), v.caption);
+  check('every row reads as a dash',
+    v.rows.every((r) => cell(v, r.team).display === '—'),
+    v.rows.map((r) => cell(v, r.team).display).join(' | '));
+  check('the note explains why', !!v.note && v.note.includes('recorded timings'), String(v.note));
 }
 
-console.log('Column shape does not change with the data source');
+console.log('Column shape is fixed per metric — a minute or a rate, never both');
 {
   const timing = new Map<string, TeamTiming>(
-    base.map((r) => [r.team, timed({ firstGoalFor: 30, scoredAfter70: { count: 3, pct: 30 } })]),
+    base.map((r) => [r.team, timed({ firstGoalFor: 30, firstGoalAgainst: 30, scoredAfter70: { count: 3, pct: 30 }, concededAfter70: { count: 3, pct: 30 } })]),
   );
   for (const [metric, suffix] of [['early1h', "'"], ['earlyConc', "'"], ['late', '%'], ['early2h', '%']] as const) {
-    const real = buildStandingsView(base, { kind: 'prob', metric, period: 'ft' }, { timing });
-    const est = buildStandingsView(base, { kind: 'prob', metric, period: 'ft' });
-    const realOk = real.rows.every((r) => {
-      const d = cell(real, r.team).display;
-      return d === '—' || d.endsWith(suffix);
-    });
-    const estOk = est.rows.every((r) => cell(est, r.team).display.endsWith(suffix));
-    check(`${metric} ends with "${suffix}" either way`, realOk && estOk,
-      `measured=${cell(real, base[0].team).display} estimated=${cell(est, base[0].team).display}`);
+    const v = buildStandingsView(base, { kind: 'prob', metric, period: 'ft' }, { timing });
+    check(
+      `${metric} always ends with "${suffix}"`,
+      v.rows.every((r) => cell(v, r.team).display.endsWith(suffix)),
+      cell(v, base[0].team).display,
+    );
   }
 }
 
-console.log('Half views keep the estimate — recorded timing covers the whole match');
+console.log('Half views have nothing to read — recorded timing covers the whole match');
 {
   const timing = new Map<string, TeamTiming>([['Early', timed({ firstGoalFor: 21.4 })]]);
   const v = buildStandingsView(base, { kind: 'prob', metric: 'early1h', period: '1h' }, { timing });
-  check('1st-half view is estimated', v.timingSource === 'estimated', String(v.timingSource));
-  const mins = v.rows.map((r) => parseInt(cell(v, r.team).display));
-  check('minutes stay inside the half', mins.every((m) => m >= 1 && m <= 45), JSON.stringify(mins));
+  check('1st-half view is unavailable', v.timingSource === 'unavailable', String(v.timingSource));
+  check('no minute is invented for the half',
+    v.rows.every((r) => cell(v, r.team).display === '—'),
+    v.rows.map((r) => cell(v, r.team).display).join(' | '));
 }
 
 console.log(failures === 0 ? '\nAll checks passed ✅' : `\n${failures} check(s) failed ❌`);

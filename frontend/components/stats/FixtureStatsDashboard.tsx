@@ -60,7 +60,9 @@ export default function FixtureStatsDashboard({ fixtureId }: FixtureStatsDashboa
 
       <View style={styles.category}>
         <Text style={styles.catTitle}>PPG — Points per game (45 stats)</Text>
-        <Text style={styles.catSub}>PPG · Green · Yellow · Red across FT / 1H / 2H splits</Text>
+        <Text style={styles.catSub}>
+          Points per game against each third of the table, across FT / 1H / 2H splits
+        </Text>
         <PpgTable rows={stats.ppg} />
       </View>
 

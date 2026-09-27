@@ -7,6 +7,8 @@ import SubTabBar from '@/components/shared/SubTabBar';
 import { useLiveStatsTables } from '@/hooks/useLiveStatsTables';
 import type { StandingRow } from '@/mock/matchData';
 import { fonts, spacing, theme } from '@/styles/theme';
+import { complianceColor, complianceFromPercent } from '@/utils/compliance';
+import type { MatchFeed } from '@/utils/leagueTables';
 import {
   buildInsights,
   buildStandingsView,
@@ -90,6 +92,12 @@ type Props = {
   competitionId?: number | string | null;
   /** Season the table covers, e.g. "2025/2026" — bounds the League Stats fetch. */
   seasonName?: string | null;
+  /**
+   * The season's finished results, per team. Every table beyond the plain
+   * standings is counted from it; without it those tabs say so rather than
+   * showing numbers nothing backs.
+   */
+  feed?: MatchFeed | null;
 };
 
 export default function StandingsAnalyticsView({
@@ -100,6 +108,7 @@ export default function StandingsAnalyticsView({
   timing,
   competitionId,
   seasonName,
+  feed,
 }: Props) {
   const [group, setGroup] = useState<Group>('standard');
   const [period, setPeriod] = useState<Period>('ft');
@@ -126,8 +135,8 @@ export default function StandingsAnalyticsView({
   }, [group, period, scope, band, window, metric]);
 
   const view = useMemo(
-    () => buildStandingsView(base, selection, { timing }),
-    [base, selection, timing],
+    () => buildStandingsView(base, selection, { timing, feed: feed ?? undefined }),
+    [base, selection, timing, feed],
   );
 
   const isInsights = group === 'insights';
@@ -205,21 +214,26 @@ export default function StandingsAnalyticsView({
           minPct={minPct}
           highlightTeams={highlightTeams}
           onTeamPress={onTeamPress}
+          feed={feed}
         />
       ) : (
         <>
           <Text style={styles.caption}>{view.caption}</Text>
+          {view.note ? <Text style={styles.note}>{view.note}</Text> : null}
 
-          <StandingsTable
-            standings={view.rows}
-            seasonLabel={seasonLabel}
-            highlightTeams={highlightTeams}
-            onRowPress={onTeamPress}
-            tierColor={group === 'standard'}
-            competitionId={group === 'standard' ? competitionId : null}
-            bandDivideAfter={view.bandDivideAfter}
-            metricColumn={view.metric}
-          />
+          {view.needsResults ? null : (
+            <StandingsTable
+              standings={view.rows}
+              seasonLabel={seasonLabel}
+              highlightTeams={highlightTeams}
+              onRowPress={onTeamPress}
+              tierColor={group === 'standard'}
+              competitionId={group === 'standard' ? competitionId : null}
+              bandMembers={view.bandMembers}
+              band={group === 'ppg' && band !== 'plain' ? band : undefined}
+              metricColumn={view.metric}
+            />
+          )}
         </>
       )}
     </View>
@@ -233,11 +247,8 @@ const MARKET_LABEL: Record<InsightMarket, string> = INSIGHT_MARKETS.reduce(
 const SCOPE_LABEL: Record<Split, string> = { overall: 'Overall', home: 'Home', away: 'Away' };
 const PERIOD_LABEL: Record<Period, string> = { ft: 'Full-time', '1h': '1st half', '2h': '2nd half' };
 
-function confidenceColor(v: number): string {
-  if (v >= 66) return theme.accentGreen;
-  if (v >= 45) return theme.yellow;
-  return theme.loss;
-}
+/** The app-wide traffic light — see utils/compliance. */
+const confidenceColor = (v: number): string => complianceColor(complianceFromPercent(v));
 
 function InsightsPanel({
   base,
@@ -246,6 +257,7 @@ function InsightsPanel({
   minPct,
   highlightTeams,
   onTeamPress,
+  feed,
 }: {
   base: StandingRow[];
   market: InsightMarket;
@@ -253,8 +265,12 @@ function InsightsPanel({
   minPct: number;
   highlightTeams?: string[];
   onTeamPress?: (team: string) => void;
+  feed?: MatchFeed | null;
 }) {
-  const rows = useMemo(() => buildInsights(base, { market, scope }), [base, market, scope]);
+  const rows = useMemo(
+    () => buildInsights(base, { market, scope }, feed ?? undefined),
+    [base, market, scope, feed],
+  );
   const matches = rows.filter((r) => r.value >= minPct);
   const highlight = new Set(highlightTeams ?? []);
   const fixtureRows = (highlightTeams ?? [])
@@ -294,6 +310,11 @@ function InsightsPanel({
         {matches.length} of {rows.length} teams · {marketLabel} {minPct > 0 ? `${minPct}%+ ` : ''}
         ({scopeLabel})
       </Text>
+      <Text style={styles.note}>
+        {rows.length === 0
+          ? 'Counted from the season’s finished results, which are not loaded here.'
+          : `Hit-rate = matches the market landed in ÷ ${scopeLabel.toLowerCase()} matches played. Counted from finished results only.`}
+      </Text>
 
       <View style={styles.insightList}>
         {matches.map((r, i) => {
@@ -326,7 +347,11 @@ function InsightsPanel({
           );
         })}
         {matches.length === 0 ? (
-          <Text style={styles.insightEmpty}>No team clears {minPct}% here — lower the threshold.</Text>
+          <Text style={styles.insightEmpty}>
+            {rows.length === 0
+              ? 'No finished results loaded for this competition yet.'
+              : `No team clears ${minPct}% here — lower the threshold.`}
+          </Text>
         ) : null}
       </View>
     </View>
@@ -347,6 +372,14 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodyMedium,
     fontSize: 12,
     color: theme.textPrimary,
+    marginBottom: spacing.xs,
+  },
+  // How the numbers on screen were counted.
+  note: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: theme.textMuted,
+    lineHeight: 15,
     marginBottom: spacing.sm,
   },
   // Bet Finder

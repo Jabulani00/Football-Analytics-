@@ -4,7 +4,7 @@ import ComplianceBadge from '@/components/analytics/ComplianceBadge';
 import SectionLabel from '@/components/shared/SectionLabel';
 import { getLeagueIntel } from '@/mock/leagueAnalyticsData';
 import type { League } from '@/mock/leaguesData';
-import { complianceColor } from '@/utils/compliance';
+import { complianceColor, complianceFromPercent } from '@/utils/compliance';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
 type LeagueIntelligencePanelProps = {
@@ -43,13 +43,13 @@ export default function LeagueIntelligencePanel({ league }: LeagueIntelligencePa
         {stats.map((row) => (
           <View key={row.label} style={styles.statsRow}>
             <Text style={[styles.statCell, styles.statLabelCol, styles.statName]}>{row.label}</Text>
-            <Text style={[styles.statCell, { color: complianceColor(complianceFrom(row.overall)) }]}>
+            <Text style={[styles.statCell, { color: complianceColor(complianceFromPercent(row.overall)) }]}>
               {row.overall}%
             </Text>
-            <Text style={[styles.statCell, { color: complianceColor(complianceFrom(row.home)) }]}>
+            <Text style={[styles.statCell, { color: complianceColor(complianceFromPercent(row.home)) }]}>
               {row.home}%
             </Text>
-            <Text style={[styles.statCell, { color: complianceColor(complianceFrom(row.away)) }]}>
+            <Text style={[styles.statCell, { color: complianceColor(complianceFromPercent(row.away)) }]}>
               {row.away}%
             </Text>
           </View>
@@ -85,12 +85,6 @@ export default function LeagueIntelligencePanel({ league }: LeagueIntelligencePa
       </View>
     </View>
   );
-}
-
-function complianceFrom(value: number): 'green' | 'yellow' | 'red' {
-  if (value >= 66) return 'green';
-  if (value >= 33) return 'yellow';
-  return 'red';
 }
 
 function SummaryTile({

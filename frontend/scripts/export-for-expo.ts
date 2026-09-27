@@ -6,6 +6,7 @@ import { mkdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
 
 import { mockFixtures } from '../mock/fixturesData';
+import { complianceFromPercent } from '../utils/compliance';
 
 const ROOT = process.cwd();
 const DATA_DIR = join(ROOT, 'assets', 'data');
@@ -43,11 +44,8 @@ function statValue(stat: string, team: string, league: string, table: string) {
   return Math.min(95, Math.max(5, base + mod));
 }
 
-function signal(v: number) {
-  if (v >= 65) return 'green';
-  if (v >= 45) return 'yellow';
-  return 'red';
-}
+/** The app's one traffic light — see utils/compliance. */
+const signal = (v: number) => complianceFromPercent(v);
 
 const ORDINARY_STATS = [
   'sc_pct', 'conc_pct', 'sc_avg', 'conc_avg', 'btts_yes', 'btts_no', 'cs_pct', 'avg_goals',

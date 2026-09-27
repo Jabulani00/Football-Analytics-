@@ -3,13 +3,17 @@ import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import SectionLabel from '@/components/shared/SectionLabel';
 import type { StandingRow } from '@/mock/matchData';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
+import { bandOf, type Band } from '@/utils/leagueTables';
 import type { MetricColumn } from '@/utils/standingsAnalytics';
 import { zonesForCompetition, type ResolvedZone, type ZoneKind } from '@/utils/competitionZones';
 
-type TierZone = 'top' | 'mid' | 'bottom';
-const TIER_COLOR: Record<TierZone, string> = { top: '#16A34A', mid: '#D97706', bottom: '#DC2626' };
-const TIER_LABEL: Record<TierZone, string> = { top: 'Top tier', mid: 'Mid tier', bottom: 'Bottom tier' };
-const TIER_ZONES: TierZone[] = ['top', 'mid', 'bottom'];
+const TIER_COLOR: Record<Band, string> = { green: '#16A34A', yellow: '#D97706', red: '#DC2626' };
+const TIER_LABEL: Record<Band, string> = {
+  green: 'Top third',
+  yellow: 'Middle third',
+  red: 'Bottom third',
+};
+const TIER_BANDS: Band[] = ['green', 'yellow', 'red'];
 
 /** Divider tint per qualification / demotion band. */
 const ZONE_COLOR: Record<ZoneKind, string> = {
@@ -21,14 +25,6 @@ const ZONE_COLOR: Record<ZoneKind, string> = {
   relegation: theme.loss,
 };
 
-/** Green / yellow / red category by table thirds (top / middle / bottom). */
-function getTierZone(pos: number, total: number): TierZone {
-  const third = Math.max(1, Math.ceil(total / 3));
-  if (pos <= third) return 'top';
-  if (pos > total - third) return 'bottom';
-  return 'mid';
-}
-
 type StandingsTableProps = {
   standings: StandingRow[];
   highlightTeams?: string[];
@@ -39,8 +35,14 @@ type StandingsTableProps = {
    * column is a metric rank rather than a league placing.
    */
   tierColor?: boolean;
-  /** Draw a band divider after this many rows (color-band analytics tables). */
-  bandDivideAfter?: number;
+  /**
+   * Teams sitting inside the colour band a band table is measured against.
+   * They get a band-coloured dot, so it is obvious which rows are the band
+   * itself (measured head-to-head) and which are playing against it.
+   */
+  bandMembers?: Set<string>;
+  /** The band those members belong to — picks the dot's colour. */
+  band?: Band;
   /**
    * OddAlerts competition id. When it has curated rules, the table draws
    * labelled qualification / relegation dividers; otherwise none are shown.
@@ -91,20 +93,12 @@ function ZoneSeparator({ zone }: { zone: ResolvedZone }) {
 function TierLegend() {
   return (
     <View style={styles.legend}>
-      {TIER_ZONES.map((z) => (
-        <View key={z} style={styles.legendItem}>
-          <View style={[styles.legendSwatch, { backgroundColor: TIER_COLOR[z] }]} />
-          <Text style={styles.legendText}>{TIER_LABEL[z]}</Text>
+      {TIER_BANDS.map((b) => (
+        <View key={b} style={styles.legendItem}>
+          <View style={[styles.legendSwatch, { backgroundColor: TIER_COLOR[b] }]} />
+          <Text style={styles.legendText}>{TIER_LABEL[b]}</Text>
         </View>
       ))}
-    </View>
-  );
-}
-
-function BandDivider() {
-  return (
-    <View style={styles.bandDivider}>
-      <Text style={styles.bandDividerLabel}>─── ranked by results vs the band ───</Text>
     </View>
   );
 }
@@ -114,6 +108,7 @@ function TableRow({
   highlighted,
   tierColor,
   total,
+  bandColor,
   metricCell,
   onPress,
 }: {
@@ -121,18 +116,21 @@ function TableRow({
   highlighted: boolean;
   tierColor: boolean;
   total: number;
+  /** Set when this row is a member of the band the table measures against. */
+  bandColor?: string;
   metricCell?: { display: string; sub: string };
   onPress?: () => void;
 }) {
-  const tierZone = tierColor ? getTierZone(row.pos, total) : null;
-  const posColor = tierZone ? TIER_COLOR[tierZone] : undefined;
+  const tierBand = tierColor ? bandOf(row.pos, total) : null;
+  const posColor = tierBand ? TIER_COLOR[tierBand] : undefined;
+  const edgeColor = tierBand ? TIER_COLOR[tierBand] : bandColor;
 
   return (
     <Pressable
         onPress={onPress}
         style={({ pressed, hovered }) => [
           styles.row,
-          tierZone ? { borderLeftColor: TIER_COLOR[tierZone] } : null,
+          edgeColor ? { borderLeftColor: edgeColor } : null,
           highlighted && styles.rowHighlighted,
           (pressed || (Platform.OS === 'web' && hovered)) && styles.rowHover,
           onPress && Platform.OS === 'web' ? ({ cursor: 'pointer' } as object) : null,
@@ -140,9 +138,12 @@ function TableRow({
         <Text style={[styles.cell, styles.colPos, posColor ? { color: posColor, fontFamily: fonts.bodySemiBold } : null]}>
           {row.pos}
         </Text>
-        <Text style={[styles.cell, styles.colTeam]} numberOfLines={1}>
-          {row.team}
-        </Text>
+        <View style={styles.colTeam}>
+          {bandColor ? <View style={[styles.bandDot, { backgroundColor: bandColor }]} /> : null}
+          <Text style={styles.teamName} numberOfLines={1}>
+            {row.team}
+          </Text>
+        </View>
         <Text style={styles.cell}>{row.played}</Text>
         <Text style={styles.cell}>{row.won}</Text>
         <Text style={styles.cell}>{row.drawn}</Text>
@@ -172,12 +173,14 @@ export default function StandingsTable({
   highlightTeams = [],
   seasonLabel = 'SCOTTISH PREMIERSHIP — 2024/25',
   tierColor = true,
-  bandDivideAfter,
+  bandMembers,
+  band,
   competitionId,
   metricColumn,
   onRowPress,
 }: StandingsTableProps) {
   const highlights = highlightTeams ?? [];
+  const bandColor = band ? TIER_COLOR[band] : undefined;
   // Empty for any competition without curated rules — no guessed zones.
   const zones = zonesForCompetition(competitionId, standings.length);
   const zoneByPos = new Map(zones.map((z) => [z.afterPos, z]));
@@ -188,7 +191,7 @@ export default function StandingsTable({
       {tierColor ? <TierLegend /> : null}
       <View style={styles.headerRow}>
         <Text style={[styles.headerCell, styles.colPos]}>#</Text>
-        <Text style={[styles.headerCell, styles.colTeam]}>Team</Text>
+        <Text style={[styles.headerCell, styles.colTeamHead]}>Team</Text>
         <Text style={styles.headerCell}>P</Text>
         <Text style={styles.headerCell}>W</Text>
         <Text style={styles.headerCell}>D</Text>
@@ -199,18 +202,18 @@ export default function StandingsTable({
         <Text style={[styles.headerCell, styles.colPts]}>Pts</Text>
         <Text style={[styles.headerCell, styles.colForm]}>{metricColumn ? metricColumn.header : 'Form'}</Text>
       </View>
-      {standings.map((row, i) => (
+      {standings.map((row) => (
         <View key={row.team}>
           <TableRow
             row={row}
             highlighted={highlights.includes(row.team)}
             tierColor={tierColor}
             total={standings.length}
+            bandColor={bandMembers?.has(row.team) ? bandColor : undefined}
             metricCell={metricColumn?.values.get(row.team)}
             onPress={onRowPress ? () => onRowPress(row.team) : undefined}
           />
           {zoneByPos.has(row.pos) ? <ZoneSeparator zone={zoneByPos.get(row.pos)!} /> : null}
-          {bandDivideAfter != null && i + 1 === bandDivideAfter ? <BandDivider /> : null}
         </View>
       ))}
     </View>
@@ -278,9 +281,24 @@ const styles = StyleSheet.create({
   colTeam: {
     flex: 1,
     minWidth: 72,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingRight: spacing.sm,
+  },
+  colTeamHead: {
+    flex: 1,
+    minWidth: 72,
     textAlign: 'left',
     paddingRight: spacing.sm,
   },
+  teamName: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: theme.textPrimary,
+    flexShrink: 1,
+  },
+  bandDot: { width: 6, height: 6, borderRadius: 3 },
   colPts: {
     fontFamily: fonts.bodySemiBold,
   },
@@ -356,18 +374,4 @@ const styles = StyleSheet.create({
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   legendSwatch: { width: 10, height: 10, borderRadius: 2 },
   legendText: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted },
-  bandDivider: {
-    paddingVertical: spacing.sm,
-    alignItems: 'center',
-    backgroundColor: theme.surfaceMuted,
-    borderBottomWidth: layout.borderWidth,
-    borderBottomColor: theme.borderStrong,
-  },
-  bandDividerLabel: {
-    fontFamily: fonts.bodySemiBold,
-    fontSize: 10,
-    color: theme.textMuted,
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-  },
 });

@@ -1,29 +1,44 @@
 /**
  * Standings analytics engine.
  *
- * Takes the base (overall, full-time) league standings and derives every
- * analytics table described in the analytics-integration spec:
+ * Derives every analytics table in the analytics-integration spec from the
+ * season's *real* finished results:
  *
  *   • PPG tables — Overall / Home / Away × Full-time / 1st Half / 2nd Half,
- *     each available plain or as a Green / Yellow / Red performance band.
+ *     plain or measured against the Green / Yellow / Red colour band.
  *   • Last-6 PPG — same split/period matrix, windowed to the last 6 games.
  *   • Recent-form tables — Last 10 / 8 / 6 games × split × period.
- *   • Probability tables — 34 outcome metrics that re-sort the whole table.
+ *   • Probability tables — outcome metrics that re-sort the whole table.
  *
- * The underlying app only stores summary rows (W/D/L, GF/GA, points), so —
- * exactly like the existing deriveHome/deriveAway helpers in leagueFeedData —
- * we synthesise a deterministic per-team match history (seeded by team) and
- * aggregate the requested view from it. Same input always yields the same
- * output, so tables are stable across renders.
+ * Everything is counted, never modelled. The match feed comes from
+ * `utils/leagueTables`, which is built from the competition's finished
+ * fixtures, so `played = won + drawn + lost`, `points = 3·won + drawn` and
+ * `played` can never exceed the matches actually played against the opponents
+ * being measured. A view that has no results to count reports `needsResults`
+ * instead of producing numbers.
  *
  * Every builder returns a plain `StandingRow[]` so the main standings table
  * renders unchanged in structure; only its contents and order respond.
  */
 import type { StandingRow } from '@/mock/matchData';
+import {
+  aggregate,
+  bandRange,
+  scopeMatches,
+  type Band as ColourBand,
+  type MatchFeed,
+  type Period,
+  type PeriodMatch,
+  type Scope,
+  type Split,
+  type TeamMatch,
+  type TeamRecord,
+} from '@/utils/leagueTables';
 
-export type Split = 'overall' | 'home' | 'away';
-export type Period = 'ft' | '1h' | '2h';
-export type Band = 'plain' | 'green' | 'yellow' | 'red';
+export type { Period, Split } from '@/utils/leagueTables';
+
+/** `plain` measures the whole league; the colours measure one band only. */
+export type Band = 'plain' | ColourBand;
 export type FormWindow = 6 | 8 | 10;
 
 export type Selection =
@@ -35,7 +50,7 @@ export type Selection =
 
 /** The value column shown for a probability metric (the stat it's ranked by). */
 export type MetricColumn = {
-  /** Short header, e.g. "SC%" or "E20". */
+  /** Short header, e.g. "SC%" or "PPG". */
   header: string;
   /** Full metric label. */
   full: string;
@@ -45,378 +60,151 @@ export type MetricColumn = {
 
 export type StandingsView = {
   rows: StandingRow[];
-  /** Insert a visual divider after this many rows (band tables only). */
-  bandDivideAfter?: number;
   /** Human-readable description of the active filter. */
   caption: string;
-  /** Present for probability tables — the value shown + ranked per team. */
+  /** How the numbers were counted — spells the arithmetic out on screen. */
+  note?: string;
+  /** Teams sitting inside the selected colour band (band tables only). */
+  bandMembers?: Set<string>;
+  /** Present for probability and band tables — the value shown + ranked per team. */
   metric?: MetricColumn;
   /**
    * Provenance for goal-timing tables: 'measured' when every row came from the
-   * provider's recorded timings, 'partial' when only some did, 'estimated'
-   * when none did. Absent for metrics that are not timing-based.
+   * provider's recorded timings, 'partial' when only some did, 'unavailable'
+   * when the metric cannot be counted from results at all.
    */
-  timingSource?: 'measured' | 'partial' | 'estimated';
+  timingSource?: 'measured' | 'partial' | 'unavailable';
+  /**
+   * The view needs this season's finished results and the caller supplied
+   * none. Callers show a "needs results" state — never invented numbers.
+   */
+  needsResults?: boolean;
 };
 
 // ---------------------------------------------------------------------------
-// Deterministic RNG + hashing
+// Feed access
 // ---------------------------------------------------------------------------
 
-function hash(s: string): number {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
-  return Math.abs(h);
+/** The rows the table renders are keyed by name; the feed is keyed by id. */
+function matchesFor(feed: MatchFeed | undefined, team: string): TeamMatch[] {
+  if (!feed) return [];
+  const id = feed.idByName.get(team);
+  if (id == null) return [];
+  return feed.byTeam.get(id) ?? [];
 }
 
-/** Small deterministic PRNG (mulberry32) — stable per seed. */
-function makeRng(seed: number): () => number {
-  let t = seed >>> 0;
-  return function () {
-    t = (t + 0x6d2b79f5) | 0;
-    let r = Math.imul(t ^ (t >>> 15), 1 | t);
-    r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
-    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-/** Deterministic Poisson draw (Knuth), capped so scorelines stay sane. */
-function samplePoisson(rng: () => number, lambda: number): number {
-  const L = Math.exp(-Math.max(0.05, lambda));
-  let k = 0;
-  let p = 1;
-  do {
-    k++;
-    p *= rng();
-  } while (p > L && k < 8);
-  return k - 1;
+function bandFor(feed: MatchFeed | undefined, team: string): ColourBand | undefined {
+  if (!feed) return undefined;
+  const id = feed.idByName.get(team);
+  return id == null ? undefined : feed.bandByTeam.get(id);
 }
 
 // ---------------------------------------------------------------------------
-// Synthetic match history
+// Rows + ranking
 // ---------------------------------------------------------------------------
 
-type Game = {
-  home: boolean;
-  gf: number; // full-time goals for
-  ga: number; // full-time goals against
-  gf1: number; // first-half goals for
-  ga1: number; // first-half goals against
-};
+type RankedRow = StandingRow & { ppg: number };
 
-type Result = 'W' | 'D' | 'L';
-
-/** Build a deterministic per-team season. Index 0 = most recent game. */
-function genGames(row: StandingRow): Game[] {
-  const rng = makeRng(hash(row.team) * 7 + row.points * 13 + row.gf * 3 + 1);
-
-  const results: Result[] = [];
-  for (let i = 0; i < row.won; i++) results.push('W');
-  for (let i = 0; i < row.drawn; i++) results.push('D');
-  for (let i = 0; i < row.lost; i++) results.push('L');
-  // Fisher-Yates shuffle → recency ordering (index 0 = most recent).
-  for (let i = results.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1));
-    [results[i], results[j]] = [results[j], results[i]];
-  }
-
-  const avgFor = row.played ? row.gf / row.played : 1;
-  const avgAgainst = row.played ? row.ga / row.played : 1;
-
-  const games: Game[] = results.map((res) => {
-    let gf = 0;
-    let ga = 0;
-    // Poisson draws let 0-goal games (clean sheets, 0-0s, failed-to-score)
-    // occur at realistic rates, so BTTS/CS/FTS markets are meaningful.
-    if (res === 'W') {
-      gf = Math.max(1, samplePoisson(rng, Math.max(1.1, avgFor)));
-      ga = samplePoisson(rng, Math.max(0.5, avgAgainst * 0.7));
-      if (ga >= gf) ga = gf - 1;
-    } else if (res === 'L') {
-      ga = Math.max(1, samplePoisson(rng, Math.max(1.1, avgAgainst)));
-      gf = samplePoisson(rng, Math.max(0.5, avgFor * 0.7));
-      if (gf >= ga) gf = ga - 1;
-    } else {
-      const g = samplePoisson(rng, Math.max(0.4, ((avgFor + avgAgainst) / 2) * 0.85));
-      gf = g;
-      ga = g;
-    }
-    gf = Math.max(0, gf);
-    ga = Math.max(0, ga);
-    const gf1 = Math.min(gf, Math.round(gf * (0.35 + rng() * 0.3)));
-    const ga1 = Math.min(ga, Math.round(ga * (0.35 + rng() * 0.3)));
-    return { home: false, gf, ga, gf1, ga1 };
-  });
-
-  // Assign ~half the games as home, seeded independently of recency.
-  const homeTarget = Math.ceil(games.length / 2);
-  const idxs = games.map((_, i) => i);
-  for (let i = idxs.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1));
-    [idxs[i], idxs[j]] = [idxs[j], idxs[i]];
-  }
-  for (let i = 0; i < homeTarget; i++) games[idxs[i]].home = true;
-
-  return games;
-}
-
-// ---------------------------------------------------------------------------
-// Aggregation helpers
-// ---------------------------------------------------------------------------
-
-function periodGoals(g: Game, period: Period): { gf: number; ga: number } {
-  if (period === '1h') return { gf: g.gf1, ga: g.ga1 };
-  if (period === '2h') return { gf: g.gf - g.gf1, ga: g.ga - g.ga1 };
-  return { gf: g.gf, ga: g.ga };
-}
-
-function resultOf(gf: number, ga: number): Result {
-  return gf > ga ? 'W' : gf < ga ? 'L' : 'D';
-}
-
-/**
- * Re-express each game so its full-time goals become the chosen period's goals
- * (e.g. 1st-half only). Lets the probability metrics be computed for Full-time,
- * 1st Half or 2nd Half.
- */
-function projectPeriod(games: Game[], period: Period): Game[] {
-  if (period === 'ft') return games;
-  return games.map((g) => {
-    const p = periodGoals(g, period);
-    return { home: g.home, gf: p.gf, ga: p.ga, gf1: Math.round(p.gf * 0.5), ga1: Math.round(p.ga * 0.5) };
-  });
-}
-
-function filterSplit(games: Game[], split: Split): Game[] {
-  if (split === 'home') return games.filter((g) => g.home);
-  if (split === 'away') return games.filter((g) => !g.home);
-  return games;
-}
-
-type Agg = {
-  team: string;
-  played: number;
-  won: number;
-  drawn: number;
-  lost: number;
-  gf: number;
-  ga: number;
-  points: number;
-  ppg: number;
-  form: Result[];
-};
-
-function aggregate(team: string, games: Game[], period: Period): Agg {
-  let won = 0;
-  let drawn = 0;
-  let lost = 0;
-  let gf = 0;
-  let ga = 0;
-  for (const g of games) {
-    const p = periodGoals(g, period);
-    gf += p.gf;
-    ga += p.ga;
-    const r = resultOf(p.gf, p.ga);
-    if (r === 'W') won++;
-    else if (r === 'D') drawn++;
-    else lost++;
-  }
-  const form: Result[] = [];
-  for (let i = 0; i < Math.min(5, games.length); i++) {
-    const p = periodGoals(games[i], period);
-    form.push(resultOf(p.gf, p.ga));
-  }
-  const played = games.length;
-  const points = won * 3 + drawn;
-  return { team, played, won, drawn, lost, gf, ga, points, ppg: played ? points / played : 0, form };
-}
-
-function aggToRow(a: Agg): StandingRow & { ppg: number } {
+function recordToRow(team: string, rec: TeamRecord): RankedRow {
   return {
     pos: 0,
-    team: a.team,
-    played: a.played,
-    won: a.won,
-    drawn: a.drawn,
-    lost: a.lost,
-    gf: a.gf,
-    ga: a.ga,
-    gd: a.gf - a.ga,
-    points: a.points,
-    form: a.form,
-    ppg: a.ppg,
+    team,
+    played: rec.played,
+    won: rec.won,
+    drawn: rec.drawn,
+    lost: rec.lost,
+    gf: rec.goalsFor,
+    ga: rec.goalsAgainst,
+    gd: rec.goalDiff,
+    points: rec.points,
+    form: rec.form,
+    ppg: rec.ppg,
   };
 }
 
-function sortRank(rows: (StandingRow & { ppg?: number })[]): StandingRow[] {
+/**
+ * Rank by points per game, so a team that has played fewer of the matches in
+ * scope is not punished for it, then by the raw tallies. A team with nothing in
+ * scope yet has no rate to rank and collects at the bottom.
+ */
+function sortRank(rows: RankedRow[]): StandingRow[] {
   return [...rows]
     .sort((a, b) => {
-      const pa = a.ppg ?? a.points / Math.max(1, a.played);
-      const pb = b.ppg ?? b.points / Math.max(1, b.played);
-      if (pb !== pa) return pb - pa;
+      if ((a.played === 0) !== (b.played === 0)) return a.played === 0 ? 1 : -1;
+      if (b.ppg !== a.ppg) return b.ppg - a.ppg;
       if (b.points !== a.points) return b.points - a.points;
-      return b.gd - a.gd;
+      if (b.gd !== a.gd) return b.gd - a.gd;
+      if (b.gf !== a.gf) return b.gf - a.gf;
+      return a.team.localeCompare(b.team);
     })
-    .map((r, i) => ({
-      pos: i + 1,
-      team: r.team,
-      played: r.played,
-      won: r.won,
-      drawn: r.drawn,
-      lost: r.lost,
-      gf: r.gf,
-      ga: r.ga,
-      gd: r.gd,
-      points: r.points,
-      form: r.form,
-    }));
+    .map((r, i) => ({ ...r, pos: i + 1 }));
 }
 
-/** Cache one synthetic season per team for the duration of a build. */
-function gamesMap(base: StandingRow[]): Map<string, Game[]> {
-  const m = new Map<string, Game[]>();
-  for (const r of base) m.set(r.team, genGames(r));
-  return m;
-}
-
-// ---------------------------------------------------------------------------
-// PPG / windowed tables
-// ---------------------------------------------------------------------------
-
-function buildPPGTable(
-  base: StandingRow[],
-  games: Map<string, Game[]>,
-  split: Split,
-  period: Period,
-  window?: number,
-): StandingRow[] {
-  // Where we hold the real numbers (overall, full-time, whole season), use them
-  // verbatim so the analytics view matches the actual standings.
-  if (split === 'overall' && period === 'ft' && !window) {
-    return sortRank(
-      base.map((r) => ({ ...r, ppg: r.points / Math.max(1, r.played) })),
+/** PPG column: the rate a table is ranked by, with its sum underneath. */
+function ppgColumn(rows: RankedRow[]): MetricColumn {
+  const values = new Map<string, { display: string; sub: string }>();
+  for (const r of rows) {
+    values.set(
+      r.team,
+      r.played === 0
+        ? { display: '—', sub: 'no games in scope' }
+        : {
+            display: r.ppg.toFixed(2),
+            sub: `${r.points} pts / ${r.played} ${r.played === 1 ? 'game' : 'games'}`,
+          },
     );
   }
-  const rows = base.map((r) => {
-    let g = filterSplit(games.get(r.team)!, split);
-    if (window) g = g.slice(0, window);
-    return aggToRow(aggregate(r.team, g, period));
-  });
-  return sortRank(rows);
+  return { header: 'PPG', full: 'Points per game', values };
 }
 
 // ---------------------------------------------------------------------------
-// Color-band tables (perform-against-band)
+// PPG / windowed / band tables
 // ---------------------------------------------------------------------------
 
-type BandRecord = { pts: number; w: number; d: number; l: number; gf: number; ga: number; games: number };
+function buildScopedRows(base: StandingRow[], feed: MatchFeed, scope: Scope): RankedRow[] {
+  return base.map((r) => recordToRow(r.team, aggregate(matchesFor(feed, r.team), scope)));
+}
 
 /**
- * A team's record against a colour band, bounded by the games it has actually
- * played. We can't exceed `played` real matches — a side that has played 2
- * games can't have 10 results (or 18 points) versus a band. So we estimate how
- * many of those games fell against the band (proportional to the band's size)
- * and simulate only that many, seeded deterministically.
+ * How many of the matches in scope could be counted for the chosen period.
+ * The half tables need a recorded `ht_score`; a match without one is dropped,
+ * so the table says how many it dropped instead of filling the gap.
+ *
+ * Measured over the whole scope, never the recency window — the question is
+ * "how many of your matches carry a half-time score", not "of your last six".
  */
-function recordVsBand(
-  team: StandingRow,
-  bandTeams: string[],
-  strength: Map<string, number>,
-  totalTeams: number,
-): BandRecord {
-  const nOpponents = Math.max(1, totalTeams - 1);
-  const estimate = Math.round((team.played * bandTeams.length) / nOpponents);
-  const games = Math.max(0, Math.min(team.played, estimate));
-
-  const me = strength.get(team.team) ?? 0;
-  const rng = makeRng(hash(team.team) * 71 + bandTeams.length * 13 + 5);
-  const rec: BandRecord = { pts: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, games };
-
-  for (let i = 0; i < games; i++) {
-    const opp = bandTeams[i % bandTeams.length];
-    const so = strength.get(opp) ?? 0;
-    const home = i % 2 === 0;
-    const diff = me - so + (home ? 0.3 : -0.15) + (rng() - 0.5) * 1.3;
-    const res: Result = diff > 0.4 ? 'W' : diff < -0.4 ? 'L' : 'D';
-    let mg = Math.max(0, Math.round(1 + me * 0.6 + (res === 'W' ? 1 : 0) + (rng() - 0.5)));
-    let og = Math.max(0, Math.round(1 + so * 0.6 + (res === 'L' ? 1 : 0) + (rng() - 0.5)));
-    if (res === 'W' && mg <= og) mg = og + 1;
-    if (res === 'L' && og <= mg) og = mg + 1;
-    if (res === 'D') og = mg;
-    rec.gf += mg;
-    rec.ga += og;
-    if (res === 'W') {
-      rec.pts += 3;
-      rec.w++;
-    } else if (res === 'D') {
-      rec.pts += 1;
-      rec.d++;
-    } else {
-      rec.l++;
-    }
-  }
-  return rec;
-}
-
-function bandGroups(plain: StandingRow[]): { green: string[]; yellow: string[]; red: string[] } {
-  const n = plain.length;
-  const third = Math.max(1, Math.ceil(n / 3));
-  const green = plain.slice(0, third).map((r) => r.team);
-  const red = plain.slice(Math.max(third, n - third)).map((r) => r.team);
-  const redSet = new Set(red);
-  const greenSet = new Set(green);
-  const yellow = plain.filter((r) => !greenSet.has(r.team) && !redSet.has(r.team)).map((r) => r.team);
-  return { green, yellow, red };
-}
-
-function buildBandTable(
+function periodCoverage(
   base: StandingRow[],
-  games: Map<string, Game[]>,
-  split: Split,
-  period: Period,
-  band: Exclude<Band, 'plain'>,
-): { rows: StandingRow[]; bandDivideAfter: number } {
-  const plain = buildPPGTable(base, games, split, period);
-  const groups = bandGroups(plain);
-  const bandTeams = groups[band];
-  const bandSet = new Set(bandTeams);
+  feed: MatchFeed,
+  scope: Scope,
+): { counted: number; eligible: number } {
+  const unwindowed: Scope = { ...scope, window: undefined };
+  let counted = 0;
+  let eligible = 0;
+  for (const r of base) {
+    const s = scopeMatches(matchesFor(feed, r.team), unwindowed);
+    counted += s.matches.length;
+    eligible += s.eligible;
+  }
+  return { counted, eligible };
+}
 
-  const strength = new Map<string, number>();
-  for (const r of plain) strength.set(r.team, r.points / Math.max(1, r.played));
-
-  // Band teams shown at the top in their plain order.
-  const plainByTeam = new Map(plain.map((r) => [r.team, r]));
-  const bandRows: StandingRow[] = bandTeams
-    .map((t) => plainByTeam.get(t)!)
-    .map((r, i) => ({ ...r, pos: i + 1 }));
-
-  // Everyone else ranked purely by points earned against the band — bounded by
-  // the number of games each team has actually played.
-  const others = base.filter((r) => !bandSet.has(r.team));
-  const scored = others.map((r) => {
-    const rec = recordVsBand(r, bandTeams, strength, base.length);
-    return {
-      pos: 0,
-      team: r.team,
-      played: rec.games,
-      won: rec.w,
-      drawn: rec.d,
-      lost: rec.l,
-      gf: rec.gf,
-      ga: rec.ga,
-      gd: rec.gf - rec.ga,
-      points: rec.pts,
-      form: r.form,
-    } satisfies StandingRow;
-  });
-  scored.sort((a, b) => (b.points !== a.points ? b.points - a.points : b.gd - a.gd));
-  const otherRows = scored.map((r, i) => ({ ...r, pos: bandRows.length + i + 1 }));
-
-  return { rows: [...bandRows, ...otherRows], bandDivideAfter: bandRows.length };
+/**
+ * The league table is the provider's; the feed is its fixture list. When the
+ * feed holds fewer results than the table claims were played, say so — a short
+ * feed makes every derived table short, and hiding that would make the numbers
+ * look like a miscalculation.
+ */
+function completenessNote(base: StandingRow[], feed: MatchFeed): string {
+  const tablePlayed = base.reduce((s, r) => s + r.played, 0);
+  let feedPlayed = 0;
+  for (const r of base) feedPlayed += matchesFor(feed, r.team).length;
+  if (tablePlayed === 0 || feedPlayed >= tablePlayed) return '';
+  return ` ${feedPlayed} of the ${tablePlayed} team-matches in the league table have a loaded result so far.`;
 }
 
 // ---------------------------------------------------------------------------
-// Probability metrics (34)
+// Probability metrics
 // ---------------------------------------------------------------------------
 
 export type ProbMetricKey =
@@ -494,19 +282,20 @@ export const PROB_METRICS: ProbMetric[] = [
   { key: 'early2h', label: 'Late goals conceded — from 70 min', short: 'LC70' },
 ];
 
-function pct(games: Game[], cond: (g: Game) => boolean): number {
+function pct(games: PeriodMatch[], cond: (g: PeriodMatch) => boolean): number {
   if (!games.length) return 0;
   return (games.filter(cond).length / games.length) * 100;
 }
 
-function probValue(row: StandingRow, games: Game[], metric: ProbMetricKey): number {
-  const total = (g: Game) => g.gf + g.ga;
+function probValue(games: PeriodMatch[], metric: ProbMetricKey): number {
+  const total = (g: PeriodMatch) => g.gf + g.ga;
   const n = games.length || 1;
-  const rng = makeRng(hash(row.team) + hash(metric) * 101);
   switch (metric) {
     case 'sc':
+    case 'tsc05':
       return pct(games, (g) => g.gf >= 1);
     case 'conc':
+    case 'tconc05':
       return pct(games, (g) => g.ga >= 1);
     case 'scm':
       return games.reduce((s, g) => s + g.gf, 0) / n;
@@ -528,6 +317,8 @@ function probValue(row: StandingRow, games: Game[], metric: ProbMetricKey): numb
       return pct(games, (g) => g.gf === g.ga);
     case 'l':
       return pct(games, (g) => g.gf < g.ga);
+    case 'o05':
+      return pct(games, (g) => total(g) >= 1);
     case 'o15':
       return pct(games, (g) => total(g) >= 2);
     case 'o25':
@@ -536,6 +327,8 @@ function probValue(row: StandingRow, games: Game[], metric: ProbMetricKey): numb
       return pct(games, (g) => total(g) >= 4);
     case 'o45':
       return pct(games, (g) => total(g) >= 5);
+    case 'u05':
+      return pct(games, (g) => total(g) === 0);
     case 'u15':
       return pct(games, (g) => total(g) <= 1);
     case 'u25':
@@ -544,14 +337,6 @@ function probValue(row: StandingRow, games: Game[], metric: ProbMetricKey): numb
       return pct(games, (g) => total(g) <= 3);
     case 'u45':
       return pct(games, (g) => total(g) <= 4);
-    case 'o05':
-      return pct(games, (g) => total(g) >= 1);
-    case 'u05':
-      return pct(games, (g) => total(g) === 0);
-    case 'tsc05':
-      return pct(games, (g) => g.gf >= 1);
-    case 'tconc05':
-      return pct(games, (g) => g.ga >= 1);
     case 'tsc15':
       return pct(games, (g) => g.gf >= 2);
     case 'tconc15':
@@ -562,23 +347,8 @@ function probValue(row: StandingRow, games: Game[], metric: ProbMetricKey): numb
       return pct(games, (g) => g.ga >= 3);
     case 'handicap':
       return games.reduce((s, g) => s + (g.gf - g.ga), 0) / n;
-    case 'scoredFirst': {
-      // No minute data — anchor to attacking strength with a stable jitter.
-      const base = pct(games, (g) => g.gf >= 1);
-      return Math.min(100, base * 0.6 + (rng() - 0.5) * 12 + 15);
-    }
-    case 'early1h':
-      // Share of matches scoring inside the opening 15 minutes (~a third of
-      // the half), so the estimate lands near the measured window.
-      return Math.min(100, pct(games, (g) => g.gf1 >= 1) * 0.35 + rng() * 5);
-    case 'early2h':
-      // Late goals conceded — estimated from second-half goals against.
-      return Math.min(100, pct(games, (g) => g.ga - g.ga1 >= 1) * 0.6 + rng() * 10);
-    case 'earlyConc':
-      return Math.min(100, pct(games, (g) => g.ga1 >= 1) * 0.35 + rng() * 5);
-    case 'late':
-      return Math.min(100, pct(games, (g) => g.gf - g.gf1 >= 1) * 0.6 + rng() * 10);
     default:
+      // Goal-order and goal-minute metrics are not in a final score.
       return 0;
   }
 }
@@ -587,25 +357,30 @@ function probValue(row: StandingRow, games: Game[], metric: ProbMetricKey): numb
 const AVG_METRICS = new Set<ProbMetricKey>(['scm', 'concm', 'avg', 'handicap']);
 
 /**
- * Metrics that are about *when* a goal arrives rather than how often. These
- * show a minute as the headline value and rank by it, so the table answers
- * "who gets there first?" — the percentage moves to the supporting stat line.
+ * Metrics that are about *when* a goal arrives rather than how often. A final
+ * score does not carry minutes, so these are answered by the provider's
+ * recorded timings or not at all.
  */
 type TimingSpec = {
   /** Goals the team scores, or the ones it ships. */
   side: 'for' | 'against';
   /** Which goal of the game we time — the opening one or the closing one. */
   edge: 'first' | 'last';
-  /** Wording for the percentage on the stat line, e.g. "by 20'". */
-  windowLabel: string;
 };
 
 const TIMING_SPECS: Partial<Record<ProbMetricKey, TimingSpec>> = {
-  early1h: { side: 'for', edge: 'first', windowLabel: "scored by 15'" },
-  early2h: { side: 'against', edge: 'last', windowLabel: "from 70'" },
-  earlyConc: { side: 'against', edge: 'first', windowLabel: "conceded by 15'" },
-  late: { side: 'for', edge: 'last', windowLabel: "from 70'" },
+  early1h: { side: 'for', edge: 'first' },
+  early2h: { side: 'against', edge: 'last' },
+  earlyConc: { side: 'against', edge: 'first' },
+  late: { side: 'for', edge: 'last' },
 };
+
+/**
+ * Which goal came first is not in a final score either, and the season-stats
+ * endpoint does not measure it (see docs/ODDALERTS_API_GAPS.md). It is reported
+ * as unavailable rather than inferred from half-time leads.
+ */
+const NOT_IN_A_SCORE = new Set<ProbMetricKey>(['scoredFirst']);
 
 /**
  * Measured goal timing for one team, as supplied by the caller.
@@ -623,10 +398,26 @@ export type TeamTiming = {
   coveragePct: number;
 };
 
+type Cell = {
+  value: number;
+  asc: boolean;
+  display: string;
+  sub: string;
+  /** No value for this team — always sorts last, never ranked. */
+  missing?: boolean;
+};
+
+/**
+ * Below this many matches an "average first goal minute" is really just one
+ * match, and a percentage is only ever 0 or 100. Values still show, but the
+ * stat line reports the sample instead of a meaningless rate.
+ */
+const MIN_TIMING_MATCHES = 3;
+
 /**
  * The real cell for a goal-timing metric, or null when this team has no
  * measured timing (a competition the provider does not cover, or a side that
- * has not scored yet). Callers fall back to the estimate in that case.
+ * has not scored yet).
  *
  * `first`-edge metrics headline the average minute and rank earliest-first;
  * `last`-edge metrics headline the share of matches with a late goal, because
@@ -663,58 +454,9 @@ function realTimingCell(metric: ProbMetricKey, t: TeamTiming, played: number): C
 }
 
 /** Placeholder for a team the provider has no measured value for. */
-function missingCell(asc: boolean): Cell {
-  return { value: asc ? Infinity : -Infinity, asc, display: '—', sub: 'not yet', missing: true };
+function missingCell(asc: boolean, sub = 'not yet'): Cell {
+  return { value: asc ? Infinity : -Infinity, asc, display: '—', sub, missing: true };
 }
-
-/** The minutes a period can actually contain a goal in. */
-function periodBounds(period: Period): { lo: number; hi: number } {
-  if (period === '1h') return { lo: 1, hi: 45 };
-  if (period === '2h') return { lo: 46, hi: 90 };
-  return { lo: 1, hi: 90 };
-}
-
-/**
- * Estimated minute of a team's opening (or closing) goal. No real minute data
- * exists in the synthetic history, so — like the app's other goal-timing
- * estimates — we derive a deterministic, plausible minute: the more often a
- * side scores, the sooner its first goal lands (and the later its last one).
- * The result is clamped to the period on screen, so a 2nd-half table never
- * reports a first-half minute.
- */
-function synthGoalMinute(
-  row: StandingRow,
-  games: Game[],
-  spec: TimingSpec,
-  period: Period,
-): number {
-  const rng = makeRng(hash(row.team) * 53 + hash(spec.side + spec.edge) * 17 + 7);
-  const scored = games.reduce((s, g) => s + (spec.side === 'for' ? g.gf : g.ga), 0);
-  const gpm = games.length ? scored / games.length : 0.9;
-  const rate = Math.min(1, gpm / 2.4); // 0 (rare) … 1 (frequent)
-  // A prolific side opens early; its last goal, by the same token, comes late.
-  const frac = spec.edge === 'first' ? 0.62 - rate * 0.42 : 0.5 + rate * 0.38;
-  const jitter = (rng() - 0.5) * 0.14;
-  const { lo, hi } = periodBounds(period);
-  const t = Math.min(0.97, Math.max(0.05, frac + jitter));
-  return Math.round(lo + (hi - lo) * t);
-}
-
-type Cell = {
-  value: number;
-  asc: boolean;
-  display: string;
-  sub: string;
-  /** No measured value for this team — always sorts last, never ranked. */
-  missing?: boolean;
-};
-
-/**
- * Below this many matches an "average first goal minute" is really just one
- * match, and a percentage is only ever 0 or 100. Values still show, but the
- * stat line reports the sample instead of a meaningless rate.
- */
-const MIN_TIMING_MATCHES = 3;
 
 /**
  * The value + supporting stat shown for one team on a probability metric, plus
@@ -722,48 +464,28 @@ const MIN_TIMING_MATCHES = 3;
  */
 function metricCell(
   row: StandingRow,
-  games: Game[],
+  games: PeriodMatch[],
   metric: ProbMetricKey,
-  period: Period,
   measured?: TeamTiming,
-  /** True when this column is being built from the provider's timings. */
-  measuredColumn = false,
 ): Cell {
   const n = games.length;
 
   const spec = TIMING_SPECS[metric];
   if (spec) {
-    // A column is either measured or estimated — never a mix. Ranking an
-    // invented minute against recorded ones would let a team that has not
-    // scored outrank teams that have.
-    if (measuredColumn) {
-      const real = measured ? realTimingCell(metric, measured, row.played) : null;
-      return real ?? missingCell(spec.edge === 'first');
-    }
-    // Fallback estimate. It must mirror the measured column's shape, or the
-    // same metric would read as a minute for one competition and a rate for
-    // another: a minute for the first-goal pair, a rate for the late pair.
-    if (spec.edge === 'last') {
-      const v = probValue(row, games, metric);
-      return { value: v, asc: false, display: `${Math.round(v)}%`, sub: `~${Math.round((v / 100) * n)} of ${n} est.` };
-    }
-    const minute = synthGoalMinute(row, games, spec, period);
-    const hitRate = Math.round(probValue(row, games, metric));
-    return {
-      value: minute,
-      asc: true,
-      display: `${minute}'`,
-      sub: `${hitRate}% ${spec.windowLabel} est.`,
-    };
+    const real = measured ? realTimingCell(metric, measured, row.played) : null;
+    return real ?? missingCell(spec.edge === 'first', 'no recorded timing');
   }
+  if (NOT_IN_A_SCORE.has(metric)) return missingCell(false, 'needs goal order');
 
-  const v = probValue(row, games, metric);
+  const v = probValue(games, metric);
 
   if (AVG_METRICS.has(metric)) {
     const display = metric === 'handicap' ? `${v >= 0 ? '+' : ''}${v.toFixed(2)}` : v.toFixed(2);
     const sub = metric === 'handicap' ? 'avg goal margin' : 'goals / match';
     return { value: v, asc: false, display, sub };
   }
+
+  if (n === 0) return missingCell(false, 'no games in scope');
 
   // Percentage metrics: show the % and how many of the games hit it.
   const hits = Math.round((v / 100) * n);
@@ -772,47 +494,39 @@ function metricCell(
 
 function buildProbTable(
   base: StandingRow[],
-  games: Map<string, Game[]>,
+  gamesFor: (team: string) => PeriodMatch[],
   metric: ProbMetricKey,
   period: Period,
   timing?: Map<string, TeamTiming>,
 ): { rows: StandingRow[]; metric: MetricColumn; measuredCount: number; thinCount: number } {
   // Measured timing covers the whole match, so it answers the Full-time view
-  // only; the half views keep the estimate. If the provider has a value for at
-  // least one team, the whole column is measured and the rest read "—".
-  const measuredCount =
-    TIMING_SPECS[metric] && period === 'ft' && timing
-      ? base.filter((r) => {
-          const t = timing.get(r.team);
-          return !!t && realTimingCell(metric, t, r.played) !== null;
-        }).length
-      : 0;
-  const measuredColumn = measuredCount > 0;
+  // only; the half views have nothing to read.
+  const useTiming = !!TIMING_SPECS[metric] && period === 'ft' ? timing : undefined;
+  const measuredCount = useTiming
+    ? base.filter((r) => {
+        const t = useTiming.get(r.team);
+        return !!t && realTimingCell(metric, t, r.played) !== null;
+      }).length
+    : 0;
 
   const cells = base.map((r) => ({
     row: r,
-    cell: metricCell(
-      r,
-      projectPeriod(games.get(r.team)!, period),
-      metric,
-      period,
-      timing?.get(r.team),
-      measuredColumn,
-    ),
+    cell: metricCell(r, gamesFor(r.team), metric, useTiming?.get(r.team)),
   }));
 
   const asc = cells[0]?.cell.asc ?? false;
   cells.sort((a, b) => {
-    // Teams with no measured value are not ranked — they collect at the bottom.
+    // Teams with no value are not ranked — they collect at the bottom.
     if (a.cell.missing !== b.cell.missing) return a.cell.missing ? 1 : -1;
-    return asc ? a.cell.value - b.cell.value : b.cell.value - a.cell.value;
+    if (a.cell.value !== b.cell.value) return asc ? a.cell.value - b.cell.value : b.cell.value - a.cell.value;
+    return a.row.team.localeCompare(b.row.team);
   });
 
   const values = new Map<string, { display: string; sub: string }>();
   for (const { row, cell } of cells) values.set(row.team, { display: cell.display, sub: cell.sub });
 
   const meta = PROB_METRICS.find((m) => m.key === metric) ?? PROB_METRICS[0];
-  const thinCount = measuredColumn
+  const thinCount = measuredCount
     ? cells.filter((c) => !c.cell.missing && c.row.played < MIN_TIMING_MATCHES).length
     : 0;
   return {
@@ -828,15 +542,7 @@ function buildProbTable(
 // e.g. "teams that hit Home BTTS 60%+ in this league".
 // ---------------------------------------------------------------------------
 
-export type InsightMarket =
-  | 'btts'
-  | 'o15'
-  | 'o25'
-  | 'o35'
-  | 'sc'
-  | 'cs'
-  | 'win'
-  | 'fts';
+export type InsightMarket = 'btts' | 'o15' | 'o25' | 'o35' | 'sc' | 'cs' | 'win' | 'fts';
 
 export const INSIGHT_MARKETS: { key: InsightMarket; label: string; short: string }[] = [
   { key: 'btts', label: 'Both Teams To Score', short: 'BTTS' },
@@ -849,29 +555,17 @@ export const INSIGHT_MARKETS: { key: InsightMarket; label: string; short: string
   { key: 'fts', label: 'Fails To Score', short: 'Fails to Score' },
 ];
 
-function marketValue(games: Game[], market: InsightMarket): number {
-  const total = (g: Game) => g.gf + g.ga;
-  switch (market) {
-    case 'btts':
-      return pct(games, (g) => g.gf >= 1 && g.ga >= 1);
-    case 'o15':
-      return pct(games, (g) => total(g) >= 2);
-    case 'o25':
-      return pct(games, (g) => total(g) >= 3);
-    case 'o35':
-      return pct(games, (g) => total(g) >= 4);
-    case 'sc':
-      return pct(games, (g) => g.gf >= 1);
-    case 'cs':
-      return pct(games, (g) => g.ga === 0);
-    case 'win':
-      return pct(games, (g) => g.gf > g.ga);
-    case 'fts':
-      return pct(games, (g) => g.gf === 0);
-    default:
-      return 0;
-  }
-}
+/** Each insight market is one of the probability metrics, under a friendlier name. */
+const INSIGHT_METRIC: Record<InsightMarket, ProbMetricKey> = {
+  btts: 'bttsY',
+  o15: 'o15',
+  o25: 'o25',
+  o35: 'o35',
+  sc: 'sc',
+  cs: 'cs',
+  win: 'w',
+  fts: 'fts',
+};
 
 export type InsightRow = { team: string; value: number; played: number };
 
@@ -879,14 +573,19 @@ export type InsightRow = { team: string; value: number; played: number };
 export function buildInsights(
   base: StandingRow[],
   opts: { market: InsightMarket; scope: Split },
+  feed?: MatchFeed,
 ): InsightRow[] {
-  const games = gamesMap(base);
+  if (!feed) return [];
   return base
     .map((r) => {
-      const g = filterSplit(games.get(r.team)!, opts.scope);
-      return { team: r.team, value: marketValue(g, opts.market), played: g.length };
+      const { matches } = scopeMatches(matchesFor(feed, r.team), { split: opts.scope });
+      return {
+        team: r.team,
+        value: probValue(matches, INSIGHT_METRIC[opts.market]),
+        played: matches.length,
+      };
     })
-    .sort((a, b) => b.value - a.value);
+    .sort((a, b) => b.value - a.value || a.team.localeCompare(b.team));
 }
 
 // ---------------------------------------------------------------------------
@@ -895,11 +594,31 @@ export function buildInsights(
 
 const SPLIT_LABEL: Record<Split, string> = { overall: 'Overall', home: 'Home', away: 'Away' };
 const PERIOD_LABEL: Record<Period, string> = { ft: 'Full-time', '1h': '1st Half', '2h': '2nd Half' };
-const BAND_LABEL: Record<Exclude<Band, 'plain'>, string> = {
-  green: '🟢 Green band',
-  yellow: '🟡 Yellow band',
-  red: '🔴 Red band',
+const BAND_LABEL: Record<ColourBand, string> = {
+  green: '🟢 Green',
+  yellow: '🟡 Yellow',
+  red: '🔴 Red',
 };
+
+const SPLIT_RULE: Record<Split, string> = {
+  overall: 'every match',
+  home: 'home matches only',
+  away: 'away matches only',
+};
+const PERIOD_RULE: Record<Period, string> = {
+  ft: 'the final score',
+  '1h': 'the half-time score',
+  '2h': 'the second half (full-time minus half-time)',
+};
+
+/** "12 of 14 matches carry a half-time score" — only ever said when it matters. */
+function halfTimeNote(period: Period, counted: number, eligible: number): string {
+  if (period === 'ft' || eligible === counted) return '';
+  return ` ${counted} of ${eligible} matches carry a half-time score; the rest are excluded.`;
+}
+
+const NEEDS_RESULTS_NOTE =
+  'These tables are counted from the season’s finished results, which are not loaded here.';
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -908,60 +627,94 @@ const BAND_LABEL: Record<Exclude<Band, 'plain'>, string> = {
 export function buildStandingsView(
   base: StandingRow[],
   sel: Selection,
-  opts?: { timing?: Map<string, TeamTiming> },
+  opts?: { timing?: Map<string, TeamTiming>; feed?: MatchFeed },
 ): StandingsView {
   if (sel.kind === 'standard') {
     return { rows: base, caption: 'League standings' };
   }
-  const games = gamesMap(base);
 
-  if (sel.kind === 'ppg') {
-    if (sel.band === 'plain') {
+  const feed = opts?.feed;
+
+  if (sel.kind === 'ppg' || sel.kind === 'last6ppg' || sel.kind === 'form') {
+    const split = sel.split;
+    const period = sel.period;
+    const window = sel.kind === 'last6ppg' ? 6 : sel.kind === 'form' ? sel.window : undefined;
+    const band = sel.kind === 'ppg' && sel.band !== 'plain' ? sel.band : undefined;
+    const windowLabel =
+      sel.kind === 'last6ppg' ? 'Last 6' : sel.kind === 'form' ? `Last ${sel.window}` : null;
+
+    const head = band
+      ? `${SPLIT_LABEL[split]} · ${PERIOD_LABEL[period]} · vs ${BAND_LABEL[band]}`
+      : windowLabel
+        ? `${windowLabel} · ${SPLIT_LABEL[split]} · ${PERIOD_LABEL[period]}`
+        : `${SPLIT_LABEL[split]} · ${PERIOD_LABEL[period]} · PPG`;
+
+    if (!feed) {
+      return { rows: [], caption: head, note: NEEDS_RESULTS_NOTE, needsResults: true };
+    }
+
+    const scope: Scope = { split, period, window, vsBand: band };
+    const rows = buildScopedRows(base, feed, scope);
+    const ranked = sortRank(rows);
+    const { counted, eligible } = periodCoverage(base, feed, scope);
+
+    const measure =
+      `Counted from ${SPLIT_RULE[split]} using ${PERIOD_RULE[period]}` +
+      (window ? `, newest ${window} first` : '') +
+      '.' +
+      halfTimeNote(period, counted, eligible) +
+      completenessNote(base, feed);
+
+    if (band) {
+      const { from, to } = bandRange(band, feed.total);
+      const members = new Set(
+        base.filter((r) => bandFor(feed, r.team) === band).map((r) => r.team),
+      );
       return {
-        rows: buildPPGTable(base, games, sel.split, sel.period),
-        caption: `${SPLIT_LABEL[sel.split]} · ${PERIOD_LABEL[sel.period]} · PPG`,
+        rows: ranked,
+        caption: `${head} (${members.size} ${members.size === 1 ? 'team' : 'teams'}, pos ${from}–${to})`,
+        note:
+          `Every row is that team's own record against the ${BAND_LABEL[band]} teams — ` +
+          `band members are measured head-to-head among themselves. ` +
+          `Ranked by PPG = points ÷ games played against the band. ${measure}`,
+        bandMembers: members,
+        metric: ppgColumn(rows),
       };
     }
-    const { rows, bandDivideAfter } = buildBandTable(base, games, sel.split, sel.period, sel.band);
-    return {
-      rows,
-      bandDivideAfter,
-      caption: `${SPLIT_LABEL[sel.split]} · ${PERIOD_LABEL[sel.period]} · ${BAND_LABEL[sel.band]} — points won vs the band`,
-    };
-  }
 
-  if (sel.kind === 'last6ppg') {
-    const rows = buildPPGTable(base, games, sel.split, sel.period, 6).filter((r) => {
-      const src = base.find((b) => b.team === r.team);
-      return (src?.played ?? 0) > 0;
-    });
     return {
-      rows,
-      caption: `${SPLIT_LABEL[sel.split]} · ${PERIOD_LABEL[sel.period]} · Last 6 PPG (teams with matches only)`,
-    };
-  }
-
-  if (sel.kind === 'form') {
-    const rows = buildPPGTable(base, games, sel.split, sel.period, sel.window).filter((r) => {
-      const src = base.find((b) => b.team === r.team);
-      return (src?.played ?? 0) > 0;
-    });
-    return {
-      rows,
-      caption: `Last ${sel.window} · ${SPLIT_LABEL[sel.split]} · ${PERIOD_LABEL[sel.period]} (teams with matches only)`,
+      rows: ranked,
+      caption: head,
+      note: `Ranked by PPG = points ÷ games. ${measure}`,
+      metric: ppgColumn(rows),
     };
   }
 
   // prob
   const meta = PROB_METRICS.find((m) => m.key === sel.metric) ?? PROB_METRICS[0];
+  const spec = TIMING_SPECS[sel.metric];
+
+  // The timing metrics read the provider's season stats, not the results, so
+  // they still answer without a match feed.
+  if (!feed && !spec && !NOT_IN_A_SCORE.has(sel.metric)) {
+    return {
+      rows: [],
+      caption: `${PERIOD_LABEL[sel.period]} · ${meta.label} (${meta.short})`,
+      note: NEEDS_RESULTS_NOTE,
+      needsResults: true,
+    };
+  }
+
+  const scope: Scope = { period: sel.period };
+  const gamesFor = (team: string) => scopeMatches(matchesFor(feed, team), scope).matches;
+
   const { rows, metric, measuredCount, thinCount } = buildProbTable(
     base,
-    games,
+    gamesFor,
     sel.metric,
     sel.period,
     opts?.timing,
   );
-  const spec = TIMING_SPECS[sel.metric];
 
   // Timing metrics rank by the clock, so spell out which end of it leads.
   // 'first'-edge metrics headline a minute; the late-goal pair headline a rate.
@@ -969,24 +722,43 @@ export function buildStandingsView(
 
   let timingSource: StandingsView['timingSource'];
   let provenance = '';
-  if (spec) {
+  let note: string | undefined;
+
+  if (spec || NOT_IN_A_SCORE.has(sel.metric)) {
     // 'partial' still means a measured column — the gap is teams with no value
-    // yet, shown as "—" and left unranked, not swapped for an estimate.
+    // yet, shown as "—" and left unranked.
     timingSource =
-      measuredCount === 0 ? 'estimated' : measuredCount === base.length ? 'measured' : 'partial';
+      measuredCount === 0
+        ? 'unavailable'
+        : measuredCount === base.length
+          ? 'measured'
+          : 'partial';
     const noValue = base.length - measuredCount;
-    provenance =
-      timingSource === 'estimated'
-        ? ' · estimated (no recorded timings)'
-        : ' · recorded timings' +
-          (noValue > 0 ? ` · ${noValue} without a value yet` : '') +
-          (thinCount > 0 ? ` · ${thinCount} from under ${MIN_TIMING_MATCHES} matches` : '');
+    if (timingSource === 'unavailable') {
+      provenance = ' · no recorded timings';
+      note = NOT_IN_A_SCORE.has(sel.metric)
+        ? 'Which team scored first is not in a final score and the provider does not measure it, so no value is shown.'
+        : 'Goal minutes are not in a final score. This metric needs the provider’s recorded timings, and none cover this table.';
+    } else {
+      provenance =
+        ' · recorded timings' +
+        (noValue > 0 ? ` · ${noValue} without a value yet` : '') +
+        (thinCount > 0 ? ` · ${thinCount} from under ${MIN_TIMING_MATCHES} matches` : '');
+      note = "Recorded goal timings from the provider's season stats — nothing estimated.";
+    }
+  } else if (feed) {
+    const { counted, eligible } = periodCoverage(base, feed, scope);
+    note =
+      `Counted from every finished match using ${PERIOD_RULE[sel.period]}.` +
+      halfTimeNote(sel.period, counted, eligible) +
+      completenessNote(base, feed);
   }
 
   return {
     rows,
     metric,
     timingSource,
+    note,
     caption: `${PERIOD_LABEL[sel.period]} · ranked by ${meta.label} (${meta.short})${order}${provenance}`,
   };
 }

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import type { PredictionResult } from '@/hooks/useModel';
+import { complianceColor, complianceFromPercent } from '@/utils/compliance';
 import { fonts, spacing, theme } from '@/styles/theme';
 
 type PredictionBarProps = {
@@ -20,7 +21,7 @@ export default function PredictionBar({ label, probability, source, loading }: P
   }, [probability]);
 
   const pct = Math.round(probability * 100);
-  const barColor = pct >= 65 ? theme.accentGreen : pct >= 45 ? theme.yellow : theme.loss;
+  const barColor = complianceColor(complianceFromPercent(pct));
 
   return (
     <View style={styles.wrap}>

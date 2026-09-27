@@ -5,6 +5,7 @@ import StatsComparisonTable from '@/components/stats/StatsComparisonTable';
 import SubTabBar from '@/components/shared/SubTabBar';
 import { useFixtureFormAnalysis } from '@/hooks/useFixtureFormAnalysis';
 import type { StandingRow } from '@/services/oddAlerts';
+import { COMPLIANCE_RULE_TEXT, PPG_RULE_TEXT } from '@/utils/compliance';
 import {
   buildCoreFixtureStats,
   type CoreStatScope,
@@ -110,8 +111,11 @@ export default function FixtureCoreStatsPanel({
               ? 'PPG / averages from the league table'
               : `From finished matches · ${homeLabel ?? homeName} n=${homeSample} · ${awayLabel ?? awayName} n=${awaySample}`}
             {error ? ` · ${error}` : ''}
-            {' · '}
-            green strong · yellow mid · red weak
+          </Text>
+          <Text style={styles.foot}>
+            Here green means stronger. PPG {PPG_RULE_TEXT} · goals per match 🟢 1.50+
+            scored, 1.00 or fewer conceded · percentages {COMPLIANCE_RULE_TEXT}, read
+            upside-down for conceding so fewer is green · a dash is not measured yet.
           </Text>
         </>
       )}

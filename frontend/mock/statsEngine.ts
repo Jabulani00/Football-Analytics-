@@ -293,6 +293,16 @@ function buildLabeledStats(
   });
 }
 
+/**
+ * Sample PPG for the nine scopes, plus points earned against each third of the
+ * table. The three band figures are the measurement — each is its own average
+ * on the 0–3 scale — and the PPG column is their mean, so a row closes: average
+ * Green / Yellow / Red and you get PPG.
+ *
+ * The previous version split one PPG figure three ways instead, which made the
+ * columns sum to PPG and left a strong side on ~0.16 points per game against
+ * the bottom third — the opposite of what the table claims to show.
+ */
 function buildPpg(fixture: Fixture, ctx: TableCtx): PpgReading[] {
   const homeP = teamProfile(fixture.homeTeam.name);
   const awayP = teamProfile(fixture.awayTeam.name);
@@ -307,16 +317,26 @@ function buildPpg(fixture: Fixture, ctx: TableCtx): PpgReading[] {
     const blend = isHomeScope || isAwayScope ? 1 : 0.55;
     const periodMod = is1H ? 0.45 : is2H ? 0.52 : 1;
     const recencyMod = ctx.group === 'lastN' ? 1.08 + rnd(salt, 0.08, i) : 1;
-    const ppg = +(
+    const base =
       (1.0 + profile.attack * 0.9 + profile.defense * 0.35 + profile.form * 0.4) *
       periodMod *
       recencyMod *
-      blend
-    ).toFixed(2);
-    const green = +(ppg * (0.55 + profile.defense * 0.15)).toFixed(2);
-    const yellow = +(ppg * 0.22 + rnd(salt, 0.08, i + 2)).toFixed(2);
-    const red = +(Math.max(0.05, ppg - green - yellow)).toFixed(2);
-    return { scope, ppg, greenPpg: green, yellowPpg: yellow, redPpg: red };
+      blend;
+
+    // Tougher opponents cost points, so the thirds sit either side of the middle.
+    const gap = 0.35 + profile.attack * 0.4 + rnd(salt, 0.1, i + 2);
+    const ppgAt = (shift: number) => +clamp(base + shift, 0, 3).toFixed(2);
+    const green = ppgAt(-gap);
+    const yellow = ppgAt(rnd(salt, 0.06, i + 5));
+    const red = ppgAt(gap);
+
+    return {
+      scope,
+      ppg: +((green + yellow + red) / 3).toFixed(2),
+      greenPpg: green,
+      yellowPpg: yellow,
+      redPpg: red,
+    };
   });
 }
 

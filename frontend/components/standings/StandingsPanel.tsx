@@ -38,7 +38,7 @@ export default function StandingsPanel() {
   const competition = selectedCompetition;
   const isGroups = isGroupStageTournament(competition?.name ?? '');
   const isCup = !!competition?.isCup;
-  const { standings, tiered, loading, error } = useStandings(
+  const { standings, tiered, feed, loading, error } = useStandings(
     isGroups || isCup ? null : competition,
     isGroups || isCup ? null : selectedSeasonId,
   );
@@ -183,6 +183,7 @@ export default function StandingsPanel() {
               timing={timingByName(standings)}
               competitionId={competition.id}
               seasonName={season?.seasonName ?? null}
+              feed={feed}
               onTeamPress={(team) => {
                 const id = teamIdByName(standings).get(team);
                 if (id != null)

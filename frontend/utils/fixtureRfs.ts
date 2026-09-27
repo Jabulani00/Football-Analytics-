@@ -13,6 +13,7 @@
  */
 
 import type { ComplianceLevel } from '@/types/analytics';
+import { complianceFromPercent, COMPLIANCE_THRESHOLDS } from '@/utils/compliance';
 import {
   levelForRun,
   MIN_SERIES,
@@ -22,8 +23,8 @@ import {
 } from '@/utils/fixtureSeries';
 import { filterScope, type ResultOutcome, type TeamResult } from '@/utils/teamResults';
 
-/** Season rate that makes a behaviour "usual" — the green band of `statSignal`. */
-export const USUAL_MIN_RATE = 65;
+/** Season rate that makes a behaviour "usual" — the green band of the traffic light. */
+export const USUAL_MIN_RATE = COMPLIANCE_THRESHOLDS.green;
 
 /** Fewer scoped games than this and a season rate is not worth calling usual. */
 export const MIN_RFS_SAMPLE = 5;
@@ -109,11 +110,9 @@ export const RFS_ORDINARY_DEFS: OrdinaryDef[] = [
   { key: 'conceding_25', label: 'Conceding 2.5 or more', usual: 'concedes 3 or more', failed: 'conceded fewer than 3', hit: conceding(3) },
 ];
 
-/** Mirrors `statSignal` in services/statsBuilder — the app's traffic lights. */
+/** The app's one traffic light — see utils/compliance. */
 export function levelForRate(rate: number): ComplianceLevel {
-  if (rate >= 65) return 'green';
-  if (rate >= 45) return 'yellow';
-  return 'red';
+  return complianceFromPercent(rate);
 }
 
 type RfsRowBase = {

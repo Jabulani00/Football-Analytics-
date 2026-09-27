@@ -7,7 +7,7 @@ import { useLiveCompetitions } from '@/hooks/useLiveCompetitions';
 import { useLiveStatsTables } from '@/hooks/useLiveStatsTables';
 import { getTeamStatsForTable } from '@/mock/analyticsData';
 import type { StatFamily } from '@/types/analytics';
-import { complianceColor } from '@/utils/compliance';
+import { complianceColor, COMPLIANCE_RULE_TEXT } from '@/utils/compliance';
 import { liveRowsToDisplay, sortByPrimary } from '@/utils/statsTableAdapter';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
@@ -173,8 +173,10 @@ export default function StatsTablesPanel() {
           </ScrollView>
 
           <Text style={styles.footHint}>
-            Colour = performance band · green strong · yellow mid · red weak. Tap a
-            table, period or scope above to explore all 72 views.
+            Colour = how often the stat lands, not whether it is good:{' '}
+            {COMPLIANCE_RULE_TEXT}. Streaks are counted in matches (🟢 3+) and PPG
+            on its 0–3 scale (🟢 1.80+). Tap a table, period or scope above to
+            explore all 72 views.
           </Text>
         </>
       )}

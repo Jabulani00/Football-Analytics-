@@ -267,6 +267,19 @@ export function strategyEvidenceFromContext(
   return evidence;
 }
 
+/**
+ * Colour for a strategy's layer score — the share of required decision layers
+ * that passed, not how often a stat lands. Deliberately not the shared
+ * `complianceFromPercent` rule: five of seven layers passing is a different
+ * claim from a market hitting 71% of the time, and with only a handful of
+ * layers the score moves in coarse steps.
+ */
+function strategyLevel(layersPassedPct: number): ComplianceLevel {
+  if (layersPassedPct >= 70) return 'green';
+  if (layersPassedPct >= 40) return 'yellow';
+  return 'red';
+}
+
 export function evaluateStrategy(
   definition: StrategyDefinition,
   candidate: StrategyCandidate,
@@ -294,7 +307,7 @@ export function evaluateStrategy(
       : compliance >= definition.minimumCompliance
         ? 'qualified'
         : 'rejected';
-  const level: ComplianceLevel = compliance >= 70 ? 'green' : compliance >= 40 ? 'yellow' : 'red';
+  const level: ComplianceLevel = strategyLevel(compliance);
 
   return {
     id: `${definition.id}-${candidate.id}`,

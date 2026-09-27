@@ -361,10 +361,16 @@ export const DEFAULT_BET_SLIP: BetSlipLeg[] = [
   },
 ];
 
+/**
+ * Points per game against each third of the table. Every figure is its own
+ * average on the 0–3 scale, so `ppg` is the mean of the three columns and not
+ * their total — the earlier sample read as a split of one PPG figure, which put
+ * this side on 0.2 points per game against the bottom third.
+ */
 export const PPG_STATS_PREVIEW = [
-  { scope: 'FT Overall', ppg: 2.1, green: 1.4, yellow: 0.5, red: 0.2 },
-  { scope: 'FT Home', ppg: 2.4, green: 1.6, yellow: 0.6, red: 0.2 },
-  { scope: 'FT Away', ppg: 1.8, green: 1.1, yellow: 0.5, red: 0.2 },
-  { scope: '1H Overall', ppg: 1.0, green: 0.6, yellow: 0.3, red: 0.1 },
-  { scope: '2H Overall', ppg: 1.1, green: 0.7, yellow: 0.3, red: 0.1 },
+  { scope: 'FT Overall', ppg: 1.8, green: 1.2, yellow: 1.8, red: 2.4 },
+  { scope: 'FT Home', ppg: 2.1, green: 1.5, yellow: 2.1, red: 2.7 },
+  { scope: 'FT Away', ppg: 1.5, green: 0.9, yellow: 1.5, red: 2.1 },
+  { scope: '1H Overall', ppg: 1.1, green: 0.8, yellow: 1.1, red: 1.4 },
+  { scope: '2H Overall', ppg: 1.2, green: 0.9, yellow: 1.2, red: 1.5 },
 ];

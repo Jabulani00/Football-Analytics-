@@ -47,11 +47,21 @@ LAST_N = ("last10", "last8", "last6")
 STAT_FAMILIES = ("ordinary", "ppg", "series", "ft_only", "league_avg")
 
 
+#: Traffic-light cut-offs. Keep in step with ``COMPLIANCE_THRESHOLDS`` in
+#: ``frontend/utils/compliance.ts`` — the frontend builds the same rows live and
+#: the two must colour a value identically.
+SIGNAL_GREEN = 65
+SIGNAL_YELLOW = 45
+
+
 def stat_signal(value: float) -> str:
-    """Traffic-light signal per SCORELINE_DEV_PROMPT (≥65 green, 45–64 yellow, <45 red)."""
-    if value >= 65:
+    """How often a stat lands: >=65 green, 45-64 yellow, <45 red.
+
+    Green means *reliable*, not *good* — a high "fails to score" is still green.
+    """
+    if value >= SIGNAL_GREEN:
         return "green"
-    if value >= 45:
+    if value >= SIGNAL_YELLOW:
         return "yellow"
     return "red"
 

@@ -200,9 +200,12 @@ console.log('\nLeague stats — fallbacks');
   check('teams with no value are dropped', table.rows.length === 2);
   check('the mean stands in for a missing league row', table.average?.value === 60);
   check('the fallback average still bands', table.average?.level === 'yellow');
+  // No `_signal` on these rows, so the shared rule bands the raw value:
+  // 80% clears the 65 green line, 40% falls under the 45 yellow line.
   check(
     'bands fall back to the shared percentage thresholds',
-    table.rows[0].level === 'green' && table.rows[1].level === 'yellow',
+    table.rows[0].level === 'green' && table.rows[1].level === 'red',
+    `${table.rows[0].level} / ${table.rows[1].level}`,
   );
 
   check(

@@ -15,7 +15,9 @@
  * plain Node/tsx and plugs into the live client via `buildLeagueStatsLive`.
  */
 
+import type { ComplianceLevel } from '@/types/analytics';
 import type { TeamStatRow, TeamStatsExport } from '@/types/data';
+import { complianceFromPercent } from '@/utils/compliance';
 // Type-only (stripped at runtime) — keeps this module free of RN imports.
 import type { RawFixture } from '@/services/oddAlerts';
 
@@ -86,12 +88,11 @@ function isFinished(fx: RawFixture): boolean {
   );
 }
 
-// ---- Signal (matches backend/schema.py stat_signal) -------------------------
-function statSignal(value: number): 'green' | 'yellow' | 'red' {
-  if (value >= 65) return 'green';
-  if (value >= 45) return 'yellow';
-  return 'red';
-}
+// ---- Signal ----------------------------------------------------------------
+// One definition, shared with every screen: utils/compliance. It mirrors
+// `stat_signal` in backend/schema.py, so a row built here and a row exported
+// from the database carry the same colour.
+const statSignal = (value: number): ComplianceLevel => complianceFromPercent(value);
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
 

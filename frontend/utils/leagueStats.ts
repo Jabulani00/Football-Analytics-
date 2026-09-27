@@ -137,11 +137,19 @@ function numberAt(row: TeamStatRow, key: string): number | null {
   return typeof cell === 'number' && Number.isFinite(cell) ? cell : null;
 }
 
-/** The builder's own band, falling back to the shared percentage thresholds. */
+/**
+ * The row's own `_signal`, or the shared rule applied to the value. Both come
+ * from `complianceFromPercent` now, so the two paths cannot disagree — they
+ * used to, which let the same percentage show two different colours.
+ *
+ * Averages (goals per game) get no signal: they are not percentages, so the
+ * cut-offs would be meaningless against them.
+ */
 function levelAt(row: TeamStatRow, def: LeagueStatDef, value: number): ComplianceLevel | null {
+  if (def.avg) return null;
   const signal = row[`${def.key}_signal`];
   if (typeof signal === 'string' && LEVELS.has(signal)) return signal as ComplianceLevel;
-  return def.avg ? null : complianceFromPercent(value);
+  return complianceFromPercent(value);
 }
 
 const round1 = (n: number) => Math.round(n * 10) / 10;

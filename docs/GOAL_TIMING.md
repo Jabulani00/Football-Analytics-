@@ -39,9 +39,14 @@ stats/season/:id
   → StandingRow.timing (TeamGoalTiming)
   → timingByName()                    utils/standingsAdapter.ts
   → <StandingsAnalyticsView timing={…}>
-  → buildStandingsView(base, sel, { timing })
+  → buildStandingsView(base, sel, { timing, feed })
   → realTimingCell()                  utils/standingsAnalytics.ts
 ```
+
+Every *other* table in that view is counted from the season's finished results
+instead — `fetchSeasonResults()` → `buildMatchFeed()` (`utils/leagueTables.ts`)
+→ the `feed` argument above. Timing is the one thing a final score cannot
+answer, which is why it alone reads the season-stats endpoint.
 
 `utils/standingsAnalytics.ts` deliberately **does not import the API layer**. It
 declares its own `TeamTiming` shape so it stays a pure function over plain
@@ -56,36 +61,39 @@ them in both `TeamGoalTiming` (service) and `TeamTiming` (analytics).
 | ------ | ------ | ------ |
 | Match detail → Table/Odds → League Table | `fetchSeasonStandings` | **measured** |
 | Clubs sidebar → standings browser | `fetchSeasonStandings` | **measured** |
-| `/league/:id` (e.g. `/league/spl`) | `mock/standingsData.ts` | estimated |
+| `/league/:id` (e.g. `/league/spl`) | `mock/standingsData.ts` | unavailable |
 
-The mock league page has no season id, so there is nothing to look up. That is
-the main reason the estimate path still exists.
+The mock league page has no season id, so there is nothing to look up and the
+four timing columns read `—`.
 
 ---
 
-## The estimate is still there — on purpose
+## There is no estimate any more
 
-`buildStandingsView` falls back to `synthGoalMinute` / `probValue` only when the
-**whole column** has nothing measured:
+**Sep 2026.** The fallback that invented a plausible minute is gone, along with
+`synthGoalMinute` and the seeded RNG the whole analytics engine used to run on.
+A goal's minute is not in a final score, so these metrics are answered by the
+provider's recorded timings or reported unavailable:
 
 - no `timing` map is passed (mock data), **or**
 - not one team in the table has a recorded value for this metric, **or**
 - the period is `1h` / `2h` — recorded timing covers the **whole match**, so it
   cannot answer a half-split view.
 
-A single team missing a value does *not* trigger the estimate — see the rule
-below.
+In each case every cell renders `—` and `StandingsView.timingSource` is
+`'unavailable'`, with a caption and a note saying why. The same applies to
+`ScrdF` (scored first): goal order is not in a score and the season-stats
+endpoint does not measure it, so it reports unavailable rather than being
+inferred from half-time leads.
 
-Provenance is surfaced, never hidden. `StandingsView.timingSource` is
-`'measured' | 'partial' | 'estimated'`, the caption spells it out, and
-estimated cells end in `est.`.
+`StandingsView.timingSource` is `'measured' | 'partial' | 'unavailable'`.
 
-**A column is wholly measured or wholly estimated — never a mix.** If the
+**A column is wholly measured or wholly unavailable — never a mix.** If the
 provider has a value for even one team, the whole column is measured and teams
 without a value render `—` and sort last, unranked. This is not cosmetic: the
 first cut fell back per team, so a side that had *not scored at all* was handed
 a plausible ~56' and ranked above teams with real recorded minutes. `partial`
-therefore means "measured column with gaps", not "half estimated".
+therefore means "measured column with gaps".
 
 Thin samples are flagged too. Under `MIN_TIMING_MATCHES` (3) an average is just
 one match and a percentage is only ever 0 or 100, so the stat line reports
@@ -117,7 +125,8 @@ not this endpoint.
 
 `frontend/scripts/standingsTiming.test.ts` (in `npm test`) covers: measured
 values used verbatim, ranking direction per metric, the minute-`0` fallback,
-provenance flags, shape consistency across sources, and half-view fallback.
+provenance flags, fixed column shape per metric, and the unavailable states
+(no timing map at all, and the half-period views).
 
 Run just this suite:
 

@@ -3,7 +3,7 @@ import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from '
 
 import SubTabBar from '@/components/shared/SubTabBar';
 import type { TeamStatRow } from '@/types/data';
-import { complianceColor } from '@/utils/compliance';
+import { complianceColor, COMPLIANCE_RULE_TEXT } from '@/utils/compliance';
 import {
   buildLeagueStatTable,
   DEFAULT_LEAGUE_STAT,
@@ -141,6 +141,11 @@ export default function LeagueStatsPanel({
           <Text style={styles.caption}>
             {table.stat.label} · {table.rows.length} teams{contextLabel ? ` · ${contextLabel}` : ''}
           </Text>
+          {avg ? null : (
+            <Text style={styles.legend}>
+              How often it lands: {COMPLIANCE_RULE_TEXT}
+            </Text>
+          )}
 
           <View style={styles.table}>
             {table.rows.map((row, i) => (
@@ -177,7 +182,8 @@ export default function LeagueStatsPanel({
             {table.thinTeams > 0
               ? `${table.thinTeams} team${table.thinTeams === 1 ? '' : 's'} under ${MIN_LEAGUE_SAMPLE} finished games — sample shown next to the name. `
               : ''}
-            Colour is how often the stat lands, not whether it is good.
+            Colour is how often the stat lands, not whether it is good — a high
+            &quot;fails to score&quot; is still green.
             {error ? ` ${error}` : ''}
           </Text>
         </>
@@ -192,6 +198,12 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodyMedium,
     fontSize: 12,
     color: theme.textPrimary,
+    marginBottom: spacing.xs,
+  },
+  legend: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: theme.textMuted,
     marginBottom: spacing.sm,
   },
   table: {

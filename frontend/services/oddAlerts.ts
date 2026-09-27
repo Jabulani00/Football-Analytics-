@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 
+import { bandOf, type SeasonResult } from '@/utils/leagueTables';
 import {
   buildTieredTables,
   type TierFixture,
@@ -1215,14 +1216,21 @@ function compareStandings(
   return a.name.localeCompare(b.name);
 }
 
-/** Assigns green/middle/red zones by splitting the table into thirds. */
+const ZONE_FOR_BAND: Record<'green' | 'yellow' | 'red', StandingZone> = {
+  green: 'top',
+  yellow: 'mid',
+  red: 'bottom',
+};
+
+/**
+ * Assigns green/middle/red zones from the shared thirds rule in
+ * utils/leagueTables, so a team's colour is the same here, on the standings
+ * table and in the colour-band analytics.
+ */
 export function assignZones<T>(rows: T[]): (T & { zone: StandingZone })[] {
-  const n = rows.length;
-  const topCut = Math.ceil(n / 3);
-  const bottomCut = n - Math.ceil(n / 3);
   return rows.map((row, i) => ({
     ...row,
-    zone: (i < topCut ? 'top' : i >= bottomCut ? 'bottom' : 'mid') as StandingZone,
+    zone: ZONE_FOR_BAND[bandOf(i + 1, rows.length)],
   }));
 }
 
@@ -1564,18 +1572,22 @@ export async function computeTierPoints(
 export type { TierTeamRow, TieredTables };
 
 const tieredCache = new Map<number, TieredTables>();
+const resultsCache = new Map<number, SeasonResult[]>();
 
 /**
- * The three colour tables, ranked per the spec, computed from the season's
- * finished results. Fetches the season's fixtures, keeps only this
- * competition's finished matches, then delegates the ranking to the pure
- * `buildTieredTables`. Cached per season id.
+ * A season's finished league results, normalised for the pure table engines
+ * (utils/leagueTables, utils/tieredTables). Half-time goals come from
+ * `ht_score` and stay null when the provider carried none — the engines exclude
+ * those matches from the half tables rather than guessing at them.
+ *
+ * Cached per season id, so the league table, the tier tables and the colour
+ * bands all share one fetch.
  */
-export async function computeTieredTables(
-  opts: { competitionId: number; season: Season; standings: StandingRow[] },
+export async function fetchSeasonResults(
+  opts: { competitionId: number; season: Season },
   signal?: AbortSignal,
-): Promise<TieredTables> {
-  const cached = tieredCache.get(opts.season.seasonId);
+): Promise<SeasonResult[]> {
+  const cached = resultsCache.get(opts.season.seasonId);
   if (cached) return cached;
 
   const { fromUnix, toUnix } = seasonWindowUnix(opts.season.seasonName);
@@ -1584,21 +1596,54 @@ export async function computeTieredTables(
     signal,
   );
 
-  const fixtures: TierFixture[] = [];
+  const results: SeasonResult[] = [];
   for (const f of raw) {
     if (normaliseStatus(f.status) !== 'FT') continue;
     if (f.home_id == null || f.away_id == null || f.home_goals == null || f.away_goals == null) {
       continue;
     }
-    fixtures.push({
+    const ht = parseHtScoreForGoals(f.ht_score);
+    // A half-time score above the full-time one is impossible — treat the pair
+    // as unrecorded rather than letting it produce a negative second half.
+    const usable = ht != null && ht.home <= f.home_goals && ht.away <= f.away_goals;
+    results.push({
       competitionId: f.competition_id,
       seasonId: f.season_id ?? null,
       homeId: f.home_id,
       awayId: f.away_id,
       homeGoals: f.home_goals,
       awayGoals: f.away_goals,
+      homeGoalsHt: usable ? ht!.home : null,
+      awayGoalsHt: usable ? ht!.away : null,
+      unix: f.unix,
     });
   }
+
+  resultsCache.set(opts.season.seasonId, results);
+  return results;
+}
+
+/**
+ * The three colour tables, ranked per the spec, computed from the season's
+ * finished results, then delegated to the pure `buildTieredTables`. Cached per
+ * season id.
+ */
+export async function computeTieredTables(
+  opts: { competitionId: number; season: Season; standings: StandingRow[] },
+  signal?: AbortSignal,
+): Promise<TieredTables> {
+  const cached = tieredCache.get(opts.season.seasonId);
+  if (cached) return cached;
+
+  const results = await fetchSeasonResults(opts, signal);
+  const fixtures: TierFixture[] = results.map((r) => ({
+    competitionId: r.competitionId,
+    seasonId: r.seasonId,
+    homeId: r.homeId,
+    awayId: r.awayId,
+    homeGoals: r.homeGoals,
+    awayGoals: r.awayGoals,
+  }));
 
   const tables = buildTieredTables({
     competitionId: opts.competitionId,
