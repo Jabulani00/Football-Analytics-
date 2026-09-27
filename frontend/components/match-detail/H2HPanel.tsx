@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import SubTabBar from '@/components/shared/SubTabBar';
 import type { H2HMatch } from '@/services/oddAlerts';
@@ -17,7 +17,14 @@ import {
   type H2HOutcome,
   type H2HSplit,
 } from '@/utils/h2hDisplay';
-import { evaluateH2HOptions, type H2HGrade, type H2HOptionTag, type H2HSayBlock } from '@/utils/h2hOptions';
+import {
+  evaluateH2HOptions,
+  h2hGradeGuide,
+  type H2HGrade,
+  type H2HGradeGuideKind,
+  type H2HOptionTag,
+  type H2HSayBlock,
+} from '@/utils/h2hOptions';
 
 type H2HPanelProps = {
   matches: H2HMatch[];
@@ -171,7 +178,13 @@ function gradeColor(grade: H2HGrade): string {
   return theme.textMuted;
 }
 
-function SayBlock({ block }: { block: H2HSayBlock }) {
+function SayBlock({
+  block,
+  onGradePress,
+}: {
+  block: H2HSayBlock;
+  onGradePress?: (kind: H2HGradeGuideKind, grade: H2HGrade) => void;
+}) {
   const color =
     block.kind === 'good'
       ? theme.accentGreen
@@ -186,9 +199,17 @@ function SayBlock({ block }: { block: H2HSayBlock }) {
         <Text style={styles.sayNum}>{block.n}.</Text>
         <Text style={[styles.sayTitle, { color }]}>{block.title}</Text>
         {block.grade ? (
-          <View style={[styles.gradePill, { borderColor: gradeColor(block.grade) }]}>
-            <Text style={[styles.gradeText, { color: gradeColor(block.grade) }]}>Grade {block.grade}</Text>
-          </View>
+          <Pressable
+            onPress={() => {
+              if (block.grade && block.gradeKind) onGradePress?.(block.gradeKind, block.grade);
+            }}
+            disabled={!block.gradeKind}
+            accessibilityRole="button"
+            accessibilityLabel={`Grade ${block.grade} definition`}>
+            <View style={[styles.gradePill, { borderColor: gradeColor(block.grade) }]}>
+              <Text style={[styles.gradeText, { color: gradeColor(block.grade) }]}>Grade {block.grade}</Text>
+            </View>
+          </Pressable>
         ) : null}
       </View>
       <Text style={styles.sayDetail}>{block.detail}</Text>
@@ -215,6 +236,64 @@ function OptionChip({ tag }: { tag: H2HOptionTag }) {
   );
 }
 
+function GradeGuideModal({
+  kind,
+  current,
+  games,
+  onClose,
+}: {
+  kind: H2HGradeGuideKind | null;
+  current: H2HGrade | null;
+  games: number | null;
+  onClose: () => void;
+}) {
+  if (kind == null) return null;
+  const guide = h2hGradeGuide(kind);
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalRoot}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <View style={styles.modalSheet}>
+          <View style={styles.modalHead}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.modalTitle}>{guide.title}</Text>
+              {games ? <Text style={styles.modalSub}>This fixture: {games} H2H</Text> : null}
+            </View>
+            <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Close">
+              <Text style={styles.modalClose}>Close</Text>
+            </Pressable>
+          </View>
+          <Text style={styles.modalLead}>{guide.note}</Text>
+          <ScrollView style={styles.modalList}>
+            {guide.windows.map((win) => (
+              <View key={win.games} style={styles.modalWindow}>
+                <Text style={[styles.modalWindowTitle, games === win.games && styles.modalWindowOn]}>
+                  {win.games} H2H
+                </Text>
+                {win.grades.map((row) => {
+                  const active = games === win.games && current === row.grade;
+                  return (
+                    <View key={row.grade} style={[styles.modalGrade, active && styles.modalGradeOn]}>
+                      <Text style={[styles.modalGradeLabel, { color: gradeColor(row.grade) }]}>
+                        Grade {row.grade}
+                      </Text>
+                      {row.lines.map((line) => (
+                        <Text key={line} style={styles.modalLine}>
+                          {line}
+                        </Text>
+                      ))}
+                    </View>
+                  );
+                })}
+              </View>
+            ))}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 const HIDDEN_SAY_TAGS = new Set(['points_share', 'polar', 'nika_nika']);
 
 export default function H2HPanel({
@@ -226,6 +305,10 @@ export default function H2HPanel({
   competitionName,
 }: H2HPanelProps) {
   const [split, setSplit] = useState<H2HSplit>('overall');
+  const [gradeModal, setGradeModal] = useState<{
+    kind: H2HGradeGuideKind;
+    grade: H2HGrade;
+  } | null>(null);
 
   const filtered = useMemo(
     () => recentH2hMeetings(filterH2hBySplit(matches, split, homeName, awayName)),
@@ -255,18 +338,29 @@ export default function H2HPanel({
       ),
     [options.tags],
   );
+  const h2hCount = options.pointsShare ? options.pointsShare.max / 3 : null;
+  const openGrade = (kind: H2HGradeGuideKind, grade: H2HGrade) => setGradeModal({ kind, grade });
+  const gradeModalEl = (
+    <GradeGuideModal
+      kind={gradeModal?.kind ?? null}
+      current={gradeModal?.grade ?? null}
+      games={h2hCount}
+      onClose={() => setGradeModal(null)}
+    />
+  );
 
   if (matches.length === 0) {
     return (
       <View style={styles.wrap}>
         <Text style={styles.optionsTitle}>What the head-to-head says</Text>
         {options.says.map((b) => (
-          <SayBlock key={b.id} block={b} />
+          <SayBlock key={b.id} block={b} onGradePress={openGrade} />
         ))}
         {extraTags.map((t) => (
           <OptionChip key={t.id} tag={t} />
         ))}
         <Text style={styles.empty}>No head-to-head history available.</Text>
+        {gradeModalEl}
       </View>
     );
   }
@@ -282,7 +376,7 @@ export default function H2HPanel({
       </Text>
       <View style={styles.optionList}>
         {options.says.map((b) => (
-          <SayBlock key={b.id} block={b} />
+          <SayBlock key={b.id} block={b} onGradePress={openGrade} />
         ))}
         {extraTags.map((t) => (
           <OptionChip key={t.id} tag={t} />
@@ -318,6 +412,7 @@ export default function H2HPanel({
       ) : (
         <Text style={styles.empty}>No meetings in this split.</Text>
       )}
+      {gradeModalEl}
     </View>
   );
 }
@@ -382,6 +477,85 @@ const styles = StyleSheet.create({
     fontSize: 10,
     letterSpacing: 0.3,
     textTransform: 'uppercase',
+  },
+  modalRoot: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    justifyContent: 'center',
+    padding: spacing.lg,
+  },
+  modalSheet: {
+    maxHeight: '80%',
+    backgroundColor: theme.surface,
+    borderRadius: layout.borderRadius,
+    borderWidth: layout.borderWidth,
+    borderColor: theme.border,
+    padding: spacing.md,
+  },
+  modalHead: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: spacing.sm,
+    gap: spacing.sm,
+  },
+  modalTitle: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 16,
+    color: theme.textPrimary,
+  },
+  modalSub: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: theme.textMuted,
+    marginTop: 2,
+  },
+  modalClose: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 13,
+    color: theme.accentBlue,
+    paddingVertical: 2,
+  },
+  modalLead: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: theme.textMuted,
+    marginBottom: spacing.sm,
+    lineHeight: 17,
+  },
+  modalList: { maxHeight: 420 },
+  modalWindow: { marginBottom: spacing.md },
+  modalWindowTitle: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 12,
+    color: theme.textFaint,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    marginBottom: spacing.xs,
+  },
+  modalWindowOn: { color: theme.textPrimary },
+  modalGrade: {
+    borderWidth: 1,
+    borderColor: theme.border,
+    borderRadius: layout.borderRadius,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    marginBottom: spacing.xs,
+    backgroundColor: theme.surfaceHover,
+  },
+  modalGradeOn: {
+    borderColor: theme.accentGreen,
+    backgroundColor: 'rgba(5, 150, 105, 0.08)',
+  },
+  modalGradeLabel: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 12,
+    marginBottom: 2,
+  },
+  modalLine: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: theme.textMuted,
+    lineHeight: 17,
   },
   optionChip: {
     borderWidth: 1,

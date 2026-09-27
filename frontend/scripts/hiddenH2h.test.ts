@@ -3,7 +3,7 @@
  * Run: npx tsx scripts/hiddenH2h.test.ts
  */
 import { evaluateHiddenLayers, polarityCounts, problemPatternFor } from '../utils/hiddenLayers';
-import { evaluateH2HOptions, formatNeverBeatenSequence, hasBeenBeaten, matchPolarSequences, neverBeatGrade, outcomeForSide } from '../utils/h2hOptions';
+import { evaluateH2HOptions, formatNeverBeatenSequence, hasBeenBeaten, h2hGradeGuide, isNikaNikaRecord, matchPolarSequences, neverBeatGrade, outcomeForSide, polarEdgeGrade } from '../utils/h2hOptions';
 import { h2hOutcomeForTeam } from '../utils/h2hDisplay';
 import type { TeamResult } from '../utils/teamResults';
 import type { StandingLike } from '../utils/motivationEngine';
@@ -248,6 +248,38 @@ console.log('\nSection 7 — numbered H2H says + never-beat grades');
   check('1W1D is Grade B', neverBeatGrade(2, 1, 1) === 'B');
   check('2D is Grade C', neverBeatGrade(2, 0, 2) === 'C');
 
+  check('polar 5W is A', polarEdgeGrade(5, 5, 0, 0) === 'A');
+  check('polar 4W1D is A', polarEdgeGrade(5, 4, 1, 0) === 'A');
+  check('polar 4W1L is A', polarEdgeGrade(5, 4, 0, 1) === 'A');
+  check('polar 3W2D is B', polarEdgeGrade(5, 3, 2, 0) === 'B');
+  check('polar 3W1D1L is B', polarEdgeGrade(5, 3, 1, 1) === 'B');
+  check('polar 3W2L is B', polarEdgeGrade(5, 3, 0, 2) === 'B');
+  check('polar 4W is A', polarEdgeGrade(4, 4, 0, 0) === 'A');
+  check('polar 3W1D is A', polarEdgeGrade(4, 3, 1, 0) === 'A');
+  check('polar 3W1L is A', polarEdgeGrade(4, 3, 0, 1) === 'A');
+  check('polar 2W2D is B', polarEdgeGrade(4, 2, 2, 0) === 'B');
+  check('polar 2W1D1L is B', polarEdgeGrade(4, 2, 1, 1) === 'B');
+  check('polar 3W is A', polarEdgeGrade(3, 3, 0, 0) === 'A');
+  check('polar 2W1L is B', polarEdgeGrade(3, 2, 0, 1) === 'B');
+  check('polar 2W1D is B', polarEdgeGrade(3, 2, 1, 0) === 'B');
+  check('polar 2W is A', polarEdgeGrade(2, 2, 0, 0) === 'A');
+  check('polar 1W1D is C', polarEdgeGrade(2, 1, 1, 0) === 'C');
+  check('nika 5: 2W2L1D', isNikaNikaRecord(5, 2, 1, 2) === true);
+  check('nika 5: 3W2L', isNikaNikaRecord(5, 3, 0, 2) === true);
+  check('nika 4: 2W1L1D', isNikaNikaRecord(4, 2, 1, 1) === true);
+  check('nika 4: 2W2L', isNikaNikaRecord(4, 2, 0, 2) === true);
+  check('nika 3: 1W1L1D', isNikaNikaRecord(3, 1, 1, 1) === true);
+  check('nika 2: 1W1L', isNikaNikaRecord(2, 1, 0, 1) === true);
+  check('2 draws is not nika', isNikaNikaRecord(2, 0, 2, 0) === false);
+  check(
+    'polar grade guide lists 5 H2H Grade A',
+    h2hGradeGuide('polar').windows[0]?.grades[0]?.lines.includes('5 wins') === true,
+  );
+  check(
+    'never-beats grade guide lists 5 draws as C',
+    h2hGradeGuide('never_beats').windows[0]?.grades.some((g) => g.grade === 'C' && g.lines.includes('5 draws')) === true,
+  );
+
   const fiveT2Wins: H2HMatch[] = [1, 2, 3, 4, 5].map((i) =>
     h2h({ home_name: 'T2side', away_name: 'T1side', home_goals: 2, away_goals: 0, date: `2026-0${i}-01`, id: i }),
   );
@@ -261,7 +293,7 @@ console.log('\nSection 7 — numbered H2H says + never-beat grades');
   check('block 1 is T1 never beats T2', five.says[0]?.title === 'T1 never beats T2');
   check('5 T2 wins is Grade A', five.says[0]?.grade === 'A');
   check('block 2 is T2 edge (polar)', five.says[1]?.title === 'T2 edge (polar)');
-  check('block 2 mentions dominates', five.says[1]?.detail.includes('dominated') === true);
+  check('block 2 polar grade is A', five.says[1]?.grade === 'A');
   check('block 3 supports T2 when Δ > 3', five.says[2]?.detail.includes('Support T2') === true);
   check('block 4 is not nika nika', five.says[3]?.title === 'Not nika nika');
 
@@ -278,7 +310,7 @@ console.log('\nSection 7 — numbered H2H says + never-beat grades');
   });
   check('2 draws is Grade C', level.says[0]?.grade === 'C');
   check('Δ ≤ 3 is almost equal', level.says[2]?.detail.includes('almost equal') === true);
-  check('Δ 0 is specified with nika nika', level.says[3]?.title.includes('Point difference is 0') === true && level.says[3]?.title.includes('Nika nika') === true);
+  check('Δ 0 is specified without calling 2 draws nika nika', level.says[3]?.title === 'Point difference is 0');
 
   const closePts: H2HMatch[] = [
     h2h({ home_name: 'T1side', away_name: 'T2side', home_goals: 1, away_goals: 0, date: '2026-03-01', id: 50 }),
@@ -294,7 +326,40 @@ console.log('\nSection 7 — numbered H2H says + never-beat grades');
   });
   check('T1 has beaten T2 when they have a win', close.says[0]?.title === 'T1 has beaten T2');
   check('Δ 3 is almost equal not support', close.says[2]?.detail.includes('almost equal') === true);
-  check('almost equal + no polar is nika nika', close.says[3]?.title === 'Nika nika');
+  check('1W 2D is not nika nika', close.says[3]?.title === 'Not nika nika');
+
+  const nikaFive: H2HMatch[] = [
+    h2h({ home_name: 'T1side', away_name: 'T2side', home_goals: 1, away_goals: 0, date: '2026-05-01', id: 80 }),
+    h2h({ home_name: 'T1side', away_name: 'T2side', home_goals: 2, away_goals: 0, date: '2026-04-01', id: 81 }),
+    h2h({ home_name: 'T2side', away_name: 'T1side', home_goals: 1, away_goals: 0, date: '2026-03-01', id: 82 }),
+    h2h({ home_name: 'T2side', away_name: 'T1side', home_goals: 2, away_goals: 0, date: '2026-02-01', id: 83 }),
+    h2h({ home_name: 'T1side', away_name: 'T2side', home_goals: 1, away_goals: 1, date: '2026-01-01', id: 84 }),
+  ];
+  const nika = evaluateH2HOptions({
+    matches: nikaFive,
+    homeName: 'T1side',
+    awayName: 'T2side',
+    t1Name: 'T1side',
+    t2Name: 'T2side',
+  });
+  check('2W 2L 1D is nika nika', nika.says[3]?.title === 'Nika nika' || nika.says[3]?.title.includes('Nika nika'));
+
+  const split32: H2HMatch[] = [
+    h2h({ home_name: 'T1side', away_name: 'T2side', home_goals: 1, away_goals: 0, date: '2026-05-01', id: 90 }),
+    h2h({ home_name: 'T1side', away_name: 'T2side', home_goals: 2, away_goals: 0, date: '2026-04-01', id: 91 }),
+    h2h({ home_name: 'T1side', away_name: 'T2side', home_goals: 3, away_goals: 0, date: '2026-03-01', id: 92 }),
+    h2h({ home_name: 'T2side', away_name: 'T1side', home_goals: 1, away_goals: 0, date: '2026-02-01', id: 93 }),
+    h2h({ home_name: 'T2side', away_name: 'T1side', home_goals: 2, away_goals: 0, date: '2026-01-01', id: 94 }),
+  ];
+  const both = evaluateH2HOptions({
+    matches: split32,
+    homeName: 'T1side',
+    awayName: 'T2side',
+    t1Name: 'T1side',
+    t2Name: 'T2side',
+  });
+  check('3W 2L is polar Grade B', both.says[1]?.title.includes('edge (polar)') === true && both.says[1]?.grade === 'B');
+  check('3W 2L is also nika nika', both.says[3]?.title.includes('Nika nika') === true);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

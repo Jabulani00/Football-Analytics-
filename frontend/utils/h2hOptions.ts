@@ -41,6 +41,7 @@ export type H2HSayBlock = {
   detail: string;
   kind: H2HOptionTag['kind'];
   grade?: H2HGrade | null;
+  gradeKind?: 'never_beats' | 'polar' | null;
 };
 
 export type FixtureH2HOptions = {
@@ -151,6 +152,162 @@ export function neverBeatGrade(games: number, wins: number, draws: number): H2HG
   }
   if (games === 1) return wins === 1 ? 'A' : 'C';
   return null;
+}
+
+/**
+ * Grade the polar edge from the leading side’s W/D/L in the last H2H window.
+ * 5: A = 5W / 4W1D / 4W1L · B = 3W2D / 3W1D1L / 3W2L
+ * 4: A = 4W / 3W1D / 3W1L · B = 2W2D / 2W1D1L
+ * 3: A = 3W · B = 2W1L / 2W1D
+ * 2: A = 2W · C = 1W1D
+ */
+export function polarEdgeGrade(
+  games: number,
+  wins: number,
+  draws: number,
+  losses: number,
+): H2HGrade | null {
+  if (games < 2 || wins + draws + losses !== games) return null;
+  if (games === 5) {
+    if (wins === 5 && draws === 0 && losses === 0) return 'A';
+    if (wins === 4 && draws === 1 && losses === 0) return 'A';
+    if (wins === 4 && draws === 0 && losses === 1) return 'A';
+    if (wins === 3 && draws === 2 && losses === 0) return 'B';
+    if (wins === 3 && draws === 1 && losses === 1) return 'B';
+    if (wins === 3 && draws === 0 && losses === 2) return 'B';
+    return null;
+  }
+  if (games === 4) {
+    if (wins === 4 && draws === 0 && losses === 0) return 'A';
+    if (wins === 3 && draws === 1 && losses === 0) return 'A';
+    if (wins === 3 && draws === 0 && losses === 1) return 'A';
+    if (wins === 2 && draws === 2 && losses === 0) return 'B';
+    if (wins === 2 && draws === 1 && losses === 1) return 'B';
+    return null;
+  }
+  if (games === 3) {
+    if (wins === 3 && draws === 0 && losses === 0) return 'A';
+    if (wins === 2 && draws === 0 && losses === 1) return 'B';
+    if (wins === 2 && draws === 1 && losses === 0) return 'B';
+    return null;
+  }
+  if (games === 2) {
+    if (wins === 2 && draws === 0 && losses === 0) return 'A';
+    if (wins === 1 && draws === 1 && losses === 0) return 'C';
+    return null;
+  }
+  return null;
+}
+
+/**
+ * Nika nika — anyone’s game — from a side’s W/D/L in the last H2H window.
+ * 5: 2W2L1D or 3W2L · 4: 2W1L1D or 2W2L · 3: 1W1L1D · 2: 1W1L
+ */
+export function isNikaNikaRecord(
+  games: number,
+  wins: number,
+  draws: number,
+  losses: number,
+): boolean {
+  if (games < 2 || wins + draws + losses !== games) return false;
+  if (games === 5) {
+    return (wins === 2 && losses === 2 && draws === 1) || (wins === 3 && losses === 2 && draws === 0);
+  }
+  if (games === 4) {
+    return (wins === 2 && losses === 1 && draws === 1) || (wins === 2 && losses === 2 && draws === 0);
+  }
+  if (games === 3) return wins === 1 && losses === 1 && draws === 1;
+  if (games === 2) return wins === 1 && losses === 1 && draws === 0;
+  return false;
+}
+
+export type H2HGradeGuideKind = 'never_beats' | 'polar';
+
+export type H2HGradeGuide = {
+  kind: H2HGradeGuideKind;
+  title: string;
+  note: string;
+  windows: { games: number; grades: { grade: H2HGrade; lines: string[] }[] }[];
+};
+
+export const NEVER_BEAT_GRADE_GUIDE: H2HGradeGuide = {
+  kind: 'never_beats',
+  title: 'T1 never beats T2 grades',
+  note: 'Graded from T2’s wins and draws when T1 has never beaten T2.',
+  windows: [
+    {
+      games: 5,
+      grades: [
+        { grade: 'A', lines: ['5 wins', '4 wins 1 draw', '3 wins 2 draws'] },
+        { grade: 'B', lines: ['2 wins 3 draws'] },
+        { grade: 'C', lines: ['1 win 4 draws', '5 draws'] },
+      ],
+    },
+    {
+      games: 4,
+      grades: [
+        { grade: 'A', lines: ['4 wins', '3 wins 1 draw'] },
+        { grade: 'B', lines: ['2 wins 2 draws'] },
+        { grade: 'C', lines: ['1 win 3 draws', '4 draws'] },
+      ],
+    },
+    {
+      games: 3,
+      grades: [
+        { grade: 'A', lines: ['3 wins', '2 wins 1 draw'] },
+        { grade: 'B', lines: ['1 win 2 draws'] },
+        { grade: 'C', lines: ['3 draws'] },
+      ],
+    },
+    {
+      games: 2,
+      grades: [
+        { grade: 'A', lines: ['2 wins'] },
+        { grade: 'B', lines: ['1 win 1 draw'] },
+        { grade: 'C', lines: ['2 draws'] },
+      ],
+    },
+  ],
+};
+
+export const POLAR_EDGE_GRADE_GUIDE: H2HGradeGuide = {
+  kind: 'polar',
+  title: 'Edge (polar) grades',
+  note: 'Graded from the leading side’s wins, draws and losses in this H2H.',
+  windows: [
+    {
+      games: 5,
+      grades: [
+        { grade: 'A', lines: ['5 wins', '4 wins 1 draw', '4 wins 1 loss'] },
+        { grade: 'B', lines: ['3 wins 2 draws', '3 wins 1 draw 1 loss', '3 wins 2 losses'] },
+      ],
+    },
+    {
+      games: 4,
+      grades: [
+        { grade: 'A', lines: ['4 wins', '3 wins 1 draw', '3 wins 1 loss'] },
+        { grade: 'B', lines: ['2 wins 2 draws', '2 wins 1 draw 1 loss'] },
+      ],
+    },
+    {
+      games: 3,
+      grades: [
+        { grade: 'A', lines: ['3 wins'] },
+        { grade: 'B', lines: ['2 wins 1 loss', '2 wins 1 draw'] },
+      ],
+    },
+    {
+      games: 2,
+      grades: [
+        { grade: 'A', lines: ['2 wins'] },
+        { grade: 'C', lines: ['1 win 1 draw'] },
+      ],
+    },
+  ],
+};
+
+export function h2hGradeGuide(kind: H2HGradeGuideKind): H2HGradeGuide {
+  return kind === 'polar' ? POLAR_EDGE_GRADE_GUIDE : NEVER_BEAT_GRADE_GUIDE;
 }
 
 function countWdl(outcomes: H2HOutcome[]): { w: number; d: number; l: number } {
@@ -296,12 +453,15 @@ export function evaluateH2HOptions(opts: {
   const t2Wdl = countWdl(t2Outcomes);
   const shareDiff = Math.abs(t1Pts - t2Pts);
   const same = shareDiff <= 3;
-  const t1Share = maxPts > 0 ? t1Pts / maxPts : 0;
-  const t2Share = maxPts > 0 ? t2Pts / maxPts : 0;
-  const polar = overall.length >= 3 && (t1Share >= 0.7 || t2Share >= 0.7);
   const greaterIsT1 = t1Pts >= t2Pts;
   const greaterLabel = greaterIsT1 ? 'T1' : 'T2';
   const greaterName = greaterIsT1 ? t1 : t2;
+  const greaterWdl = greaterIsT1 ? t1Wdl : t2Wdl;
+  const polarGrade = polarEdgeGrade(overall.length, greaterWdl.w, greaterWdl.d, greaterWdl.l);
+  const polar = polarGrade != null;
+  const nikaNika =
+    isNikaNikaRecord(overall.length, t1Wdl.w, t1Wdl.d, t1Wdl.l) ||
+    isNikaNikaRecord(overall.length, t2Wdl.w, t2Wdl.d, t2Wdl.l);
   const pointsShare = {
     home: homePts,
     away: awayPtsReal,
@@ -316,7 +476,6 @@ export function evaluateH2HOptions(opts: {
     detail: `${homePts}–${awayPtsReal} points from last ${overall.length} meetings (max ${H2H_POINTS_SHARE_MAX} each)`,
   });
 
-  const nikaNika = overall.length >= 2 && same && !polar;
   const t1NeverBeats = overall.length > 0 && t1Wdl.w === 0;
   const says: H2HSayBlock[] = [];
 
@@ -329,6 +488,7 @@ export function evaluateH2HOptions(opts: {
       detail: `${t1} has never beaten ${t2} in the last ${overall.length} (${t2Wdl.w} win${t2Wdl.w === 1 ? '' : 's'}, ${t2Wdl.d} draw${t2Wdl.d === 1 ? '' : 's'} for T2).`,
       kind: 'warn',
       grade,
+      gradeKind: grade ? 'never_beats' : null,
     });
   } else {
     says.push({
@@ -338,26 +498,29 @@ export function evaluateH2HOptions(opts: {
       detail: `${t1} has beaten ${t2} in these meetings (${t1Wdl.w}W / ${t1Wdl.d}D / ${t1Wdl.l}L).`,
       kind: 'info',
       grade: null,
+      gradeKind: null,
     });
   }
 
-  if (shareDiff > 3 || polar) {
+  if (polarGrade) {
     says.push({
       n: 2,
       id: 'say_edge_polar',
       title: `${greaterLabel} edge (polar)`,
-      detail: polar
-        ? `${greaterName} has clearly dominated these meetings · ${t1Pts}–${t2Pts} points.`
-        : `${greaterLabel} (${greaterName}) holds the H2H edge · ${t1Pts}–${t2Pts} points.`,
+      detail: `${greaterName} ${greaterWdl.w}W / ${greaterWdl.d}D / ${greaterWdl.l}L at this H2H · ${t1Pts}–${t2Pts} points.`,
       kind: 'warn',
+      grade: polarGrade,
+      gradeKind: 'polar',
     });
   } else {
     says.push({
       n: 2,
       id: 'say_edge_polar',
       title: 'No edge (polar)',
-      detail: 'Neither side dominates these meetings.',
+      detail: 'Neither side’s H2H record matches a polar edge grade.',
       kind: 'neutral',
+      grade: null,
+      gradeKind: null,
     });
   }
 
@@ -417,9 +580,9 @@ export function evaluateH2HOptions(opts: {
   if (polar) {
     tags.push({
       id: 'polar',
-      label: `${greaterLabel} edge (polar)`,
+      label: `${greaterLabel} edge (polar) · Grade ${polarGrade}`,
       kind: 'warn',
-      detail: `${greaterName} has clearly dominated these meetings`,
+      detail: `${greaterName} ${greaterWdl.w}W / ${greaterWdl.d}D / ${greaterWdl.l}L`,
     });
   }
 
