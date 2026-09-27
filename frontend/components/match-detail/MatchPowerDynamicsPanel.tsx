@@ -341,12 +341,14 @@ export default function MatchPowerDynamicsPanel({
           <View>
             <SectorIntro
               title="H2H"
-              note={`${t1Label} vs ${t2Label} — Polar, never-beaten, and points share sit above the meetings.`}
+              note={`${t1Label} vs ${t2Label} — numbered reads from the last 5 meetings (15 points).`}
             />
             <H2HPanel
               matches={h2hMatches}
               homeName={homeName}
               awayName={awayName}
+              t1Name={pd.t1.name}
+              t2Name={pd.t2.name}
               competitionName={competitionName}
             />
           </View>

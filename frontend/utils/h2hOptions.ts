@@ -32,11 +32,24 @@ export type PolarSequenceHit = {
   sequence: string;
 };
 
+export type H2HGrade = 'A' | 'B' | 'C';
+
+export type H2HSayBlock = {
+  n: 1 | 2 | 3 | 4;
+  id: string;
+  title: string;
+  detail: string;
+  kind: H2HOptionTag['kind'];
+  grade?: H2HGrade | null;
+};
+
 export type FixtureH2HOptions = {
   hasData: boolean;
   tags: H2HOptionTag[];
+  /** Numbered "What the head-to-head says" blocks. */
+  says: H2HSayBlock[];
   /** Points share from home lens, e.g. 4/15 vs 6/15. */
-  pointsShare: { home: number; away: number; max: number; same: boolean } | null;
+  pointsShare: { home: number; away: number; max: number; same: boolean; diff: number } | null;
   avgGoals: number | null;
   polarSequences: PolarSequenceHit[];
   scoreBetRelevant: boolean;
@@ -107,6 +120,39 @@ export function formatNeverBeatenSequence(
   return `(${outcomes.slice(0, limit).join(' ')})`;
 }
 
+/**
+ * Grade T2's unbeaten H2H when T1 never beats T2 (T2 wins + draws, no T1 wins).
+ * 5 games: A = 5W / 4W1D / 3W2D · B = 2W3D · C = 1W4D or 5D
+ * 4 games: A = 4W / 3W1D · B = 2W2D · C = 1W3D or 4D
+ * 3 games: A = 3W / 2W1D · B = 1W2D · C = 3D
+ * 2 games: A = 2W · B = 1W1D · C = 2D
+ */
+export function neverBeatGrade(games: number, wins: number, draws: number): H2HGrade | null {
+  if (games < 1 || wins < 0 || draws < 0 || wins + draws !== games) return null;
+  if (games === 5) {
+    if (wins >= 3) return 'A';
+    if (wins === 2) return 'B';
+    return 'C';
+  }
+  if (games === 4) {
+    if (wins >= 3) return 'A';
+    if (wins === 2) return 'B';
+    return 'C';
+  }
+  if (games === 3) {
+    if (wins >= 2) return 'A';
+    if (wins === 1) return 'B';
+    return 'C';
+  }
+  if (games === 2) {
+    if (wins === 2) return 'A';
+    if (wins === 1) return 'B';
+    return 'C';
+  }
+  if (games === 1) return wins === 1 ? 'A' : 'C';
+  return null;
+}
+
 function countWdl(outcomes: H2HOutcome[]): { w: number; d: number; l: number } {
   let w = 0;
   let d = 0;
@@ -170,12 +216,17 @@ export function evaluateH2HOptions(opts: {
   matches: H2HMatch[];
   homeName: string;
   awayName: string;
+  /** T1 / T2 from the table. Defaults to home / away. */
+  t1Name?: string | null;
+  t2Name?: string | null;
   /** Current fixture competition — used for never-beaten totals. */
   competitionName?: string | null;
   /** Optional recent form (non-H2H) for polar sequences through T1 lens. */
   homeForm?: TeamResult[];
 }): FixtureH2HOptions {
   const { matches, homeName, awayName, competitionName, homeForm } = opts;
+  const t1 = (opts.t1Name ?? '').trim() || homeName;
+  const t2 = (opts.t2Name ?? '').trim() || awayName;
 
   if (!matches || matches.length === 0) {
     return {
@@ -188,6 +239,7 @@ export function evaluateH2HOptions(opts: {
           detail: 'No effects from H2H for this fixture',
         },
       ],
+      says: [],
       pointsShare: null,
       avgGoals: null,
       polarSequences: [],
@@ -236,13 +288,26 @@ export function evaluateH2HOptions(opts: {
   const maxPts = overall.length * 3;
   const awayOutcomes = overall.map((m) => outcomeForSide(m, awayName));
   const awayPtsReal = pointsFromOutcomes(awayOutcomes);
-  const shareDiff = Math.abs(homePts - awayPtsReal);
+  const t1Outcomes = overall.map((m) => outcomeForSide(m, t1));
+  const t2Outcomes = overall.map((m) => outcomeForSide(m, t2));
+  const t1Pts = pointsFromOutcomes(t1Outcomes);
+  const t2Pts = pointsFromOutcomes(t2Outcomes);
+  const t1Wdl = countWdl(t1Outcomes);
+  const t2Wdl = countWdl(t2Outcomes);
+  const shareDiff = Math.abs(t1Pts - t2Pts);
   const same = shareDiff <= 3;
+  const t1Share = maxPts > 0 ? t1Pts / maxPts : 0;
+  const t2Share = maxPts > 0 ? t2Pts / maxPts : 0;
+  const polar = overall.length >= 3 && (t1Share >= 0.7 || t2Share >= 0.7);
+  const greaterIsT1 = t1Pts >= t2Pts;
+  const greaterLabel = greaterIsT1 ? 'T1' : 'T2';
+  const greaterName = greaterIsT1 ? t1 : t2;
   const pointsShare = {
     home: homePts,
     away: awayPtsReal,
     max: maxPts,
     same,
+    diff: shareDiff,
   };
   tags.push({
     id: 'points_share',
@@ -251,27 +316,119 @@ export function evaluateH2HOptions(opts: {
     detail: `${homePts}–${awayPtsReal} points from last ${overall.length} meetings (max ${H2H_POINTS_SHARE_MAX} each)`,
   });
 
-  // Polar dominance: one side has ≥70% of available points and ≥3 meetings
-  const homeShare = maxPts > 0 ? homePts / maxPts : 0;
-  const awayShare = maxPts > 0 ? awayPtsReal / maxPts : 0;
-  if (overall.length >= 3 && (homeShare >= 0.7 || awayShare >= 0.7)) {
-    const dominant = homeShare >= awayShare ? homeName : awayName;
-    tags.push({
-      id: 'polar',
-      label: 'One side dominates',
+  const nikaNika = overall.length >= 2 && same && !polar;
+  const t1NeverBeats = overall.length > 0 && t1Wdl.w === 0;
+  const says: H2HSayBlock[] = [];
+
+  if (t1NeverBeats) {
+    const grade = neverBeatGrade(overall.length, t2Wdl.w, t2Wdl.d);
+    says.push({
+      n: 1,
+      id: 'say_never_beats',
+      title: 'T1 never beats T2',
+      detail: `${t1} has never beaten ${t2} in the last ${overall.length} (${t2Wdl.w} win${t2Wdl.w === 1 ? '' : 's'}, ${t2Wdl.d} draw${t2Wdl.d === 1 ? '' : 's'} for T2).`,
       kind: 'warn',
-      detail: `${dominant} has clearly dominated these meetings`,
+      grade,
+    });
+  } else {
+    says.push({
+      n: 1,
+      id: 'say_never_beats',
+      title: 'T1 has beaten T2',
+      detail: `${t1} has beaten ${t2} in these meetings (${t1Wdl.w}W / ${t1Wdl.d}D / ${t1Wdl.l}L).`,
+      kind: 'info',
+      grade: null,
     });
   }
 
-  // Nika Nika — anyone's game: enough meetings, same strength, no polar
-  const isPolar = tags.some((t) => t.id === 'polar');
-  if (overall.length >= 3 && same && !isPolar) {
+  if (shareDiff > 3 || polar) {
+    says.push({
+      n: 2,
+      id: 'say_edge_polar',
+      title: `${greaterLabel} edge (polar)`,
+      detail: polar
+        ? `${greaterName} has clearly dominated these meetings · ${t1Pts}–${t2Pts} points.`
+        : `${greaterLabel} (${greaterName}) holds the H2H edge · ${t1Pts}–${t2Pts} points.`,
+      kind: 'warn',
+    });
+  } else {
+    says.push({
+      n: 2,
+      id: 'say_edge_polar',
+      title: 'No edge (polar)',
+      detail: 'Neither side dominates these meetings.',
+      kind: 'neutral',
+    });
+  }
+
+  const nMeet = overall.length;
+  if (shareDiff <= 3) {
+    says.push({
+      n: 3,
+      id: 'say_points',
+      title: `These ${nMeet} H2H games are ${maxPts} points`,
+      detail: `T1 is almost equal to T2 (${t1Pts}–${t2Pts}, difference ${shareDiff} ≤ 3).`,
+      kind: 'neutral',
+    });
+  } else {
+    says.push({
+      n: 3,
+      id: 'say_points',
+      title: `These ${nMeet} H2H games are ${maxPts} points`,
+      detail: `Support ${greaterLabel} (${greaterName}) — H2H ${t1Pts}–${t2Pts}, difference ${shareDiff} is greater than 3.`,
+      kind: greaterIsT1 ? 'good' : 'bad',
+    });
+  }
+
+  if (shareDiff === 0 && nikaNika) {
+    says.push({
+      n: 4,
+      id: 'say_nika',
+      title: 'Point difference is 0 · Nika nika',
+      detail: "Level on H2H points — anyone's game (nika nika).",
+      kind: 'neutral',
+    });
+  } else if (shareDiff === 0) {
+    says.push({
+      n: 4,
+      id: 'say_nika',
+      title: 'Point difference is 0',
+      detail: 'T1 and T2 are level on H2H points.',
+      kind: 'neutral',
+    });
+  } else if (nikaNika) {
+    says.push({
+      n: 4,
+      id: 'say_nika',
+      title: 'Nika nika',
+      detail: "Anyone's game — no clear dominator.",
+      kind: 'neutral',
+    });
+  } else {
+    says.push({
+      n: 4,
+      id: 'say_nika',
+      title: 'Not nika nika',
+      detail: "H2H is not anyone's game.",
+      kind: 'info',
+    });
+  }
+
+  if (polar) {
+    tags.push({
+      id: 'polar',
+      label: `${greaterLabel} edge (polar)`,
+      kind: 'warn',
+      detail: `${greaterName} has clearly dominated these meetings`,
+    });
+  }
+
+  if (nikaNika) {
     tags.push({
       id: 'nika_nika',
-      label: "Anyone's game",
+      label: 'Nika nika',
       kind: 'neutral',
-      detail: 'Balanced head-to-head — no clear dominator',
+      detail: "Anyone's game — no clear dominator",
     });
   }
 
@@ -354,7 +511,7 @@ export function evaluateH2HOptions(opts: {
   }
 
   const scoreBetRelevant =
-    (avgGoals != null && (avgGoals >= 2.5 || avgGoals <= 1.5)) || isPolar || tags.some((t) => t.id === 'last_draw');
+    (avgGoals != null && (avgGoals >= 2.5 || avgGoals <= 1.5)) || polar || tags.some((t) => t.id === 'last_draw');
 
   if (scoreBetRelevant) {
     tags.push({
@@ -368,6 +525,7 @@ export function evaluateH2HOptions(opts: {
   return {
     hasData: true,
     tags,
+    says,
     pointsShare,
     avgGoals,
     polarSequences,

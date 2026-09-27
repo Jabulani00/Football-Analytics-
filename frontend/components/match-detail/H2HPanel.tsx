@@ -17,12 +17,14 @@ import {
   type H2HOutcome,
   type H2HSplit,
 } from '@/utils/h2hDisplay';
-import { evaluateH2HOptions, type H2HOptionTag } from '@/utils/h2hOptions';
+import { evaluateH2HOptions, type H2HGrade, type H2HOptionTag, type H2HSayBlock } from '@/utils/h2hOptions';
 
 type H2HPanelProps = {
   matches: H2HMatch[];
   homeName: string;
   awayName: string;
+  t1Name?: string | null;
+  t2Name?: string | null;
   /** Fixture competition — used for never-beaten W/D/L totals. */
   competitionName?: string | null;
 };
@@ -163,6 +165,37 @@ function Tag({ label, muted }: { label: string; muted?: boolean }) {
   );
 }
 
+function gradeColor(grade: H2HGrade): string {
+  if (grade === 'A') return theme.accentGreen;
+  if (grade === 'B') return theme.yellow;
+  return theme.textMuted;
+}
+
+function SayBlock({ block }: { block: H2HSayBlock }) {
+  const color =
+    block.kind === 'good'
+      ? theme.accentGreen
+      : block.kind === 'bad'
+        ? theme.loss
+        : block.kind === 'warn'
+          ? theme.accentOrange
+          : theme.textMuted;
+  return (
+    <View style={[styles.sayCard, { borderColor: color }]}>
+      <View style={styles.sayHead}>
+        <Text style={styles.sayNum}>{block.n}.</Text>
+        <Text style={[styles.sayTitle, { color }]}>{block.title}</Text>
+        {block.grade ? (
+          <View style={[styles.gradePill, { borderColor: gradeColor(block.grade) }]}>
+            <Text style={[styles.gradeText, { color: gradeColor(block.grade) }]}>Grade {block.grade}</Text>
+          </View>
+        ) : null}
+      </View>
+      <Text style={styles.sayDetail}>{block.detail}</Text>
+    </View>
+  );
+}
+
 function OptionChip({ tag }: { tag: H2HOptionTag }) {
   const color =
     tag.kind === 'good'
@@ -182,7 +215,16 @@ function OptionChip({ tag }: { tag: H2HOptionTag }) {
   );
 }
 
-export default function H2HPanel({ matches, homeName, awayName, competitionName }: H2HPanelProps) {
+const HIDDEN_SAY_TAGS = new Set(['points_share', 'polar', 'nika_nika']);
+
+export default function H2HPanel({
+  matches,
+  homeName,
+  awayName,
+  t1Name,
+  t2Name,
+  competitionName,
+}: H2HPanelProps) {
   const [split, setSplit] = useState<H2HSplit>('overall');
 
   const filtered = useMemo(
@@ -203,15 +245,25 @@ export default function H2HPanel({ matches, homeName, awayName, competitionName 
 
   // Section 7 — additive option tags; does not change the list below.
   const options = useMemo(
-    () => evaluateH2HOptions({ matches, homeName, awayName, competitionName }),
-    [matches, homeName, awayName, competitionName],
+    () => evaluateH2HOptions({ matches, homeName, awayName, t1Name, t2Name, competitionName }),
+    [matches, homeName, awayName, t1Name, t2Name, competitionName],
+  );
+  const extraTags = useMemo(
+    () =>
+      options.tags.filter(
+        (t) => !HIDDEN_SAY_TAGS.has(t.id) && !t.id.endsWith('_overall'),
+      ),
+    [options.tags],
   );
 
   if (matches.length === 0) {
     return (
       <View style={styles.wrap}>
         <Text style={styles.optionsTitle}>What the head-to-head says</Text>
-        {options.tags.map((t) => (
+        {options.says.map((b) => (
+          <SayBlock key={b.id} block={b} />
+        ))}
+        {extraTags.map((t) => (
           <OptionChip key={t.id} tag={t} />
         ))}
         <Text style={styles.empty}>No head-to-head history available.</Text>
@@ -225,11 +277,14 @@ export default function H2HPanel({ matches, homeName, awayName, competitionName 
       <Text style={styles.optionsSub}>
         Quick reads from past meetings between these two
         {options.pointsShare
-          ? ` · points from H2H: ${options.pointsShare.home}–${options.pointsShare.away} (of ${options.pointsShare.max} each)`
+          ? ` · these ${options.pointsShare.max / 3} H2H games are ${options.pointsShare.max} points`
           : ''}
       </Text>
       <View style={styles.optionList}>
-        {options.tags.map((t) => (
+        {options.says.map((b) => (
+          <SayBlock key={b.id} block={b} />
+        ))}
+        {extraTags.map((t) => (
           <OptionChip key={t.id} tag={t} />
         ))}
       </View>
@@ -284,6 +339,50 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   optionList: { gap: spacing.xs, marginBottom: spacing.md },
+  sayCard: {
+    borderWidth: 1,
+    borderRadius: layout.borderRadius,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    backgroundColor: theme.surface,
+    gap: 4,
+  },
+  sayHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
+  },
+  sayNum: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 12,
+    color: theme.textFaint,
+    width: 18,
+  },
+  sayTitle: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 12,
+    flexShrink: 1,
+  },
+  sayDetail: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: theme.textMuted,
+    marginLeft: 24,
+    lineHeight: 16,
+  },
+  gradePill: {
+    borderWidth: 1,
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  gradeText: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 10,
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
   optionChip: {
     borderWidth: 1,
     borderRadius: layout.borderRadius,
