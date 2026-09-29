@@ -18,6 +18,7 @@ import { complianceFromPercent } from '@/utils/compliance';
 export const ANALYTICS_TABS: { id: AnalyticsTab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'tables', label: 'Stats Tables' },
+  { id: 'footy', label: 'Footy Stats' },
   { id: 'predictions', label: 'Predictions' },
   { id: 'finder', label: '🔎 Bet Finder' },
   { id: 'streams', label: 'Streams' },

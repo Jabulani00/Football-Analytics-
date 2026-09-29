@@ -8,6 +8,7 @@ import OddsFusionPanel from '@/components/analytics/OddsFusionPanel';
 import OverviewPanel from '@/components/analytics/OverviewPanel';
 import PredictionsPanel from '@/components/analytics/PredictionsPanel';
 import SmartFinderPanel from '@/components/analytics/SmartFinderPanel';
+import FootyStatsPanel from '@/components/analytics/FootyStatsPanel';
 import StatsTablesPanel from '@/components/analytics/StatsTablesPanel';
 import StrategiesPanel from '@/components/analytics/StrategiesPanel';
 import StreamsPanel from '@/components/analytics/StreamsPanel';
@@ -37,6 +38,8 @@ function PanelForTab({
       return <OverviewPanel />;
     case 'tables':
       return <StatsTablesPanel />;
+    case 'footy':
+      return <FootyStatsPanel />;
     case 'predictions':
       return <PredictionsPanel />;
     case 'finder':

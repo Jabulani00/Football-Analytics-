@@ -1264,6 +1264,18 @@ export async function fetchSeasonStandings(
   return assignZones(rows).map((row, i) => ({ rank: i + 1, ...row }));
 }
 
+/**
+ * Raw `stats/season` rows. Callers pick corner, card, and offside fields only
+ * when they are actually present — the mapped standings type does not include them.
+ */
+export async function fetchRawSeasonStats(
+  seasonId: number | string,
+  signal?: AbortSignal,
+): Promise<Record<string, unknown>[]> {
+  const env = await getJson<Record<string, unknown>>(`stats/season/${seasonId}`, {}, signal);
+  return env.data.filter((row) => row != null && typeof row === 'object');
+}
+
 // ----- Standings movement (after a match) ---------------------------------
 
 export type Movement = { position: number | null; delta: number | null };
