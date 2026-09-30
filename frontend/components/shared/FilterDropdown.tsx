@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
@@ -10,9 +10,10 @@ type Props = {
   value: string;
   options: FilterOption[];
   onChange: (value: string) => void;
+  style?: StyleProp<ViewStyle>;
 };
 
-export default function FilterDropdown({ label, value, options, onChange }: Props) {
+export default function FilterDropdown({ label, value, options, onChange, style }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const selected = options.find((opt) => opt.value === value);
@@ -25,7 +26,7 @@ export default function FilterDropdown({ label, value, options, onChange }: Prop
   }, [options, query]);
 
   return (
-    <View style={styles.field}>
+    <View style={[styles.field, style]}>
       <Text style={styles.label}>{label}</Text>
       <Pressable
         onPress={() => {

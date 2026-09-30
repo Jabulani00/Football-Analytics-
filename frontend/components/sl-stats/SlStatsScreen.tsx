@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
-import FootyTable from '@/components/analytics/FootyTable';
+import FootyTable, { type FootyColumn } from '@/components/analytics/FootyTable';
 import AppShell from '@/components/shared/AppShell';
 import FilterDropdown from '@/components/shared/FilterDropdown';
 import StickyBack from '@/components/shared/StickyBack';
@@ -160,6 +160,11 @@ const BOARD_POOLS = [
   { value: '200', label: '200 most active' },
 ];
 
+function useNarrow(): boolean {
+  const { width } = useWindowDimensions();
+  return width < 720;
+}
+
 function kickoff(unix: number): string {
   return new Date(unix * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
@@ -212,6 +217,7 @@ function BestBetLine({ bet }: { bet: BestBet | null }) {
 }
 
 export default function SlStatsScreen({ onBack }: { onBack: () => void }) {
+  const narrow = useNarrow();
   const [analysis, setAnalysis] = useState<AnalysisId>('corners');
   const [country, setCountry] = useState('');
   const [leagueId, setLeagueId] = useState('');
@@ -320,18 +326,18 @@ export default function SlStatsScreen({ onBack }: { onBack: () => void }) {
 
   return (
     <AppShell>
-      <ScrollView ref={scrollRef} contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={Platform.OS === 'web'}>
+      <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, narrow && styles.scrollNarrow]} showsVerticalScrollIndicator={Platform.OS === 'web'}>
         <StickyBack label="← HOME" onPress={onBack} />
-        <View style={styles.hero}>
+        <View style={[styles.hero, narrow && styles.heroNarrow]}>
           <View style={styles.heroCopy}>
             <Text style={styles.heroKicker}>Query</Text>
-            <Text style={styles.title}>SL-STATS</Text>
+            <Text style={[styles.title, narrow && styles.titleNarrow]}>SL-STATS</Text>
             <Text style={styles.blurb}>
               Filters pull an ordinary stat, the league average, and a series, then combine them. Top 200 ranks teams, leagues, or competitions by a current series or by any ordinary rate.
             </Text>
           </View>
-          <View style={styles.heroStat}>
-            <Text style={styles.heroNum}>{combined.length}</Text>
+          <View style={[styles.heroStat, narrow && styles.heroStatNarrow]}>
+            <Text style={[styles.heroNum, narrow && styles.heroNumNarrow]}>{combined.length}</Text>
             <Text style={styles.heroLabel}>matches ranked</Text>
           </View>
         </View>
@@ -340,50 +346,50 @@ export default function SlStatsScreen({ onBack }: { onBack: () => void }) {
           {index.matches} finished matches in this filter.
         </Text>
 
-        <View style={styles.filters}>
-          <FilterDropdown label="Analysis" value={analysis} options={ANALYSES.map((item) => ({ value: item.value, label: item.label }))} onChange={(value) => setAnalysis(value as AnalysisId)} />
-          <FilterDropdown label="Country" value={country} options={countries} onChange={setCountry} />
-          <FilterDropdown label="League" value={leagueId} options={leagues} onChange={setLeagueId} />
-          <FilterDropdown label="Competitions" value={kind} options={KINDS} onChange={(value) => setKind(value as CompetitionKind)} />
-          <FilterDropdown label="Scope" value={scope} options={SCOPES} onChange={(value) => setScope(value as Scope)} />
-          <FilterDropdown label="Ordinary stat" value={statKey} options={ORDINARY_PICKS.map((item) => ({ value: item.key, label: item.label }))} onChange={setStatKey} />
-          <FilterDropdown label="Series" value={seriesKey} options={[{ value: '', label: 'No series' }, ...seriesOptions.map((item) => ({ value: item.key, label: item.label }))]} onChange={setSeriesKey} />
-          <FilterDropdown label="Rank" value={boardEntity} options={BOARD_ENTITIES} onChange={(value) => setBoardEntity(value as BoardEntity)} />
-          <FilterDropdown label="Measured by" value={boardMeasure} options={BOARD_MEASURES} onChange={(value) => setBoardMeasure(value as BoardMeasure)} />
-          <FilterDropdown label="At least" value={String(boardMinimum)} options={[{ value: '0', label: 'Best 200' }, ...BOARD_FLOORS.map((item) => ({ value: String(item), label: `${item} or more games` }))]} onChange={(value) => setBoardMinimum(Number(value))} />
-          <FilterDropdown label="Sample" value={boardPool} options={BOARD_POOLS} onChange={(value) => setBoardPool(value as '30' | '200')} />
+        <View style={[styles.filters, narrow && styles.filtersNarrow]}>
+          <FilterDropdown style={narrow ? styles.filterFull : undefined} label="Analysis" value={analysis} options={ANALYSES.map((item) => ({ value: item.value, label: item.label }))} onChange={(value) => setAnalysis(value as AnalysisId)} />
+          <FilterDropdown style={narrow ? styles.filterFull : undefined} label="Country" value={country} options={countries} onChange={setCountry} />
+          <FilterDropdown style={narrow ? styles.filterFull : undefined} label="League" value={leagueId} options={leagues} onChange={setLeagueId} />
+          <FilterDropdown style={narrow ? styles.filterFull : undefined} label="Competitions" value={kind} options={KINDS} onChange={(value) => setKind(value as CompetitionKind)} />
+          <FilterDropdown style={narrow ? styles.filterFull : undefined} label="Scope" value={scope} options={SCOPES} onChange={(value) => setScope(value as Scope)} />
+          <FilterDropdown style={narrow ? styles.filterFull : undefined} label="Ordinary stat" value={statKey} options={ORDINARY_PICKS.map((item) => ({ value: item.key, label: item.label }))} onChange={setStatKey} />
+          <FilterDropdown style={narrow ? styles.filterFull : undefined} label="Series" value={seriesKey} options={[{ value: '', label: 'No series' }, ...seriesOptions.map((item) => ({ value: item.key, label: item.label }))]} onChange={setSeriesKey} />
+          <FilterDropdown style={narrow ? styles.filterFull : undefined} label="Rank" value={boardEntity} options={BOARD_ENTITIES} onChange={(value) => setBoardEntity(value as BoardEntity)} />
+          <FilterDropdown style={narrow ? styles.filterFull : undefined} label="Measured by" value={boardMeasure} options={BOARD_MEASURES} onChange={(value) => setBoardMeasure(value as BoardMeasure)} />
+          <FilterDropdown style={narrow ? styles.filterFull : undefined} label="At least" value={String(boardMinimum)} options={[{ value: '0', label: 'Best 200' }, ...BOARD_FLOORS.map((item) => ({ value: String(item), label: `${item} or more games` }))]} onChange={(value) => setBoardMinimum(Number(value))} />
+          <FilterDropdown style={narrow ? styles.filterFull : undefined} label="Sample" value={boardPool} options={BOARD_POOLS} onChange={(value) => setBoardPool(value as '30' | '200')} />
 
           {analysis === 'btts' ? (
             <>
-              <FilterDropdown label="Both teams to score result" value={bttsResult} options={BTTS_RESULTS} onChange={(value) => setBttsResult(value as '' | BttsSplit)} />
-              <FilterDropdown label="Half" value={half} options={HALF_CHOICES} onChange={(value) => setHalf(value as '' | HalfSide)} />
-              <FilterDropdown label="League sort" value={leagueSort} options={LEAGUE_SORTS} onChange={(value) => setLeagueSort(value as LeagueSort)} />
+              <FilterDropdown style={narrow ? styles.filterFull : undefined} label="Both teams to score result" value={bttsResult} options={BTTS_RESULTS} onChange={(value) => setBttsResult(value as '' | BttsSplit)} />
+              <FilterDropdown style={narrow ? styles.filterFull : undefined} label="Half" value={half} options={HALF_CHOICES} onChange={(value) => setHalf(value as '' | HalfSide)} />
+              <FilterDropdown style={narrow ? styles.filterFull : undefined} label="League sort" value={leagueSort} options={LEAGUE_SORTS} onChange={(value) => setLeagueSort(value as LeagueSort)} />
             </>
           ) : null}
           {analysis === 'goals' ? (
             <>
-              <FilterDropdown label="Goal line" value={String(goalLine)} options={GOAL_LINES.map((item) => ({ value: String(item), label: `${item} goals` }))} onChange={(value) => setGoalLine(Number(value) as GoalLine)} />
-              <FilterDropdown label="Over or under" value={goalSide} options={GOAL_SIDES} onChange={(value) => setGoalSide(value as GoalSide)} />
-              <FilterDropdown label="League sort" value={leagueSort} options={LEAGUE_SORTS} onChange={(value) => setLeagueSort(value as LeagueSort)} />
+              <FilterDropdown style={narrow ? styles.filterFull : undefined} label="Goal line" value={String(goalLine)} options={GOAL_LINES.map((item) => ({ value: String(item), label: `${item} goals` }))} onChange={(value) => setGoalLine(Number(value) as GoalLine)} />
+              <FilterDropdown style={narrow ? styles.filterFull : undefined} label="Over or under" value={goalSide} options={GOAL_SIDES} onChange={(value) => setGoalSide(value as GoalSide)} />
+              <FilterDropdown style={narrow ? styles.filterFull : undefined} label="League sort" value={leagueSort} options={LEAGUE_SORTS} onChange={(value) => setLeagueSort(value as LeagueSort)} />
             </>
           ) : null}
           {analysis === 'halves' ? (
-            <FilterDropdown label="Half" value={half || 'first'} options={HALF_CHOICES.filter((item) => item.value !== '')} onChange={(value) => setHalf(value as HalfSide)} />
+            <FilterDropdown style={narrow ? styles.filterFull : undefined} label="Half" value={half || 'first'} options={HALF_CHOICES.filter((item) => item.value !== '')} onChange={(value) => setHalf(value as HalfSide)} />
           ) : null}
           {analysis === 'both' ? (
-            <FilterDropdown label="Both halves" value={bothMode} options={BOTH_MODES} onChange={(value) => setBothMode(value as BothHalvesMode)} />
+            <FilterDropdown style={narrow ? styles.filterFull : undefined} label="Both halves" value={bothMode} options={BOTH_MODES} onChange={(value) => setBothMode(value as BothHalvesMode)} />
           ) : null}
           {analysis === 'clean' ? (
-            <FilterDropdown label="Clean sheet table" value={cleanDir} options={CLEAN_DIRS} onChange={(value) => setCleanDir(value as CleanSheetDirection)} />
+            <FilterDropdown style={narrow ? styles.filterFull : undefined} label="Clean sheet table" value={cleanDir} options={CLEAN_DIRS} onChange={(value) => setCleanDir(value as CleanSheetDirection)} />
           ) : null}
           {analysis === 'corners' ? (
-            <FilterDropdown label="Corner line" value={cornerLine} options={CORNER_OVER_LINES.map((item) => ({ value: item, label: `Over ${item} corners` }))} onChange={(value) => setCornerLine(value as (typeof CORNER_OVER_LINES)[number])} />
+            <FilterDropdown style={narrow ? styles.filterFull : undefined} label="Corner line" value={cornerLine} options={CORNER_OVER_LINES.map((item) => ({ value: item, label: `Over ${item} corners` }))} onChange={(value) => setCornerLine(value as (typeof CORNER_OVER_LINES)[number])} />
           ) : null}
           {analysis === 'cards' ? (
-            <FilterDropdown label="Card type" value={cardKind} options={CARD_KINDS} onChange={(value) => setCardKind(value as 'yellow' | 'red')} />
+            <FilterDropdown style={narrow ? styles.filterFull : undefined} label="Card type" value={cardKind} options={CARD_KINDS} onChange={(value) => setCardKind(value as 'yellow' | 'red')} />
           ) : null}
           {analysis === 'offsides' ? (
-            <FilterDropdown label="Offside line" value={offsideLine} options={OFFSIDE_OVER_LINES.map((item) => ({ value: item, label: `Over ${item} offsides` }))} onChange={(value) => setOffsideLine(value as (typeof OFFSIDE_OVER_LINES)[number])} />
+            <FilterDropdown style={narrow ? styles.filterFull : undefined} label="Offside line" value={offsideLine} options={OFFSIDE_OVER_LINES.map((item) => ({ value: item, label: `Over ${item} offsides` }))} onChange={(value) => setOffsideLine(value as (typeof OFFSIDE_OVER_LINES)[number])} />
           ) : null}
         </View>
 
@@ -494,6 +500,7 @@ function joinNames(labels: string[]): string {
 }
 
 function FixtureSummary({ row, bet }: { row: ReturnType<typeof combineMatchQuery>[number]; bet: BestBet | null }) {
+  const narrow = useNarrow();
   const [likelyOpen, setLikelyOpen] = useState(false);
   const [combinedOpen, setCombinedOpen] = useState(false);
   const parts = row.evidence.filter((line) => line.pct != null);
@@ -505,7 +512,7 @@ function FixtureSummary({ row, bet }: { row: ReturnType<typeof combineMatchQuery
   };
   return (
     <View>
-      <View style={styles.queryMatch}>
+      <View style={[styles.queryMatch, narrow && styles.queryMatchNarrow]}>
         <Pressable onPress={toggleBoth} style={styles.queryMatchText}>
           <Text style={styles.fixtureChevron}>{likelyOpen || combinedOpen ? '▾' : '▸'}</Text>
           <View style={styles.queryMatchCopy}>
@@ -513,15 +520,17 @@ function FixtureSummary({ row, bet }: { row: ReturnType<typeof combineMatchQuery
             <Text style={styles.queryMatchName}>{row.match}</Text>
           </View>
         </Pressable>
-        <Pressable onPress={() => setLikelyOpen((value) => !value)} style={styles.likely}>
-          <Text style={styles.likelyKicker}>Likely outcome</Text>
-          <Text style={styles.likelySelection} numberOfLines={2}>{bet?.selection ?? 'No pick'}</Text>
-          <Text style={styles.likelyPct}>{bet ? `${Math.round(bet.probability * 100)}%` : '—'}</Text>
-        </Pressable>
-        <Pressable onPress={() => setCombinedOpen((value) => !value)} style={styles.queryCombined}>
-          <Text style={styles.combinedKicker}>Combined</Text>
-          <Text style={styles.queryCombinedValue}>{shown}</Text>
-        </Pressable>
+        <View style={[styles.queryBadges, narrow && styles.queryBadgesNarrow]}>
+          <Pressable onPress={() => setLikelyOpen((value) => !value)} style={[styles.likely, narrow && styles.badgeNarrow]}>
+            <Text style={styles.likelyKicker}>Likely outcome</Text>
+            <Text style={styles.likelySelection} numberOfLines={2}>{bet?.selection ?? 'No pick'}</Text>
+            <Text style={styles.likelyPct}>{bet ? `${Math.round(bet.probability * 100)}%` : '—'}</Text>
+          </Pressable>
+          <Pressable onPress={() => setCombinedOpen((value) => !value)} style={[styles.queryCombined, narrow && styles.badgeNarrow]}>
+            <Text style={styles.combinedKicker}>Combined</Text>
+            <Text style={styles.queryCombinedValue}>{shown}</Text>
+          </Pressable>
+        </View>
       </View>
       {combinedOpen ? (
         <View>
@@ -593,19 +602,60 @@ function Pager({
   from?: number;
   to?: number;
 }) {
+  const narrow = useNarrow();
   if (!always && pages <= 1) return null;
   const range = from != null && to != null ? `Showing ${from}–${to} of ${total}` : `${total} ${noun}`;
+  const label = `${range} · Page ${page} of ${pages}`;
   return (
-    <View style={styles.pager}>
-      <Pressable style={[styles.pageBtn, page <= 1 && styles.pageBtnOff]} onPress={() => page > 1 && onChange(page - 1)}>
-        <Text style={styles.pageBtnText}>Previous</Text>
-      </Pressable>
-      <Text style={styles.pageLabel}>
-        {range} · Page {page} of {pages}
-      </Text>
-      <Pressable style={[styles.pageBtn, page >= pages && styles.pageBtnOff]} onPress={() => page < pages && onChange(page + 1)}>
-        <Text style={styles.pageBtnText}>Next</Text>
-      </Pressable>
+    <View style={[styles.pager, narrow && styles.pagerNarrow]}>
+      {narrow ? <Text style={styles.pageLabelNarrow}>{label}</Text> : null}
+      <View style={[styles.pagerButtons, !narrow && styles.pagerButtonsWide]}>
+        <Pressable style={[styles.pageBtn, narrow && styles.pageBtnGrow, page <= 1 && styles.pageBtnOff]} onPress={() => page > 1 && onChange(page - 1)}>
+          <Text style={styles.pageBtnText}>Previous</Text>
+        </Pressable>
+        {narrow ? null : <Text style={styles.pageLabel}>{label}</Text>}
+        <Pressable style={[styles.pageBtn, narrow && styles.pageBtnGrow, page >= pages && styles.pageBtnOff]} onPress={() => page < pages && onChange(page + 1)}>
+          <Text style={styles.pageBtnText}>Next</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function StatsTable({
+  columns,
+  rows,
+  empty,
+}: {
+  columns: FootyColumn[];
+  rows: { id: string; cells: Record<string, string> }[];
+  empty: string;
+}) {
+  const narrow = useNarrow();
+  if (!narrow) return <FootyTable columns={columns} rows={rows} empty={empty} />;
+  if (rows.length === 0) return <Text style={styles.note}>{empty}</Text>;
+  const rankCol = columns.find((col) => col.key === 'rank');
+  const named = columns.find((col) => ['name', 'team', 'league', 'score', 'match'].includes(col.key)) ?? columns.find((col) => col.key !== 'rank');
+  const figureCol =
+    columns.find((col) => ['figure', 'value', 'pct', 'run', 'avg'].includes(col.key) && col !== named) ??
+    [...columns].reverse().find((col) => col !== named && col.key !== 'rank');
+  const rest = columns.filter((col) => col !== rankCol && col !== named && col !== figureCol);
+  return (
+    <View style={styles.cardList}>
+      {rows.map((row) => (
+        <View key={row.id} style={styles.statCard}>
+          <View style={styles.statCardTop}>
+            {rankCol ? <Text style={styles.statRank}>{row.cells[rankCol.key]}</Text> : null}
+            <Text style={styles.statName}>{named ? row.cells[named.key] : ''}</Text>
+            {figureCol ? <Text style={styles.statFigure}>{row.cells[figureCol.key]}</Text> : null}
+          </View>
+          {rest.map((col) => (
+            <Text key={col.key} style={styles.statMeta}>
+              {col.label}: {row.cells[col.key] || '—'}
+            </Text>
+          ))}
+        </View>
+      ))}
     </View>
   );
 }
@@ -666,7 +716,7 @@ function TopBoard({
     <Block dropdown title="Top 200" note={sentence}>
       <Text style={styles.formula}>{sentence}</Text>
       {pager('top')}
-      <FootyTable
+      <StatsTable
         columns={columns}
         empty={empty}
         rows={visible.map((row, index) => ({
@@ -833,7 +883,7 @@ function AnalysisBody(props: {
     const teams = rankWdw(props.index, props.scope);
     return (
       <>
-        <FootyTable
+        <StatsTable
           columns={[
             { key: 'rank', label: '#', flex: 0.4 },
             { key: 'team', label: 'Team', flex: 1.5 },
@@ -897,7 +947,7 @@ function AnalysisBody(props: {
     const rows = rankScorelines(props.index);
     return (
       <>
-        <FootyTable
+        <StatsTable
           columns={[
             { key: 'rank', label: '#', flex: 0.4 },
             { key: 'score', label: 'Correct score', flex: 1.2 },
@@ -922,7 +972,7 @@ function AnalysisBody(props: {
       const matches = feed ? rankCornerMatches(feed, props.upcoming) : [];
       return (
         <>
-          <FootyTable
+          <StatsTable
             columns={[
               { key: 'rank', label: '#', flex: 0.4 },
               { key: 'league', label: 'League', flex: 1.6 },
@@ -994,7 +1044,7 @@ function AnalysisBody(props: {
     const next = seriesMatches(props.finished, props.upcoming, props.seriesKey, props.scope);
     return (
       <>
-        <FootyTable
+        <StatsTable
           columns={[
             { key: 'rank', label: '#', flex: 0.4 },
             { key: 'team', label: 'Team', flex: 1.6 },
@@ -1058,7 +1108,7 @@ function LeagueRateTable({ title, rows, sort }: { title: string; sort: LeagueSor
   const label = sort === 'goals' ? 'Goals' : sort === 'avg' ? 'Average' : sort === 'progress' ? 'Progress' : 'Rate';
   return (
     <Block title={title} note="Leagues that have played at least 25% of the season. Over lines leave out leagues that have already finished.">
-      <FootyTable
+      <StatsTable
         columns={[
           { key: 'rank', label: '#', flex: 0.4 },
           { key: 'league', label: 'League', flex: 1.6 },
@@ -1095,7 +1145,7 @@ function RankTable({
   const start = (safe - 1) * size;
   return (
     <Block title={title} note={note}>
-      <FootyTable
+      <StatsTable
         columns={[
           { key: 'rank', label: '#', flex: 0.4 },
           { key: 'name', label: 'Name', flex: 1.6 },
@@ -1116,6 +1166,8 @@ function RankTable({
 
 const styles = StyleSheet.create({
   scroll: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xl, gap: spacing.md, width: '100%' },
+  scrollNarrow: { paddingHorizontal: spacing.md },
+  filterFull: { width: '100%', minWidth: 0, flexBasis: 'auto', flexGrow: 0 },
   hero: {
     width: '100%',
     flexDirection: 'row',
@@ -1127,6 +1179,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.lg,
     paddingHorizontal: spacing.lg,
   },
+  heroNarrow: { flexDirection: 'column', alignItems: 'flex-start', gap: spacing.sm, paddingHorizontal: spacing.md },
   heroCopy: { flex: 1, gap: 4 },
   heroKicker: {
     fontFamily: fonts.bodySemiBold,
@@ -1136,12 +1189,16 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   title: { fontFamily: fonts.display, fontSize: 36, color: '#FFFFFF', letterSpacing: 0.6 },
+  titleNarrow: { fontSize: 30 },
   blurb: { fontFamily: fonts.body, fontSize: 15, color: '#CBD5E1', lineHeight: 22, maxWidth: 760 },
   heroStat: { alignItems: 'flex-end', minWidth: 120 },
+  heroStatNarrow: { alignItems: 'flex-start', minWidth: 0 },
   heroNum: { fontFamily: fonts.display, fontSize: 44, color: '#FFFFFF', lineHeight: 48 },
+  heroNumNarrow: { fontSize: 36, lineHeight: 40 },
   heroLabel: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: '#94A3B8', letterSpacing: 0.4, textTransform: 'uppercase' },
   sample: { fontFamily: fonts.body, fontSize: 13, color: theme.textMuted },
   filters: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  filtersNarrow: { flexDirection: 'column' },
   block: { gap: spacing.xs },
   disclosure: {
     width: '100%',
@@ -1232,8 +1289,12 @@ const styles = StyleSheet.create({
     borderTopWidth: 2,
     borderTopColor: theme.accentGreen,
   },
+  queryMatchNarrow: { flexDirection: 'column', alignItems: 'stretch', gap: spacing.sm },
+  queryBadges: { flexDirection: 'row', alignItems: 'stretch', gap: spacing.sm },
+  queryBadgesNarrow: { width: '100%' },
+  badgeNarrow: { flex: 1, minWidth: 0, maxWidth: undefined },
   queryMatchText: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  queryMatchCopy: { flex: 1, gap: 2 },
+  queryMatchCopy: { flex: 1, minWidth: 0, gap: 2 },
   queryKicker: {
     fontFamily: fonts.bodySemiBold,
     fontSize: 11,
@@ -1290,9 +1351,28 @@ const styles = StyleSheet.create({
   },
   queryHit: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: theme.win, textAlign: 'right' },
   queryMiss: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: theme.loss, textAlign: 'right' },
-  pager: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, marginTop: spacing.sm },
+  pager: { gap: spacing.sm, marginTop: spacing.sm },
+  pagerNarrow: { alignItems: 'stretch' },
+  pagerButtons: { width: '100%', flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  pagerButtonsWide: { justifyContent: 'space-between' },
   pageBtn: { backgroundColor: '#0F172A', borderRadius: 8, paddingVertical: 10, paddingHorizontal: 16 },
+  pageBtnGrow: { flex: 1, alignItems: 'center' },
+  pageLabelNarrow: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: theme.textPrimary, textAlign: 'center' },
   pageBtnOff: { opacity: 0.35 },
   pageBtnText: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: '#FFFFFF' },
-  pageLabel: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: theme.textPrimary },
+  pageLabel: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: theme.textPrimary, flexShrink: 1, textAlign: 'center' },
+  cardList: { gap: spacing.sm },
+  statCard: {
+    borderWidth: layout.borderWidth,
+    borderColor: theme.border,
+    borderRadius: 10,
+    backgroundColor: theme.surface,
+    padding: spacing.sm,
+    gap: 2,
+  },
+  statCardTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  statRank: { fontFamily: fonts.display, fontSize: 18, color: theme.textMuted, width: 32 },
+  statName: { flex: 1, fontFamily: fonts.bodySemiBold, fontSize: 15, color: theme.textPrimary },
+  statFigure: { fontFamily: fonts.display, fontSize: 18, color: theme.accentGreen, textAlign: 'right' },
+  statMeta: { fontFamily: fonts.body, fontSize: 12, color: theme.textMuted, lineHeight: 16, paddingLeft: 40 },
 });
