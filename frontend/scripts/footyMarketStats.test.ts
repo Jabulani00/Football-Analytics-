@@ -2,6 +2,7 @@
  * Unit tests for Footy Stats rankings.
  */
 import {
+  aggregateBoxScores,
   asPercentProgress,
   bttsSummary,
   buildFootyIndex,
@@ -18,6 +19,8 @@ import {
   rankHalfGoals,
   rankLeagues,
   rankScorelines,
+  readBoxScore,
+  sampleMatchStats,
   upcomingBtts,
   upcomingGoalLine,
   type FootyFixture,
@@ -260,6 +263,82 @@ console.log('\nFooty stats — season discipline fields');
   check('over 2.5 offsides is stored', feed.teams.find((t) => t.name === 'Rough')?.offsideOver['2.5'] === 55);
   const noDiscipline = extractDiscipline([{ name: 'Plain', played: { total: 12 }, goals_for: { total: 20 } }]);
   check('goal fields alone do not invent corners or cards', noDiscipline.hasCorners === false && noDiscipline.hasCards === false && noDiscipline.hasOffsides === false);
+}
+
+console.log('\nFooty stats — match summary box scores');
+{
+  check(
+    'pressure alone is not a corner or booking sample',
+    readBoxScore('A', 'B', { home_pressure: 12, away_pressure: 8 }) == null,
+  );
+  const first = readBoxScore('Home', 'Away', {
+    home_corners: 7,
+    away_corners: 4,
+    home_yellow_cards: 2,
+    away_yellow_cards: 1,
+    home_red_cards: 0,
+    away_red_cards: 1,
+    home_offsides: 3,
+    away_offsides: 1,
+  });
+  check(
+    'reads the same stat keys as the match summary',
+    first?.homeCorners === 7 && first.awayYellows === 1 && first.homeOffsides === 3,
+  );
+  const feed = aggregateBoxScores([
+    first!,
+    readBoxScore('Home', 'Other', {
+      home_corners: 6,
+      away_corners: 5,
+      home_yellow_cards: 3,
+      away_yellow_cards: 0,
+      home_red_cards: 0,
+      away_red_cards: 0,
+      home_offsides: 2,
+      away_offsides: 2,
+    })!,
+    readBoxScore('Home', 'Third', {
+      home_corners: 2,
+      away_corners: 2,
+      home_yellow_cards: 1,
+      away_yellow_cards: 4,
+      home_red_cards: 0,
+      away_red_cards: 0,
+      home_offsides: 0,
+      away_offsides: 1,
+    })!,
+  ]);
+  const home = feed.teams.find((team) => team.name === 'Home');
+  check('match corners add both teams', home?.matchCorners === 26);
+  check('corners for are this team only', home?.cornersFor === 15);
+  check('two of three matches are over 9.5 corners', home?.cornerOver['9.5'] === 66.7);
+  check('yellow bookings are summed', home?.yellows === 6);
+  check('offsides are this team only', home?.offsides === 5);
+  check('two of three matches are over 2.5 offsides', home?.offsideOver['2.5'] === 66.7);
+  check('the sample size is the number of matches', feed.sampledMatches === 3);
+  check('full-match stats do not invent a half split', feed.hasCornerHalves === false);
+  const named = readBoxScore('Home', 'Away', { home_corners: 8, away_corners: 4 }, {
+    competitionId: 9,
+    competitionName: 'Premier',
+    country: 'England',
+  });
+  const other = readBoxScore('Home', 'Away', { home_corners: 3, away_corners: 3 }, {
+    competitionId: 4,
+    competitionName: 'Championship',
+    country: 'England',
+  });
+  const split = aggregateBoxScores([named!, other!]);
+  check('the same team name in two leagues stays two rows', split.teams.filter((team) => team.name === 'Home').length === 2);
+  const premier = split.leagues.find((league) => league.league === 'Premier');
+  check('a league corner average uses both teams once', premier?.matchCorners === 12 && premier.cornerMatches === 1);
+  const many = [
+    ...repeat(12, () => fx({ homeName: 'A', awayName: 'B', competitionId: 1, competitionName: 'One' })),
+    ...repeat(4, () => fx({ homeName: 'C', awayName: 'D', competitionId: 2, competitionName: 'Two' })),
+  ];
+  const sampled = sampleMatchStats(many, null);
+  check('each league keeps its own recent matches', sampled.filter((row) => row.competitionId === 1).length === 10);
+  check('a smaller league is not dropped', sampled.filter((row) => row.competitionId === 2).length === 4);
+  check('one league still uses the deeper sample', sampleMatchStats(repeat(60, () => fx({ homeName: 'A', awayName: 'B' })), 1).length === 48);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

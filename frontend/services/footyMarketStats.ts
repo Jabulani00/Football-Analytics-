@@ -11,6 +11,16 @@ export const MIN_CLEAN_SHEET_MATCHES = 7;
 export const MIN_CARD_MATCHES = 5;
 export const MIN_CORNER_MATCHES = 7;
 export const MIN_OFFSIDE_MATCHES = 5;
+/** Finished matches sampled when one league is selected. */
+export const MATCH_SAMPLE_CAP = 48;
+/** Recent finished matches sampled in each league on the all-leagues view. */
+export const MATCHES_PER_LEAGUE = 10;
+/** Cap on match-stat requests when several leagues are on screen. */
+export const MULTI_SAMPLE_CAP = 300;
+/** Teams and leagues need this many sampled matches before a row shows. */
+export const MATCH_SAMPLE_MIN = 3;
+export const CORNER_OVER_LINES = ['8.5', '9.5', '10.5', '11.5', '12.5'] as const;
+export const OFFSIDE_OVER_LINES = ['1.5', '2.5', '3.5'] as const;
 export const UPCOMING_LIMIT = 80;
 export const ALL_LEAGUE_CAP = 30;
 
@@ -633,6 +643,9 @@ export function rankUpcomingValues(
 
 export type DisciplineTeam = {
   name: string;
+  league: string;
+  country: string;
+  competitionId: number | null;
   played: number;
   cornersFor: number | null;
   cornersAgainst: number | null;
@@ -644,26 +657,50 @@ export type DisciplineTeam = {
   offsides: number | null;
   cornerOver: Record<string, number>;
   offsideOver: Record<string, number>;
+  /** Matches behind the card totals, when that sample differs from `played`. */
+  cardPlayed?: number;
+  /** Matches behind the offside totals, when that sample differs from `played`. */
+  offsidePlayed?: number;
+};
+
+export type DisciplineLeague = {
+  competitionId: number;
+  league: string;
+  country: string;
+  cornerMatches: number;
+  matchCorners: number;
+  cornerOver: Record<string, number>;
+  cardMatches: number;
+  yellows: number;
+  reds: number;
+  offsideMatches: number;
+  offsides: number;
+  offsideOver: Record<string, number>;
 };
 
 export type DisciplineFeed = {
   teams: DisciplineTeam[];
+  leagues: DisciplineLeague[];
   hasCorners: boolean;
   hasCornerHalves: boolean;
   hasCornerOvers: boolean;
   hasCards: boolean;
   hasOffsides: boolean;
   hasOffsideOvers: boolean;
+  /** Set when totals were counted from match `include=stats`, not the season row. */
+  sampledMatches: number | null;
 };
 
 const EMPTY_FEED: DisciplineFeed = {
   teams: [],
+  leagues: [],
   hasCorners: false,
   hasCornerHalves: false,
   hasCornerOvers: false,
   hasCards: false,
   hasOffsides: false,
   hasOffsideOvers: false,
+  sampledMatches: null,
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -753,6 +790,9 @@ export function extractDiscipline(rows: unknown[]): DisciplineFeed {
       (cornersFor != null && cornersAgainst != null ? cornersFor + cornersAgainst : null);
     teams.push({
       name: nameValue,
+      league: '',
+      country: '',
+      competitionId: null,
       played,
       cornersFor,
       cornersAgainst,
@@ -768,11 +808,305 @@ export function extractDiscipline(rows: unknown[]): DisciplineFeed {
   }
   return {
     teams,
+    leagues: [],
     hasCorners: teams.some((t) => t.cornersFor != null || t.cornersAgainst != null || t.matchCorners != null),
     hasCornerHalves: teams.some((t) => t.corners1h != null && t.corners2h != null),
     hasCornerOvers: teams.some((t) => Object.keys(t.cornerOver).length > 0),
     hasCards: teams.some((t) => t.yellows != null || t.reds != null),
     hasOffsides: teams.some((t) => t.offsides != null),
     hasOffsideOvers: teams.some((t) => Object.keys(t.offsideOver).length > 0),
+    sampledMatches: null,
+  };
+}
+
+export type BoxScore = {
+  homeName: string;
+  awayName: string;
+  competitionId: number;
+  competitionName: string;
+  country: string;
+  homeCorners: number | null;
+  awayCorners: number | null;
+  homeYellows: number | null;
+  awayYellows: number | null;
+  homeReds: number | null;
+  awayReds: number | null;
+  homeOffsides: number | null;
+  awayOffsides: number | null;
+};
+
+function statNum(stats: Record<string, number | null | undefined>, key: string): number | null {
+  const value = stats[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+/** Read corners, bookings, and offsides from a fixture `stats` object. */
+export function sampleMatchStats(fixtures: FootyFixture[], competitionId: number | null): FootyFixture[] {
+  const finished = fixtures.filter((fx) => fx.finished).sort((a, b) => b.unix - a.unix);
+  if (competitionId != null) {
+    return finished.filter((fx) => fx.competitionId === competitionId).slice(0, MATCH_SAMPLE_CAP);
+  }
+  const groups = new Map<number, FootyFixture[]>();
+  for (const fx of finished) {
+    const list = groups.get(fx.competitionId);
+    if (!list) groups.set(fx.competitionId, [fx]);
+    else if (list.length < MATCHES_PER_LEAGUE) list.push(fx);
+  }
+  return [...groups.values()].flat().slice(0, MULTI_SAMPLE_CAP);
+}
+
+export function readBoxScore(
+  homeName: string,
+  awayName: string,
+  stats: Record<string, number | null | undefined> | null | undefined,
+  meta?: { competitionId: number; competitionName: string; country: string },
+): BoxScore | null {
+  if (!stats || !homeName || !awayName) return null;
+  const row: BoxScore = {
+    homeName,
+    awayName,
+    competitionId: meta?.competitionId ?? 0,
+    competitionName: meta?.competitionName ?? '',
+    country: meta?.country ?? '',
+    homeCorners: statNum(stats, 'home_corners'),
+    awayCorners: statNum(stats, 'away_corners'),
+    homeYellows: statNum(stats, 'home_yellow_cards'),
+    awayYellows: statNum(stats, 'away_yellow_cards'),
+    homeReds: statNum(stats, 'home_red_cards'),
+    awayReds: statNum(stats, 'away_red_cards'),
+    homeOffsides: statNum(stats, 'home_offsides'),
+    awayOffsides: statNum(stats, 'away_offsides'),
+  };
+  const hasFigure =
+    row.homeCorners != null ||
+    row.awayCorners != null ||
+    row.homeYellows != null ||
+    row.awayYellows != null ||
+    row.homeReds != null ||
+    row.awayReds != null ||
+    row.homeOffsides != null ||
+    row.awayOffsides != null;
+  return hasFigure ? row : null;
+}
+
+type SideAcc = {
+  name: string;
+  league: string;
+  country: string;
+  competitionId: number;
+  cornerMatches: number;
+  cornersFor: number;
+  cornersAgainst: number;
+  cornerHits: Record<string, number>;
+  cardMatches: number;
+  yellows: number;
+  reds: number;
+  offsideMatches: number;
+  offsides: number;
+  offsideHits: Record<string, number>;
+};
+
+function sideAcc(map: Map<string, SideAcc>, name: string, rowMeta: BoxScore): SideAcc {
+  const key = `${rowMeta.competitionId}::${name}`;
+  let row = map.get(key);
+  if (!row) {
+    row = {
+      name,
+      league: rowMeta.competitionName,
+      country: rowMeta.country,
+      competitionId: rowMeta.competitionId,
+      cornerMatches: 0,
+      cornersFor: 0,
+      cornersAgainst: 0,
+      cornerHits: {},
+      cardMatches: 0,
+      yellows: 0,
+      reds: 0,
+      offsideMatches: 0,
+      offsides: 0,
+      offsideHits: {},
+    };
+    map.set(key, row);
+  }
+  return row;
+}
+
+function addOver(hits: Record<string, number>, lines: readonly string[], total: number) {
+  for (const line of lines) {
+    if (total > Number(line)) hits[line] = (hits[line] ?? 0) + 1;
+  }
+}
+
+/**
+ * Season totals from finished-match stats — the same home/away pairs the
+ * match summary lists under corners, offsides, and yellow/red cards.
+ * Over percentages are the share of those matches that cleared the line.
+ */
+type LeagueAcc = {
+  competitionId: number;
+  league: string;
+  country: string;
+  cornerMatches: number;
+  matchCorners: number;
+  cornerHits: Record<string, number>;
+  cardMatches: number;
+  yellows: number;
+  reds: number;
+  offsideMatches: number;
+  offsides: number;
+  offsideHits: Record<string, number>;
+};
+
+function leagueAcc(map: Map<number, LeagueAcc>, row: BoxScore): LeagueAcc {
+  let acc = map.get(row.competitionId);
+  if (!acc) {
+    acc = {
+      competitionId: row.competitionId,
+      league: row.competitionName,
+      country: row.country,
+      cornerMatches: 0,
+      matchCorners: 0,
+      cornerHits: {},
+      cardMatches: 0,
+      yellows: 0,
+      reds: 0,
+      offsideMatches: 0,
+      offsides: 0,
+      offsideHits: {},
+    };
+    map.set(row.competitionId, acc);
+  }
+  return acc;
+}
+
+export function aggregateBoxScores(rows: BoxScore[]): DisciplineFeed {
+  const map = new Map<string, SideAcc>();
+  const leagues = new Map<number, LeagueAcc>();
+  let sampled = 0;
+  for (const row of rows) {
+    sampled += 1;
+    if (row.homeCorners != null && row.awayCorners != null) {
+      const home = sideAcc(map, row.homeName, row);
+      const away = sideAcc(map, row.awayName, row);
+      const total = row.homeCorners + row.awayCorners;
+      home.cornerMatches += 1;
+      away.cornerMatches += 1;
+      home.cornersFor += row.homeCorners;
+      home.cornersAgainst += row.awayCorners;
+      away.cornersFor += row.awayCorners;
+      away.cornersAgainst += row.homeCorners;
+      addOver(home.cornerHits, CORNER_OVER_LINES, total);
+      addOver(away.cornerHits, CORNER_OVER_LINES, total);
+      if (row.competitionName) {
+        const league = leagueAcc(leagues, row);
+        league.cornerMatches += 1;
+        league.matchCorners += total;
+        addOver(league.cornerHits, CORNER_OVER_LINES, total);
+      }
+    }
+    if (row.homeYellows != null || row.awayYellows != null || row.homeReds != null || row.awayReds != null) {
+      const home = sideAcc(map, row.homeName, row);
+      const away = sideAcc(map, row.awayName, row);
+      home.cardMatches += 1;
+      away.cardMatches += 1;
+      home.yellows += row.homeYellows ?? 0;
+      home.reds += row.homeReds ?? 0;
+      away.yellows += row.awayYellows ?? 0;
+      away.reds += row.awayReds ?? 0;
+      if (row.competitionName) {
+        const league = leagueAcc(leagues, row);
+        league.cardMatches += 1;
+        league.yellows += (row.homeYellows ?? 0) + (row.awayYellows ?? 0);
+        league.reds += (row.homeReds ?? 0) + (row.awayReds ?? 0);
+      }
+    }
+    if (row.homeOffsides != null && row.awayOffsides != null) {
+      const home = sideAcc(map, row.homeName, row);
+      const away = sideAcc(map, row.awayName, row);
+      const total = row.homeOffsides + row.awayOffsides;
+      home.offsideMatches += 1;
+      away.offsideMatches += 1;
+      home.offsides += row.homeOffsides;
+      away.offsides += row.awayOffsides;
+      addOver(home.offsideHits, OFFSIDE_OVER_LINES, total);
+      addOver(away.offsideHits, OFFSIDE_OVER_LINES, total);
+      if (row.competitionName) {
+        const league = leagueAcc(leagues, row);
+        league.offsideMatches += 1;
+        league.offsides += total;
+        addOver(league.offsideHits, OFFSIDE_OVER_LINES, total);
+      }
+    }
+  }
+
+  const teams: DisciplineTeam[] = [...map.values()].map((row) => {
+    const cornerOver: Record<string, number> = {};
+    if (row.cornerMatches > 0) {
+      for (const line of CORNER_OVER_LINES) cornerOver[line] = ratePct(row.cornerHits[line] ?? 0, row.cornerMatches);
+    }
+    const offsideOver: Record<string, number> = {};
+    if (row.offsideMatches > 0) {
+      for (const line of OFFSIDE_OVER_LINES) {
+        offsideOver[line] = ratePct(row.offsideHits[line] ?? 0, row.offsideMatches);
+      }
+    }
+    return {
+      name: row.name,
+      league: row.league,
+      country: row.country,
+      competitionId: row.competitionId || null,
+      played: row.cornerMatches || row.cardMatches || row.offsideMatches,
+      cornersFor: row.cornerMatches > 0 ? row.cornersFor : null,
+      cornersAgainst: row.cornerMatches > 0 ? row.cornersAgainst : null,
+      matchCorners: row.cornerMatches > 0 ? row.cornersFor + row.cornersAgainst : null,
+      corners1h: null,
+      corners2h: null,
+      yellows: row.cardMatches > 0 ? row.yellows : null,
+      reds: row.cardMatches > 0 ? row.reds : null,
+      offsides: row.offsideMatches > 0 ? row.offsides : null,
+      cornerOver,
+      offsideOver,
+      cardPlayed: row.cardMatches,
+      offsidePlayed: row.offsideMatches,
+    };
+  });
+
+  const leagueRows: DisciplineLeague[] = [...leagues.values()].map((row) => {
+    const cornerOver: Record<string, number> = {};
+    if (row.cornerMatches > 0) {
+      for (const line of CORNER_OVER_LINES) cornerOver[line] = ratePct(row.cornerHits[line] ?? 0, row.cornerMatches);
+    }
+    const offsideOver: Record<string, number> = {};
+    if (row.offsideMatches > 0) {
+      for (const line of OFFSIDE_OVER_LINES) {
+        offsideOver[line] = ratePct(row.offsideHits[line] ?? 0, row.offsideMatches);
+      }
+    }
+    return {
+      competitionId: row.competitionId,
+      league: row.league,
+      country: row.country,
+      cornerMatches: row.cornerMatches,
+      matchCorners: row.matchCorners,
+      cornerOver,
+      cardMatches: row.cardMatches,
+      yellows: row.yellows,
+      reds: row.reds,
+      offsideMatches: row.offsideMatches,
+      offsides: row.offsides,
+      offsideOver,
+    };
+  });
+
+  return {
+    teams,
+    leagues: leagueRows,
+    hasCorners: teams.some((team) => team.cornersFor != null),
+    hasCornerHalves: false,
+    hasCornerOvers: teams.some((team) => Object.keys(team.cornerOver).length > 0),
+    hasCards: teams.some((team) => team.yellows != null || team.reds != null),
+    hasOffsides: teams.some((team) => team.offsides != null),
+    hasOffsideOvers: teams.some((team) => Object.keys(team.offsideOver).length > 0),
+    sampledMatches: sampled,
   };
 }

@@ -3,8 +3,12 @@ import { useEffect, useState } from 'react';
 import { cachedFetch } from '@/services/fixtureCache';
 import {
   ALL_LEAGUE_CAP,
+  aggregateBoxScores,
   asPercentProgress,
   extractDiscipline,
+  readBoxScore,
+  sampleMatchStats,
+  type BoxScore,
   type CompetitionKind,
   type DisciplineFeed,
   type FootyFixture,
@@ -13,6 +17,7 @@ import {
   fetchAllCompetitions,
   fetchAllFixturesBetween,
   fetchAllUpcomingFixtures,
+  fetchFixtureMatchStats,
   fetchRawSeasonStats,
   seasonWindowUnix,
   type Competition,
@@ -36,6 +41,7 @@ export type FootyStatsData = {
   upcoming: FootyFixture[];
   catalog: FootyCatalogComp[];
   discipline: DisciplineFeed | null;
+  statsLoading: boolean;
   loadedLeagues: number;
   capped: boolean;
 };
@@ -136,6 +142,7 @@ const EMPTY: FootyStatsData = {
   upcoming: [],
   catalog: [],
   discipline: null,
+  statsLoading: false,
   loadedLeagues: 0,
   capped: false,
 };
@@ -158,6 +165,7 @@ export function useFootyStats(filter: {
       finished: [],
       upcoming: [],
       discipline: null,
+      statsLoading: false,
     }));
 
     (async () => {
@@ -208,7 +216,20 @@ export function useFootyStats(filter: {
           .filter((fx) => fx.unix <= horizon)
           .map((fx) => toFootyFixture(fx, progressOf.get(fx.competition_id) ?? null));
 
-        let discipline: DisciplineFeed | null = null;
+        if (!alive) return;
+        setData({
+          loading: false,
+          error: null,
+          finished,
+          upcoming,
+          catalog,
+          discipline: null,
+          statsLoading: true,
+          loadedLeagues: targets.length,
+          capped,
+        });
+
+        let seasonFeed: DisciplineFeed | null = null;
         if (competitionId != null) {
           const selected = catalog.find((comp) => comp.id === competitionId);
           if (selected?.seasonId != null) {
@@ -218,29 +239,44 @@ export function useFootyStats(filter: {
                 RESULTS_TTL_MS,
                 () => fetchRawSeasonStats(selected.seasonId as number),
               );
-              discipline = extractDiscipline(raw);
+              seasonFeed = extractDiscipline(raw);
             } catch {
-              discipline = extractDiscipline([]);
+              seasonFeed = extractDiscipline([]);
             }
           }
         }
-
-        if (!alive) return;
-        setData({
-          loading: false,
-          error: null,
-          finished,
-          upcoming,
-          catalog,
-          discipline,
-          loadedLeagues: targets.length,
-          capped,
+        const sample = sampleMatchStats(finished, competitionId);
+        const boxes = await mapPool(sample, 6, async (fx) => {
+          try {
+            const detail = await cachedFetch(`footy:box:${fx.id}`, RESULTS_TTL_MS, () =>
+              fetchFixtureMatchStats(fx.id),
+            );
+            if (!detail?.stats) return null;
+            return readBoxScore(detail.home_name, detail.away_name, detail.stats, {
+              competitionId: fx.competitionId,
+              competitionName: fx.competitionName,
+              country: fx.country,
+            });
+          } catch {
+            return null;
+          }
         });
+        if (!alive) return;
+        const counted = boxes.filter((row): row is BoxScore => row != null);
+        const matchFeed = aggregateBoxScores(counted);
+        const matchHasFigures = matchFeed.hasCorners || matchFeed.hasCards || matchFeed.hasOffsides;
+        const discipline = matchHasFigures ? matchFeed : seasonFeed;
+        setData((prev) => ({
+          ...prev,
+          discipline,
+          statsLoading: false,
+        }));
       } catch (err: unknown) {
         if (!alive || ctrl.signal.aborted) return;
         setData((prev) => ({
           ...prev,
           loading: false,
+          statsLoading: false,
           error: err instanceof Error ? err.message : String(err),
         }));
       }

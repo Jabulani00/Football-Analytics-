@@ -15,6 +15,7 @@ import {
   MIN_LEAGUE_PROGRESS,
   MIN_OFFSIDE_MATCHES,
   MIN_RATE_MATCHES,
+  MATCH_SAMPLE_MIN,
   perGame,
   rankBothHalves,
   rankBttsSplit,
@@ -97,19 +98,19 @@ const MARKETS: { value: MarketId; label: string; blurb: string }[] = [
     value: 'corners',
     label: 'Corners',
     blurb:
-      'Corner totals come from the selected league’s season feed. Averages are total corners divided by matches played. Over lines appear only when the feed includes them.',
+      'Corners are counted from each finished match’s stats — the same corners figure as the match summary. Over lines are the share of those matches that finished above the line.',
   },
   {
     value: 'cards',
     label: 'Yellow & red cards',
     blurb:
-      'Card totals come from the selected league’s season feed. Player bookings are not in this feed, so there is no player table.',
+      'Yellow and red cards are counted from each finished match’s stats — the same bookings as the match summary. The feed does not name which player was booked.',
   },
   {
     value: 'offsides',
     label: 'Offsides',
     blurb:
-      'Team offsides per game from the selected league’s season feed. The next-48-hours list adds the home and away offside averages. Over lines appear only when the feed includes them.',
+      'Offsides are counted from each finished match’s stats — the same offside figure as the match summary. The next-48-hours list adds the home and away averages.',
   },
 ];
 
@@ -171,6 +172,20 @@ function maybePct(n: number | null): string {
 
 function maybeNum(n: number | null): string {
   return n == null ? '—' : n.toFixed(1);
+}
+
+function floorFor(feed: { sampledMatches: number | null } | null | undefined, fallback: number): number {
+  return feed?.sampledMatches != null ? MATCH_SAMPLE_MIN : fallback;
+}
+
+/** A team row needs one sampled match. Ten matches in a league rarely put the same side on the pitch three times. */
+function teamFloor(feed: { sampledMatches: number | null } | null | undefined, fallback: number): number {
+  return feed?.sampledMatches != null ? 1 : fallback;
+}
+
+function sampleNote(feed: { sampledMatches: number | null } | null | undefined): string {
+  if (feed?.sampledMatches == null) return '';
+  return ` Counted from ${feed.sampledMatches} finished matches, using the same stats as the match summary.`;
 }
 
 function kickoff(unix: number): string {
@@ -433,7 +448,7 @@ export default function FootyStatsPanel() {
       {!live.loading && needsLeague ? (
         <DisciplineSections
           market={market}
-          hasLeague={Boolean(leagueId)}
+          statsLoading={live.statsLoading}
           teams={live.discipline?.teams ?? []}
           feed={live.discipline}
           upcoming={live.upcoming}
@@ -698,14 +713,23 @@ function ScoreSection({ index }: { index: ReturnType<typeof buildFootyIndex> }) 
   );
 }
 
-function UpcomingTable({ rows }: { rows: { id: number; unix: number; home: string; away: string; league: string; homePct: number; awayPct: number; pct: number }[] }) {
+function UpcomingTable({
+  rows,
+  asPercent = true,
+  valueLabel,
+}: {
+  rows: { id: number; unix: number; home: string; away: string; league: string; homePct: number; awayPct: number; pct: number }[];
+  asPercent?: boolean;
+  valueLabel?: string;
+}) {
+  const show = (n: number) => (asPercent ? pct(n) : n.toFixed(1));
   const columns: FootyColumn[] = [
     { key: 'ko', label: 'Kickoff', flex: 1.2 },
     { key: 'match', label: 'Match', flex: 2 },
     { key: 'league', label: 'League', flex: 1.3 },
     { key: 'home', label: 'Home', flex: 0.7 },
     { key: 'away', label: 'Away', flex: 0.7 },
-    { key: 'pct', label: 'Match', flex: 0.7 },
+    { key: 'pct', label: valueLabel ?? (asPercent ? 'Match' : 'Avg'), flex: 0.7 },
   ];
   return (
     <FootyTable
@@ -717,9 +741,9 @@ function UpcomingTable({ rows }: { rows: { id: number; unix: number; home: strin
           ko: kickoff(row.unix),
           match: `${row.home} vs ${row.away}`,
           league: row.league,
-          home: pct(row.homePct),
-          away: pct(row.awayPct),
-          pct: pct(row.pct),
+          home: show(row.homePct),
+          away: show(row.awayPct),
+          pct: show(row.pct),
         },
       }))}
     />
@@ -762,9 +786,19 @@ function LeagueTable({
   );
 }
 
+function spansLeagues(teams: DisciplineTeam[]): boolean {
+  return new Set(teams.map((team) => team.competitionId).filter((id) => id != null)).size > 1;
+}
+
+function findTeam(teams: DisciplineTeam[], competitionId: number, name: string): DisciplineTeam | undefined {
+  return teams.find(
+    (team) => team.name === name && (team.competitionId == null || team.competitionId === competitionId),
+  );
+}
+
 function DisciplineSections({
   market,
-  hasLeague,
+  statsLoading,
   teams,
   feed,
   upcoming,
@@ -774,7 +808,7 @@ function DisciplineSections({
   offsideLine,
 }: {
   market: MarketId;
-  hasLeague: boolean;
+  statsLoading: boolean;
   teams: DisciplineTeam[];
   feed: ReturnType<typeof useFootyStats>['discipline'];
   upcoming: ReturnType<typeof useFootyStats>['upcoming'];
@@ -783,11 +817,14 @@ function DisciplineSections({
   cornerLine: string;
   offsideLine: string;
 }) {
-  if (!hasLeague) {
+  if (statsLoading && !feed) {
     return (
-      <Text style={styles.note}>
-        Select one league. Corner, card, and offside totals are read from that league’s season feed, and only when the feed includes them.
-      </Text>
+      <View>
+        <ActivityIndicator color={theme.accentGreen} style={styles.spinner} />
+        <Text style={styles.note}>
+          Counting corners, bookings, and offsides from recent finished matches — the same stats the match summary shows.
+        </Text>
+      </View>
     );
   }
   if (market === 'corners') return <CornerSection teams={teams} feed={feed} half={half} line={cornerLine} upcoming={upcoming} query={query} />;
@@ -811,10 +848,20 @@ function CornerSection({
   query: { country: string | null; competitionId: number | null; kind: CompetitionKind; scope: Scope };
 }) {
   if (!feed?.hasCorners) {
-    return <Text style={styles.note}>This league’s season feed has no corner totals.</Text>;
+    return <Text style={styles.note}>No corner counts on the finished matches in this filter.</Text>;
   }
+  const min = floorFor(feed, MIN_CORNER_MATCHES);
+  const teamMin = teamFloor(feed, MIN_CORNER_MATCHES);
+  const multi = spansLeagues(teams);
+  const leagueRows = (feed.leagues ?? [])
+    .filter((league) => league.cornerMatches >= min)
+    .map((league) => ({
+      league,
+      avg: perGame(league.matchCorners, league.cornerMatches) ?? 0,
+    }))
+    .sort((a, b) => b.avg - a.avg || a.league.league.localeCompare(b.league.league));
   const ranked = teams
-    .filter((team) => team.played >= MIN_CORNER_MATCHES && (team.matchCorners != null || team.cornersFor != null))
+    .filter((team) => team.played >= teamMin && (team.matchCorners != null || team.cornersFor != null))
     .map((team) => ({
       team,
       match: perGame(team.matchCorners, team.played),
@@ -828,6 +875,7 @@ function CornerSection({
   const columns: FootyColumn[] = [
     { key: 'rank', label: '#', flex: 0.4 },
     { key: 'team', label: 'Team', flex: 1.6 },
+    ...(multi ? [{ key: 'league', label: 'League', flex: 1.2 }] : []),
     { key: 'played', label: 'Played', flex: 0.7 },
     { key: 'match', label: 'Match / game', flex: 1 },
     { key: 'for', label: 'For / game', flex: 0.9 },
@@ -835,35 +883,68 @@ function CornerSection({
   ];
   const valueFor = (competitionId: number, name: string) => {
     if (query.competitionId != null && competitionId !== query.competitionId) return null;
-    const team = teams.find((item) => item.name === name);
-    if (!team || team.played < MIN_CORNER_MATCHES) return null;
+    const team = findTeam(teams, competitionId, name);
+    if (!team || team.played < teamMin) return null;
     return perGame(team.matchCorners, team.played);
   };
   const fixtures = rankUpcomingValues(upcoming, query, valueFor, 'avg');
   const halfKey = half === 'first' ? 'corners1h' : 'corners2h';
   const halfRows = feed.hasCornerHalves
     ? teams
-        .filter((team) => team.played >= MIN_CORNER_MATCHES && team[halfKey] != null)
+        .filter((team) => team.played >= teamMin && team[halfKey] != null)
         .map((team) => ({ name: team.name, played: team.played, avg: perGame(team[halfKey], team.played) ?? 0 }))
         .sort((a, b) => b.avg - a.avg)
     : [];
   const overRows = feed.hasCornerOvers
     ? teams
-        .filter((team) => team.played >= MIN_CORNER_MATCHES && team.cornerOver[line] != null)
-        .map((team) => ({ name: team.name, played: team.played, pct: team.cornerOver[line] }))
+        .filter((team) => team.played >= teamMin && team.cornerOver[line] != null)
+        .map((team) => ({
+          name: team.name,
+          league: team.league,
+          competitionId: team.competitionId,
+          played: team.played,
+          pct: team.cornerOver[line],
+        }))
         .sort((a, b) => b.pct - a.pct)
     : [];
   return (
     <>
-      <Block title="Corners per game" note={`Teams with at least ${MIN_CORNER_MATCHES} matches. Match corners are the two teams combined when the feed provides both sides.`}>
+      {leagueRows.length > 0 ? (
+        <Block title="Corners per game by league" note={`Match corners add both teams. Leagues with at least ${min} sampled matches.${sampleNote(feed)}`}>
+          <FootyTable
+            columns={[
+              { key: 'rank', label: '#', flex: 0.4 },
+              { key: 'league', label: 'League', flex: 1.6 },
+              { key: 'country', label: 'Country', flex: 1 },
+              { key: 'played', label: 'Matches', flex: 0.8 },
+              { key: 'avg', label: 'Per game', flex: 0.8 },
+              { key: 'pct', label: `Over ${line}`, flex: 0.8 },
+            ]}
+            empty="No leagues with enough sampled matches."
+            rows={leagueRows.map((row, i) => ({
+              id: String(row.league.competitionId),
+              cells: {
+                rank: String(i + 1),
+                league: row.league.league,
+                country: row.league.country,
+                played: String(row.league.cornerMatches),
+                avg: row.avg.toFixed(1),
+                pct: pct(row.league.cornerOver[line] ?? 0),
+              },
+            }))}
+          />
+        </Block>
+      ) : null}
+      <Block title="Corners per game" note={`Match corners add both teams. Played is how many sampled matches that team was in.${sampleNote(feed)}`}>
         <FootyTable
           columns={columns}
           empty="No corner totals for teams that have played enough matches."
           rows={ranked.map((row, i) => ({
-            id: row.team.name,
+            id: `${row.team.competitionId ?? 'x'}-${row.team.name}`,
             cells: {
               rank: String(i + 1),
               team: row.team.name,
+              league: row.team.league,
               played: String(row.team.played),
               match: maybeNum(row.match),
               for: maybeNum(row.forAvg),
@@ -892,21 +973,28 @@ function CornerSection({
         <Text style={styles.note}>This feed has no first-half and second-half corner split.</Text>
       )}
       <Block title="Upcoming matches with high average corners" note="Average of the two teams’ match-corners per game. Next 48 hours, leagues at 25% progress or more.">
-        <UpcomingTable rows={fixtures} />
+        <UpcomingTable rows={fixtures} asPercent={false} />
       </Block>
       {feed.hasCornerOvers ? (
-        <Block title={`Over ${line} corners`} note="Percentage taken from the season feed. It is not estimated from the average.">
+        <Block title={`Over ${line} corners`} note={`Share of this team’s sampled matches with more than ${line} corners. One match is 100% or 0%.${sampleNote(feed)}`}>
           <FootyTable
             columns={[
               { key: 'rank', label: '#', flex: 0.4 },
               { key: 'team', label: 'Team', flex: 1.6 },
+              ...(multi ? [{ key: 'league', label: 'League', flex: 1.2 }] : []),
               { key: 'played', label: 'Played', flex: 0.7 },
               { key: 'pct', label: '%', flex: 0.7 },
             ]}
             empty={`No Over ${line} corner percentages in this feed.`}
             rows={overRows.map((row, i) => ({
-              id: row.name,
-              cells: { rank: String(i + 1), team: row.name, played: String(row.played), pct: pct(row.pct) },
+              id: `${row.competitionId ?? 'x'}-${row.name}`,
+              cells: {
+                rank: String(i + 1),
+                team: row.name,
+                league: row.league,
+                played: String(row.played),
+                pct: pct(row.pct),
+              },
             }))}
           />
         </Block>
@@ -925,39 +1013,81 @@ function CardSection({
   feed: ReturnType<typeof useFootyStats>['discipline'];
 }) {
   if (!feed?.hasCards) {
-    return (
-      <>
-        <Text style={styles.note}>This league’s season feed has no yellow or red card totals.</Text>
-        <Text style={styles.note}>Player bookings are not in the feed, so there is no list of players who are carded most.</Text>
-      </>
-    );
+    return <Text style={styles.note}>No yellow or red card counts on the finished matches in this filter.</Text>;
   }
-  const rows = teams
-    .filter((team) => team.played >= MIN_CARD_MATCHES && (team.yellows != null || team.reds != null))
-    .map((team) => ({
-      name: team.name,
-      played: team.played,
-      yellow: perGame(team.yellows, team.played),
-      red: perGame(team.reds, team.played),
+  const min = floorFor(feed, MIN_CARD_MATCHES);
+  const teamMin = teamFloor(feed, MIN_CARD_MATCHES);
+  const multi = spansLeagues(teams);
+  const leagueRows = (feed.leagues ?? [])
+    .filter((league) => league.cardMatches >= min)
+    .map((league) => ({
+      league,
+      yellow: perGame(league.yellows, league.cardMatches) ?? 0,
+      red: perGame(league.reds, league.cardMatches) ?? 0,
     }))
+    .sort((a, b) => b.yellow - a.yellow || a.league.league.localeCompare(b.league.league));
+  const rows = teams
+    .filter((team) => {
+      const played = team.cardPlayed ?? team.played;
+      return played >= teamMin && (team.yellows != null || team.reds != null);
+    })
+    .map((team) => {
+      const played = team.cardPlayed ?? team.played;
+      return {
+        name: team.name,
+        league: team.league,
+        competitionId: team.competitionId,
+        played,
+        yellow: perGame(team.yellows, played),
+        red: perGame(team.reds, played),
+      };
+    })
     .sort((a, b) => (b.yellow ?? -1) - (a.yellow ?? -1) || a.name.localeCompare(b.name));
   return (
     <>
-      <Block title="Cards per match" note={`Teams with at least ${MIN_CARD_MATCHES} matches, ranked by yellow cards per game.`}>
+      {leagueRows.length > 0 ? (
+        <Block title="Cards per match by league" note={`Yellow and red cards of both teams. Leagues with at least ${min} sampled matches.${sampleNote(feed)}`}>
+          <FootyTable
+            columns={[
+              { key: 'rank', label: '#', flex: 0.4 },
+              { key: 'league', label: 'League', flex: 1.6 },
+              { key: 'country', label: 'Country', flex: 1 },
+              { key: 'played', label: 'Matches', flex: 0.8 },
+              { key: 'yellow', label: 'Yellow / game', flex: 1 },
+              { key: 'red', label: 'Red / game', flex: 0.9 },
+            ]}
+            empty="No leagues with enough sampled matches."
+            rows={leagueRows.map((row, i) => ({
+              id: String(row.league.competitionId),
+              cells: {
+                rank: String(i + 1),
+                league: row.league.league,
+                country: row.league.country,
+                played: String(row.league.cardMatches),
+                yellow: row.yellow.toFixed(1),
+                red: row.red.toFixed(1),
+              },
+            }))}
+          />
+        </Block>
+      ) : null}
+      <Block title="Cards per match" note={`Yellow cards of this team only. Played is how many sampled matches that team was in.${sampleNote(feed)}`}>
         <FootyTable
           columns={[
             { key: 'rank', label: '#', flex: 0.4 },
             { key: 'team', label: 'Team', flex: 1.6 },
+            ...(multi ? [{ key: 'league', label: 'League', flex: 1.2 }] : []),
             { key: 'played', label: 'Played', flex: 0.7 },
             { key: 'yellow', label: 'Yellow / game', flex: 1 },
             { key: 'red', label: 'Red / game', flex: 1 },
           ]}
           empty="No card totals for teams that have played enough matches."
           rows={rows.map((row, i) => ({
-            id: row.name,
+            id: `${row.competitionId ?? 'x'}-${row.name}`,
             cells: {
               rank: String(i + 1),
               team: row.name,
+              league: row.league,
               played: String(row.played),
               yellow: maybeNum(row.yellow),
               red: maybeNum(row.red),
@@ -965,7 +1095,7 @@ function CardSection({
           }))}
         />
       </Block>
-      <Text style={styles.note}>Player bookings are not in the feed, so there is no list of players who are carded most.</Text>
+      <Text style={styles.note}>These are team bookings. The match stats do not name which player was carded.</Text>
     </>
   );
 }
@@ -984,46 +1114,94 @@ function OffsideSection({
   query: { country: string | null; competitionId: number | null; kind: CompetitionKind; scope: Scope };
 }) {
   if (!feed?.hasOffsides) {
-    return <Text style={styles.note}>This league’s season feed has no offside totals.</Text>;
+    return <Text style={styles.note}>No offside counts on the finished matches in this filter.</Text>;
   }
+  const min = floorFor(feed, MIN_OFFSIDE_MATCHES);
+  const teamMin = teamFloor(feed, MIN_OFFSIDE_MATCHES);
+  const multi = spansLeagues(teams);
+  const leagueRows = (feed.leagues ?? [])
+    .filter((league) => league.offsideMatches >= min)
+    .map((league) => ({
+      league,
+      avg: perGame(league.offsides, league.offsideMatches) ?? 0,
+    }))
+    .sort((a, b) => b.avg - a.avg || a.league.league.localeCompare(b.league.league));
   const rows = teams
-    .filter((team) => team.played >= MIN_OFFSIDE_MATCHES && team.offsides != null)
-    .map((team) => ({ name: team.name, played: team.played, avg: perGame(team.offsides, team.played) ?? 0 }))
+    .filter((team) => (team.offsidePlayed ?? team.played) >= teamMin && team.offsides != null)
+    .map((team) => {
+      const played = team.offsidePlayed ?? team.played;
+      return { name: team.name, league: team.league, competitionId: team.competitionId, played, avg: perGame(team.offsides, played) ?? 0 };
+    })
     .sort((a, b) => b.avg - a.avg);
   const valueFor = (competitionId: number, name: string) => {
     if (query.competitionId != null && competitionId !== query.competitionId) return null;
-    const team = rows.find((item) => item.name === name);
-    return team ? team.avg : null;
+    const team = findTeam(teams, competitionId, name);
+    const played = team ? (team.offsidePlayed ?? team.played) : 0;
+    if (!team || played < teamMin || team.offsides == null) return null;
+    return perGame(team.offsides, played);
   };
   const fixtures = rankUpcomingValues(upcoming, query, valueFor, 'sum');
   const overRows = feed.hasOffsideOvers
     ? teams
-        .filter((team) => team.played >= MIN_OFFSIDE_MATCHES && team.offsideOver[line] != null)
+        .filter((team) => (team.offsidePlayed ?? team.played) >= teamMin && team.offsideOver[line] != null)
         .map((team) => ({ name: team.name, played: team.played, pct: team.offsideOver[line] }))
         .sort((a, b) => b.pct - a.pct)
     : [];
   return (
     <>
-      <Block title="Teams with the most offsides" note="Offsides of this team only, per game.">
+      {leagueRows.length > 0 ? (
+        <Block title="Offsides per game by league" note={`Offsides of both teams. Leagues with at least ${min} sampled matches.${sampleNote(feed)}`}>
+          <FootyTable
+            columns={[
+              { key: 'rank', label: '#', flex: 0.4 },
+              { key: 'league', label: 'League', flex: 1.6 },
+              { key: 'country', label: 'Country', flex: 1 },
+              { key: 'played', label: 'Matches', flex: 0.8 },
+              { key: 'avg', label: 'Per game', flex: 0.8 },
+              { key: 'pct', label: `Over ${line}`, flex: 0.8 },
+            ]}
+            empty="No leagues with enough sampled matches."
+            rows={leagueRows.map((row, i) => ({
+              id: String(row.league.competitionId),
+              cells: {
+                rank: String(i + 1),
+                league: row.league.league,
+                country: row.league.country,
+                played: String(row.league.offsideMatches),
+                avg: row.avg.toFixed(1),
+                pct: pct(row.league.offsideOver[line] ?? 0),
+              },
+            }))}
+          />
+        </Block>
+      ) : null}
+      <Block title="Teams with the most offsides" note={`Offsides of this team only, per game.${sampleNote(feed)}`}>
         <FootyTable
           columns={[
             { key: 'rank', label: '#', flex: 0.4 },
             { key: 'team', label: 'Team', flex: 1.6 },
+            ...(multi ? [{ key: 'league', label: 'League', flex: 1.2 }] : []),
             { key: 'played', label: 'Played', flex: 0.7 },
             { key: 'avg', label: 'Per game', flex: 0.8 },
           ]}
           empty="No offside totals for teams that have played enough matches."
           rows={rows.map((row, i) => ({
-            id: row.name,
-            cells: { rank: String(i + 1), team: row.name, played: String(row.played), avg: row.avg.toFixed(1) },
+            id: `${row.competitionId ?? 'x'}-${row.name}`,
+            cells: {
+              rank: String(i + 1),
+              team: row.name,
+              league: row.league,
+              played: String(row.played),
+              avg: row.avg.toFixed(1),
+            },
           }))}
         />
       </Block>
       <Block title="Upcoming matches with high average offsides" note="Home offsides per game plus away offsides per game. Next 48 hours.">
-        <UpcomingTable rows={fixtures} />
+        <UpcomingTable rows={fixtures} asPercent={false} valueLabel="Total" />
       </Block>
       {feed.hasOffsideOvers ? (
-        <Block title={`Over ${line} match offsides`} note="Percentage taken from the season feed.">
+        <Block title={`Over ${line} match offsides`} note={`Share of this team’s sampled matches with more than ${line} offsides.${sampleNote(feed)}`}>
           <FootyTable
             columns={[
               { key: 'rank', label: '#', flex: 0.4 },
