@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
+import FilterDropdown from '@/components/shared/FilterDropdown';
 import SectionLabel from '@/components/shared/SectionLabel';
 import { useHollywoodExport } from '@/hooks/useHollywoodExport';
 import { useHollywoodHunt } from '@/hooks/useHollywoodHunt';
@@ -197,7 +198,7 @@ function AllMarkets({
 }
 
 export default function HollywoodOddsPanel({ onAddLeg }: { onAddLeg?: (leg: BetSlipLeg) => void }) {
-  const [filter, setFilter] = useState('');
+  const narrow = useWindowDimensions().width < 720;
   const [categoryId, setCategoryId] = useState<number | null>(null);
   const [tournamentId, setTournamentId] = useState<number | null>(null);
   const [selections, setSelections] = useState<Record<number, Selection>>({});
@@ -217,11 +218,7 @@ export default function HollywoodOddsPanel({ onAddLeg }: { onAddLeg?: (leg: BetS
   const hunt = useHollywoodHunt();
   const { state: exportState, exportSlip } = useHollywoodExport();
 
-  const filteredCountries = useMemo(() => {
-    const q = filter.trim().toLowerCase();
-    const list = q ? nav.categories.filter((c) => c.name.toLowerCase().includes(q)) : nav.categories;
-    return list.slice(0, 40);
-  }, [nav.categories, filter]);
+  const fieldStyle = narrow ? { width: '100%' as const, minWidth: 0, flexBasis: 'auto' as const, flexGrow: 0 } : { width: '100%' as const, flexBasis: 'auto' as const };
 
   const legs = useMemo(() => Object.values(selections), [selections]);
   const combinedOdds = legs.reduce((acc, s) => acc * s.odds, 1);
@@ -328,45 +325,30 @@ export default function HollywoodOddsPanel({ onAddLeg }: { onAddLeg?: (leg: BetS
         </View>
       ) : null}
 
-      {/* Country */}
-      <SectionLabel style={styles.label}>Country</SectionLabel>
-      <TextInput
-        style={styles.search}
-        value={filter}
-        onChangeText={setFilter}
-        placeholder="Filter countries…"
-        placeholderTextColor={theme.textFaint}
-      />
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-        {nav.loadingCategories ? <Text style={styles.muted}>Loading…</Text> : null}
-        {filteredCountries.map((c) => (
-          <Chip
-            key={c.id}
-            label={c.name}
-            active={c.id === categoryId}
-            onPress={() => {
-              setCategoryId(c.id);
-              setTournamentId(null);
-            }}
+      <View style={[styles.filters, narrow && styles.filtersNarrow]}>
+        <FilterDropdown
+          label="Country"
+          value={categoryId == null ? '' : String(categoryId)}
+          options={nav.categories.map((item) => ({ value: String(item.id), label: item.name }))}
+          onChange={(value) => {
+            setCategoryId(Number(value));
+            setTournamentId(null);
+          }}
+          style={fieldStyle}
+        />
+        {categoryId != null ? (
+          <FilterDropdown
+            label="League"
+            value={tournamentId == null ? '' : String(tournamentId)}
+            options={nav.tournaments.map((item) => ({ value: String(item.id), label: item.name }))}
+            onChange={(value) => setTournamentId(Number(value))}
+            style={fieldStyle}
           />
-        ))}
-      </ScrollView>
-
-      {/* League */}
-      {categoryId != null ? (
-        <>
-          <SectionLabel style={styles.label}>League</SectionLabel>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-            {nav.loadingTournaments ? <Text style={styles.muted}>Loading…</Text> : null}
-            {nav.tournaments.map((t) => (
-              <Chip key={t.id} label={t.name} active={t.id === tournamentId} onPress={() => setTournamentId(t.id)} />
-            ))}
-            {!nav.loadingTournaments && nav.tournaments.length === 0 ? (
-              <Text style={styles.muted}>No leagues.</Text>
-            ) : null}
-          </ScrollView>
-        </>
-      ) : null}
+        ) : null}
+      </View>
+      {nav.loadingCategories ? <Text style={styles.muted}>Loading countries…</Text> : null}
+      {categoryId != null && nav.loadingTournaments ? <Text style={styles.muted}>Loading leagues…</Text> : null}
+      {categoryId != null && !nav.loadingTournaments && nav.tournaments.length === 0 ? <Text style={styles.muted}>No leagues.</Text> : null}
 
       {/* Events */}
       {tournamentId != null ? (
@@ -464,20 +446,6 @@ export default function HollywoodOddsPanel({ onAddLeg }: { onAddLeg?: (leg: BetS
   );
 }
 
-function Chip({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed, hovered }) => [
-        styles.chip,
-        active && styles.chipActive,
-        (pressed || (Platform.OS === 'web' && hovered)) && styles.chipHover,
-      ]}>
-      <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
-    </Pressable>
-  );
-}
-
 function HuntMetric({ label, value, alert }: { label: string; value: string; alert?: boolean }) {
   return (
     <View style={styles.huntMetric}>
@@ -488,7 +456,9 @@ function HuntMetric({ label, value, alert }: { label: string; value: string; ale
 }
 
 const styles = StyleSheet.create({
-  container: { width: '100%', maxWidth: 720, alignSelf: 'center' },
+  container: { width: '100%' },
+  filters: { width: '100%', flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.sm },
+  filtersNarrow: { flexDirection: 'column' },
   intro: {
     fontFamily: fonts.body,
     fontSize: 14,
@@ -560,7 +530,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   fixtureRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: spacing.sm },
-  fixture: { fontFamily: fonts.bodySemiBold, fontSize: 15, color: theme.textPrimary },
+  fixture: { flex: 1, minWidth: 0, fontFamily: fonts.bodySemiBold, fontSize: 15, color: theme.textPrimary },
   riskTag: {
     fontFamily: fonts.bodySemiBold,
     fontSize: 9,
@@ -599,7 +569,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: 4,
   },
-  marketRow: { flexDirection: 'row', gap: spacing.xs, paddingRight: spacing.sm },
+  marketRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
   selBtn: {
     flexDirection: 'row',
     alignItems: 'center',

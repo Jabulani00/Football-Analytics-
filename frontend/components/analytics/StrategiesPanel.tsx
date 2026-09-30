@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 
 import ComplianceBadge from '@/components/analytics/ComplianceBadge';
+import FilterDropdown from '@/components/shared/FilterDropdown';
 import SectionLabel from '@/components/shared/SectionLabel';
 import type { HollywoodPopularOddsState } from '@/hooks/useHollywoodPopularOdds';
 import { useSavedStrategies } from '@/hooks/useSavedStrategies';
@@ -31,6 +32,7 @@ export default function StrategiesPanel({
   live: HollywoodPopularOddsState;
   onAddLeg: (leg: BetSlipLeg) => void;
 }) {
+  const narrow = useWindowDimensions().width < 720;
   const [sort, setSort] = useState<SortKey>('overall');
   const {
     definitions,
@@ -159,18 +161,17 @@ export default function StrategiesPanel({
         })}
       </View>
 
-      <View style={styles.sortBar}>
-        <Text style={styles.sortLabel}>Sort by:</Text>
-        {([
-          ['overall', 'Overall'],
-          ['kickoff', 'Kickoff'],
-          ['date', 'Date'],
-        ] as const).map(([key, label]) => (
-          <Pressable key={key} onPress={() => setSort(key)} style={[styles.sortChip, sort === key && styles.sortChipActive]}>
-            <Text style={[styles.sortChipText, sort === key && styles.sortChipTextActive]}>{label}</Text>
-          </Pressable>
-        ))}
-      </View>
+      <FilterDropdown
+        label="Sort by"
+        value={sort}
+        options={[
+          { value: 'overall', label: 'Overall' },
+          { value: 'kickoff', label: 'Kickoff' },
+          { value: 'date', label: 'Date' },
+        ]}
+        onChange={(value) => setSort(value as SortKey)}
+        style={narrow ? styles.filterFull : styles.filterWide}
+      />
 
       <Text style={styles.pendingSort}>Home/Away form is evaluated inside each joined fixture context.</Text>
 
@@ -269,7 +270,6 @@ const styles = StyleSheet.create({
   },
   builder: {
     width: '100%',
-    maxWidth: 720,
     borderWidth: layout.borderWidth,
     borderColor: theme.border,
     borderRadius: layout.borderRadius,
@@ -281,7 +281,6 @@ const styles = StyleSheet.create({
   builderTitle: { marginBottom: spacing.md, textAlign: 'center' },
   nameInput: {
     width: '100%',
-    maxWidth: 420,
     fontFamily: fonts.body,
     fontSize: 14,
     color: theme.textPrimary,
@@ -307,7 +306,9 @@ const styles = StyleSheet.create({
   saveButtonText: { fontFamily: fonts.display, fontSize: 12, color: theme.bg, letterSpacing: 0.8 },
   saveMessage: { fontFamily: fonts.bodyMedium, fontSize: 11, color: theme.accentGreen, textAlign: 'center', marginTop: spacing.sm },
   persistenceNote: { fontFamily: fonts.body, fontSize: 10, color: theme.textFaint, textAlign: 'center', lineHeight: 15, marginTop: spacing.sm, maxWidth: 560 },
-  savedList: { width: '100%', maxWidth: 720, gap: spacing.sm, marginBottom: spacing.xl },
+  savedList: { width: '100%', gap: spacing.sm, marginBottom: spacing.xl },
+  filterWide: { width: '100%', flexBasis: 'auto', marginBottom: spacing.lg },
+  filterFull: { width: '100%', minWidth: 0, flexBasis: 'auto', flexGrow: 0, marginBottom: spacing.lg },
   savedCard: { borderWidth: layout.borderWidth, borderColor: theme.border, borderRadius: layout.borderRadius, backgroundColor: theme.surface, padding: spacing.md },
   savedHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
   savedName: { flex: 1, fontFamily: fonts.bodySemiBold, fontSize: 13, color: theme.textPrimary },

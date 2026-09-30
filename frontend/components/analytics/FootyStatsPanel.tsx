@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import FootyTable, { type FootyColumn } from '@/components/analytics/FootyTable';
 import FilterDropdown from '@/components/shared/FilterDropdown';
@@ -221,6 +221,7 @@ const TEAM_COLS: FootyColumn[] = [
 ];
 
 export default function FootyStatsPanel() {
+  const narrow = useWindowDimensions().width < 720;
   const [market, setMarket] = useState<MarketId>('btts');
   const [country, setCountry] = useState('');
   const [leagueId, setLeagueId] = useState('');
@@ -300,21 +301,21 @@ export default function FootyStatsPanel() {
       <Text style={styles.blurb}>{marketMeta.blurb}</Text>
 
       <View style={styles.filters}>
-        <FilterDropdown
+        <FilterDropdown style={narrow ? styles.filterFull : undefined}
           label="Market"
           value={market}
           options={MARKETS.map((item) => ({ value: item.value, label: item.label }))}
           onChange={(value) => setMarket(value as MarketId)}
         />
-        <FilterDropdown label="Country" value={country} options={countries} onChange={setCountry} />
-        <FilterDropdown label="League" value={leagueId} options={leagues} onChange={setLeagueId} />
-        <FilterDropdown
+        <FilterDropdown style={narrow ? styles.filterFull : undefined} label="Country" value={country} options={countries} onChange={setCountry} />
+        <FilterDropdown style={narrow ? styles.filterFull : undefined} label="League" value={leagueId} options={leagues} onChange={setLeagueId} />
+        <FilterDropdown style={narrow ? styles.filterFull : undefined}
           label="Competitions"
           value={kind}
           options={KINDS.map((item) => ({ value: item.value, label: item.label }))}
           onChange={(value) => setKind(value as CompetitionKind)}
         />
-        <FilterDropdown
+        <FilterDropdown style={narrow ? styles.filterFull : undefined}
           label="Scope"
           value={scope}
           options={SCOPES.map((item) => ({ value: item.value, label: item.label }))}
@@ -322,13 +323,13 @@ export default function FootyStatsPanel() {
         />
         {market === 'btts' ? (
           <>
-            <FilterDropdown
+            <FilterDropdown style={narrow ? styles.filterFull : undefined}
               label="BTTS result"
               value={split}
               options={SPLITS.map((item) => ({ value: item.value, label: item.label }))}
               onChange={(value) => setSplit(value as BttsSplit)}
             />
-            <FilterDropdown
+            <FilterDropdown style={narrow ? styles.filterFull : undefined}
               label="Half"
               value={half}
               options={HALVES.map((item) => ({ value: item.value, label: item.label }))}
@@ -338,19 +339,19 @@ export default function FootyStatsPanel() {
         ) : null}
         {market === 'goals' ? (
           <>
-            <FilterDropdown
+            <FilterDropdown style={narrow ? styles.filterFull : undefined}
               label="Line"
               value={String(line)}
               options={GOAL_LINES.map((item) => ({ value: String(item), label: String(item) }))}
               onChange={(value) => setLine(Number(value) as GoalLine)}
             />
-            <FilterDropdown
+            <FilterDropdown style={narrow ? styles.filterFull : undefined}
               label="Side"
               value={side}
               options={SIDES.map((item) => ({ value: item.value, label: item.label }))}
               onChange={(value) => setSide(value as GoalSide)}
             />
-            <FilterDropdown
+            <FilterDropdown style={narrow ? styles.filterFull : undefined}
               label="League sort"
               value={leagueSort}
               options={LEAGUE_SORTS}
@@ -359,7 +360,7 @@ export default function FootyStatsPanel() {
           </>
         ) : null}
         {market === 'halves' ? (
-          <FilterDropdown
+          <FilterDropdown style={narrow ? styles.filterFull : undefined}
             label="Half"
             value={half}
             options={HALVES.map((item) => ({ value: item.value, label: item.label }))}
@@ -367,7 +368,7 @@ export default function FootyStatsPanel() {
           />
         ) : null}
         {market === 'both' ? (
-          <FilterDropdown
+          <FilterDropdown style={narrow ? styles.filterFull : undefined}
             label="Market split"
             value={bothMode}
             options={BOTH_MODES.map((item) => ({ value: item.value, label: item.label }))}
@@ -375,7 +376,7 @@ export default function FootyStatsPanel() {
           />
         ) : null}
         {market === 'clean' ? (
-          <FilterDropdown
+          <FilterDropdown style={narrow ? styles.filterFull : undefined}
             label="Table"
             value={cleanDir}
             options={CLEAN_DIRS.map((item) => ({ value: item.value, label: item.label }))}
@@ -383,7 +384,7 @@ export default function FootyStatsPanel() {
           />
         ) : null}
         {market === 'btts' ? (
-          <FilterDropdown
+          <FilterDropdown style={narrow ? styles.filterFull : undefined}
             label="League sort"
             value={leagueSort}
             options={LEAGUE_SORTS}
@@ -391,7 +392,7 @@ export default function FootyStatsPanel() {
           />
         ) : null}
         {market === 'corners' && live.discipline?.hasCornerOvers ? (
-          <FilterDropdown
+          <FilterDropdown style={narrow ? styles.filterFull : undefined}
             label="Corner line"
             value={cornerLine}
             options={CORNER_LINES.map((item) => ({ value: item, label: `Over ${item}` }))}
@@ -399,7 +400,7 @@ export default function FootyStatsPanel() {
           />
         ) : null}
         {market === 'offsides' && live.discipline?.hasOffsideOvers ? (
-          <FilterDropdown
+          <FilterDropdown style={narrow ? styles.filterFull : undefined}
             label="Offside line"
             value={offsideLine}
             options={OFFSIDE_LINES.map((item) => ({ value: item, label: `Over ${item}` }))}
@@ -407,7 +408,7 @@ export default function FootyStatsPanel() {
           />
         ) : null}
         {market === 'corners' && live.discipline?.hasCornerHalves ? (
-          <FilterDropdown
+          <FilterDropdown style={narrow ? styles.filterFull : undefined}
             label="Half"
             value={half}
             options={HALVES.map((item) => ({ value: item.value, label: item.label }))}
@@ -1226,7 +1227,7 @@ function OffsideSection({
 const styles = StyleSheet.create({
   wrap: {
     width: '100%',
-    maxWidth: 1100,
+    maxWidth: undefined,
     gap: spacing.md,
   },
   title: {
@@ -1245,7 +1246,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.md,
+    width: '100%',
   },
+  filterFull: { width: '100%', minWidth: 0, flexBasis: 'auto', flexGrow: 0 },
   sample: {
     fontFamily: fonts.bodyMedium,
     fontSize: 13,

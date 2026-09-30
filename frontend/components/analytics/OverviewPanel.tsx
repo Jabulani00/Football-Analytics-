@@ -168,7 +168,7 @@ const styles = StyleSheet.create({
   summaryCard: {
     flex: 1,
     minWidth: 140,
-    maxWidth: 220,
+    maxWidth: undefined,
     backgroundColor: theme.surface,
     borderWidth: layout.borderWidth,
     borderColor: theme.border,

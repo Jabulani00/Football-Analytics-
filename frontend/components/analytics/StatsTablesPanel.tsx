@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import LeagueStatsPanel from '@/components/league/LeagueStatsPanel';
 import CompetitionPicker from '@/components/shared/CompetitionPicker';
+import FilterDropdown from '@/components/shared/FilterDropdown';
 import { useLiveCompetitions } from '@/hooks/useLiveCompetitions';
 import { useLiveStatsTables } from '@/hooks/useLiveStatsTables';
 import { getTeamStatsForTable } from '@/mock/analyticsData';
@@ -40,6 +41,7 @@ const SCOPES: { key: ScopeKey; label: string }[] = [
 const PERIOD_TO_BUILDER: Record<PeriodKey, string> = { fulltime: 'ft', firsthalf: 'ht', secondhalf: '2h' };
 
 export default function StatsTablesPanel() {
+  const narrow = useWindowDimensions().width < 720;
   const [familyKey, setFamilyKey] = useState('ordinary');
   const [period, setPeriod] = useState<PeriodKey>('fulltime');
   const [scope, setScope] = useState<ScopeKey>('overall');
@@ -104,23 +106,30 @@ export default function StatsTablesPanel() {
         )}
       </View>
 
-      {/* 1) Table family / window */}
-      <Text style={styles.controlLabel}>TABLE</Text>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={Platform.OS === 'web'}
-        contentContainerStyle={styles.chipRow}>
-        {FAMILIES.map((f) => (
-          <Chip key={f.key} label={f.label} active={f.key === familyKey} onPress={() => setFamilyKey(f.key)} />
-        ))}
-      </ScrollView>
-      <Text style={styles.blurb}>{family.blurb}</Text>
-
-      {/* 2) Period + Scope segmented controls */}
-      <View style={styles.segments}>
-        <Segmented options={PERIODS} value={period} onChange={setPeriod} />
-        <Segmented options={SCOPES} value={scope} onChange={setScope} />
+      <View style={[styles.filters, narrow && styles.filtersNarrow]}>
+        <FilterDropdown
+          label="Table"
+          value={familyKey}
+          options={FAMILIES.map((item) => ({ value: item.key, label: item.label }))}
+          onChange={setFamilyKey}
+          style={narrow ? styles.filterFull : undefined}
+        />
+        <FilterDropdown
+          label="Period"
+          value={period}
+          options={PERIODS.map((item) => ({ value: item.key, label: item.label }))}
+          onChange={(value) => setPeriod(value as PeriodKey)}
+          style={narrow ? styles.filterFull : undefined}
+        />
+        <FilterDropdown
+          label="Scope"
+          value={scope}
+          options={SCOPES.map((item) => ({ value: item.key, label: item.label }))}
+          onChange={(value) => setScope(value as ScopeKey)}
+          style={narrow ? styles.filterFull : undefined}
+        />
       </View>
+      <Text style={styles.blurb}>{family.blurb}</Text>
 
       {/* Table */}
       {isLeagueStats ? (
@@ -184,48 +193,11 @@ export default function StatsTablesPanel() {
   );
 }
 
-function Chip({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed, hovered }) => [
-        styles.chip,
-        active && styles.chipActive,
-        (pressed || (Platform.OS === 'web' && hovered)) && !active && styles.chipHover,
-      ]}>
-      <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
-    </Pressable>
-  );
-}
-
-function Segmented<T extends string>({
-  options,
-  value,
-  onChange,
-}: {
-  options: { key: T; label: string }[];
-  value: T;
-  onChange: (v: T) => void;
-}) {
-  return (
-    <View style={styles.segment}>
-      {options.map((o) => {
-        const active = o.key === value;
-        return (
-          <Pressable
-            key={o.key}
-            onPress={() => onChange(o.key)}
-            style={[styles.segmentItem, active && styles.segmentItemActive]}>
-            <Text style={[styles.segmentText, active && styles.segmentTextActive]}>{o.label}</Text>
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
-  container: { width: '100%', alignItems: 'center' },
+  container: { width: '100%' },
+  filters: { width: '100%', flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.sm },
+  filtersNarrow: { flexDirection: 'column' },
+  filterFull: { width: '100%', minWidth: 0, flexBasis: 'auto', flexGrow: 0 },
   statusRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: spacing.sm, marginBottom: spacing.md, minHeight: 18,
@@ -249,7 +221,7 @@ const styles = StyleSheet.create({
   chipTextActive: { color: theme.accentGreen },
   blurb: {
     alignSelf: 'stretch', fontFamily: fonts.body, fontSize: 12, color: theme.textMuted,
-    marginBottom: spacing.md, maxWidth: 640,
+    marginBottom: spacing.md, width: '100%',
   },
 
   segments: {

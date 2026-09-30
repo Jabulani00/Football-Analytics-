@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import CompetitionPicker from '@/components/shared/CompetitionPicker';
-import SubTabBar from '@/components/shared/SubTabBar';
+import FilterDropdown from '@/components/shared/FilterDropdown';
 import { useLiveCompetitions } from '@/hooks/useLiveCompetitions';
 import { useLiveFixturePredictions, type PredictedFixture } from '@/hooks/useLiveFixturePredictions';
 import {
@@ -181,6 +181,7 @@ function teamMatches(info: TierInfo | undefined, tier: TierFilter, form: FormFil
 // ---------------------------------------------------------------------------
 
 export default function SmartFinderPanel() {
+  const narrow = useWindowDimensions().width < 720;
   const competitions = useLiveCompetitions(3);
   const [competitionId, setCompetitionId] = useState<number | null>(null);
   useEffect(() => {
@@ -271,26 +272,12 @@ export default function SmartFinderPanel() {
         onSelect={setCompetitionId}
       />
 
-      <View style={styles.filters}>
-        <FilterRow label="TEAM TIER">
-          <SubTabBar tabs={TIER_TABS} active={tier} onChange={setTier} />
-        </FilterRow>
-        <FilterRow label="FORM VS GREEN">
-          <SubTabBar tabs={FORM_TABS} active={form} onChange={setForm} />
-        </FilterRow>
-        <FilterRow label="MIN BET PROBABILITY">
-          <SubTabBar
-            tabs={PROB_TABS}
-            active={String(minProb)}
-            onChange={(id) => setMinProb(Number(id) as ProbFilter)}
-          />
-        </FilterRow>
-        <FilterRow label="MAX RISK">
-          <SubTabBar tabs={RISK_TABS} active={maxRisk} onChange={setMaxRisk} />
-        </FilterRow>
-        <FilterRow label="MARKET">
-          <SubTabBar tabs={MODULE_TABS} active={module} onChange={setModule} />
-        </FilterRow>
+      <View style={[styles.filters, narrow && styles.filtersNarrow]}>
+        <FilterDropdown label="Team tier" value={tier} options={TIER_TABS.map((item) => ({ value: item.id, label: item.label }))} onChange={(value) => setTier(value as TierFilter)} style={narrow ? styles.filterFull : undefined} />
+        <FilterDropdown label="Form vs Green" value={form} options={FORM_TABS.map((item) => ({ value: item.id, label: item.label }))} onChange={(value) => setForm(value as FormFilter)} style={narrow ? styles.filterFull : undefined} />
+        <FilterDropdown label="Minimum bet probability" value={String(minProb)} options={PROB_TABS.map((item) => ({ value: item.id, label: item.label }))} onChange={(id) => setMinProb(Number(id) as ProbFilter)} style={narrow ? styles.filterFull : undefined} />
+        <FilterDropdown label="Maximum risk" value={maxRisk} options={RISK_TABS.map((item) => ({ value: item.id, label: item.label }))} onChange={(value) => setMaxRisk(value as RiskFilter)} style={narrow ? styles.filterFull : undefined} />
+        <FilterDropdown label="Market" value={module} options={MODULE_TABS.map((item) => ({ value: item.id, label: item.label }))} onChange={(value) => setModule(value as ModuleFilter)} style={narrow ? styles.filterFull : undefined} />
       </View>
 
       <View style={styles.summaryCard}>
@@ -326,15 +313,6 @@ export default function SmartFinderPanel() {
           ))}
         </View>
       )}
-    </View>
-  );
-}
-
-function FilterRow({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <View style={styles.filterRow}>
-      <Text style={styles.filterLabel}>{label}</Text>
-      {children}
     </View>
   );
 }
@@ -418,7 +396,7 @@ function buildSentence(tier: TierFilter, form: FormFilter, minProb: ProbFilter, 
 }
 
 const styles = StyleSheet.create({
-  container: { width: '100%', maxWidth: 680, alignSelf: 'center' },
+  container: { width: '100%' },
   intro: {
     fontFamily: fonts.body,
     fontSize: 13,
@@ -427,15 +405,9 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     lineHeight: 19,
   },
-  filters: { marginTop: spacing.sm },
-  filterRow: { marginBottom: spacing.xs },
-  filterLabel: {
-    fontFamily: fonts.bodySemiBold,
-    fontSize: 10,
-    letterSpacing: 0.8,
-    color: theme.textMuted,
-    marginBottom: 2,
-  },
+  filters: { width: '100%', flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm },
+  filtersNarrow: { flexDirection: 'column' },
+  filterFull: { width: '100%', minWidth: 0, flexBasis: 'auto', flexGrow: 0 },
   summaryCard: {
     flexDirection: 'row',
     alignItems: 'center',

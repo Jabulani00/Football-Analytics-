@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import CompetitionPicker from '@/components/shared/CompetitionPicker';
 import RecommendationCard from '@/components/analytics/RecommendationCard';
-import SubTabBar from '@/components/shared/SubTabBar';
+import FilterDropdown from '@/components/shared/FilterDropdown';
 import { useLiveCompetitions } from '@/hooks/useLiveCompetitions';
 import { useLiveFixturePredictions, type PredictedFixture } from '@/hooks/useLiveFixturePredictions';
 import type { FixturePrediction } from '@/services/predictionEngine';
@@ -115,6 +115,7 @@ function verdict(p: FixturePrediction, home: string, away: string): string {
 }
 
 export default function PredictionsPanel() {
+  const narrow = useWindowDimensions().width < 720;
   const competitions = useLiveCompetitions(3);
   const [competitionId, setCompetitionId] = useState<number | null>(null);
 
@@ -192,23 +193,37 @@ export default function PredictionsPanel() {
       </View>
 
       {/* Bet-type screener — filter the fixtures down to the bets you want. */}
-      <View style={styles.screener}>
-        <Text style={styles.screenerLabel}>SHOW FIXTURES FOR</Text>
-        <SubTabBar tabs={BET_TYPES} active={betType} onChange={setBetType} />
+      <View style={[styles.filters, narrow && styles.filtersNarrow]}>
+        <FilterDropdown
+          label="Show fixtures for"
+          value={betType}
+          options={BET_TYPES.map((item) => ({ value: item.id, label: item.label }))}
+          onChange={(value) => setBetType(value as BetTypeId)}
+          style={narrow ? styles.filterFull : undefined}
+        />
         {activeBet.value ? (
-          <SubTabBar
-            tabs={PROB_MINS}
-            active={String(minProb)}
+          <FilterDropdown
+            label="Minimum probability"
+            value={String(minProb)}
+            options={PROB_MINS.map((item) => ({ value: item.id, label: item.label }))}
             onChange={(id) => setMinProb(Number(id))}
+            style={narrow ? styles.filterFull : undefined}
           />
         ) : null}
-      </View>
-
-      {/* Best-bet screener — which market the recommendation draws from + a risk gate. */}
-      <View style={styles.screener}>
-        <Text style={styles.screenerLabel}>BEST BET · MODULE &amp; RISK</Text>
-        <SubTabBar tabs={MODULE_TABS} active={recModule} onChange={setRecModule} />
-        <SubTabBar tabs={RISK_TABS} active={maxRisk} onChange={setMaxRisk} />
+        <FilterDropdown
+          label="Best bet market"
+          value={recModule}
+          options={MODULE_TABS.map((item) => ({ value: item.id, label: item.label }))}
+          onChange={(value) => setRecModule(value as ModuleFilter)}
+          style={narrow ? styles.filterFull : undefined}
+        />
+        <FilterDropdown
+          label="Risk"
+          value={maxRisk}
+          options={RISK_TABS.map((item) => ({ value: item.id, label: item.label }))}
+          onChange={(value) => setMaxRisk(value as RiskFilter)}
+          style={narrow ? styles.filterFull : undefined}
+        />
       </View>
 
       {!loading && withPred.length === 0 ? (
@@ -348,7 +363,10 @@ function Market({ label, value }: { label: string; value: string }) {
 }
 
 const styles = StyleSheet.create({
-  container: { width: '100%', alignItems: 'center' },
+  container: { width: '100%' },
+  filters: { width: '100%', flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.md },
+  filtersNarrow: { flexDirection: 'column' },
+  filterFull: { width: '100%', minWidth: 0, flexBasis: 'auto', flexGrow: 0 },
   hint: {
     fontFamily: fonts.body, fontSize: 13, color: theme.textMuted,
     textAlign: 'center', marginBottom: spacing.lg, maxWidth: 640,
@@ -370,7 +388,7 @@ const styles = StyleSheet.create({
     color: theme.textMuted, marginBottom: spacing.xs,
   },
   resultCount: {
-    width: '100%', maxWidth: 640, fontFamily: fonts.bodyMedium, fontSize: 12,
+    width: '100%', fontFamily: fonts.bodyMedium, fontSize: 12,
     color: theme.textPrimary, marginBottom: spacing.sm,
   },
   kickoffRow: {
@@ -382,7 +400,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm, paddingVertical: 2,
   },
   matchBadgeText: { fontFamily: fonts.bodySemiBold, fontSize: 11, color: theme.accentGreen },
-  list: { width: '100%', maxWidth: 640, gap: spacing.md },
+  list: { width: '100%', gap: spacing.md },
   card: {
     backgroundColor: theme.surface, borderWidth: layout.borderWidth, borderColor: theme.border,
     borderRadius: layout.borderRadius, padding: spacing.md,

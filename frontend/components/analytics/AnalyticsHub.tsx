@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import AnalyticsNav from '@/components/analytics/AnalyticsNav';
 import BetSlipPanel from '@/components/analytics/BetSlipPanel';
@@ -58,6 +58,7 @@ function PanelForTab({
 }
 
 export default function AnalyticsHub({ onBack }: AnalyticsHubProps) {
+  const narrow = useWindowDimensions().width < 720;
   const [activeTab, setActiveTab] = useState<AnalyticsTab>('overview');
   const needsPopularOdds = activeTab === 'strategies' || activeTab === 'odds';
   const live = useHollywoodPopularOdds(needsPopularOdds);
@@ -66,7 +67,7 @@ export default function AnalyticsHub({ onBack }: AnalyticsHubProps) {
   return (
     <AppShell>
       <ScrollView
-        contentContainerStyle={styles.scroll}
+        contentContainerStyle={[styles.scroll, narrow && styles.scrollNarrow]}
         showsVerticalScrollIndicator={Platform.OS === 'web'}>
         <View style={styles.topBar}>
           <View style={styles.wordmark}>
@@ -79,7 +80,7 @@ export default function AnalyticsHub({ onBack }: AnalyticsHubProps) {
         <StickyBack label="← HOME" onPress={onBack} />
 
         <View style={styles.hero}>
-          <Text style={styles.pageTitle}>BETTING INTELLIGENCE</Text>
+          <Text style={[styles.pageTitle, narrow && styles.pageTitleNarrow]}>BETTING INTELLIGENCE</Text>
           <Text style={styles.subtitle}>
             Football Analytics Platform — 72 tables · 100+ metrics · 5 phases
           </Text>
@@ -99,9 +100,10 @@ const styles = StyleSheet.create({
   scroll: {
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.xxl,
-    alignItems: 'center',
     width: '100%',
-    alignSelf: 'center',
+  },
+  scrollNarrow: {
+    paddingHorizontal: spacing.md,
   },
   topBar: {
     flexDirection: 'row',
@@ -145,16 +147,19 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: spacing.sm,
   },
+  pageTitleNarrow: {
+    fontSize: 28,
+  },
   subtitle: {
     fontFamily: fonts.body,
     fontSize: 14,
     color: theme.textMuted,
     textAlign: 'center',
-    maxWidth: 520,
+    width: '100%',
     lineHeight: 22,
   },
   panel: {
     width: '100%',
-    alignItems: 'center',
+    alignItems: 'stretch',
   },
 });

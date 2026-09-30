@@ -88,7 +88,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.xs,
     marginBottom: spacing.xl,
-    maxWidth: 900,
+    width: '100%',
   },
   flowItem: {
     flexDirection: 'row',
