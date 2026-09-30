@@ -9,6 +9,7 @@ import {
   rankLeagueAverages,
   rankOrdinaryTeams,
   rankSeriesTeams,
+  rankTopBoard,
   seriesMatches,
   seriesPicks,
   bestBetForFixture,
@@ -237,6 +238,120 @@ console.log('\nSL-STATS');
   check('the query includes the league average', leagueLine != null);
   check('the combined figure is the average of those calculations', queried[0]?.combined === expected);
   check('previous evidence shows a home win', queried[0]?.previous.some((row) => row.team === 'Alpha' && row.hit && row.text.startsWith('Alpha 2-0')) === true);
+}
+
+{
+  const longWins = (name: string, count: number, competitionId: number, competitionName: string, cup = false) =>
+    Array.from({ length: count }, (_, index) =>
+      fx({
+        homeName: name,
+        awayName: `Opp ${competitionId}-${index}`,
+        homeGoals: 1,
+        awayGoals: 0,
+        competitionId,
+        competitionName,
+        isCup: cup,
+        unix: 1_700_000_000 + competitionId * 1000 + index,
+      }),
+    );
+  const sample = [
+    ...longWins('Alpha', 12, 1, 'Premier'),
+    ...longWins('Beta', 6, 2, 'Championship'),
+    ...longWins('CupSide', 10, 9, 'FA Cup', true),
+  ];
+  const teams = rankTopBoard(sample, {
+    entity: 'teams',
+    measure: 'series',
+    statKey: 'w_pct',
+    seriesKey: 'w',
+    scope: 'overall',
+    minimum: 10,
+  });
+  check('a win series of 10 or more keeps the long runs', teams.some((row) => row.name === 'Alpha' && row.figure === '12 games'));
+  check('a win series under 10 is left out', teams.every((row) => row.name !== 'Beta'));
+  check('cup sides stay off the league team board only when ranking leagues', rankTopBoard(sample, {
+    entity: 'leagues',
+    measure: 'series',
+    statKey: 'w_pct',
+    seriesKey: 'w',
+    scope: 'overall',
+    minimum: 10,
+  }).every((row) => row.name !== 'FA Cup') && teams.some((row) => row.name === 'CupSide'));
+  const leagues = rankTopBoard(sample, {
+    entity: 'leagues',
+    measure: 'series',
+    statKey: 'w_pct',
+    seriesKey: 'w',
+    scope: 'overall',
+    minimum: 10,
+  });
+  check('leagues rank by the longest win series of 10 or more', leagues.length === 1 && leagues[0].name === 'Premier' && leagues[0].detail === 'Alpha' && leagues[0].extra === '1');
+  const competitions = rankTopBoard(sample, {
+    entity: 'competitions',
+    measure: 'series',
+    statKey: 'w_pct',
+    seriesKey: 'w',
+    scope: 'overall',
+    minimum: 10,
+  });
+  check('competitions include the cup with a 10-game win series', competitions.some((row) => row.name === 'FA Cup' && row.typeLabel === 'Cup' && row.figure === '10 games'));
+  const btts = [
+    ...Array.from({ length: 10 }, (_, index) =>
+      fx({
+        homeName: 'Alpha',
+        awayName: `Btts ${index}`,
+        homeGoals: index < 8 ? 2 : 1,
+        awayGoals: index < 8 ? 1 : 0,
+        unix: 1_710_000_000 + index,
+      }),
+    ),
+    ...Array.from({ length: 10 }, (_, index) =>
+      fx({
+        homeName: `Host ${index}`,
+        awayName: 'Beta',
+        homeGoals: index < 2 ? 1 : 2,
+        awayGoals: index < 2 ? 1 : 0,
+        unix: 1_720_000_000 + index,
+      }),
+    ),
+  ];
+  const rates = rankTopBoard(btts, {
+    entity: 'teams',
+    measure: 'ordinary',
+    statKey: 'btts_yes',
+    seriesKey: '',
+    scope: 'overall',
+    minimum: 10,
+  });
+  check('both teams to score ranks the higher rate from 10 games', rates[0]?.name === 'Alpha' && rates[0].figure === '80.0%' && rates[1]?.name === 'Beta');
+  const averages = rankTopBoard(btts, {
+    entity: 'leagues',
+    measure: 'ordinary',
+    statKey: 'btts_yes',
+    seriesKey: '',
+    scope: 'overall',
+    minimum: 10,
+  });
+  check('the league average is the mean of the qualifying teams', averages[0]?.figure === '50.0%' && averages[0].detail === 'Alpha');
+  const open = rankTopBoard(
+    [
+      ...longWins('Alpha', 12, 1, 'Premier'),
+      ...longWins('Short', 1, 1, 'Premier'),
+      fx({ homeName: 'Cold', awayName: 'Warm', homeGoals: 0, awayGoals: 1, competitionId: 1, competitionName: 'Premier' }),
+    ],
+    { entity: 'teams', measure: 'series', statKey: 'w_pct', seriesKey: 'w', scope: 'overall', minimum: 0 },
+  );
+  check('best 200 keeps the long run first and still lists a one-game series', open[0]?.name === 'Alpha' && open.some((row) => row.name === 'Short'));
+  check('a team with no current series stays off the best 200', open.every((row) => row.name !== 'Cold'));
+  check('the board stops at the requested length', rankTopBoard(sample, {
+    entity: 'teams',
+    measure: 'series',
+    statKey: 'w_pct',
+    seriesKey: 'w',
+    scope: 'overall',
+    minimum: 5,
+    limit: 1,
+  }).length === 1);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

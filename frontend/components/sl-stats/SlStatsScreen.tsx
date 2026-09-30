@@ -36,7 +36,9 @@ import {
   type Scope,
 } from '@/services/footyMarketStats';
 import {
+  BOARD_FLOORS,
   ORDINARY_PICKS,
+  TOP_BOARD,
   bestBetsForFixtures,
   bestBetForFixture,
   combineMatchQuery,
@@ -46,9 +48,13 @@ import {
   rankLeagueAverages,
   rankOrdinaryTeams,
   rankSeriesTeams,
+  rankTopBoard,
   seriesMatches,
   seriesPicks,
   type BestBet,
+  type BoardEntity,
+  type BoardMeasure,
+  type BoardRow,
 } from '@/services/slStats';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
@@ -136,6 +142,23 @@ const LEAGUE_SORTS: { value: LeagueSort; label: string }[] = [
 ];
 
 const QUERY_PAGE = 6;
+const BOARD_PAGE = 20;
+
+const BOARD_ENTITIES: { value: BoardEntity; label: string }[] = [
+  { value: 'teams', label: 'Teams' },
+  { value: 'leagues', label: 'Leagues' },
+  { value: 'competitions', label: 'Competitions' },
+];
+
+const BOARD_MEASURES: { value: BoardMeasure; label: string }[] = [
+  { value: 'series', label: 'Current series' },
+  { value: 'ordinary', label: 'Ordinary rate' },
+];
+
+const BOARD_POOLS = [
+  { value: '30', label: '30 most active' },
+  { value: '200', label: '200 most active' },
+];
 
 function kickoff(unix: number): string {
   return new Date(unix * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -209,11 +232,16 @@ export default function SlStatsScreen({ onBack }: { onBack: () => void }) {
   const [queryPage, setQueryPage] = useState(1);
   const scrollRef = useRef<ScrollView>(null);
   const [statKey, setStatKey] = useState('sc_pct');
+  const [boardEntity, setBoardEntity] = useState<BoardEntity>('teams');
+  const [boardMeasure, setBoardMeasure] = useState<BoardMeasure>('series');
+  const [boardMinimum, setBoardMinimum] = useState(0);
+  const [boardPool, setBoardPool] = useState<'30' | '200'>('30');
 
   const live = useSlStats({
     country: country || null,
     competitionId: leagueId ? Number(leagueId) : null,
     kind,
+    leagueCap: Number(boardPool),
   });
 
   useEffect(() => {
@@ -249,6 +277,22 @@ export default function SlStatsScreen({ onBack }: { onBack: () => void }) {
   );
   const statLabel = ORDINARY_PICKS.find((item) => item.key === statKey)?.label ?? 'Scoring percentage';
   const seriesLabel = seriesOptions.find((item) => item.key === seriesKey)?.label ?? 'Win';
+  const boardSeriesKey = seriesKey || 'w';
+  const boardSeriesLabel = seriesOptions.find((item) => item.key === boardSeriesKey)?.label ?? 'Win';
+  const boardRows = useMemo(
+    () =>
+      rankTopBoard(live.finished, {
+        entity: boardEntity,
+        measure: boardMeasure,
+        statKey,
+        seriesKey: boardSeriesKey,
+        scope,
+        minimum: boardMinimum,
+        limit: TOP_BOARD,
+      }),
+    [live.finished, boardEntity, boardMeasure, statKey, boardSeriesKey, scope, boardMinimum],
+  );
+  const boardSentence = boardCopy(boardEntity, boardMeasure, boardMeasure === 'series' ? boardSeriesLabel : statLabel, boardMinimum, !seriesKey && boardMeasure === 'series');
 
   const combined = useMemo(
     () => combineMatchQuery(live.finished, upcoming, { scope, statKey, statLabel, seriesKey, seriesLabel }),
@@ -283,7 +327,7 @@ export default function SlStatsScreen({ onBack }: { onBack: () => void }) {
             <Text style={styles.heroKicker}>Query</Text>
             <Text style={styles.title}>SL-STATS</Text>
             <Text style={styles.blurb}>
-              Filters pull an ordinary stat, the league average, and a series, then combine them. Each page shows the matches and the previous results behind the figure.
+              Filters pull an ordinary stat, the league average, and a series, then combine them. Top 200 ranks teams, leagues, or competitions by a current series or by any ordinary rate.
             </Text>
           </View>
           <View style={styles.heroStat}>
@@ -304,6 +348,10 @@ export default function SlStatsScreen({ onBack }: { onBack: () => void }) {
           <FilterDropdown label="Scope" value={scope} options={SCOPES} onChange={(value) => setScope(value as Scope)} />
           <FilterDropdown label="Ordinary stat" value={statKey} options={ORDINARY_PICKS.map((item) => ({ value: item.key, label: item.label }))} onChange={setStatKey} />
           <FilterDropdown label="Series" value={seriesKey} options={[{ value: '', label: 'No series' }, ...seriesOptions.map((item) => ({ value: item.key, label: item.label }))]} onChange={setSeriesKey} />
+          <FilterDropdown label="Rank" value={boardEntity} options={BOARD_ENTITIES} onChange={(value) => setBoardEntity(value as BoardEntity)} />
+          <FilterDropdown label="Measured by" value={boardMeasure} options={BOARD_MEASURES} onChange={(value) => setBoardMeasure(value as BoardMeasure)} />
+          <FilterDropdown label="At least" value={String(boardMinimum)} options={[{ value: '0', label: 'Best 200' }, ...BOARD_FLOORS.map((item) => ({ value: String(item), label: `${item} or more games` }))]} onChange={(value) => setBoardMinimum(Number(value))} />
+          <FilterDropdown label="Sample" value={boardPool} options={BOARD_POOLS} onChange={(value) => setBoardPool(value as '30' | '200')} />
 
           {analysis === 'btts' ? (
             <>
@@ -344,6 +392,15 @@ export default function SlStatsScreen({ onBack }: { onBack: () => void }) {
 
         {!live.loading ? (
           <>
+            <TopBoard
+              key={`${boardEntity}-${boardMeasure}-${boardMinimum}-${statKey}-${boardSeriesKey}-${scope}-${country}-${leagueId}-${kind}`}
+              rows={boardRows}
+              entity={boardEntity}
+              measure={boardMeasure}
+              minimum={boardMinimum}
+              sentence={boardSentence}
+              empty={boardEmpty(boardEntity, boardMeasure, boardMeasure === 'series' ? boardSeriesLabel : statLabel, boardMinimum, kind)}
+            />
             <QueryBoard
               rows={queryRows}
               bets={bets}
@@ -385,6 +442,45 @@ export default function SlStatsScreen({ onBack }: { onBack: () => void }) {
       </ScrollView>
     </AppShell>
   );
+}
+
+function boardCopy(entity: BoardEntity, measure: BoardMeasure, stat: string, minimum: number, assumedWin: boolean): string {
+  const who = entity === 'teams' ? 'Teams' : entity === 'leagues' ? 'Domestic leagues' : 'Competitions';
+  const floor = minimum > 0 ? `${minimum} or more games` : 'the best 200';
+  const assumed = assumedWin ? ' No series was selected, so this uses Win.' : '';
+  const pages = ' Use Previous and Next to move through the full list.';
+  if (measure === 'series' && entity === 'teams') {
+    return minimum > 0
+      ? `${who} with a current ${stat} series of ${floor}, longest run first. Each team is listed once in each competition.${assumed}${pages}`
+      : `The best 200 ${who.toLowerCase()} by the current ${stat} series, longest run first. Each team is listed once in each competition.${assumed}${pages}`;
+  }
+  if (measure === 'series') {
+    return minimum > 0
+      ? `${who} that contain a current ${stat} series of ${floor}. Ranked by the longest run, then by how many sides reach that length.${assumed}${pages}`
+      : `The best 200 ${who.toLowerCase()} by the longest current ${stat} series.${assumed}${pages}`;
+  }
+  if (entity === 'teams') {
+    return minimum > 0
+      ? `${who} with ${stat} from ${floor}, ranked by the share of matches.${pages}`
+      : `The best 200 ${who.toLowerCase()} by ${stat}, ranked by the share of matches.${pages}`;
+  }
+  return minimum > 0
+    ? `${who} ranked by the average ${stat} of sides with ${floor}. The best side in each one is named beside the average.${pages}`
+    : `The best 200 ${who.toLowerCase()} by the average ${stat}. The best side in each one is named beside the average.${pages}`;
+}
+
+function boardEmpty(entity: BoardEntity, measure: BoardMeasure, stat: string, minimum: number, kind: CompetitionKind): string {
+  if (entity === 'leagues' && kind === 'cup') {
+    return 'Leagues are domestic competitions. Switch Competitions to Domestic leagues or All competitions.';
+  }
+  if (measure === 'series') {
+    return minimum > 0
+      ? `No ${entity} have a current ${stat} series of ${minimum} or more games in this sample. Choose Best 200, or widen Sample to 200 most active.`
+      : `No ${entity} have a current ${stat} series in this sample.`;
+  }
+  return minimum > 0
+    ? `No ${entity} have ${minimum} or more games for ${stat} in this sample. Choose Best 200, or widen Sample to 200 most active.`
+    : `No ${entity} have a finished match for ${stat} in this sample.`;
 }
 
 function countedFrom(detail: string): string {
@@ -484,26 +580,111 @@ function Pager({
   total,
   noun = 'matches',
   onChange,
+  always = false,
+  from,
+  to,
 }: {
   page: number;
   pages: number;
   total: number;
   noun?: string;
   onChange: (page: number) => void;
+  always?: boolean;
+  from?: number;
+  to?: number;
 }) {
-  if (pages <= 1) return null;
+  if (!always && pages <= 1) return null;
+  const range = from != null && to != null ? `Showing ${from}–${to} of ${total}` : `${total} ${noun}`;
   return (
     <View style={styles.pager}>
       <Pressable style={[styles.pageBtn, page <= 1 && styles.pageBtnOff]} onPress={() => page > 1 && onChange(page - 1)}>
         <Text style={styles.pageBtnText}>Previous</Text>
       </Pressable>
       <Text style={styles.pageLabel}>
-        Page {page} of {pages} · {total} {noun}
+        {range} · Page {page} of {pages}
       </Text>
       <Pressable style={[styles.pageBtn, page >= pages && styles.pageBtnOff]} onPress={() => page < pages && onChange(page + 1)}>
         <Text style={styles.pageBtnText}>Next</Text>
       </Pressable>
     </View>
+  );
+}
+
+function TopBoard({
+  rows,
+  entity,
+  measure,
+  minimum,
+  sentence,
+  empty,
+}: {
+  rows: BoardRow[];
+  entity: BoardEntity;
+  measure: BoardMeasure;
+  minimum: number;
+  sentence: string;
+  empty: string;
+}) {
+  const [page, setPage] = useState(1);
+  const pages = Math.max(1, Math.ceil(rows.length / BOARD_PAGE));
+  const safe = Math.min(page, pages);
+  const start = (safe - 1) * BOARD_PAGE;
+  const visible = rows.slice(start, start + BOARD_PAGE);
+  const nameLabel = entity === 'teams' ? 'Team' : entity === 'leagues' ? 'League' : 'Competition';
+  const columns = [
+    { key: 'rank', label: '#', flex: 0.35 },
+    { key: 'name', label: nameLabel, flex: 1.5 },
+    ...(entity === 'teams' ? [{ key: 'context', label: 'League', flex: 1.3 }] : []),
+    ...(entity === 'competitions' ? [{ key: 'type', label: 'Type', flex: 0.6 }] : []),
+    { key: 'country', label: 'Country', flex: 1 },
+    ...(measure === 'series'
+      ? [
+          { key: 'figure', label: entity === 'teams' ? 'Current series' : 'Longest series', flex: 0.9 },
+          { key: 'detail', label: entity === 'teams' ? 'Played' : 'Team on that series', flex: entity === 'teams' ? 0.6 : 1.2 },
+          ...(entity === 'teams' ? [] : [{ key: 'extra', label: minimum > 0 ? `Teams with ${minimum}+` : 'Teams on a run', flex: 0.8 }]),
+        ]
+      : [
+          { key: 'detail', label: entity === 'teams' ? 'Played' : 'Best team', flex: entity === 'teams' ? 0.6 : 1.2 },
+          { key: 'figure', label: entity === 'teams' ? 'Rate' : 'Average', flex: 0.8 },
+          ...(entity === 'teams' ? [] : [{ key: 'extra', label: 'Best rate and teams', flex: 1 }]),
+        ]),
+  ];
+  const pager = (slot: string) => (
+    <Pager
+      key={slot}
+      page={safe}
+      pages={pages}
+      total={rows.length}
+      noun="rows"
+      always
+      from={rows.length === 0 ? 0 : start + 1}
+      to={start + visible.length}
+      onChange={setPage}
+    />
+  );
+  return (
+    <Block dropdown title="Top 200" note={sentence}>
+      <Text style={styles.formula}>{sentence}</Text>
+      {pager('top')}
+      <FootyTable
+        columns={columns}
+        empty={empty}
+        rows={visible.map((row, index) => ({
+          id: row.id,
+          cells: {
+            rank: String(start + index + 1),
+            name: row.name,
+            context: row.context,
+            type: row.typeLabel,
+            country: row.country,
+            figure: row.figure,
+            detail: row.detail,
+            extra: row.extra,
+          },
+        }))}
+      />
+      {pager('bottom')}
+    </Block>
   );
 }
 

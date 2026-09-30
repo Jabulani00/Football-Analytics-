@@ -161,8 +161,10 @@ export function useSlStats(filter: {
   country: string | null;
   competitionId: number | null;
   kind: CompetitionKind;
+  leagueCap?: number;
 }): SlStatsData {
   const { country, competitionId, kind } = filter;
+  const leagueCap = filter.leagueCap ?? ALL_LEAGUE_CAP;
   const [data, setData] = useState<SlStatsData>(EMPTY);
 
   useEffect(() => {
@@ -191,10 +193,10 @@ export function useSlStats(filter: {
           return activity.has(comp.id);
         });
         let capped = false;
-        if (competitionId == null && country == null && kind === 'domestic' && targets.length > ALL_LEAGUE_CAP) {
+        if (competitionId == null && country == null && kind === 'domestic' && targets.length > leagueCap) {
           targets = [...targets]
             .sort((a, b) => (activity.get(b.id) ?? 0) - (activity.get(a.id) ?? 0) || a.name.localeCompare(b.name))
-            .slice(0, ALL_LEAGUE_CAP);
+            .slice(0, leagueCap);
           capped = true;
         }
         const finished = (await mapPool(targets, 4, loadResults)).flat();
@@ -251,7 +253,7 @@ export function useSlStats(filter: {
       alive = false;
       ctrl.abort();
     };
-  }, [country, competitionId, kind]);
+  }, [country, competitionId, kind, leagueCap]);
 
   return data;
 }

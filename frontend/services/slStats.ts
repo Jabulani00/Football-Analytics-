@@ -187,6 +187,7 @@ type TeamBucket = {
   league: string;
   country: string;
   competitionId: number;
+  isCup: boolean;
   results: TeamResult[];
 };
 
@@ -212,10 +213,10 @@ function resultFor(fx: FootyFixture, team: string): TeamResult {
   };
 }
 
-function teamBuckets(fixtures: FootyFixture[]): Map<string, TeamBucket> {
+function teamBuckets(fixtures: FootyFixture[], includeCups = false): Map<string, TeamBucket> {
   const map = new Map<string, TeamBucket>();
   const finished = fixtures
-    .filter((fx) => fx.finished && fx.homeGoals != null && fx.awayGoals != null && !fx.isFriendly && !fx.isCup)
+    .filter((fx) => fx.finished && fx.homeGoals != null && fx.awayGoals != null && !fx.isFriendly && (includeCups || !fx.isCup))
     .sort((a, b) => b.unix - a.unix);
   for (const fx of finished) {
     for (const team of [fx.homeName, fx.awayName]) {
@@ -227,6 +228,7 @@ function teamBuckets(fixtures: FootyFixture[]): Map<string, TeamBucket> {
           league: fx.competitionName,
           country: fx.country,
           competitionId: fx.competitionId,
+          isCup: fx.isCup,
           results: [],
         };
         map.set(key, bucket);
@@ -472,6 +474,126 @@ export function rankLeagueAverages(
     }))
     .sort((a, b) => b.pct - a.pct || a.name.localeCompare(b.name))
     .slice(0, SL_LIMIT);
+}
+
+export const TOP_BOARD = 200;
+
+export const BOARD_FLOORS = [5, 7, 10, 15] as const;
+
+export type BoardEntity = 'teams' | 'leagues' | 'competitions';
+
+export type BoardMeasure = 'series' | 'ordinary';
+
+export type BoardRow = {
+  id: string;
+  name: string;
+  context: string;
+  country: string;
+  typeLabel: string;
+  figure: string;
+  detail: string;
+  extra: string;
+};
+
+type TeamMeasure = {
+  bucket: TeamBucket;
+  played: number;
+  run: number;
+  pct: number;
+};
+
+/**
+ * Top 200 for one stat. Teams are one row per side in a competition.
+ * Leagues are domestic competitions, ranked by the longest current series
+ * or by the average rate of teams that cleared the minimum games.
+ * Competitions are the same table with cups included.
+ */
+export function rankTopBoard(
+  fixtures: FootyFixture[],
+  options: {
+    entity: BoardEntity;
+    measure: BoardMeasure;
+    statKey: string;
+    seriesKey: string;
+    scope: 'overall' | 'home' | 'away';
+    minimum: number;
+    limit?: number;
+  },
+): BoardRow[] {
+  const limit = options.limit ?? TOP_BOARD;
+  const includeCups = options.entity !== 'leagues';
+  const measured: TeamMeasure[] = [];
+  const series = options.measure === 'series' ? seriesPred(options.seriesKey || 'w') : null;
+  const hit = options.measure === 'ordinary' ? ordinaryHit(options.statKey) : null;
+  if (options.measure === 'series' && !series) return [];
+  if (options.measure === 'ordinary' && !hit) return [];
+
+  for (const bucket of teamBuckets(fixtures, includeCups).values()) {
+    const results = inScope(bucket.results, options.scope);
+    if (options.measure === 'series' && series) {
+      const run = runLength(results, series);
+      const floor = options.minimum > 0 ? options.minimum : 1;
+      if (results.length === 0 || run < floor) continue;
+      measured.push({ bucket, played: results.length, run, pct: 0 });
+      continue;
+    }
+    if (!hit || results.length < Math.max(options.minimum, 1)) continue;
+    const hits = results.filter(hit).length;
+    measured.push({
+      bucket,
+      played: results.length,
+      run: 0,
+      pct: Math.round((hits / results.length) * 1000) / 10,
+    });
+  }
+
+  if (options.entity === 'teams') {
+    const sorted =
+      options.measure === 'series'
+        ? [...measured].sort((a, b) => b.run - a.run || b.played - a.played || a.bucket.team.localeCompare(b.bucket.team))
+        : [...measured].sort((a, b) => b.pct - a.pct || b.played - a.played || a.bucket.team.localeCompare(b.bucket.team));
+    return sorted.slice(0, limit).map((row) => ({
+      id: `${row.bucket.competitionId}::${row.bucket.team}`,
+      name: row.bucket.team,
+      context: row.bucket.league,
+      country: row.bucket.country,
+      typeLabel: row.bucket.isCup ? 'Cup' : 'League',
+      figure: options.measure === 'series' ? `${row.run} games` : `${row.pct.toFixed(1)}%`,
+      detail: String(row.played),
+      extra: '',
+    }));
+  }
+
+  const groups = new Map<number, TeamMeasure[]>();
+  for (const row of measured) {
+    const list = groups.get(row.bucket.competitionId) ?? [];
+    list.push(row);
+    groups.set(row.bucket.competitionId, list);
+  }
+  const grouped = [...groups.values()].map((list) => {
+    const ordered =
+      options.measure === 'series'
+        ? [...list].sort((a, b) => b.run - a.run || a.bucket.team.localeCompare(b.bucket.team))
+        : [...list].sort((a, b) => b.pct - a.pct || a.bucket.team.localeCompare(b.bucket.team));
+    const best = ordered[0];
+    const average = Math.round((list.reduce((sum, row) => sum + row.pct, 0) / list.length) * 10) / 10;
+    return { best, count: list.length, average };
+  });
+  const sortedGroups =
+    options.measure === 'series'
+      ? grouped.sort((a, b) => b.best.run - a.best.run || b.count - a.count || a.best.bucket.league.localeCompare(b.best.bucket.league))
+      : grouped.sort((a, b) => b.average - a.average || b.count - a.count || a.best.bucket.league.localeCompare(b.best.bucket.league));
+
+  return sortedGroups.slice(0, limit).map((row) => ({
+    id: String(row.best.bucket.competitionId),
+    name: row.best.bucket.league,
+    context: row.best.bucket.country,
+    country: row.best.bucket.country,
+    typeLabel: row.best.bucket.isCup ? 'Cup' : 'League',
+    figure: options.measure === 'series' ? `${row.best.run} games` : `${row.average.toFixed(1)}%`,
+    detail: row.best.bucket.team,
+    extra: options.measure === 'series' ? String(row.count) : `${row.best.pct.toFixed(1)}% · ${row.count} ${row.count === 1 ? 'team' : 'teams'}`,
+  }));
 }
 
 export type BestBet = {
