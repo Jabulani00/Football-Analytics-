@@ -493,11 +493,7 @@ function sideStats(games: FootyFixture[], home: boolean): VenueStats {
   return { scAvg: scored / games.length, concAvg: conceded / games.length, sample: games.length };
 }
 
-/** Same best-bet pick the fixture row shows: market, selection, and model percentage. */
-export function bestBetForFixture(fx: FootyFixture, finished: FootyFixture[]): BestBet | null {
-  const league = finished.filter(
-    (game) => game.finished && game.competitionId === fx.competitionId && game.homeGoals != null && game.awayGoals != null,
-  );
+function betFromLeague(fx: FootyFixture, league: FootyFixture[]): BestBet | null {
   if (league.length === 0) return null;
   const homeGames = league.filter((game) => game.homeName === fx.homeName);
   const awayGames = league.filter((game) => game.awayName === fx.awayName);
@@ -511,6 +507,30 @@ export function bestBetForFixture(fx: FootyFixture, finished: FootyFixture[]): B
   const rec = buildRecommendation({ prediction, homeName: fx.homeName, awayName: fx.awayName });
   if (!rec.best) return null;
   return { market: rec.best.market, selection: rec.best.selection, probability: rec.best.probability };
+}
+
+/** Same best-bet pick the fixture row shows: market, selection, and model percentage. */
+export function bestBetForFixture(fx: FootyFixture, finished: FootyFixture[]): BestBet | null {
+  return betFromLeague(
+    fx,
+    finished.filter(
+      (game) => game.finished && game.competitionId === fx.competitionId && game.homeGoals != null && game.awayGoals != null,
+    ),
+  );
+}
+
+/** One pass over finished matches, then a bet only for the fixtures asked for. */
+export function bestBetsForFixtures(fixtures: FootyFixture[], finished: FootyFixture[]): Map<number, BestBet | null> {
+  const byComp = new Map<number, FootyFixture[]>();
+  for (const game of finished) {
+    if (!game.finished || game.homeGoals == null || game.awayGoals == null) continue;
+    const list = byComp.get(game.competitionId);
+    if (list) list.push(game);
+    else byComp.set(game.competitionId, [game]);
+  }
+  const map = new Map<number, BestBet | null>();
+  for (const fx of fixtures) map.set(fx.id, betFromLeague(fx, byComp.get(fx.competitionId) ?? []));
+  return map;
 }
 
 export type EvidenceLine = {
@@ -667,5 +687,5 @@ export function combineMatchQuery(
     });
   }
 
-  return rows.sort((a, b) => (b.combined ?? -1) - (a.combined ?? -1) || a.unix - b.unix).slice(0, 12);
+  return rows.sort((a, b) => (b.combined ?? -1) - (a.combined ?? -1) || a.unix - b.unix).slice(0, 48);
 }

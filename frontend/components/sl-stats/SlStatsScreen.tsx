@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import FootyTable from '@/components/analytics/FootyTable';
 import AppShell from '@/components/shared/AppShell';
@@ -37,6 +37,7 @@ import {
 } from '@/services/footyMarketStats';
 import {
   ORDINARY_PICKS,
+  bestBetsForFixtures,
   bestBetForFixture,
   combineMatchQuery,
   ordinaryMatches,
@@ -134,6 +135,8 @@ const LEAGUE_SORTS: { value: LeagueSort; label: string }[] = [
   { value: 'progress', label: 'Season progress' },
 ];
 
+const QUERY_PAGE = 6;
+
 function kickoff(unix: number): string {
   return new Date(unix * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
@@ -142,12 +145,27 @@ function pct(n: number): string {
   return `${n.toFixed(1)}%`;
 }
 
-function Block({ title, note, children }: { title: string; note: string; children: ReactNode }) {
+function Block({ title, note, children, dropdown = false }: { title: string; note: string; children: ReactNode; dropdown?: boolean }) {
+  const [open, setOpen] = useState(false);
+  if (!dropdown) {
+    return (
+      <View style={styles.block}>
+        <Text style={styles.blockTitle}>{title}</Text>
+        <Text style={styles.note}>{note}</Text>
+        {children}
+      </View>
+    );
+  }
   return (
-    <View style={styles.block}>
-      <Text style={styles.blockTitle}>{title}</Text>
-      <Text style={styles.note}>{note}</Text>
-      {children}
+    <View style={styles.disclosure}>
+      <Pressable onPress={() => setOpen((value) => !value)} style={styles.disclosureHead}>
+        <View style={styles.disclosureCopy}>
+          <Text style={styles.disclosureTitle}>{title}</Text>
+          <Text style={styles.disclosureNote} numberOfLines={open ? undefined : 1}>{note}</Text>
+        </View>
+        <Text style={styles.chevron}>{open ? '▾' : '▸'}</Text>
+      </Pressable>
+      {open ? <View style={styles.disclosureBody}>{children}</View> : null}
     </View>
   );
 }
@@ -188,6 +206,8 @@ export default function SlStatsScreen({ onBack }: { onBack: () => void }) {
   const [leagueSort, setLeagueSort] = useState<LeagueSort>('pct');
   const seriesOptions = useMemo(() => seriesPicks(), []);
   const [seriesKey, setSeriesKey] = useState('');
+  const [queryPage, setQueryPage] = useState(1);
+  const scrollRef = useRef<ScrollView>(null);
   const [statKey, setStatKey] = useState('sc_pct');
 
   const live = useSlStats({
@@ -230,24 +250,47 @@ export default function SlStatsScreen({ onBack }: { onBack: () => void }) {
   const statLabel = ORDINARY_PICKS.find((item) => item.key === statKey)?.label ?? 'Scoring percentage';
   const seriesLabel = seriesOptions.find((item) => item.key === seriesKey)?.label ?? 'Win';
 
-  const bets = useMemo(() => {
-    const map = new Map<number, BestBet | null>();
-    for (const fx of upcoming) map.set(fx.id, bestBetForFixture(fx, live.finished));
-    return map;
-  }, [upcoming, live.finished]);
   const combined = useMemo(
     () => combineMatchQuery(live.finished, upcoming, { scope, statKey, statLabel, seriesKey, seriesLabel }),
     [live.finished, upcoming, scope, statKey, statLabel, seriesKey, seriesLabel],
   );
+  const queryPages = Math.max(1, Math.ceil(combined.length / QUERY_PAGE));
+  const safeQueryPage = Math.min(queryPage, queryPages);
+  const queryRows = combined.slice((safeQueryPage - 1) * QUERY_PAGE, safeQueryPage * QUERY_PAGE);
+  const bets = useMemo(() => {
+    const wanted = new Set(queryRows.map((row) => row.id));
+    return bestBetsForFixtures(
+      upcoming.filter((fx) => wanted.has(fx.id)),
+      live.finished,
+    );
+  }, [combined, safeQueryPage, upcoming, live.finished]);
+
+  useEffect(() => {
+    setQueryPage(1);
+  }, [country, leagueId, kind, scope, statKey, seriesKey]);
+
+  const showQueryPage = (next: number) => {
+    setQueryPage(next);
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
+  };
 
   return (
     <AppShell>
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={Platform.OS === 'web'}>
+      <ScrollView ref={scrollRef} contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={Platform.OS === 'web'}>
         <StickyBack label="← HOME" onPress={onBack} />
-        <Text style={styles.title}>SL-STATS</Text>
-        <Text style={styles.blurb}>
-          The filters are the query. They pull an ordinary stat, the league average of that stat, and a series when you choose one, then combine those calculations. Each upcoming match lists the previous matches the figure was counted from.
-        </Text>
+        <View style={styles.hero}>
+          <View style={styles.heroCopy}>
+            <Text style={styles.heroKicker}>Query</Text>
+            <Text style={styles.title}>SL-STATS</Text>
+            <Text style={styles.blurb}>
+              Filters pull an ordinary stat, the league average, and a series, then combine them. Each page shows the matches and the previous results behind the figure.
+            </Text>
+          </View>
+          <View style={styles.heroStat}>
+            <Text style={styles.heroNum}>{combined.length}</Text>
+            <Text style={styles.heroLabel}>matches ranked</Text>
+          </View>
+        </View>
         <Text style={styles.sample}>
           {live.capped ? `Showing the ${live.loadedLeagues} most active leagues. ` : `${live.loadedLeagues} leagues loaded. `}
           {index.matches} finished matches in this filter.
@@ -301,8 +344,16 @@ export default function SlStatsScreen({ onBack }: { onBack: () => void }) {
 
         {!live.loading ? (
           <>
-            <QueryBoard rows={combined} bets={bets} statLabel={statLabel} />
-            <Block title="Rankings for this analysis" note={ANALYSES.find((item) => item.value === analysis)?.blurb ?? ''}>
+            <QueryBoard
+              rows={queryRows}
+              bets={bets}
+              statLabel={statLabel}
+              page={safeQueryPage}
+              pages={queryPages}
+              total={combined.length}
+              onPage={showQueryPage}
+            />
+            <Block dropdown title="Rankings for this analysis" note={ANALYSES.find((item) => item.value === analysis)?.blurb ?? ''}>
               <AnalysisBody
                 analysis={analysis}
                 index={index}
@@ -340,62 +391,150 @@ function countedFrom(detail: string): string {
   return detail.replace(/^[\d.]+%\s*(from\s+)?/i, '');
 }
 
+function joinNames(labels: string[]): string {
+  if (labels.length <= 1) return labels[0] ?? '';
+  if (labels.length === 2) return `${labels[0]} and ${labels[1]}`;
+  return `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`;
+}
+
+function FixtureSummary({ row, bet }: { row: ReturnType<typeof combineMatchQuery>[number]; bet: BestBet | null }) {
+  const [likelyOpen, setLikelyOpen] = useState(false);
+  const [combinedOpen, setCombinedOpen] = useState(false);
+  const parts = row.evidence.filter((line) => line.pct != null);
+  const shown = row.combined == null ? '—' : `${Math.round(row.combined)}%`;
+  const toggleBoth = () => {
+    const next = !(likelyOpen && combinedOpen);
+    setLikelyOpen(next);
+    setCombinedOpen(next);
+  };
+  return (
+    <View>
+      <View style={styles.queryMatch}>
+        <Pressable onPress={toggleBoth} style={styles.queryMatchText}>
+          <Text style={styles.fixtureChevron}>{likelyOpen || combinedOpen ? '▾' : '▸'}</Text>
+          <View style={styles.queryMatchCopy}>
+            <Text style={styles.queryKicker}>{kickoff(row.unix)} · {row.league}</Text>
+            <Text style={styles.queryMatchName}>{row.match}</Text>
+          </View>
+        </Pressable>
+        <Pressable onPress={() => setLikelyOpen((value) => !value)} style={styles.likely}>
+          <Text style={styles.likelyKicker}>Likely outcome</Text>
+          <Text style={styles.likelySelection} numberOfLines={2}>{bet?.selection ?? 'No pick'}</Text>
+          <Text style={styles.likelyPct}>{bet ? `${Math.round(bet.probability * 100)}%` : '—'}</Text>
+        </Pressable>
+        <Pressable onPress={() => setCombinedOpen((value) => !value)} style={styles.queryCombined}>
+          <Text style={styles.combinedKicker}>Combined</Text>
+          <Text style={styles.queryCombinedValue}>{shown}</Text>
+        </Pressable>
+      </View>
+      {combinedOpen ? (
+        <View>
+          <Text style={styles.querySection}>How the combined percentage was reached</Text>
+          <Text style={styles.formula}>
+            {shown} is the average of {joinNames(parts.map((line) => line.label)) || 'no available figures'}.
+          </Text>
+          <Text style={styles.formula}>
+            {parts.map((line, index) => (
+              <Text key={line.label}>
+                {index > 0 ? ' + ' : ''}
+                <Text style={styles.formulaName}>{line.label}</Text>
+                {' '}
+                <Text style={styles.formulaPct}>{(line.pct as number).toFixed(1)}%</Text>
+              </Text>
+            ))}
+            {parts.length > 0 ? ` ÷ ${parts.length} = ` : ''}
+            {row.combined == null ? '—' : <Text style={styles.formulaPct}>{row.combined.toFixed(1)}%</Text>}
+            {row.combined != null ? `, shown as ${shown}` : ''}.
+          </Text>
+          <View style={[styles.queryRow, styles.queryHead]}>
+            <Text style={[styles.queryHeadText, styles.queryCalc]}>What was used</Text>
+            <Text style={[styles.queryHeadText, styles.queryFigureCol]}>Figure</Text>
+          </View>
+          {row.evidence.map((line, index) => (
+            <View key={line.label} style={[styles.queryRow, index % 2 === 1 && styles.queryAlt]}>
+              <View style={styles.queryCalc}>
+                <Text style={styles.queryLabel}>{line.label}</Text>
+                <Text style={styles.queryFrom}>{countedFrom(line.detail)}</Text>
+              </View>
+              <Text style={[styles.queryFigure, styles.queryFigureCol]}>{line.pct == null ? '—' : `${line.pct.toFixed(1)}%`}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+      {likelyOpen ? (
+        <View>
+          <Text style={styles.querySection}>Why this is the likely outcome</Text>
+          <Text style={styles.formula}>{bet ? `${bet.market}: ${bet.selection} at ${Math.round(bet.probability * 100)}%` : 'No qualifying recommendation from the finished matches in this league.'}</Text>
+          {row.previous.length > 0 ? <Text style={styles.querySection}>Previous evidence</Text> : null}
+          {row.previous.map((item, index) => (
+            <View key={`${item.text}-${index}`} style={[styles.queryRow, index % 2 === 1 && styles.queryAlt]}>
+              <Text style={[styles.queryLabel, styles.queryCalc]}>{item.text}</Text>
+              <Text style={[item.hit ? styles.queryHit : styles.queryMiss, styles.queryFigureCol]}>{item.hit ? 'Hit' : 'Miss'}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function Pager({
+  page,
+  pages,
+  total,
+  noun = 'matches',
+  onChange,
+}: {
+  page: number;
+  pages: number;
+  total: number;
+  noun?: string;
+  onChange: (page: number) => void;
+}) {
+  if (pages <= 1) return null;
+  return (
+    <View style={styles.pager}>
+      <Pressable style={[styles.pageBtn, page <= 1 && styles.pageBtnOff]} onPress={() => page > 1 && onChange(page - 1)}>
+        <Text style={styles.pageBtnText}>Previous</Text>
+      </Pressable>
+      <Text style={styles.pageLabel}>
+        Page {page} of {pages} · {total} {noun}
+      </Text>
+      <Pressable style={[styles.pageBtn, page >= pages && styles.pageBtnOff]} onPress={() => page < pages && onChange(page + 1)}>
+        <Text style={styles.pageBtnText}>Next</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 function QueryBoard({
   rows,
   bets,
   statLabel,
+  page,
+  pages,
+  total,
+  onPage,
 }: {
   rows: ReturnType<typeof combineMatchQuery>;
   bets: Map<number, BestBet | null>;
   statLabel: string;
+  page: number;
+  pages: number;
+  total: number;
+  onPage: (page: number) => void;
 }) {
   if (rows.length === 0) {
     return <Text style={styles.note}>No upcoming matches in this query have played at least 25% of the season.</Text>;
   }
   return (
-    <Block title="Combined calculation" note={`Ordinary ${statLabel}, the league average, and the series when one is selected. The percentage is the average of those calculations.`}>
+    <Block dropdown title="Combined calculation" note={`Ordinary ${statLabel}, the league average, and the series when one is selected. The percentage is the average of those calculations.`}>
       <View style={styles.queryTable}>
-        <View style={[styles.queryRow, styles.queryHead]}>
-          <Text style={[styles.queryHeadText, styles.queryCalc]}>Calculation</Text>
-          <Text style={[styles.queryHeadText, styles.queryFigureCol]}>Figure</Text>
-        </View>
-        {rows.map((row) => {
-          const bet = bets.get(row.id) ?? null;
-          return (
-            <View key={row.id}>
-              <View style={styles.queryMatch}>
-                <View style={styles.queryMatchText}>
-                  <Text style={styles.queryKicker}>{kickoff(row.unix)} · {row.league}</Text>
-                  <Text style={styles.queryMatchName}>{row.match}</Text>
-                  <Text style={styles.queryKicker}>Best bet</Text>
-                  <Text style={styles.queryBetSelection}>{bet?.selection ?? 'No qualifying recommendation'}</Text>
-                  {bet ? <Text style={styles.queryBetMarket}>{bet.market} · {Math.round(bet.probability * 100)}%</Text> : null}
-                </View>
-                <View style={styles.queryCombined}>
-                  <Text style={styles.queryKicker}>Combined</Text>
-                  <Text style={styles.queryCombinedValue}>{row.combined == null ? '—' : `${Math.round(row.combined)}%`}</Text>
-                </View>
-              </View>
-              {row.evidence.map((line, index) => (
-                <View key={line.label} style={[styles.queryRow, index % 2 === 1 && styles.queryAlt]}>
-                  <View style={styles.queryCalc}>
-                    <Text style={styles.queryLabel}>{line.label}</Text>
-                    <Text style={styles.queryFrom}>{countedFrom(line.detail)}</Text>
-                  </View>
-                  <Text style={[styles.queryFigure, styles.queryFigureCol]}>{line.pct == null ? '—' : `${line.pct.toFixed(1)}%`}</Text>
-                </View>
-              ))}
-              {row.previous.length > 0 ? <Text style={styles.querySection}>Previous evidence</Text> : null}
-              {row.previous.map((item, index) => (
-                <View key={`${item.text}-${index}`} style={[styles.queryRow, index % 2 === 1 && styles.queryAlt]}>
-                  <Text style={[styles.queryLabel, styles.queryCalc]}>{item.text}</Text>
-                  <Text style={[item.hit ? styles.queryHit : styles.queryMiss, styles.queryFigureCol]}>{item.hit ? 'Hit' : 'Miss'}</Text>
-                </View>
-              ))}
-            </View>
-          );
-        })}
+        {rows.map((row) => (
+          <FixtureSummary key={row.id} row={row} bet={bets.get(row.id) ?? null} />
+        ))}
       </View>
+      <Pager page={page} pages={pages} total={total} onChange={onPage} />
     </Block>
   );
 }
@@ -405,12 +544,17 @@ function UpcomingList({
 }: {
   rows: { id: number; key?: string; unix: number; match: string; league: string; detail: string; bet: BestBet | null }[];
 }) {
+  const [page, setPage] = useState(1);
+  const size = 8;
+  const pages = Math.max(1, Math.ceil(rows.length / size));
+  const safe = Math.min(page, pages);
+  const visible = rows.slice((safe - 1) * size, safe * size);
   if (rows.length === 0) {
     return <Text style={styles.note}>No upcoming matches in leagues that have played at least 25% of the season.</Text>;
   }
   return (
     <View style={styles.matchList}>
-      {rows.map((row, index) => (
+      {visible.map((row, index) => (
         <View key={row.key ?? `${row.id}-${index}`} style={styles.matchCard}>
           <Text style={styles.matchKo}>{kickoff(row.unix)}</Text>
           <Text style={styles.matchTitle}>{row.match}</Text>
@@ -418,6 +562,7 @@ function UpcomingList({
           <BestBetLine bet={row.bet} />
         </View>
       ))}
+      <Pager page={safe} pages={pages} total={rows.length} onChange={setPage} />
     </View>
   );
 }
@@ -448,7 +593,7 @@ function AnalysisBody(props: {
   bets: Map<number, BestBet | null>;
 }) {
   const lines = (fixtures: typeof props.upcoming, detail: (id: number) => string) =>
-    fixtures.slice(0, 40).map((fx) => ({
+    fixtures.slice(0, 8).map((fx) => ({
       id: fx.id,
       unix: fx.unix,
       match: `${fx.homeName} vs ${fx.awayName}`,
@@ -474,7 +619,7 @@ function AnalysisBody(props: {
       <>
         <RankTable title="Best teams" note="Ranked by how often the stat lands." rows={teams.map((row) => ({ id: `${row.league}-${row.team}`, name: row.team, league: row.league, played: row.played, value: pct(row.pct) }))} valueLabel="Rate" />
         <LeagueRateTable title="Best leagues" rows={leagues} sort={props.leagueSort} />
-        <Block title="Upcoming matches" note="Next 48 hours. The best bet is the same pick shown on a fixture.">
+        <Block dropdown title="Upcoming matches" note="Next 48 hours. The best bet is the same pick shown on a fixture.">
           <UpcomingList rows={lines(props.upcoming, (id) => {
             const row = next.find((item) => item.id === id);
             return row ? `Both teams to score ${row.pct.toFixed(1)}%` : '';
@@ -493,7 +638,7 @@ function AnalysisBody(props: {
       <>
         <RankTable title={`Best teams for ${label}`} note="Share of this team’s matches on that side of the line." rows={teams.map((row) => ({ id: `${row.league}-${row.team}`, name: row.team, league: row.league, played: row.played, value: pct(row.pct) }))} valueLabel="Rate" />
         <LeagueRateTable title={`Best leagues for ${label}`} rows={leagues} sort={props.leagueSort} />
-        <Block title="Upcoming matches" note="Next 48 hours. The best bet is the same pick shown on a fixture.">
+        <Block dropdown title="Upcoming matches" note="Next 48 hours. The best bet is the same pick shown on a fixture.">
           <UpcomingList rows={lines(props.upcoming, (id) => {
             const row = next.find((item) => item.id === id);
             return row ? `${label} ${row.pct.toFixed(1)}%` : '';
@@ -523,7 +668,7 @@ function AnalysisBody(props: {
             cells: { rank: String(i + 1), team: row.team, league: row.league, played: String(row.played), win: pct(row.winPct), draw: pct(row.drawPct), loss: pct(row.lossPct) },
           }))}
         />
-        <Block title="Upcoming matches" note="Next 48 hours. The best bet is the same pick shown on a fixture.">
+        <Block dropdown title="Upcoming matches" note="Next 48 hours. The best bet is the same pick shown on a fixture.">
           <UpcomingList rows={lines(props.upcoming, () => '')} />
         </Block>
       </>
@@ -536,7 +681,7 @@ function AnalysisBody(props: {
     return (
       <>
         <RankTable title={side === 'first' ? '1st half goals' : '2nd half goals'} note="Average goals by this team in that half." rows={teams.map((row) => ({ id: `${row.league}-${row.team}`, name: row.team, league: row.league, played: row.played, value: row.avg.toFixed(1) }))} valueLabel="Per game" />
-        <Block title="Upcoming matches" note="Next 48 hours. The best bet is the same pick shown on a fixture.">
+        <Block dropdown title="Upcoming matches" note="Next 48 hours. The best bet is the same pick shown on a fixture.">
           <UpcomingList rows={lines(props.upcoming, () => '')} />
         </Block>
       </>
@@ -548,7 +693,7 @@ function AnalysisBody(props: {
     return (
       <>
         <RankTable title="Best teams" note="Share of matches that fit this both-halves stat." rows={teams.map((row) => ({ id: `${row.league}-${row.team}`, name: row.team, league: row.league, played: row.played, value: pct(row.pct) }))} valueLabel="Rate" />
-        <Block title="Upcoming matches" note="Next 48 hours. The best bet is the same pick shown on a fixture.">
+        <Block dropdown title="Upcoming matches" note="Next 48 hours. The best bet is the same pick shown on a fixture.">
           <UpcomingList rows={lines(props.upcoming, () => '')} />
         </Block>
       </>
@@ -560,7 +705,7 @@ function AnalysisBody(props: {
     return (
       <>
         <RankTable title={props.cleanDir === 'most' ? 'Most clean sheets' : 'Least clean sheets'} note="A team needs at least 7 matches." rows={teams.map((row) => ({ id: `${row.league}-${row.team}`, name: row.team, league: row.league, played: row.played, value: `${row.hits} · ${pct(row.pct)}` }))} valueLabel="Clean sheets" />
-        <Block title="Upcoming matches" note="Next 48 hours. The best bet is the same pick shown on a fixture.">
+        <Block dropdown title="Upcoming matches" note="Next 48 hours. The best bet is the same pick shown on a fixture.">
           <UpcomingList rows={lines(props.upcoming, () => '')} />
         </Block>
       </>
@@ -581,7 +726,7 @@ function AnalysisBody(props: {
           empty="No finished scores in this filter."
           rows={rows.slice(0, 20).map((row, i) => ({ id: row.score, cells: { rank: String(i + 1), score: row.score, count: String(row.count), pct: pct(row.pct) } }))}
         />
-        <Block title="Upcoming matches" note="Next 48 hours. The best bet is the same pick shown on a fixture.">
+        <Block dropdown title="Upcoming matches" note="Next 48 hours. The best bet is the same pick shown on a fixture.">
           <UpcomingList rows={lines(props.upcoming, () => '')} />
         </Block>
       </>
@@ -608,7 +753,7 @@ function AnalysisBody(props: {
             empty="No leagues with corner counts yet."
             rows={leagues.map((row, i) => ({ id: row.id, cells: { rank: String(i + 1), league: row.league, country: row.country, played: String(row.played), avg: row.perGame.toFixed(1), pct: pct(row.overPct) } }))}
           />
-          <Block title="Upcoming matches" note="Next 48 hours. Corners per game sit beside the fixture best bet.">
+          <Block dropdown title="Upcoming matches" note="Next 48 hours. Corners per game sit beside the fixture best bet.">
             <UpcomingList
               rows={[
                 ...matches.map((row) => ({ id: row.id, unix: row.unix, match: row.match, league: row.league, detail: `Corners ${row.avg.toFixed(1)} per game`, bet: props.bets.get(row.id) ?? null })),
@@ -653,7 +798,7 @@ function AnalysisBody(props: {
           rows={teams.slice(0, 40)}
           valueLabel={props.analysis === 'cards' ? 'Per game' : 'Per game and over'}
         />
-        <Block title="Upcoming matches" note="Next 48 hours. The best bet is the same pick shown on a fixture.">
+        <Block dropdown title="Upcoming matches" note="Next 48 hours. The best bet is the same pick shown on a fixture.">
           <UpcomingList rows={lines(props.upcoming, () => '')} />
         </Block>
       </>
@@ -679,7 +824,7 @@ function AnalysisBody(props: {
           empty={`No team has a live ${props.seriesLabel} series of 3 or more.`}
           rows={teams.map((row, i) => ({ id: row.id, cells: { rank: String(i + 1), team: row.team, league: row.league, run: String(row.run), sample: String(row.sample) } }))}
         />
-        <Block title="Upcoming matches" note="Each team’s next match, with the fixture best bet.">
+        <Block dropdown title="Upcoming matches" note="Each team’s next match, with the fixture best bet.">
           <UpcomingList
             rows={next.map((row) => ({
               id: row.id,
@@ -706,7 +851,7 @@ function AnalysisBody(props: {
         rows={teams.map((row) => ({ id: row.id, name: row.name, league: props.analysis === 'ordinary' ? row.league : row.country, played: row.played, value: pct(row.pct) }))}
         valueLabel={props.statLabel}
       />
-      <Block title="Upcoming matches" note="Next 48 hours. The rate sits beside the fixture best bet.">
+      <Block dropdown title="Upcoming matches" note="Next 48 hours. The rate sits beside the fixture best bet.">
         <UpcomingList
           rows={next.map((row) => ({
             id: row.id,
@@ -761,6 +906,12 @@ function RankTable({
   valueLabel: string;
   rows: { id: string; name: string; league: string; played: number; value: string }[];
 }) {
+  const [page, setPage] = useState(1);
+  const size = 12;
+  const pages = Math.max(1, Math.ceil(rows.length / size));
+  const safe = Math.min(page, pages);
+  const visible = rows.slice((safe - 1) * size, safe * size);
+  const start = (safe - 1) * size;
   return (
     <Block title={title} note={note}>
       <FootyTable
@@ -772,22 +923,67 @@ function RankTable({
           { key: 'value', label: valueLabel, flex: 0.9 },
         ]}
         empty="Nothing in this filter has enough matches."
-        rows={rows.slice(0, 40).map((row, i) => ({
+        rows={visible.map((row, i) => ({
           id: row.id,
-          cells: { rank: String(i + 1), name: row.name, league: row.league, played: String(row.played), value: row.value },
+          cells: { rank: String(start + i + 1), name: row.name, league: row.league, played: String(row.played), value: row.value },
         }))}
       />
+      <Pager page={safe} pages={pages} total={rows.length} noun="rows" onChange={setPage} />
     </Block>
   );
 }
 
 const styles = StyleSheet.create({
-  scroll: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xl, gap: spacing.md, width: '100%', maxWidth: 1100 },
-  title: { fontFamily: fonts.display, fontSize: 28, color: theme.textPrimary, letterSpacing: 0.4 },
-  blurb: { fontFamily: fonts.body, fontSize: 14, color: theme.textMuted, lineHeight: 20 },
+  scroll: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xl, gap: spacing.md, width: '100%' },
+  hero: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.lg,
+    backgroundColor: '#0F172A',
+    borderRadius: 12,
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.lg,
+  },
+  heroCopy: { flex: 1, gap: 4 },
+  heroKicker: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 12,
+    color: '#34D399',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+  },
+  title: { fontFamily: fonts.display, fontSize: 36, color: '#FFFFFF', letterSpacing: 0.6 },
+  blurb: { fontFamily: fonts.body, fontSize: 15, color: '#CBD5E1', lineHeight: 22, maxWidth: 760 },
+  heroStat: { alignItems: 'flex-end', minWidth: 120 },
+  heroNum: { fontFamily: fonts.display, fontSize: 44, color: '#FFFFFF', lineHeight: 48 },
+  heroLabel: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: '#94A3B8', letterSpacing: 0.4, textTransform: 'uppercase' },
   sample: { fontFamily: fonts.body, fontSize: 13, color: theme.textMuted },
   filters: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   block: { gap: spacing.xs },
+  disclosure: {
+    width: '100%',
+    borderWidth: layout.borderWidth,
+    borderColor: theme.border,
+    borderRadius: 10,
+    backgroundColor: theme.surface,
+    overflow: 'hidden',
+  },
+  disclosureHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: 14,
+    paddingHorizontal: spacing.md,
+    backgroundColor: '#0F172A',
+  },
+  disclosureCopy: { flex: 1, gap: 2 },
+  disclosureTitle: { fontFamily: fonts.display, fontSize: 18, color: '#FFFFFF' },
+  disclosureNote: { fontFamily: fonts.body, fontSize: 13, color: '#CBD5E1', lineHeight: 18 },
+  disclosureBody: { padding: spacing.sm, gap: spacing.sm, backgroundColor: theme.bg },
+  chevron: { fontFamily: fonts.bodySemiBold, fontSize: 18, color: '#FFFFFF', width: 18 },
+  fixtureChevron: { fontFamily: fonts.bodySemiBold, fontSize: 18, color: theme.textPrimary, width: 18 },
   blockTitle: { fontFamily: fonts.display, fontSize: 18, color: theme.textPrimary },
   note: { fontFamily: fonts.body, fontSize: 13, color: theme.textMuted, lineHeight: 18 },
   error: { fontFamily: fonts.body, fontSize: 13, color: '#B91C1C' },
@@ -832,6 +1028,16 @@ const styles = StyleSheet.create({
   queryFigureCol: { width: 72, textAlign: 'right' },
   queryLabel: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: theme.textPrimary, lineHeight: 18 },
   queryFrom: { fontFamily: fonts.body, fontSize: 12, color: theme.textMuted, lineHeight: 16, marginTop: 1 },
+  formula: {
+    fontFamily: fonts.body,
+    fontSize: 15,
+    color: theme.textPrimary,
+    lineHeight: 22,
+    paddingHorizontal: spacing.sm,
+    paddingTop: spacing.sm,
+  },
+  formulaName: { fontFamily: fonts.bodySemiBold, color: theme.textPrimary },
+  formulaPct: { fontFamily: fonts.bodySemiBold, color: theme.accentGreen },
   queryFigure: { fontFamily: fonts.bodySemiBold, fontSize: 14, color: theme.textPrimary },
   queryMatch: {
     flexDirection: 'row',
@@ -845,7 +1051,8 @@ const styles = StyleSheet.create({
     borderTopWidth: 2,
     borderTopColor: theme.accentGreen,
   },
-  queryMatchText: { flex: 1, gap: 2 },
+  queryMatchText: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  queryMatchCopy: { flex: 1, gap: 2 },
   queryKicker: {
     fontFamily: fonts.bodySemiBold,
     fontSize: 11,
@@ -854,10 +1061,40 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
   },
   queryMatchName: { fontFamily: fonts.bodySemiBold, fontSize: 16, color: theme.textPrimary },
-  queryBetSelection: { fontFamily: fonts.bodySemiBold, fontSize: 14, color: theme.textPrimary },
-  queryBetMarket: { fontFamily: fonts.body, fontSize: 12, color: theme.textMuted },
-  queryCombined: { alignItems: 'flex-end' },
-  queryCombinedValue: { fontFamily: fonts.display, fontSize: 28, color: theme.accentGreen, lineHeight: 32 },
+  likely: {
+    backgroundColor: '#0F172A',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    minWidth: 148,
+    maxWidth: 240,
+    gap: 1,
+  },
+  likelyKicker: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 10,
+    color: '#FDE68A',
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+  },
+  likelySelection: { fontFamily: fonts.bodySemiBold, fontSize: 16, color: '#FFFFFF', lineHeight: 20 },
+  likelyPct: { fontFamily: fonts.display, fontSize: 26, color: '#FACC15', lineHeight: 28 },
+  queryCombined: {
+    backgroundColor: theme.accentGreen,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    alignItems: 'flex-end',
+    minWidth: 96,
+  },
+  combinedKicker: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 11,
+    color: '#D1FAE5',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  queryCombinedValue: { fontFamily: fonts.display, fontSize: 30, color: '#FFFFFF', lineHeight: 34 },
   querySection: {
     fontFamily: fonts.bodySemiBold,
     fontSize: 11,
@@ -872,4 +1109,9 @@ const styles = StyleSheet.create({
   },
   queryHit: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: theme.win, textAlign: 'right' },
   queryMiss: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: theme.loss, textAlign: 'right' },
+  pager: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, marginTop: spacing.sm },
+  pageBtn: { backgroundColor: '#0F172A', borderRadius: 8, paddingVertical: 10, paddingHorizontal: 16 },
+  pageBtnOff: { opacity: 0.35 },
+  pageBtnText: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: '#FFFFFF' },
+  pageLabel: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: theme.textPrimary },
 });
