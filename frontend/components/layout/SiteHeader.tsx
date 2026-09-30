@@ -1,5 +1,5 @@
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, type Href } from 'expo-router';
 
 import {
   useScoresFilter,
@@ -69,6 +69,9 @@ export default function SiteHeader({ showFilters = true }: SiteHeaderProps) {
         <Text style={styles.date}>{formatTopBarDate(new Date())}</Text>
         <Pressable onPress={() => router.push('/analytics')} style={styles.analyticsLink}>
           <Text style={styles.analyticsText}>Analytics</Text>
+        </Pressable>
+        <Pressable onPress={() => router.push('/sl-stats' as Href)} style={styles.analyticsLink}>
+          <Text style={styles.analyticsText}>SL-STATS</Text>
         </Pressable>
       </View>
 

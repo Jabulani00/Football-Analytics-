@@ -569,6 +569,25 @@ export function groupByCompetition(
 
 // ----- Match detail -------------------------------------------------------
 
+/**
+ * Corners, cards, and offsides for one fixture — the same `include=stats`
+ * object the match summary and pressure monitor read.
+ */
+export async function fetchFixtureMatchStats(
+  id: number | string,
+  signal?: AbortSignal,
+): Promise<Pick<RawFixtureDetail, 'id' | 'home_name' | 'away_name' | 'stats'> | null> {
+  try {
+    const env = await getJson<RawFixtureDetail>(`fixtures/${id}`, { include: 'stats' }, signal);
+    const row = env.data[0];
+    if (!row) return null;
+    return { id: row.id, home_name: row.home_name, away_name: row.away_name, stats: row.stats };
+  } catch (err) {
+    if (err instanceof OddAlertsNonJsonError) return null;
+    throw err;
+  }
+}
+
 /** Single fixture with probability, stats, odds, H2H and referee included. */
 export async function fetchFixtureDetail(
   id: number | string,
@@ -1262,6 +1281,18 @@ export async function fetchSeasonStandings(
   rows.sort(compareStandings);
 
   return assignZones(rows).map((row, i) => ({ rank: i + 1, ...row }));
+}
+
+/**
+ * Raw `stats/season` rows. Callers pick corner, card, and offside fields only
+ * when they are actually present — the mapped standings type does not include them.
+ */
+export async function fetchRawSeasonStats(
+  seasonId: number | string,
+  signal?: AbortSignal,
+): Promise<Record<string, unknown>[]> {
+  const env = await getJson<Record<string, unknown>>(`stats/season/${seasonId}`, {}, signal);
+  return env.data.filter((row) => row != null && typeof row === 'object');
 }
 
 // ----- Standings movement (after a match) ---------------------------------

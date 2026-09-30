@@ -100,6 +100,7 @@ export type OddsFusionRow = {
 export type AnalyticsTab =
   | 'overview'
   | 'tables'
+  | 'footy'
   | 'predictions'
   | 'finder'
   | 'streams'

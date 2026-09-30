@@ -1,8 +1,9 @@
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View, useWindowDimensions } from 'react-native';
 
-import type { AnalyticsTab } from '@/types/analytics';
+import FilterDropdown from '@/components/shared/FilterDropdown';
 import { ANALYTICS_TABS } from '@/mock/analyticsData';
-import { fonts, layout, spacing, theme } from '@/styles/theme';
+import type { AnalyticsTab } from '@/types/analytics';
+import { spacing } from '@/styles/theme';
 
 type AnalyticsNavProps = {
   active: AnalyticsTab;
@@ -10,66 +11,25 @@ type AnalyticsNavProps = {
 };
 
 export default function AnalyticsNav({ active, onChange }: AnalyticsNavProps) {
+  const narrow = useWindowDimensions().width < 720;
   return (
     <View style={styles.wrap}>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={Platform.OS === 'web'}
-        contentContainerStyle={styles.scroll}>
-        {ANALYTICS_TABS.map((tab) => {
-          const isActive = tab.id === active;
-          return (
-            <Pressable
-              key={tab.id}
-              onPress={() => onChange(tab.id)}
-              style={({ pressed, hovered }) => [
-                styles.tab,
-                isActive && styles.tabActive,
-                (pressed || (Platform.OS === 'web' && hovered)) && styles.tabHover,
-              ]}>
-              <Text style={[styles.tabText, isActive && styles.tabTextActive]}>{tab.label}</Text>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
+      <FilterDropdown
+        label="Section"
+        value={active}
+        options={ANALYTICS_TABS.map((tab) => ({ value: tab.id, label: tab.label }))}
+        onChange={(value) => onChange(value as AnalyticsTab)}
+        style={narrow ? styles.full : styles.wide}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: {
-    alignItems: 'center',
-    marginBottom: spacing.xl,
+    width: '100%',
+    marginBottom: spacing.lg,
   },
-  scroll: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.xs,
-  },
-  tab: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderWidth: layout.borderWidth,
-    borderColor: theme.border,
-    borderRadius: layout.borderRadius,
-    backgroundColor: theme.surface,
-    ...(Platform.OS === 'web' ? ({ cursor: 'pointer' } as object) : {}),
-  },
-  tabActive: {
-    borderColor: theme.accentGreen,
-    backgroundColor: 'rgba(0, 229, 160, 0.08)',
-  },
-  tabHover: {
-    borderColor: theme.textMuted,
-  },
-  tabText: {
-    fontFamily: fonts.bodyMedium,
-    fontSize: 12,
-    color: theme.textMuted,
-    letterSpacing: 0.3,
-  },
-  tabTextActive: {
-    color: theme.accentGreen,
-  },
+  wide: { width: '100%', flexBasis: 'auto' },
+  full: { width: '100%', minWidth: 0, flexBasis: 'auto', flexGrow: 0 },
 });

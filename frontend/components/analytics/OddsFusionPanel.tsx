@@ -432,7 +432,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   compareTitle: { marginTop: spacing.xl, marginBottom: spacing.md, textAlign: 'center' },
-  comparisonList: { width: '100%', maxWidth: 900, gap: spacing.sm },
+  comparisonList: { width: '100%', gap: spacing.sm },
   comparisonCard: {
     borderWidth: layout.borderWidth,
     borderColor: theme.border,

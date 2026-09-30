@@ -229,7 +229,6 @@ const styles = StyleSheet.create({
   },
   slip: {
     width: '100%',
-    maxWidth: 480,
     backgroundColor: theme.surface,
     borderWidth: layout.borderWidth,
     borderColor: theme.border,
