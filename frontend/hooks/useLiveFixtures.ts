@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 
 import {
   fetchAllFixturesBetween,
@@ -9,6 +10,8 @@ import {
   type Fixture,
   type FixtureKind,
 } from '@/services/oddAlerts';
+import { clientStaleTime } from '@/services/oddAlertsCachePolicy';
+import { oddAlertsKeys } from '@/services/oddAlertsKeys';
 import type { UpcomingScope } from '@/components/layout/ScoresFilterContext';
 
 export type ScoresView = 'all' | 'live' | 'ft' | 'ns';
@@ -85,78 +88,48 @@ export function useLiveFixtures(
   const kind = options.kind ?? 'club';
   const favoriteCompetitionIds = options.favoriteCompetitionIds ?? [];
   const favKey = favoriteCompetitionIds.slice().sort((a, b) => a - b).join(',');
+  const [refreshing, setRefreshing] = useState(false);
 
-  const [state, setState] = useState<State>({
-    fixtures: [],
-    loading: true,
-    refreshing: false,
-    error: null,
-    lastUpdated: null,
+  const stalePath =
+    view === 'ft' ? 'fixtures/between' : view === 'ns' ? 'fixtures/upcoming' : 'fixtures/live';
+
+  const query = useQuery({
+    queryKey: oddAlertsKeys.scoresFeed({
+      view,
+      resultsDays,
+      upcomingDays,
+      upcomingScope,
+      kind,
+      favorites: favKey,
+    }),
+    queryFn: ({ signal }) =>
+      loadFixtures(
+        view,
+        {
+          resultsDays,
+          upcomingDays,
+          upcomingScope,
+          kind,
+          favoriteCompetitionIds: favKey ? favKey.split(',').map(Number) : [],
+        },
+        signal,
+      ),
+    staleTime: clientStaleTime(stalePath),
+    refetchInterval: view === 'live' || view === 'all' ? LIVE_POLL_MS : false,
+    placeholderData: keepPreviousData,
   });
 
-  const abortRef = useRef<AbortController | null>(null);
-
-  const run = useCallback(
-    async (mode: 'initial' | 'refresh' | 'poll') => {
-      abortRef.current?.abort();
-      const controller = new AbortController();
-      abortRef.current = controller;
-
-      if (mode !== 'poll') {
-        setState((s) => ({
-          ...s,
-          loading: mode === 'initial',
-          refreshing: mode === 'refresh',
-          error: null,
-        }));
-      }
-
-      try {
-        const fixtures = await loadFixtures(
-          view,
-          {
-            resultsDays,
-            upcomingDays,
-            upcomingScope,
-            kind,
-            favoriteCompetitionIds: favKey ? favKey.split(',').map(Number) : [],
-          },
-          controller.signal,
-        );
-        setState({
-          fixtures,
-          loading: false,
-          refreshing: false,
-          error: null,
-          lastUpdated: Date.now(),
-        });
-      } catch (err) {
-        if (controller.signal.aborted) return;
-        setState((s) => ({
-          ...s,
-          loading: false,
-          refreshing: false,
-          error: err instanceof Error ? err.message : 'Failed to load fixtures',
-        }));
-      }
-    },
-    [view, resultsDays, upcomingDays, upcomingScope, kind, favKey],
-  );
-
-  useEffect(() => {
-    run('initial');
-    return () => abortRef.current?.abort();
-  }, [run]);
-
-  useEffect(() => {
-    if (view !== 'live' && view !== 'all') return;
-    const id = setInterval(() => run('poll'), LIVE_POLL_MS);
-    return () => clearInterval(id);
-  }, [run, view]);
-
   const refresh = useCallback(() => {
-    run('refresh');
-  }, [run]);
+    setRefreshing(true);
+    void query.refetch().finally(() => setRefreshing(false));
+  }, [query]);
 
-  return { ...state, refresh };
+  return {
+    fixtures: query.data ?? [],
+    loading: query.isPending || query.isPlaceholderData,
+    refreshing: refreshing && query.isFetching,
+    error: query.error instanceof Error ? query.error.message : query.error ? 'Failed to load fixtures' : null,
+    lastUpdated: query.dataUpdatedAt || null,
+    refresh,
+  };
 }

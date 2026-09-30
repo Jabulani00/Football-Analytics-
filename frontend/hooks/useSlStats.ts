@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 
-import { cachedFetch } from '@/services/fixtureCache';
 import {
   ALL_LEAGUE_CAP,
   aggregateBoxScores,
@@ -20,6 +19,9 @@ import {
   seasonWindowUnix,
   type Competition,
 } from '@/services/oddAlerts';
+import { clientStaleTime } from '@/services/oddAlertsCachePolicy';
+import { oddAlertsKeys } from '@/services/oddAlertsKeys';
+import { queryClient } from '@/services/queryClient';
 
 export type SlCatalogComp = {
   id: number;
@@ -43,7 +45,6 @@ export type SlStatsData = {
   capped: boolean;
 };
 
-const RESULTS_TTL_MS = 5 * 60_000;
 const FINISHED = new Set(['FT', 'AET', 'PEN', 'FT_PEN', 'AWD', 'AWARDED', 'WO', 'AWAITING_UPDATES']);
 
 function isNoise(comp: Competition): boolean {
@@ -127,17 +128,24 @@ async function mapPool<T, R>(items: T[], limit: number, fn: (item: T) => Promise
 
 async function loadResults(comp: SlCatalogComp): Promise<FootyFixture[]> {
   if (comp.seasonId == null || !comp.seasonName) return [];
-  const key = `footy:results:${comp.id}:${comp.seasonId}`;
   try {
-    return await cachedFetch(key, RESULTS_TTL_MS, async () => {
-      const { fromUnix, toUnix } = seasonWindowUnix(comp.seasonName as string);
-      const raw = await fetchAllFixturesBetween({
-        fromUnix,
-        toUnix,
+    return await queryClient.fetchQuery({
+      queryKey: oddAlertsKeys.between({
         competitions: String(comp.id),
+        seasonId: comp.seasonId,
         maxPages: 6,
-      });
-      return raw.map((fx) => toFootyFixture(fx, comp.progress));
+      }),
+      staleTime: clientStaleTime('fixtures/between'),
+      queryFn: async () => {
+        const { fromUnix, toUnix } = seasonWindowUnix(comp.seasonName as string);
+        const raw = await fetchAllFixturesBetween({
+          fromUnix,
+          toUnix,
+          competitions: String(comp.id),
+          maxPages: 6,
+        });
+        return raw.map((fx) => toFootyFixture(fx, comp.progress));
+      },
     });
   } catch {
     return [];
@@ -174,11 +182,19 @@ export function useSlStats(filter: {
 
     (async () => {
       try {
-        const comps = await fetchAllCompetitions();
+        const comps = await queryClient.fetchQuery({
+          queryKey: oddAlertsKeys.competitions(),
+          queryFn: () => fetchAllCompetitions(),
+          staleTime: clientStaleTime('competitions'),
+        });
         if (!alive) return;
         const catalog = comps.filter((comp) => !isNoise(comp)).map(toCatalog);
         const progressOf = new Map(catalog.map((comp) => [comp.id, comp.progress]));
-        const upcomingRaw = await fetchAllUpcomingFixtures({ days: 7, maxPages: 5 }, ctrl.signal);
+        const upcomingRaw = await queryClient.fetchQuery({
+          queryKey: oddAlertsKeys.upcomingAll({ days: 7, maxPages: 5 }),
+          queryFn: () => fetchAllUpcomingFixtures({ days: 7, maxPages: 5 }),
+          staleTime: clientStaleTime('fixtures/upcoming'),
+        });
         if (!alive) return;
         const activity = new Map<number, number>();
         for (const fx of upcomingRaw) {
@@ -220,7 +236,11 @@ export function useSlStats(filter: {
         const sample = sampleMatchStats(finished, competitionId);
         const boxes = await mapPool(sample, 6, async (fx) => {
           try {
-            const detail = await cachedFetch(`footy:box:${fx.id}`, RESULTS_TTL_MS, () => fetchFixtureMatchStats(fx.id));
+            const detail = await queryClient.fetchQuery({
+              queryKey: oddAlertsKeys.fixture(fx.id, 'stats'),
+              queryFn: () => fetchFixtureMatchStats(fx.id),
+              staleTime: clientStaleTime(`fixtures/${fx.id}`),
+            });
             if (!detail?.stats) return null;
             return readBoxScore(detail.home_name, detail.away_name, detail.stats, {
               competitionId: fx.competitionId,

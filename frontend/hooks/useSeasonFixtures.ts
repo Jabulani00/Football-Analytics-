@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 
 import {
   fetchAllFixturesBetween,
@@ -7,6 +8,8 @@ import {
   type Competition,
   type Season,
 } from '@/services/oddAlerts';
+import { clientStaleTime } from '@/services/oddAlertsCachePolicy';
+import { oddAlertsKeys } from '@/services/oddAlertsKeys';
 import type { SeasonMatch } from '@/utils/bhozomaEngine';
 
 type State = {
@@ -24,60 +27,63 @@ export function useSeasonFixtures(
   season: Season | null | undefined,
   enabled: boolean,
 ): State {
-  const [state, setState] = useState<State>({
-    matches: [],
-    loading: false,
-    error: null,
+  const active = enabled && competition != null && season != null;
+  const competitionId = competition?.id ?? 0;
+  const seasonId = season?.seasonId ?? 0;
+  const seasonName = season?.seasonName ?? '';
+
+  const query = useQuery({
+    queryKey: oddAlertsKeys.between({
+      competitions: String(competitionId),
+      seasonId,
+      seasonName,
+      maxPages: 8,
+    }),
+    queryFn: ({ signal }) => {
+      const window = seasonWindowUnix(seasonName);
+      return fetchAllFixturesBetween(
+        {
+          fromUnix: window.fromUnix,
+          toUnix: window.toUnix,
+          competitions: String(competitionId),
+          maxPages: 8,
+        },
+        signal,
+      );
+    },
+    enabled: active,
+    staleTime: clientStaleTime('fixtures/between'),
   });
 
-  useEffect(() => {
-    if (!enabled || !competition || !season) {
-      setState({ matches: [], loading: false, error: null });
-      return;
-    }
-
-    const ctrl = new AbortController();
-    setState({ matches: [], loading: true, error: null });
-
-    const { fromUnix, toUnix } = seasonWindowUnix(season.seasonName);
-    fetchAllFixturesBetween(
-      {
-        fromUnix,
-        toUnix,
-        competitions: String(competition.id),
-        maxPages: 8,
-      },
-      ctrl.signal,
-    )
-      .then((raw) => {
-        if (ctrl.signal.aborted) return;
-        const matches: SeasonMatch[] = [];
-        for (const f of raw) {
-          if (normaliseStatus(f.status) !== 'FT') continue;
-          if (f.home_id == null || f.away_id == null) continue;
-          if (f.home_goals == null || f.away_goals == null) continue;
-          if (f.season_id != null && f.season_id !== season.seasonId) continue;
-          matches.push({
-            homeId: f.home_id,
-            awayId: f.away_id,
-            homeGoals: f.home_goals,
-            awayGoals: f.away_goals,
-            unix: f.unix,
-          });
-        }
-        setState({ matches, loading: false, error: null });
-      })
-      .catch((err) => {
-        if (ctrl.signal.aborted) return;
-        setState({
-          matches: [],
-          loading: false,
-          error: err instanceof Error ? err.message : 'Failed to load season fixtures.',
-        });
+  const matches = useMemo(() => {
+    if (!active || !query.data || !season) return [];
+    const rows: SeasonMatch[] = [];
+    for (const fixture of query.data) {
+      if (normaliseStatus(fixture.status) !== 'FT') continue;
+      if (fixture.home_id == null || fixture.away_id == null) continue;
+      if (fixture.home_goals == null || fixture.away_goals == null) continue;
+      if (fixture.season_id != null && fixture.season_id !== season.seasonId) continue;
+      rows.push({
+        homeId: fixture.home_id,
+        awayId: fixture.away_id,
+        homeGoals: fixture.home_goals,
+        awayGoals: fixture.away_goals,
+        unix: fixture.unix,
       });
+    }
+    return rows;
+  }, [active, query.data, season]);
 
-    return () => ctrl.abort();
-  }, [enabled, competition?.id, season?.seasonId, season?.seasonName]);
+  if (!active) return { matches: [], loading: false, error: null };
 
-  return state;
+  return {
+    matches,
+    loading: query.isPending,
+    error:
+      query.error instanceof Error
+        ? query.error.message
+        : query.error
+          ? 'Failed to load season fixtures.'
+          : null,
+  };
 }

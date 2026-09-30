@@ -4,7 +4,10 @@
 // exported server bundle, so the web app works locally and in production
 // without any CORS issues. The token stays server-side.
 //
-// Requires `web.output: "server"` in app.json.
+// Complete upstream bodies are cached for a short TTL. Identical in-flight
+// calls share one OddAlerts request. Set CACHE_ENABLED=false to pass through.
+
+import { fetchThroughCache } from '../services/oddAlertsServerCache';
 
 const UPSTREAM = 'https://data.oddalerts.com/api';
 
@@ -55,22 +58,41 @@ export async function GET(request: Request): Promise<Response> {
 
   const search = new URLSearchParams();
   url.searchParams.forEach((value, key) => {
-    if (key === 'path' || key === 'api_token') return;
+    if (key === 'path' || key === 'api_token' || key === 'cache') return;
     search.append(key, value);
   });
-  search.set('api_token', TOKEN);
+
+  const bypass = url.searchParams.get('cache') === 'off';
 
   try {
-    const upstream = await fetch(`${UPSTREAM}/${path}?${search.toString()}`, {
-      headers: { Accept: 'application/json' },
+    const result = await fetchThroughCache({
+      path,
+      params: search,
+      bypass,
+      fetcher: async () => {
+        const upstreamSearch = new URLSearchParams(search);
+        upstreamSearch.set('api_token', TOKEN);
+        const upstream = await fetch(`${UPSTREAM}/${path}?${upstreamSearch.toString()}`, {
+          headers: { Accept: 'application/json' },
+        });
+        const body = await upstream.text();
+        return {
+          status: upstream.status,
+          contentType: upstream.headers.get('Content-Type') ?? 'application/json; charset=utf-8',
+          body,
+        };
+      },
     });
-    const body = await upstream.text();
-    return new Response(body, {
-      status: upstream.status,
+
+    const cacheHeader = result.cache === 'BYPASS' ? 'MISS' : result.cache;
+    return new Response(result.body, {
+      status: result.status,
       headers: {
         ...CORS,
-        'Content-Type': 'application/json; charset=utf-8',
-        'Cache-Control': 's-maxage=10, stale-while-revalidate=30',
+        'Content-Type': result.contentType || 'application/json; charset=utf-8',
+        'Cache-Control': 'private, max-age=0',
+        'X-Cache': cacheHeader,
+        'Server-Timing': `app;dur=${result.durationMs}`,
       },
     });
   } catch (err) {

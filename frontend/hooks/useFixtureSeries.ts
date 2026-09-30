@@ -1,18 +1,18 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 
-import { cachedFetch } from '@/services/fixtureCache';
 import {
   fetchAllFixturesBetween,
   seasonWindowUnix,
   type RawFixture,
 } from '@/services/oddAlerts';
+import { clientStaleTime } from '@/services/oddAlertsCachePolicy';
+import { oddAlertsKeys } from '@/services/oddAlertsKeys';
 import { excludeFixture, teamResultsFromFixtures, type TeamResult } from '@/utils/teamResults';
 
 /** Used when the fixture carries no season name to derive a window from. */
 const FALLBACK_LOOKBACK_DAYS = 300;
-
-/** Re-selecting the same fixture inside this window reuses the fetch. */
-const CACHE_TTL_MS = 10 * 60 * 1000;
+const EMPTY_RAW: RawFixture[] = [];
 
 type State = {
   loading: boolean;
@@ -20,6 +20,8 @@ type State = {
   homeResults: TeamResult[];
   awayResults: TeamResult[];
 };
+
+const idle: State = { loading: false, error: null, homeResults: [], awayResults: [] };
 
 /**
  * Season- and competition-scoped finished results for both sides of a fixture,
@@ -54,73 +56,70 @@ export function useFixtureSeries(opts: {
     excludeFixtureId,
     enabled = true,
   } = opts;
-  const [raw, setRaw] = useState<RawFixture[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
   const canFetch = enabled && competitionId != null && (homeId != null || awayId != null);
+  const teams = [...new Set([homeId, awayId].filter((id): id is number => id != null))].join(',');
 
-  useEffect(() => {
-    if (!canFetch) {
-      setRaw([]);
-      setError(null);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
+  const query = useQuery({
+    queryKey: oddAlertsKeys.between({
+      competitions: competitionId ?? '',
+      seasonId: seasonId ?? 'any',
+      seasonName: seasonName ?? '',
+      teams,
+      maxPages: 2,
+      lookbackDays: seasonName ? 0 : FALLBACK_LOOKBACK_DAYS,
+    }),
+    queryFn: ({ signal }) => {
+      const now = Math.floor(Date.now() / 1000);
+      const window = seasonName
+        ? seasonWindowUnix(seasonName)
+        : { fromUnix: now - FALLBACK_LOOKBACK_DAYS * 86_400, toUnix: now };
+      return fetchAllFixturesBetween(
+        {
+          fromUnix: window.fromUnix,
+          toUnix: Math.min(window.toUnix, now),
+          teams,
+          competitions: String(competitionId),
+          maxPages: 2,
+        },
+        signal,
+      );
+    },
+    enabled: canFetch,
+    staleTime: clientStaleTime('fixtures/between'),
+    placeholderData: keepPreviousData,
+  });
 
-    const now = Math.floor(Date.now() / 1000);
-    const window = seasonName
-      ? seasonWindowUnix(seasonName)
-      : { fromUnix: now - FALLBACK_LOOKBACK_DAYS * 86_400, toUnix: now };
-    const fromUnix = window.fromUnix;
-    const toUnix = Math.min(window.toUnix, now); // no point paging future fixtures
-    const teams = [...new Set([homeId, awayId].filter((id): id is number => id != null))].join(',');
-    const key = `series:${competitionId}:${seasonId ?? 'any'}:${teams}:${fromUnix}:${toUnix}`;
-
-    cachedFetch(key, CACHE_TTL_MS, () =>
-      fetchAllFixturesBetween({
-        fromUnix,
-        toUnix,
-        teams,
-        competitions: String(competitionId),
-        // `teams` narrows the feed to two clubs, so a season fits in one page.
-        maxPages: 2,
-      }),
-    )
-      .then((rows) => {
-        if (cancelled) return;
-        setRaw(rows);
-        setLoading(false);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setRaw([]);
-        setLoading(false);
-        setError(err instanceof Error ? err.message : 'Could not load series history.');
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [canFetch, homeId, awayId, competitionId, seasonId, seasonName]);
+  const raw = query.data ?? EMPTY_RAW;
 
   return useMemo(() => {
-    if (!canFetch) {
-      return { loading: false, error: null, homeResults: [], awayResults: [] };
-    }
-    // Series are opponent-agnostic, so no standings ranks are needed.
+    if (!canFetch) return idle;
     const resultOpts = { competitionId, seasonId: seasonId ?? null, includeCup: isCup };
     const resultsFor = (teamId: number | null | undefined) =>
       teamId != null
         ? excludeFixture(teamResultsFromFixtures(raw, teamId, null, resultOpts), excludeFixtureId)
         : [];
     return {
-      loading,
-      error,
+      loading: query.isPending || query.isPlaceholderData,
+      error:
+        query.error instanceof Error
+          ? query.error.message
+          : query.error
+            ? 'Could not load series history.'
+            : null,
       homeResults: resultsFor(homeId),
       awayResults: resultsFor(awayId),
     };
-  }, [canFetch, raw, homeId, awayId, competitionId, seasonId, isCup, excludeFixtureId, loading, error]);
+  }, [
+    canFetch,
+    raw,
+    homeId,
+    awayId,
+    competitionId,
+    seasonId,
+    isCup,
+    excludeFixtureId,
+    query.isPending,
+    query.isPlaceholderData,
+    query.error,
+  ]);
 }

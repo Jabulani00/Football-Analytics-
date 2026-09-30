@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useMemo, useRef } from 'react';
+import { useQueries, useQuery } from '@tanstack/react-query';
 
-import { cachedFetch } from '@/services/fixtureCache';
+import { clientStaleTime } from '@/services/oddAlertsCachePolicy';
+import { oddAlertsKeys } from '@/services/oddAlertsKeys';
 import { fetchAllFixturesBetween, fetchUpcomingFixtures, type RawFixture } from '@/services/oddAlerts';
 import { predictFromStats, type FixturePrediction } from '@/services/predictionEngine';
 import {
@@ -18,7 +20,6 @@ const DEFAULT_POLL_MS = 5 * 60_000; // keep predictions running on live data
 const FORM_LOOKBACK_DAYS = 250; // recent cross-competition form window
 const MAX_FIXTURES = 30; // cap fixtures predicted per competition
 const TEAMS_PER_REQUEST = 25; // batch team ids into one /fixtures/between call
-const FETCH_TTL_MS = 60_000; // reuse fetched fixtures within 60s (instant re-select)
 
 /**
  * Predicts a competition's upcoming fixtures using each team's CROSS-COMPETITION
@@ -33,94 +34,105 @@ export function useLiveFixturePredictions(opts: {
   pollMs?: number;
 }): { items: PredictedFixture[]; loading: boolean; error: string | null } {
   const { competitionId, days = 10, pollMs = DEFAULT_POLL_MS } = opts;
-  const [items, setItems] = useState<PredictedFixture[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const enabled = competitionId != null;
 
-  useEffect(() => {
-    if (competitionId == null) return;
-    const ctrl = new AbortController();
-    let timer: ReturnType<typeof setInterval> | undefined;
+  const upcomingQuery = useQuery({
+    queryKey: oddAlertsKeys.upcoming({ days }),
+    queryFn: ({ signal }) => fetchUpcomingFixtures({ days }, signal),
+    enabled,
+    staleTime: clientStaleTime('fixtures/upcoming'),
+    refetchInterval: enabled && pollMs > 0 ? pollMs : false,
+  });
 
-    const run = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        // Cached so a repeat/shared selection within the TTL is instant.
-        const upcomingEnv = await cachedFetch(`upcoming:${days}`, FETCH_TTL_MS, () =>
-          fetchUpcomingFixtures({ days }),
-        );
-        const upcoming = upcomingEnv.data
-          .filter((f) => f.competition_id === competitionId && f.home_id && f.away_id)
-          .sort((a, b) => a.unix - b.unix)
-          .slice(0, MAX_FIXTURES);
+  const upcoming = useMemo(() => {
+    if (competitionId == null) return [];
+    return (upcomingQuery.data?.data ?? [])
+      .filter((f) => f.competition_id === competitionId && f.home_id && f.away_id)
+      .sort((a, b) => a.unix - b.unix)
+      .slice(0, MAX_FIXTURES);
+  }, [competitionId, upcomingQuery.data]);
 
-        if (upcoming.length === 0) {
-          if (!ctrl.signal.aborted) setItems([]);
-          return;
-        }
+  const chunks = useMemo(() => {
+    const teamIds = Array.from(
+      new Set(upcoming.flatMap((f) => [f.home_id as number, f.away_id as number])),
+    );
+    return chunk(teamIds, TEAMS_PER_REQUEST);
+  }, [upcoming]);
 
-        // Distinct team ids across the fixtures we're predicting.
-        const teamIds = Array.from(
-          new Set(upcoming.flatMap((f) => [f.home_id as number, f.away_id as number])),
-        );
+  const teamQueries = useQueries({
+    queries: chunks.map((ids) => {
+      const teams = ids.join(',');
+      return {
+        queryKey: oddAlertsKeys.between({
+          teams,
+          lookbackDays: FORM_LOOKBACK_DAYS,
+          maxPages: 5,
+        }),
+        queryFn: ({ signal }: { signal: AbortSignal }) => {
+          const now = Math.floor(Date.now() / 1000);
+          const fromUnix = now - FORM_LOOKBACK_DAYS * 86_400;
+          return fetchAllFixturesBetween(
+            { fromUnix, toUnix: now, teams, maxPages: 5 },
+            signal,
+          );
+        },
+        enabled: enabled && upcoming.length > 0,
+        staleTime: clientStaleTime('fixtures/between'),
+        refetchInterval: pollMs > 0 ? pollMs : false,
+      };
+    }),
+  });
 
-        // Batch-fetch each team's cross-competition results — chunks run in
-        // parallel so many-team cup rounds don't fetch serially; cached per chunk.
-        const now = Math.floor(Date.now() / 1000);
-        const fromUnix = now - FORM_LOOKBACK_DAYS * 86_400;
-        const chunkResults = await Promise.all(
-          chunk(teamIds, TEAMS_PER_REQUEST).map((ids) => {
-            const key = `teams:${ids.slice().sort((a, b) => a - b).join(',')}:${FORM_LOOKBACK_DAYS}`;
-            return cachedFetch(key, FETCH_TTL_MS, () =>
-              fetchAllFixturesBetween({ fromUnix, toUnix: now, teams: ids.join(','), maxPages: 5 }),
-            );
-          }),
-        );
-        const byId = new Map<number, RawFixture>();
-        for (const rows of chunkResults) for (const f of rows) byId.set(f.id, f); // dedupe
-        const results = Array.from(byId.values());
+  const teamStamp = teamQueries.map((query) => `${query.dataUpdatedAt}:${query.status}`).join('|');
 
-        // Index each team's own finished matches once.
-        const teamMatches = new Map<number, RawFixture[]>();
-        for (const f of results) {
-          if (!FINISHED.has(f.status) || f.home_goals == null || f.away_goals == null) continue;
-          for (const id of [f.home_id, f.away_id]) {
-            if (id == null) continue;
-            const list = teamMatches.get(id) ?? [];
-            list.push(f);
-            teamMatches.set(id, list);
-          }
-        }
+  const held = useRef<PredictedFixture[]>([]);
 
-        const baseline = baselineFromResults(results);
-        const strengthOf = (id: number) => computeTeamStrengths(teamMatches.get(id) ?? [], id);
+  const computed = useMemo(() => {
+    if (!enabled || !upcomingQuery.isSuccess) return null;
+    if (upcoming.length === 0) return [] as PredictedFixture[];
+    if (teamQueries.length === 0 || teamQueries.some((query) => query.data == null)) return null;
 
-        const predicted: PredictedFixture[] = upcoming.map((fx) => {
-          const home = strengthOf(fx.home_id as number);
-          const away = strengthOf(fx.away_id as number);
-          const prediction =
-            home.sample > 0 && away.sample > 0
-              ? predictFromStats(homeVenue(home), awayVenue(away), baseline)
-              : null;
-          return { fixture: fx, prediction };
-        });
+    const byId = new Map<number, RawFixture>();
+    for (const query of teamQueries) {
+      for (const fixture of query.data ?? []) byId.set(fixture.id, fixture);
+    }
+    const results = Array.from(byId.values());
 
-        if (!ctrl.signal.aborted) setItems(predicted);
-      } catch (e: unknown) {
-        if (!ctrl.signal.aborted) setError(e instanceof Error ? e.message : String(e));
-      } finally {
-        if (!ctrl.signal.aborted) setLoading(false);
+    const teamMatches = new Map<number, RawFixture[]>();
+    for (const fixture of results) {
+      if (!FINISHED.has(fixture.status) || fixture.home_goals == null || fixture.away_goals == null) continue;
+      for (const id of [fixture.home_id, fixture.away_id]) {
+        if (id == null) continue;
+        const list = teamMatches.get(id) ?? [];
+        list.push(fixture);
+        teamMatches.set(id, list);
       }
-    };
+    }
 
-    run();
-    if (pollMs > 0) timer = setInterval(run, pollMs);
-    return () => {
-      ctrl.abort();
-      if (timer) clearInterval(timer);
-    };
-  }, [competitionId, days, pollMs]);
+    const baseline = baselineFromResults(results);
+    const strengthOf = (id: number) => computeTeamStrengths(teamMatches.get(id) ?? [], id);
 
-  return { items, loading, error };
+    return upcoming.map((fx) => {
+      const home = strengthOf(fx.home_id as number);
+      const away = strengthOf(fx.away_id as number);
+      const prediction =
+        home.sample > 0 && away.sample > 0
+          ? predictFromStats(homeVenue(home), awayVenue(away), baseline)
+          : null;
+      return { fixture: fx, prediction };
+    });
+  }, [enabled, upcoming, upcomingQuery.isSuccess, upcomingQuery.dataUpdatedAt, teamStamp]);
+
+  if (computed) held.current = computed;
+
+  const failed = upcomingQuery.error ?? teamQueries.find((query) => query.error)?.error ?? null;
+  const loading =
+    enabled &&
+    (upcomingQuery.isFetching || teamQueries.some((query) => query.isFetching || query.isPending));
+
+  return {
+    items: enabled ? (computed ?? held.current) : [],
+    loading,
+    error: failed instanceof Error ? failed.message : failed ? String(failed) : null,
+  };
 }

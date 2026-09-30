@@ -1,5 +1,7 @@
 import { Platform } from 'react-native';
 
+import { publicParams, trackRequest } from '@/services/apiTrafficLog';
+import { cacheKey } from '@/services/oddAlertsCachePolicy';
 import { bandOf, type SeasonResult } from '@/utils/leagueTables';
 import {
   buildTieredTables,
@@ -12,9 +14,10 @@ import {
  * Client for the OddAlerts Football Data API (https://data.oddalerts.com/api).
  *
  * Transport differs by platform because the upstream API sends no CORS headers:
- *   - Web:    requests go through the bundled Vercel proxy at `/api/oddalerts`,
- *             which injects the token server-side. No token is exposed to the browser.
- *   - Native: requests hit the API directly with the token as a query param.
+ *   - Web:    requests go through the same-origin `/oddalerts` route, which
+ *             injects the token server-side. No token is exposed to the browser.
+ *   - Native: requests use EXPO_PUBLIC_ODDALERTS_PROXY when it is an absolute
+ *             URL, and otherwise hit the API directly with the token.
  *
  * Override any of these with EXPO_PUBLIC_* env vars if you self-host.
  */
@@ -29,7 +32,15 @@ const PROXY_URL = process.env.EXPO_PUBLIC_ODDALERTS_PROXY ?? '/oddalerts';
 // Set EXPO_PUBLIC_ODDALERTS_TOKEN in frontend/.env (see .env.example).
 const TOKEN = process.env.EXPO_PUBLIC_ODDALERTS_TOKEN ?? '';
 
-const USE_PROXY = Platform.OS === 'web';
+function isAbsoluteUrl(value: string): boolean {
+  return /^https?:\/\//i.test(value);
+}
+
+// Web always stays on the same-origin route, even when the env proxy is the
+// deployed origin used by native builds. Native uses the proxy only when that
+// URL is absolute, so local native dev can keep calling OddAlerts directly.
+const USE_PROXY = Platform.OS === 'web' || isAbsoluteUrl(PROXY_URL);
+const PROXY_BASE = Platform.OS === 'web' ? '/oddalerts' : PROXY_URL;
 
 export type ApiStatus =
   | 'NS'
@@ -190,7 +201,7 @@ function buildUrl(path: string, params: Record<string, string | number | undefin
 
   if (USE_PROXY) {
     search.set('path', path);
-    return `${PROXY_URL}?${search.toString()}`;
+    return `${PROXY_BASE}?${search.toString()}`;
   }
 
   search.set('api_token', TOKEN);
@@ -213,23 +224,110 @@ export class OddAlertsNonJsonError extends Error {
   }
 }
 
-async function getJson<T>(
+type SharedPayload = {
+  envelope: ApiEnvelope<unknown>;
+  bytes: number;
+  status: number;
+  cache: string;
+};
+
+type SharedGet = {
+  promise: Promise<SharedPayload>;
+  controller: AbortController;
+  listeners: number;
+  aborts: number;
+};
+
+const sharedGets = new Map<string, SharedGet>();
+
+function abortError(): Error {
+  const err = new Error('Aborted');
+  err.name = 'AbortError';
+  return err;
+}
+
+async function fetchEnvelope(
   path: string,
-  params: Record<string, string | number | undefined> = {},
-  signal?: AbortSignal,
-): Promise<ApiEnvelope<T>> {
+  params: Record<string, string | number | undefined>,
+  signal: AbortSignal,
+): Promise<SharedPayload> {
   const res = await fetch(buildUrl(path, params), {
     headers: { Accept: 'application/json' },
     signal,
   });
   const text = await res.text();
   if (!res.ok) {
-    throw new Error(`OddAlerts API ${res.status}: ${path}`);
+    const error = new Error(`OddAlerts API ${res.status}: ${path}`) as Error & { status: number; bytes: number };
+    error.status = res.status;
+    error.bytes = text.length;
+    throw error;
   }
   try {
-    return JSON.parse(text) as ApiEnvelope<T>;
+    return {
+      envelope: JSON.parse(text) as ApiEnvelope<unknown>,
+      bytes: text.length,
+      status: res.status,
+      cache: res.headers.get('X-Cache') ?? 'MISS',
+    };
   } catch {
     throw new OddAlertsNonJsonError(path, text.slice(0, 120));
+  }
+}
+
+async function getJson<T>(
+  path: string,
+  params: Record<string, string | number | undefined> = {},
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<T>> {
+  const key = cacheKey(path, params);
+  const traffic = trackRequest({ side: 'client', path, params: publicParams(params) });
+  let logged = false;
+  const finish = (status: number, bytes: number, cache: string) => {
+    if (logged) return;
+    logged = true;
+    traffic.finish({ status, bytes, cache });
+  };
+
+  if (signal?.aborted) {
+    finish(0, 0, 'MISS');
+    throw abortError();
+  }
+
+  let slot = sharedGets.get(key);
+  if (!slot) {
+    const controller = new AbortController();
+    const promise = fetchEnvelope(path, params, controller.signal).finally(() => {
+      if (sharedGets.get(key)?.controller === controller) sharedGets.delete(key);
+    });
+    slot = { promise, controller, listeners: 0, aborts: 0 };
+    sharedGets.set(key, slot);
+  }
+
+  const mine = slot;
+  mine.listeners += 1;
+
+  const detach = () => {
+    mine.aborts += 1;
+    if (mine.aborts >= mine.listeners) mine.controller.abort();
+  };
+  signal?.addEventListener('abort', detach, { once: true });
+
+  try {
+    const parsed = await mine.promise;
+    if (signal?.aborted) {
+      finish(0, parsed.bytes, parsed.cache);
+      throw abortError();
+    }
+    finish(parsed.status, parsed.bytes, parsed.cache);
+    return parsed.envelope as ApiEnvelope<T>;
+  } catch (err) {
+    const status = err && typeof err === 'object' && 'status' in err ? Number((err as { status: number }).status) : 0;
+    const bytes = err && typeof err === 'object' && 'bytes' in err ? Number((err as { bytes: number }).bytes) : 0;
+    finish(Number.isFinite(status) ? status : 0, Number.isFinite(bytes) ? bytes : 0, 'MISS');
+    if (signal?.aborted) throw abortError();
+    throw err;
+  } finally {
+    signal?.removeEventListener('abort', detach);
   }
 }
 

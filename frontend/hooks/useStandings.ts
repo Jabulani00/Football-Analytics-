@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 
 import {
   computeTieredTables,
@@ -8,6 +9,8 @@ import {
   type StandingRow,
   type TieredTables,
 } from '@/services/oddAlerts';
+import { clientStaleTime } from '@/services/oddAlertsCachePolicy';
+import { oddAlertsKeys } from '@/services/oddAlertsKeys';
 import { buildMatchFeed, type MatchFeed } from '@/utils/leagueTables';
 
 type State = {
@@ -33,60 +36,67 @@ const empty: State = {
  * cached fetch in `fetchSeasonResults`.
  */
 export function useStandings(competition: Competition | null, seasonId: number | null): State {
-  const [state, setState] = useState<State>(empty);
+  const season =
+    competition && seasonId != null
+      ? (competition.seasons.find((item) => item.seasonId === seasonId) ?? null)
+      : null;
+  const enabled = competition != null && seasonId != null;
 
-  useEffect(() => {
-    if (!competition || seasonId == null) {
-      setState(empty);
-      return;
-    }
-    const season = competition.seasons.find((s) => s.seasonId === seasonId);
-    const controller = new AbortController();
-    setState({ ...empty, loading: true });
+  const standingsQuery = useQuery({
+    queryKey: oddAlertsKeys.seasonStats(seasonId ?? 0),
+    queryFn: ({ signal }) => fetchSeasonStandings(seasonId as number, signal),
+    enabled,
+    staleTime: clientStaleTime('stats/season'),
+  });
 
-    (async () => {
-      try {
-        const standings = await fetchSeasonStandings(seasonId, controller.signal);
-        if (controller.signal.aborted) return;
-        setState({ ...empty, standings });
+  const standings = standingsQuery.data ?? [];
+  const canDerive = enabled && season != null && standings.length > 0;
 
-        // The derived tables need the full season results — fetch in the
-        // background so the plain table is on screen immediately.
-        if (season && standings.length > 0) {
-          const opts = { competitionId: competition.id, season, standings };
-          fetchSeasonResults(opts, controller.signal)
-            .then((results) => {
-              if (controller.signal.aborted) return;
-              const feed = buildMatchFeed({
-                competitionId: competition.id,
-                seasonId,
-                standings: standings.map((r) => ({
-                  teamId: r.teamId,
-                  name: r.name,
-                  rank: r.rank,
-                })),
-                results,
-              });
-              setState((s) => ({ ...s, feed }));
-            })
-            .catch(() => {});
-          computeTieredTables(opts, controller.signal)
-            .then((tiered) => {
-              if (!controller.signal.aborted) setState((s) => ({ ...s, tiered }));
-            })
-            .catch(() => {});
-        }
-      } catch (err) {
-        if (controller.signal.aborted) return;
-        setState({
-          ...empty,
-          error: err instanceof Error ? err.message : 'Failed to load standings.',
-        });
-      }
-    })();
+  const resultsQuery = useQuery({
+    queryKey: ['oddalerts', 'season-results', competition?.id ?? 0, season?.seasonId ?? 0] as const,
+    queryFn: ({ signal }) =>
+      fetchSeasonResults({ competitionId: competition!.id, season: season! }, signal),
+    enabled: canDerive,
+    staleTime: clientStaleTime('fixtures/between'),
+  });
 
-    return () => controller.abort();
-  }, [competition, seasonId]);
+  const tieredQuery = useQuery({
+    queryKey: ['oddalerts', 'tiered-tables', competition?.id ?? 0, season?.seasonId ?? 0] as const,
+    queryFn: ({ signal }) =>
+      computeTieredTables(
+        { competitionId: competition!.id, season: season!, standings },
+        signal,
+      ),
+    enabled: canDerive,
+    staleTime: clientStaleTime('fixtures/between'),
+  });
 
-  return state;
+  const feed = useMemo(() => {
+    if (!canDerive || !resultsQuery.data || !competition || seasonId == null) return null;
+    return buildMatchFeed({
+      competitionId: competition.id,
+      seasonId,
+      standings: standings.map((row) => ({
+        teamId: row.teamId,
+        name: row.name,
+        rank: row.rank,
+      })),
+      results: resultsQuery.data,
+    });
+  }, [canDerive, resultsQuery.data, competition, seasonId, standings]);
+
+  if (!enabled) return empty;
+
+  return {
+    standings,
+    tiered: tieredQuery.data ?? null,
+    feed,
+    loading: standingsQuery.isPending,
+    error:
+      standingsQuery.error instanceof Error
+        ? standingsQuery.error.message
+        : standingsQuery.error
+          ? 'Failed to load standings.'
+          : null,
+  };
 }

@@ -1,5 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 
+import { oddAlertsKeys } from '@/services/oddAlertsKeys';
+import { clientStaleTime } from '@/services/oddAlertsCachePolicy';
 import { fetchUpcomingFixtures, type RawFixture } from '@/services/oddAlerts';
 
 export type LiveCompetition = {
@@ -29,46 +32,40 @@ function competitionRank(fx: RawFixture): number {
   return 0;
 }
 
+function competitionsFrom(rows: RawFixture[] | undefined): LiveCompetition[] {
+  const seen = new Map<number, LiveCompetition>();
+  for (const fx of rows ?? []) {
+    if (!fx.competition_id || !fx.competition_name) continue;
+    const existing = seen.get(fx.competition_id);
+    if (existing) {
+      existing.upcoming += 1;
+    } else {
+      seen.set(fx.competition_id, {
+        id: fx.competition_id,
+        name: fx.competition_name,
+        season: fx.season,
+        country: fx.competition_country,
+        upcoming: 1,
+        rank: competitionRank(fx),
+      });
+    }
+  }
+  return Array.from(seen.values()).sort(
+    (a, b) => a.rank - b.rank || b.upcoming - a.upcoming || a.name.localeCompare(b.name),
+  );
+}
+
 /**
  * Distinct competitions that have upcoming fixtures — i.e. leagues currently
  * active, sourced live from the API. Sorted by activity (most upcoming fixtures
  * first) so the default selection is a competition likely to have results.
  */
 export function useLiveCompetitions(days = 3): LiveCompetition[] {
-  const [competitions, setCompetitions] = useState<LiveCompetition[]>([]);
+  const query = useQuery({
+    queryKey: oddAlertsKeys.upcoming({ days }),
+    queryFn: ({ signal }) => fetchUpcomingFixtures({ days }, signal),
+    staleTime: clientStaleTime('fixtures/upcoming'),
+  });
 
-  useEffect(() => {
-    const ctrl = new AbortController();
-    fetchUpcomingFixtures({ days }, ctrl.signal)
-      .then((env) => {
-        const seen = new Map<number, LiveCompetition>();
-        for (const fx of env.data as RawFixture[]) {
-          if (!fx.competition_id || !fx.competition_name) continue;
-          const existing = seen.get(fx.competition_id);
-          if (existing) {
-            existing.upcoming += 1;
-          } else {
-            seen.set(fx.competition_id, {
-              id: fx.competition_id,
-              name: fx.competition_name,
-              season: fx.season,
-              country: fx.competition_country,
-              upcoming: 1,
-              rank: competitionRank(fx),
-            });
-          }
-        }
-        // Leagues first, then cups, then friendlies; within a tier by activity.
-        const list = Array.from(seen.values()).sort(
-          (a, b) => a.rank - b.rank || b.upcoming - a.upcoming || a.name.localeCompare(b.name),
-        );
-        if (!ctrl.signal.aborted) setCompetitions(list);
-      })
-      .catch(() => {
-        /* leave empty */
-      });
-    return () => ctrl.abort();
-  }, [days]);
-
-  return competitions;
+  return useMemo(() => competitionsFrom(query.data?.data), [query.data]);
 }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 
-import { cachedFetch } from '@/services/fixtureCache';
 import { fetchBook1x2ForFixtures, type Book1x2 } from '@/services/hollywood1x2Board';
 import {
   fetchFixtureDetail,
@@ -9,12 +9,12 @@ import {
   type RawFixtureDetail,
   type StandingRow,
 } from '@/services/oddAlerts';
+import { clientStaleTime } from '@/services/oddAlertsCachePolicy';
+import { oddAlertsKeys } from '@/services/oddAlertsKeys';
 import { standingRowsToLike, streamForFixture } from '@/utils/fixtureStreamline';
 import type { StreamName } from '@/utils/powerDynamicsEngine';
 import type { StandingLike } from '@/utils/motivationEngine';
 
-const STANDINGS_TTL_MS = 10 * 60_000;
-const DETAIL_TTL_MS = 5 * 60_000;
 const MAX_SEASONS = 16;
 const MAX_DETAILS = 80;
 const DETAIL_CONCURRENCY = 4;
@@ -55,6 +55,7 @@ export function useFixtureStreamlines(
   const [details, setDetails] = useState<Details>(new Map());
   const [books, setBooks] = useState<Books>(new Map());
   const [booksReady, setBooksReady] = useState(false);
+  const queryClient = useQueryClient();
 
   const upcoming = useMemo(() => (enabled ? upcomingForStream(fixtures) : []), [enabled, fixtures]);
   const upcomingIds = useMemo(() => upcoming.map((f) => f.id).join(','), [upcoming]);
@@ -76,9 +77,11 @@ export function useFixtureStreamlines(
     Promise.all(
       seasonIds.map(async (id) => {
         try {
-          const rows = await cachedFetch(`standings:${id}`, STANDINGS_TTL_MS, () =>
-            fetchSeasonStandings(id),
-          );
+          const rows = await queryClient.fetchQuery({
+            queryKey: oddAlertsKeys.seasonStats(id),
+            queryFn: () => fetchSeasonStandings(id),
+            staleTime: clientStaleTime('stats/season'),
+          });
           return [id, standingRowsToLike(rows)] as const;
         } catch {
           return [id, [] as StandingLike[]] as const;
@@ -91,7 +94,7 @@ export function useFixtureStreamlines(
     return () => {
       active = false;
     };
-  }, [enabled, seasonKey]);
+  }, [enabled, seasonKey, queryClient]);
 
   useEffect(() => {
     if (!enabled || upcoming.length === 0) {
@@ -106,9 +109,11 @@ export function useFixtureStreamlines(
       while (cursor < ids.length && !controller.signal.aborted) {
         const id = ids[cursor++];
         try {
-          const detail = await cachedFetch(`pd-detail:${id}`, DETAIL_TTL_MS, () =>
-            fetchFixtureDetail(id, controller.signal),
-          );
+          const detail = await queryClient.fetchQuery({
+            queryKey: oddAlertsKeys.fixture(id, 'probability,stats,odds,h2h,referee'),
+            queryFn: () => fetchFixtureDetail(id),
+            staleTime: clientStaleTime(`fixtures/${id}`),
+          });
           if (controller.signal.aborted) return;
           setDetails((prev) => {
             const next = new Map(prev);
@@ -129,7 +134,7 @@ export function useFixtureStreamlines(
       Array.from({ length: Math.min(DETAIL_CONCURRENCY, ids.length) }, () => worker()),
     );
     return () => controller.abort();
-  }, [enabled, upcomingIds]);
+  }, [enabled, upcomingIds, queryClient]);
 
   useEffect(() => {
     if (!enabled || upcoming.length === 0) {
