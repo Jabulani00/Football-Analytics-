@@ -5,13 +5,13 @@
 
 import type { H2HMatch } from '@/services/oddAlerts';
 import {
-  H2H_MEETINGS_LIMIT,
-  h2hOutcomeForTeam,
-  recentH2hMeetings,
-  teamInH2hMatch,
-  teamsMatch,
-  type H2HOutcome,
-  type H2HSplit,
+    H2H_MEETINGS_LIMIT,
+    h2hOutcomeForTeam,
+    recentH2hMeetings,
+    teamInH2hMatch,
+    teamsMatch,
+    type H2HOutcome,
+    type H2HSplit,
 } from '@/utils/h2hDisplay';
 import type { TeamResult } from '@/utils/teamResults';
 import { lastN } from '@/utils/teamResults';

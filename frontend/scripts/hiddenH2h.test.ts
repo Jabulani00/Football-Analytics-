@@ -2,12 +2,12 @@
  * Unit tests for Section 6 + 7.
  * Run: npx tsx scripts/hiddenH2h.test.ts
  */
-import { evaluateHiddenLayers, polarityCounts, problemPatternFor } from '../utils/hiddenLayers';
-import { evaluateH2HOptions, formatNeverBeatenSequence, hasBeenBeaten, h2hGradeGuide, isNikaNikaRecord, matchPolarSequences, neverBeatGrade, outcomeForSide, polarEdgeGrade } from '../utils/h2hOptions';
-import { h2hOutcomeForTeam } from '../utils/h2hDisplay';
-import type { TeamResult } from '../utils/teamResults';
-import type { StandingLike } from '../utils/motivationEngine';
 import type { H2HMatch } from '../services/oddAlerts';
+import { h2hOutcomeForTeam } from '../utils/h2hDisplay';
+import { evaluateH2HOptions, formatNeverBeatenSequence, h2hGradeGuide, hasBeenBeaten, isNikaNikaRecord, matchPolarSequences, neverBeatGrade, outcomeForSide, polarEdgeGrade } from '../utils/h2hOptions';
+import { evaluateHiddenLayers, polarityCounts, problemPatternFor } from '../utils/hiddenLayers';
+import type { StandingLike } from '../utils/motivationEngine';
+import type { TeamResult } from '../utils/teamResults';
 
 let passed = 0;
 let failed = 0;

@@ -1,13 +1,24 @@
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useMemo, useState } from 'react';
 
+import SubTabBar from '@/components/shared/SubTabBar';
 import {
+  bhozomaFixtureRows,
   buildBhozomaTable,
+  formatBhozomaSpan,
   type BhozomaSideStats,
   type BhozomaTeamRow,
+  type BhozomaVenue,
 } from '@/utils/bhozomaEngine';
 import type { SeasonMatch } from '@/utils/bhozomaEngine';
 import type { StandingLike } from '@/utils/motivationEngine';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
+
+const VENUE_TABS: { id: BhozomaVenue; label: string }[] = [
+  { id: 'overall', label: 'Overall' },
+  { id: 'home', label: 'Home' },
+  { id: 'away', label: 'Away' },
+];
 
 type Props = {
   standings: StandingLike[];
@@ -92,9 +103,14 @@ function DataRow({ row, highlight, extraLabel }: { row: BhozomaTeamRow; highligh
   return (
     <View style={[styles.row, row.isMidTable && styles.rowMid, highlight && styles.rowFocus]}>
       <Text style={[styles.td, styles.cPos]}>{row.rank}</Text>
-      <Text style={[styles.td, styles.cTeam]} numberOfLines={1}>
-        {extraLabel ?? row.name}
-      </Text>
+      <View style={styles.cTeam}>
+        <Text style={[styles.td, styles.teamName]} numberOfLines={1}>
+          {extraLabel ?? row.name}
+        </Text>
+        <Text style={styles.spanHint} numberOfLines={1}>
+          Above {formatBhozomaSpan(row.aboveRanks)} · Below {formatBhozomaSpan(row.belowRanks)}
+        </Text>
+      </View>
       <Text style={[styles.td, styles.cPts]}>{row.points}</Text>
       <SideCells side={row.above} />
       <SideCells side={row.below} />
@@ -114,6 +130,17 @@ export default function BhozomaView({
   highlightIds,
   teamLabels,
 }: Props) {
+  const [venue, setVenue] = useState<BhozomaVenue>('overall');
+
+  const table = useMemo(
+    () => buildBhozomaTable(standings, matches, competitionId, venue),
+    [standings, matches, competitionId, venue],
+  );
+
+  const fixtureIds = (highlightIds ?? []).filter((id) => Number.isFinite(id));
+  const focus = bhozomaFixtureRows(table, fixtureIds);
+  const highlightSet = new Set(fixtureIds);
+
   if (loading) {
     return (
       <View style={styles.center}>
@@ -125,35 +152,34 @@ export default function BhozomaView({
   if (error) return <Text style={styles.muted}>{error}</Text>;
   if (standings.length === 0) return <Text style={styles.muted}>No standings.</Text>;
 
-  const table = buildBhozomaTable(standings, matches, competitionId);
-  const focus = table.midRows.length > 0 ? table.midRows : table.rows;
-  const highlightSet = new Set((highlightIds ?? []).filter((id) => Number.isFinite(id)));
-  const ordered = [...focus].sort((a, b) => {
-    const ah = highlightSet.has(a.teamId) ? 0 : 1;
-    const bh = highlightSet.has(b.teamId) ? 0 : 1;
-    return ah - bh || a.rank - b.rank;
-  });
-
   return (
     <View>
       <Text style={styles.blurb}>
-        Mid-table form vs sides currently above and below on the table (not all season games).
-        Giant-killer = taking ≥50% of points from higher sides. vs lower sides: 60–74% =
-        good, ≥75% = dominates. Under 3 meetings still shows a read marked “early”.
+        Yellow-band sides in this fixture only. vs Above is the places above that side
+        (e.g. 9th → 8–1). vs Below is the places under them (10–last). Home / Away / Overall
+        filters which finished games count.
       </Text>
+      <SubTabBar tabs={VENUE_TABS} active={venue} onChange={setVenue} />
       {table.midBand ? (
         <Text style={styles.summary}>
-          Mid-table places {table.midBand.from}–{table.midBand.to} · {focus.length} team
-          {focus.length === 1 ? '' : 's'}
-          {table.midRows.length === 0 ? ' (full table — no mid band hit)' : ''}
+          Yellow band {table.midBand.from}–{table.midBand.to}
+          {focus.length === 0
+            ? ' · neither side is yellow'
+            : focus.length === 1
+              ? ` · ${focus[0].name} (#${focus[0].rank})`
+              : ` · both sides in yellow (${focus.map((r) => `#${r.rank}`).join(' & ')})`}
         </Text>
       ) : (
-        <Text style={styles.summary}>Showing {focus.length} teams</Text>
+        <Text style={styles.summary}>No yellow band on this table.</Text>
       )}
       {matches.length === 0 ? (
         <Text style={styles.muted}>No finished season fixtures loaded yet.</Text>
       ) : null}
-
+      {focus.length === 0 ? (
+        <Text style={styles.muted}>
+          Bhozoma is for the yellow band. Neither side in this fixture sits there.
+        </Text>
+      ) : (
       <ScrollView horizontal showsHorizontalScrollIndicator>
         <View style={styles.table}>
           {/* Group header */}
@@ -186,7 +212,7 @@ export default function BhozomaView({
             <Text style={[styles.th, styles.cLabel]}>Read</Text>
           </View>
 
-          {ordered.map((r) => (
+          {focus.map((r) => (
             <DataRow
               key={r.teamId}
               row={r}
@@ -196,6 +222,7 @@ export default function BhozomaView({
           ))}
         </View>
       </ScrollView>
+      )}
     </View>
   );
 }
@@ -235,7 +262,7 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    minHeight: 36,
+    minHeight: 42,
     borderBottomWidth: layout.borderWidth,
     borderBottomColor: theme.border,
     paddingHorizontal: spacing.xs,
@@ -270,7 +297,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   cPos: { width: 28, textAlign: 'center', fontFamily: fonts.bodySemiBold },
-  cTeam: { width: 140, paddingRight: spacing.xs, fontFamily: fonts.bodySemiBold },
+  cTeam: { width: 140, paddingRight: spacing.xs },
+  teamName: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: theme.textPrimary },
+  spanHint: {
+    fontFamily: fonts.body,
+    fontSize: 9,
+    color: theme.textFaint,
+    marginTop: 1,
+  },
   cPts: { width: 40, textAlign: 'center', fontFamily: fonts.bodySemiBold },
   cMp: { width: 36, textAlign: 'center' },
   cScores: { width: 120, paddingHorizontal: 4 },

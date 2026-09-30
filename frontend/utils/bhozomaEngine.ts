@@ -7,16 +7,10 @@
 import { criticalLinesFor, type StandingLike } from '@/utils/motivationEngine';
 
 export const BHOZOMA_MIN_MP = 3;
-/** Points % vs sides above — giant-killer only when they actually take points up the table. */
-export const GIANT_KILLER_PCT = 50;
-/** Competitive (not soft) vs higher sides. */
-export const COMPETITIVE_ABOVE_PCT = 30;
-/** Strong haul vs sides below — dominance. */
-export const DOMINATES_BELOW_PCT = 75;
-/** Good (but not dominant) vs sides below. */
-export const GOOD_BELOW_PCT = 60;
-/** Soft / leaky vs sides below. */
-export const DROPS_BELOW_PCT = 45;
+/** vs Above: % ≥ this → Bhozoma; below it → Goliath hero. */
+export const BHOZOMA_ABOVE_PCT = 30;
+/** vs Below: % > this → Umnqumi wehlathi; otherwise Hlathi submissive. */
+export const UMNQUMI_BELOW_PCT = 50;
 
 export type SeasonMatch = {
   homeId: number;
@@ -38,6 +32,10 @@ export type BhozomaSideStats = {
   label: string | null;
 };
 
+export type BhozomaVenue = 'overall' | 'home' | 'away';
+
+export type BhozomaRankSpan = { from: number; to: number };
+
 export type BhozomaTeamRow = {
   teamId: number;
   name: string;
@@ -45,6 +43,10 @@ export type BhozomaTeamRow = {
   points: number;
   zone: 'top' | 'mid' | 'bottom' | 'unknown';
   isMidTable: boolean;
+  /** Nearest place above → 1st, e.g. 8→1 for 9th. */
+  aboveRanks: BhozomaRankSpan | null;
+  /** Next place below → last, e.g. 10→20 for 9th. */
+  belowRanks: BhozomaRankSpan | null;
   above: BhozomaSideStats;
   below: BhozomaSideStats;
 };
@@ -62,6 +64,11 @@ function ptsFor(gf: number, ga: number): number {
   return 0;
 }
 
+export function formatBhozomaSpan(span: BhozomaRankSpan | null): string {
+  if (!span) return '—';
+  return `${span.from}–${span.to}`;
+}
+
 function emptySide(kind: 'above' | 'below'): BhozomaSideStats {
   return {
     mp: 0,
@@ -75,23 +82,17 @@ function emptySide(kind: 'above' | 'below'): BhozomaSideStats {
   };
 }
 
-/** Classify from points %; thin samples still get a real read (not a blank wall). */
+/** vs Above: < 30% Goliath hero, ≥ 30% Bhozoma. */
 function labelAbove(pct: number | null, mp: number): string {
   if (mp <= 0 || pct == null) return 'No meetings yet';
-  let core: string;
-  if (pct >= GIANT_KILLER_PCT) core = 'Giant-killer';
-  else if (pct >= COMPETITIVE_ABOVE_PCT) core = 'Competitive vs higher sides';
-  else core = 'Soft vs higher sides';
+  const core = pct < BHOZOMA_ABOVE_PCT ? 'Goliath hero' : 'Bhozoma';
   return mp < BHOZOMA_MIN_MP ? `${core} · early` : core;
 }
 
+/** vs Below: > 50% Umnqumi wehlathi, ≤ 50% Hlathi submissive. */
 function labelBelow(pct: number | null, mp: number): string {
   if (mp <= 0 || pct == null) return 'No meetings yet';
-  let core: string;
-  if (pct >= DOMINATES_BELOW_PCT) core = 'Dominates lower sides';
-  else if (pct >= GOOD_BELOW_PCT) core = 'Good against lower sides';
-  else if (pct >= DROPS_BELOW_PCT) core = 'Solid vs lower sides';
-  else core = 'Drops points to lower sides';
+  const core = pct > UMNQUMI_BELOW_PCT ? 'Umnqumi wehlathi' : 'Hlathi submissive';
   return mp < BHOZOMA_MIN_MP ? `${core} · early` : core;
 }
 
@@ -101,6 +102,7 @@ function sideStats(
   nameById: Map<number, string>,
   matches: SeasonMatch[],
   kind: 'above' | 'below',
+  venue: BhozomaVenue = 'overall',
 ): BhozomaSideStats {
   if (opponentIds.size === 0) return emptySide(kind);
 
@@ -111,6 +113,8 @@ function sideStats(
     const asHome = m.homeId === teamId;
     const asAway = m.awayId === teamId;
     if (!asHome && !asAway) continue;
+    if (venue === 'home' && !asHome) continue;
+    if (venue === 'away' && !asAway) continue;
     const oppId = asHome ? m.awayId : m.homeId;
     if (!opponentIds.has(oppId)) continue;
     const gf = asHome ? m.homeGoals : m.awayGoals;
@@ -145,18 +149,21 @@ function sideStats(
 }
 
 /**
- * Build Bhozoma rows for a league. Usage focus = mid-table (yellow band),
- * but every team is computed so callers can inspect the full picture.
+ * Build Bhozoma rows for a league. Usage focus = mid-table (yellow band).
+ * For a yellow side in 9th facing a different tier (e.g. 2nd), vs Above is
+ * places 8→1 and vs Below is 10→last — split on that yellow side’s rank.
  */
 export function buildBhozomaTable(
   standings: StandingLike[],
   matches: SeasonMatch[],
   competitionId?: number | string | null,
+  venue: BhozomaVenue = 'overall',
 ): BhozomaTable {
   const lines = criticalLinesFor(competitionId ?? null, standings.length);
   const midBand = lines.midBand;
   const nameById = new Map(standings.map((r) => [r.teamId, r.name]));
   const sorted = [...standings].sort((a, b) => a.rank - b.rank);
+  const lastPlace = sorted.length > 0 ? sorted[sorted.length - 1].rank : 0;
 
   const rows: BhozomaTeamRow[] = sorted.map((team) => {
     const aboveIds = new Set(
@@ -178,8 +185,10 @@ export function buildBhozomaTable(
       points: team.points,
       zone,
       isMidTable,
-      above: sideStats(team.teamId, aboveIds, nameById, matches, 'above'),
-      below: sideStats(team.teamId, belowIds, nameById, matches, 'below'),
+      aboveRanks: team.rank > 1 ? { from: team.rank - 1, to: 1 } : null,
+      belowRanks: team.rank < lastPlace ? { from: team.rank + 1, to: lastPlace } : null,
+      above: sideStats(team.teamId, aboveIds, nameById, matches, 'above', venue),
+      below: sideStats(team.teamId, belowIds, nameById, matches, 'below', venue),
     };
   });
 
@@ -188,4 +197,17 @@ export function buildBhozomaTable(
     rows,
     midRows: rows.filter((r) => r.isMidTable),
   };
+}
+
+/** Fixture Bhozoma: only yellow-band sides in this match, split on each side’s own place. */
+export function bhozomaFixtureRows(table: BhozomaTable, teamIds: number[]): BhozomaTeamRow[] {
+  const seen = new Set<number>();
+  const out: BhozomaTeamRow[] = [];
+  for (const id of teamIds) {
+    if (!Number.isFinite(id) || seen.has(id)) continue;
+    seen.add(id);
+    const row = table.rows.find((r) => r.teamId === id);
+    if (row?.isMidTable) out.push(row);
+  }
+  return out;
 }

@@ -2,7 +2,13 @@
  * Unit tests for Section 8 + 9.
  * Run: npx tsx scripts/bhozomaImbangi.test.ts
  */
-import { buildBhozomaTable, BHOZOMA_MIN_MP, type SeasonMatch } from '../utils/bhozomaEngine';
+import {
+  bhozomaFixtureRows,
+  buildBhozomaTable,
+  formatBhozomaSpan,
+  BHOZOMA_MIN_MP,
+  type SeasonMatch,
+} from '../utils/bhozomaEngine';
 import { buildImbangiTable, leagueProgressInfo } from '../utils/imbangiEngine';
 import type { StandingLike } from '../utils/motivationEngine';
 
@@ -68,17 +74,17 @@ console.log('\nSection 8 — Bhozoma');
   );
   check('above not data dust', charlie?.above.dataDust === false);
   check(
-    'low pts vs above → soft (not giant-killer)',
-    charlie?.above.label === 'Soft vs higher sides',
+    'low pts vs above → Goliath hero',
+    charlie?.above.label === 'Goliath hero',
     `label=${charlie?.above.label} pct=${charlie?.above.pctAttained}`,
   );
   check(
-    'strong vs below',
-    charlie?.below.label === 'Dominates lower sides',
+    'strong vs below → Umnqumi wehlathi',
+    charlie?.below.label === 'Umnqumi wehlathi',
     `label=${charlie?.below.label}`,
   );
 
-  // Charlie takes points from Alpha (above) — should read as giant-killer.
+  // Charlie takes points from sides above — % ≥ 30 → Bhozoma.
   const punchUp = buildBhozomaTable(
     TABLE,
     [
@@ -90,12 +96,12 @@ console.log('\nSection 8 — Bhozoma');
   );
   const cPunch = punchUp.rows.find((r) => r.teamId === 3);
   check(
-    'high pts vs above → giant-killer',
-    cPunch?.above.label === 'Giant-killer',
+    '≥30% vs above → Bhozoma',
+    cPunch?.above.label === 'Bhozoma',
     `label=${cPunch?.above.label} pct=${cPunch?.above.pctAttained}`,
   );
 
-  // ~67% vs below → good, not dominance.
+  // ~67% vs below → Umnqumi wehlathi.
   const midBelow = buildBhozomaTable(
     TABLE,
     [
@@ -107,11 +113,27 @@ console.log('\nSection 8 — Bhozoma');
   );
   const cMid = midBelow.rows.find((r) => r.teamId === 3);
   check(
-    '67% vs below → good against lower',
-    cMid?.below.label === 'Good against lower sides' &&
+    '>50% vs below → Umnqumi wehlathi',
+    cMid?.below.label === 'Umnqumi wehlathi' &&
       cMid.below.pctAttained != null &&
       Math.round(cMid.below.pctAttained) === 67,
     `label=${cMid?.below.label} pct=${cMid?.below.pctAttained}`,
+  );
+
+  const leakBelow = buildBhozomaTable(
+    TABLE,
+    [
+      { homeId: 3, awayId: 5, homeGoals: 0, awayGoals: 1, unix: 1 },
+      { homeId: 3, awayId: 6, homeGoals: 0, awayGoals: 1, unix: 2 },
+      { homeId: 5, awayId: 3, homeGoals: 0, awayGoals: 1, unix: 3 },
+    ],
+    999999,
+  );
+  const cLeak = leakBelow.rows.find((r) => r.teamId === 3);
+  check(
+    '≤50% vs below → Hlathi submissive',
+    cLeak?.below.label === 'Hlathi submissive',
+    `label=${cLeak?.below.label} pct=${cLeak?.below.pctAttained}`,
   );
 
   const thin = buildBhozomaTable(TABLE, [
@@ -119,10 +141,80 @@ console.log('\nSection 8 — Bhozoma');
   ], null);
   const c2 = thin.rows.find((r) => r.teamId === 3);
   check(
-    'MP < 3 → early soft read',
-    c2?.above.dataDust === true && c2.above.label === 'Soft vs higher sides · early',
+    'MP < 3 → early Goliath hero',
+    c2?.above.dataDust === true && c2.above.label === 'Goliath hero · early',
     `label=${c2?.above.label}`,
   );
+
+  // Yellow (3rd) vs a different tier (2nd): split is still on the yellow side’s place.
+  check(
+    'yellow 3rd vs above is 2–1',
+    charlie?.aboveRanks?.from === 2 && charlie?.aboveRanks?.to === 1,
+    `span=${formatBhozomaSpan(charlie?.aboveRanks ?? null)}`,
+  );
+  check(
+    'yellow 3rd vs below is 4–last',
+    charlie?.belowRanks?.from === 4 && charlie?.belowRanks?.to === 6,
+    `span=${formatBhozomaSpan(charlie?.belowRanks ?? null)}`,
+  );
+  check('1st has no sides above', table.rows[0]?.aboveRanks == null);
+  check('last has no sides below', table.rows[5]?.belowRanks == null);
+  check('format 8–1', formatBhozomaSpan({ from: 8, to: 1 }) === '8–1');
+
+  const mixedVenue: SeasonMatch[] = [
+    { homeId: 3, awayId: 1, homeGoals: 0, awayGoals: 2, unix: 1 },
+    { homeId: 3, awayId: 2, homeGoals: 0, awayGoals: 2, unix: 2 },
+    { homeId: 1, awayId: 3, homeGoals: 2, awayGoals: 0, unix: 3 },
+    { homeId: 5, awayId: 3, homeGoals: 0, awayGoals: 1, unix: 4 },
+  ];
+  const overallV = buildBhozomaTable(TABLE, mixedVenue, 999999, 'overall');
+  const homeV = buildBhozomaTable(TABLE, mixedVenue, 999999, 'home');
+  const awayV = buildBhozomaTable(TABLE, mixedVenue, 999999, 'away');
+  const cAll = overallV.rows.find((r) => r.teamId === 3);
+  const cHome = homeV.rows.find((r) => r.teamId === 3);
+  const cAway = awayV.rows.find((r) => r.teamId === 3);
+  check('overall counts home+away vs above', cAll?.above.mp === 3, `mp=${cAll?.above.mp}`);
+  check('home filter drops away vs above', cHome?.above.mp === 2, `mp=${cHome?.above.mp}`);
+  check('away filter keeps only away vs above', cAway?.above.mp === 1, `mp=${cAway?.above.mp}`);
+  check('home filter keeps only home vs below', cHome?.below.mp === 0, `mp=${cHome?.below.mp}`);
+  check('away filter keeps away vs below', cAway?.below.mp === 1, `mp=${cAway?.below.mp}`);
+  check(
+    'venue filter does not change table ranks',
+    cHome?.rank === 3 && cAway?.rank === 3 && cHome.aboveRanks?.from === 2,
+  );
+
+  // 3rd (yellow) vs 2nd (not yellow) — only the yellow side is in the Bhozoma table.
+  const fixture = bhozomaFixtureRows(table, [3, 2]);
+  check('fixture table is the yellow side only', fixture.length === 1 && fixture[0]?.teamId === 3);
+  check('non-yellow 2nd is not listed', fixture.every((r) => r.teamId !== 2 && r.teamId !== 4));
+  check(
+    '3rd vs 2nd still splits 2–1 / 4–last on the yellow side',
+    fixture[0]?.aboveRanks?.from === 2 &&
+      fixture[0]?.aboveRanks?.to === 1 &&
+      fixture[0]?.belowRanks?.from === 4 &&
+      fixture[0]?.belowRanks?.to === 6,
+  );
+
+  const bothYellow = bhozomaFixtureRows(table, [3, 4]);
+  check('both yellow sides listed', bothYellow.length === 2 && bothYellow[0]?.teamId === 3 && bothYellow[1]?.teamId === 4);
+
+  const neitherYellow = bhozomaFixtureRows(table, [1, 2]);
+  check('no yellow sides → empty bhozoma table', neitherYellow.length === 0);
+
+  const twenty: StandingLike[] = Array.from({ length: 20 }, (_, i) =>
+    team(i + 1, i + 1, `T${i + 1}`, 60 - i, 20, i < 6 ? 'top' : i < 14 ? 'mid' : 'bottom'),
+  );
+  const nine = buildBhozomaTable(twenty, [], 999999).rows.find((r) => r.rank === 9);
+  check(
+    '9th vs a different tier splits 8–1 / 10–20',
+    nine?.aboveRanks?.from === 8 &&
+      nine?.aboveRanks?.to === 1 &&
+      nine?.belowRanks?.from === 10 &&
+      nine?.belowRanks?.to === 20,
+    `above=${formatBhozomaSpan(nine?.aboveRanks ?? null)} below=${formatBhozomaSpan(nine?.belowRanks ?? null)}`,
+  );
+  const nineVsTwo = bhozomaFixtureRows(buildBhozomaTable(twenty, [], 999999), [9, 2]);
+  check('9th vs 2nd lists only 9th', nineVsTwo.length === 1 && nineVsTwo[0]?.rank === 9);
 }
 
 console.log('\nSection 9 — Imbangi + progress');
