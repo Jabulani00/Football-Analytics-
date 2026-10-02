@@ -572,14 +572,21 @@ export function evaluateStreamline(opts: {
     oddsCall = `${oddsLabel}: ${t1Label} ${fmtOdds(t1Odds)}, ${t2Label} ${fmtOdds(t2Odds)}. T1 should be the shorter price. Non-compliant.`;
   }
 
-  const inStreams: Record<StreamName, boolean> = {
+  const candidates: Record<StreamName, boolean> = {
     bateteme: close,
     compliant: oddsOutcome === 'compliant',
     zidane_law: ppgOddsZidane && t1NeverBeatenT2,
     bookie: ppgOddsZidane && t1DidBeatT2,
     bookie2: ppgOddsZidane && h2hMeetings === 0,
   };
-  const primary = STREAM_ORDER.find((name) => inStreams[name]) ?? null;
+  const primary = STREAM_ORDER.find((name) => candidates[name]) ?? null;
+  const inStreams: Record<StreamName, boolean> = {
+    bateteme: primary === 'bateteme',
+    compliant: primary === 'compliant',
+    zidane_law: primary === 'zidane_law',
+    bookie: primary === 'bookie',
+    bookie2: primary === 'bookie2',
+  };
 
   const h2hLine = `${h2hMeetings} H2H, T1 ${t1H2hWins}W / ${t1H2hDraws}D / ${t1H2hLosses}L`;
   let call: string;
@@ -645,9 +652,10 @@ function findTableRow(
   return table.find((t) => t.name.trim().toLowerCase() === needle) ?? null;
 }
 
-/** Streams this fixture is in, in tab order. */
+/** The one Streamline this fixture falls under (STREAM_ORDER: first match wins). */
 export function listedStreams(inStreams: Record<StreamName, boolean>): StreamName[] {
-  return STREAM_ORDER.filter((name) => inStreams[name]);
+  const name = STREAM_ORDER.find((n) => inStreams[n]);
+  return name ? [name] : [];
 }
 
 type StreamlineMatchupOpts = {
@@ -714,7 +722,7 @@ export function streamlineReadForMatchup(opts: StreamlineMatchupOpts): Streamlin
   });
 }
 
-/** Every matching Streamline for a fixture (tab order). */
+/** The one Streamline this fixture falls under. */
 export function streamsForMatchup(opts: StreamlineMatchupOpts): StreamName[] {
   const read = streamlineReadForMatchup(opts);
   if (!read) return [];

@@ -30,6 +30,14 @@ import {
   type VenueRead,
 } from '@/utils/powerDynamicsEngine';
 import { CHANGE_LABEL, OPTION_LABEL, type TeamLast5 } from '@/utils/last5Analysis';
+import {
+  LAST6_BAND_LABEL,
+  LAST6_TREND_LABEL,
+  last6FormForSides,
+  type Last6FormBand,
+  type Last6Game,
+} from '@/utils/last6Form';
+import type { TeamResult } from '@/utils/teamResults';
 import { GRADE_LABEL, STANCE_LABEL } from '@/utils/motivationEngine';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
@@ -353,7 +361,7 @@ export function StreamlineCards({
   const inFocus = focus != null && s.inStreams[focus];
   const introNote =
     focus == null
-      ? 'Order: Bateteme stream, Compliant stream, Zidane Law, Bookie mistake, Bookie mistake 2.'
+      ? 'One stream per fixture. Order: Bateteme, Compliant, Zidane Law, Bookie mistake, Bookie mistake 2.'
       : focus === 'zidane_law' || focus === 'bookie' || focus === 'bookie2'
         ? focus === 'bookie2'
           ? `${ZIDANE_PPG_ODDS_RULE}. No H2H games were found.`
@@ -491,6 +499,88 @@ export function Last5Cards({
     <View>
       {block(pd.t1.label, t1Team, pd.lastGame.t1)}
       {block(pd.t2.label, t2Team, pd.lastGame.t2)}
+    </View>
+  );
+}
+
+function last6Tone(band: Last6FormBand): Tone {
+  if (band === 'strong') return 'good';
+  if (band === 'poor') return 'bad';
+  return 'warn';
+}
+
+function gameLine(g: Last6Game): string {
+  const venue = g.isHome ? 'H' : 'A';
+  const vs =
+    g.opponentAbove === true ? 'above' : g.opponentAbove === false ? 'below' : 'opp';
+  return `${venue} vs ${g.opponentName} (${vs}) ${g.gf}–${g.ga} · ${g.outcome}`;
+}
+
+export function FormCards({
+  pd,
+  homeResults,
+  awayResults,
+}: {
+  pd: PowerDynamicsBundle;
+  homeResults: TeamResult[];
+  awayResults: TeamResult[];
+}) {
+  const t1Results = pd.t1.venue === 'home' ? homeResults : awayResults;
+  const t2Results = pd.t2.venue === 'home' ? homeResults : awayResults;
+  const form = last6FormForSides({
+    t1TeamId: pd.t1.teamId,
+    t2TeamId: pd.t2.teamId,
+    t1Results,
+    t2Results,
+    t1Label: pd.t1.label,
+    t2Label: pd.t2.label,
+  });
+
+  const block = (label: string, side: typeof form.t1) => (
+    <SideCard
+      label={label}
+      meta={side ? `${side.won}-${side.drawn}-${side.lost} · ${side.points}/${side.possible} pts` : undefined}>
+      {side ? (
+        <>
+          <Line text={LAST6_BAND_LABEL[side.band]} tone={last6Tone(side.band)} />
+          <Line text={side.read} />
+          <Text style={styles.seq}>{side.sequence.join(' ')}</Text>
+          <Line
+            text={`PPG ${side.ppg != null ? side.ppg.toFixed(2) : '—'} · GF ${side.gf} GA ${side.ga} (GD ${side.gd >= 0 ? '+' : ''}${side.gd})`}
+          />
+          <Line text={LAST6_TREND_LABEL[side.trend]} tone={side.trend === 'dropping' ? 'bad' : side.trend === 'picking_up' ? 'good' : 'info'} />
+          <Line
+            text={`In these 6: home ${side.homePoints} pts (${side.homeMp} MP) · away ${side.awayPoints} pts (${side.awayMp} MP)`}
+          />
+          {side.mpVsAbove + side.mpVsBelow > 0 ? (
+            <Line
+              text={`vs above ${side.pointsVsAbove} pts / ${side.mpVsAbove} · vs below ${side.pointsVsBelow} pts / ${side.mpVsBelow}`}
+            />
+          ) : null}
+          <Text style={styles.subHead}>Last {side.mp} games</Text>
+          {side.games.map((g, i) => (
+            <Line
+              key={`${g.opponentName}-${i}`}
+              text={gameLine(g)}
+              tone={g.outcome === 'W' ? 'good' : g.outcome === 'L' ? 'bad' : 'info'}
+            />
+          ))}
+        </>
+      ) : (
+        <Line text="No finished games in the last-6 window yet" />
+      )}
+    </SideCard>
+  );
+
+  return (
+    <View>
+      <SectorIntro
+        title="Form"
+        note="Last 6 finished league games for T1 and T2 — W/D/L, points, and whether they are taking, mixing, or leaking results."
+      />
+      <Callout text={form.call} tone={form.split ? 'warn' : 'info'} />
+      {block(pd.t1.label, form.t1)}
+      {block(pd.t2.label, form.t2)}
     </View>
   );
 }

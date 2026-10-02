@@ -22,7 +22,7 @@ function streamColor(stream: StreamName): string {
 
 /** Fixed far-right Streamline column so fixture rows stay aligned. */
 export default function StreamlineChip({ stream }: Props) {
-  const streams = asList(stream);
+  const streams = asList(stream).slice(0, 1);
   const label =
     streams.length > 0
       ? `Streamline ${streams.map((s) => STREAM_CHIP[s]).join(', ')}`

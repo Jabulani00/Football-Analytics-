@@ -498,7 +498,12 @@ console.log('\nstreamline');
     t1H2hLosses: 0,
   });
   check('close + compliant stays Bateteme as primary', arsenalLeeds.t1Stream === 'bateteme');
-  check('odds still score Compliant', arsenalLeeds.inStreams.compliant === true && arsenalLeeds.oddsOutcome === 'compliant');
+  check(
+    'close fixture is only Bateteme, even when odds score Compliant',
+    arsenalLeeds.inStreams.bateteme === true &&
+      arsenalLeeds.inStreams.compliant === false &&
+      arsenalLeeds.oddsOutcome === 'compliant',
+  );
   check('high PPG with low odds is not Bookie', arsenalLeeds.inStreams.bookie === false);
   check('draws are on the record', arsenalLeeds.t1H2hDraws === 2);
   check('primary call is Bateteme not Compliant or Bookie', arsenalLeeds.call.includes('Bateteme') && !arsenalLeeds.call.includes('Compliant') && !arsenalLeeds.call.includes('Bookie'));
@@ -599,7 +604,7 @@ console.log('\nstreamline on a fixture matchup');
     }) == null,
   );
   check(
-    'close + T1 shorter 1X2 lists Bateteme and Compliant',
+    'close + T1 shorter 1X2 is Bateteme only',
     JSON.stringify(
       streamsForMatchup({
         table,
@@ -610,7 +615,7 @@ console.log('\nstreamline on a fixture matchup');
         homeOdds: 1.55,
         awayOdds: 5.4,
       }),
-    ) === JSON.stringify(['bateteme', 'compliant']),
+    ) === JSON.stringify(['bateteme']),
   );
   check(
     'T1 never beaten T2 is Zidane Law',
