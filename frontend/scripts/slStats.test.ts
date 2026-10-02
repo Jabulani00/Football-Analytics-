@@ -3,11 +3,14 @@
  */
 import {
   combineMatchQuery,
+  isMidweekKickoff,
   ordinaryMatches,
   rankCornerLeagues,
   rankCornerMatches,
   rankLeagueAverages,
+  rankLeakyFixtures,
   rankOrdinaryTeams,
+  rankSecondHalfFixtures,
   rankSeriesTeams,
   rankTopBoard,
   seriesMatches,
@@ -352,6 +355,225 @@ console.log('\nSL-STATS');
     minimum: 5,
     limit: 1,
   }).length === 1);
+}
+
+function played(options: {
+  team: string;
+  count: number;
+  gf: number;
+  ga: number;
+  home?: boolean;
+  htGf?: number | null;
+  htGa?: number | null;
+  competitionId?: number;
+  competitionName?: string;
+  startUnix: number;
+  scores?: { gf: number; ga: number; htGf?: number | null; htGa?: number | null }[];
+}): FootyFixture[] {
+  return Array.from({ length: options.count }, (_, index) => {
+    const score = options.scores?.[index] ?? { gf: options.gf, ga: options.ga, htGf: options.htGf, htGa: options.htGa };
+    const home = options.home !== false;
+    const htGf = score.htGf === undefined ? 0 : score.htGf;
+    const htGa = score.htGa === undefined ? 0 : score.htGa;
+    return fx({
+      homeName: home ? options.team : `${options.team} opp ${index}`,
+      awayName: home ? `${options.team} opp ${index}` : options.team,
+      homeGoals: home ? score.gf : score.ga,
+      awayGoals: home ? score.ga : score.gf,
+      htHome: htGf == null || htGa == null ? null : home ? htGf : htGa,
+      htAway: htGf == null || htGa == null ? null : home ? htGa : htGf,
+      competitionId: options.competitionId ?? 1,
+      competitionName: options.competitionName ?? 'Premier',
+      unix: options.startUnix + index,
+      finished: true,
+    });
+  });
+}
+
+function upcoming(home: string, away: string, unix: number, competitionId = 1, competitionName = 'Premier'): FootyFixture {
+  return fx({
+    homeName: home,
+    awayName: away,
+    homeGoals: null,
+    awayGoals: null,
+    htHome: null,
+    htAway: null,
+    finished: false,
+    unix,
+    competitionId,
+    competitionName,
+  });
+}
+
+function leakyScores(bttsHits: number, concedeHits: number) {
+  const scores: { gf: number; ga: number }[] = [];
+  for (let index = 0; index < 10; index += 1) {
+    const concede = index < concedeHits;
+    const btts = index < bttsHits;
+    scores.push({ gf: btts || !concede ? 1 : 0, ga: concede ? 1 : 0 });
+  }
+  return scores;
+}
+
+console.log('\nQuick filters');
+{
+  const home = played({ team: 'Alpha', count: 10, gf: 1, ga: 1, startUnix: 1_800_000_000, scores: leakyScores(7, 8) });
+  const away = played({ team: 'Beta', count: 10, gf: 1, ga: 1, home: false, startUnix: 1_800_100_000, scores: leakyScores(6, 8) });
+  const short = played({ team: 'Short', count: 9, gf: 1, ga: 1, startUnix: 1_800_200_000 });
+  const tight = played({ team: 'Tight', count: 10, gf: 1, ga: 0, startUnix: 1_800_300_000 });
+  const open = upcoming('Alpha', 'Beta', 1_900_000_000);
+  const rows = rankLeakyFixtures([...home, ...away, ...short, ...tight], [
+    open,
+    upcoming('Alpha', 'Short', 1_900_000_100),
+    upcoming('Alpha', 'Tight', 1_900_000_200),
+  ]);
+  check('both sides conceding 8 of 10 are listed', rows.some((row) => row.match === 'Alpha vs Beta'));
+  check('fewer than 10 games is left out', rows.every((row) => !row.match.includes('Short')));
+  check('conceding 0 of 10 is left out', rows.every((row) => !row.match.includes('Tight')));
+  const pair = rows.find((row) => row.match === 'Alpha vs Beta');
+  check('a 70% both-teams-to-score rate is marked', pair?.homeBttsPass === true && pair.homeBttsPct === 70);
+  check('a 60% both-teams-to-score rate stays on the list unmarked', pair?.awayBttsPass === false && pair.awayBttsPct === 60);
+
+  const livelyHome = played({
+    team: 'Lively',
+    count: 10,
+    gf: 2,
+    ga: 2,
+    competitionId: 2,
+    competitionName: 'Open',
+    startUnix: 1_810_000_000,
+  });
+  const livelyAway = played({
+    team: 'Loose',
+    count: 10,
+    gf: 2,
+    ga: 2,
+    home: false,
+    competitionId: 2,
+    competitionName: 'Open',
+    startUnix: 1_810_100_000,
+  });
+  const ranked = rankLeakyFixtures(
+    [...home, ...away, ...livelyHome, ...livelyAway],
+    [open, upcoming('Lively', 'Loose', 1_900_000_300, 2, 'Open')],
+  );
+  check('the higher both-teams-to-score model ranks first', ranked[0]?.match === 'Lively vs Loose' && ranked[0].btts > (ranked[1]?.btts ?? 1));
+}
+
+{
+  const day = (weekday: number) => {
+    for (let offset = 0; offset < 14; offset += 1) {
+      const unix = Math.floor(Date.UTC(2026, 0, 1 + offset, 12, 0, 0) / 1000);
+      if (new Date(unix * 1000).getDay() === weekday) return unix;
+    }
+    return 0;
+  };
+  check('Tuesday, Wednesday and Thursday are midweek', [2, 3, 4].every((weekday) => isMidweekKickoff(day(weekday))));
+  check('Monday and Friday are not midweek', !isMidweekKickoff(day(1)) && !isMidweekKickoff(day(5)));
+
+  const openHome = played({ team: 'Host', count: 10, gf: 1, ga: 2, startUnix: 1_820_000_000, competitionId: 5, competitionName: 'High' });
+  const openAway = played({ team: 'Visit', count: 10, gf: 2, ga: 1, home: false, startUnix: 1_820_100_000, competitionId: 5, competitionName: 'High' });
+  const quietHome = played({ team: 'Wall', count: 10, gf: 0, ga: 1, startUnix: 1_830_000_000, competitionId: 6, competitionName: 'Low' });
+  const quietAway = played({ team: 'Poke', count: 10, gf: 1, ga: 0, home: false, startUnix: 1_830_100_000, competitionId: 6, competitionName: 'Low' });
+  const shutHome = played({
+    team: 'Shut',
+    count: 10,
+    gf: 1,
+    ga: 0,
+    htGf: 1,
+    htGa: 0,
+    startUnix: 1_840_000_000,
+    competitionId: 7,
+    competitionName: 'Nil',
+  });
+  const shutAway = played({
+    team: 'Blank',
+    count: 10,
+    gf: 0,
+    ga: 1,
+    home: false,
+    htGf: 0,
+    htGa: 1,
+    startUnix: 1_840_100_000,
+    competitionId: 7,
+    competitionName: 'Nil',
+  });
+  const few = played({ team: 'Nine', count: 9, gf: 1, ga: 2, startUnix: 1_850_000_000, competitionId: 8, competitionName: 'Short' });
+  const fewAway = played({ team: 'Also', count: 10, gf: 2, ga: 1, home: false, startUnix: 1_850_100_000, competitionId: 8, competitionName: 'Short' });
+  const slowAwayScores = [
+    ...Array.from({ length: 5 }, () => ({ gf: 2, ga: 1, htGf: 0, htGa: 0 })),
+    ...Array.from({ length: 3 }, () => ({ gf: 2, ga: 1, htGf: 0, htGa: 0 })),
+    ...Array.from({ length: 2 }, () => ({ gf: 0, ga: 1, htGf: 0, htGa: 0 })),
+  ];
+  const slowAway = played({
+    team: 'Late',
+    count: 10,
+    gf: 0,
+    ga: 1,
+    home: false,
+    startUnix: 1_860_000_000,
+    competitionId: 5,
+    competitionName: 'High',
+    scores: slowAwayScores,
+  });
+  const heavyHome = played({
+    team: 'Early',
+    count: 10,
+    gf: 3,
+    ga: 1,
+    htGf: 3,
+    htGa: 0,
+    startUnix: 1_870_000_000,
+    competitionId: 9,
+    competitionName: 'Early',
+  });
+  const heavyAway = played({
+    team: 'Reply',
+    count: 10,
+    gf: 1,
+    ga: 3,
+    home: false,
+    htGf: 0,
+    htGa: 3,
+    startUnix: 1_870_100_000,
+    competitionId: 9,
+    competitionName: 'Early',
+  });
+  const history = [...openHome, ...openAway, ...quietHome, ...quietAway, ...shutHome, ...shutAway, ...few, ...fewAway, ...slowAway, ...heavyHome, ...heavyAway];
+  const high = upcoming('Host', 'Visit', day(3), 5, 'High');
+  const low = upcoming('Wall', 'Poke', day(1), 6, 'Low');
+  const screened = rankSecondHalfFixtures(history, [
+    high,
+    low,
+    upcoming('Shut', 'Blank', day(3), 7, 'Nil'),
+    upcoming('Nine', 'Also', day(3), 8, 'Short'),
+    upcoming('Host', 'Late', day(3), 5, 'High'),
+    upcoming('Early', 'Reply', day(4), 9, 'Early'),
+  ]);
+  check('a high-scoring second-half match is listed', screened.some((row) => row.match === 'Host vs Visit'));
+  check('a league under 2.5 goals stays out until that league is chosen', screened.every((row) => row.match !== 'Wall vs Poke'));
+  const chosen = rankSecondHalfFixtures([...quietHome, ...quietAway], [low], { competitionId: 6 });
+  check('choosing a league keeps it without the goals-per-game gate', chosen.some((row) => row.match === 'Wall vs Poke'));
+  check('a second half that stays 0-0 is left out', screened.every((row) => row.match !== 'Shut vs Blank'));
+  check('fewer than 10 games is left out of the second-half list', screened.every((row) => row.match !== 'Nine vs Also'));
+  check('scoring in the second half in 3 of the last 5 is left out', screened.every((row) => row.match !== 'Host vs Late'));
+  const listed = screened.find((row) => row.match === 'Host vs Visit');
+  check('the away side’s last 5 goals are the sort figure', listed?.awayGoalsLast5 === 10);
+  check('a Wednesday kickoff is marked midweek', listed?.midweek === true);
+  const early = screened.find((row) => row.match === 'Early vs Reply');
+  check('a first-half-heavy run stays listed and unmarked', early != null && early.homeHeavyPass === false && early.awayHeavyPass === false);
+  const mild = played({
+    team: 'Mild',
+    count: 10,
+    gf: 1,
+    ga: 1,
+    home: false,
+    startUnix: 1_820_200_000,
+    competitionId: 5,
+    competitionName: 'High',
+  });
+  const byGoals = rankSecondHalfFixtures([...openHome, ...openAway, ...mild], [upcoming('Host', 'Mild', day(3), 5, 'High'), high]);
+  check('more away goals in the last 5 ranks first', byGoals[0]?.match === 'Host vs Visit' && byGoals[0].awayGoalsLast5 === 10 && byGoals[1]?.awayGoalsLast5 === 5);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

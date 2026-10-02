@@ -615,17 +615,22 @@ function sideStats(games: FootyFixture[], home: boolean): VenueStats {
   return { scAvg: scored / games.length, concAvg: conceded / games.length, sample: games.length };
 }
 
-function betFromLeague(fx: FootyFixture, league: FootyFixture[]): BestBet | null {
+function fixtureModel(fx: FootyFixture, league: FootyFixture[]) {
   if (league.length === 0) return null;
   const homeGames = league.filter((game) => game.homeName === fx.homeName);
   const awayGames = league.filter((game) => game.awayName === fx.awayName);
   const homeAvg = league.reduce((sum, game) => sum + (game.homeGoals ?? 0), 0) / league.length;
   const awayAvg = league.reduce((sum, game) => sum + (game.awayGoals ?? 0), 0) / league.length;
-  const prediction = predictFromStats(sideStats(homeGames, true), sideStats(awayGames, false), {
+  return predictFromStats(sideStats(homeGames, true), sideStats(awayGames, false), {
     homeAvg,
     awayAvg,
     measured: true,
   });
+}
+
+function betFromLeague(fx: FootyFixture, league: FootyFixture[]): BestBet | null {
+  const prediction = fixtureModel(fx, league);
+  if (!prediction) return null;
   const rec = buildRecommendation({ prediction, homeName: fx.homeName, awayName: fx.awayName });
   if (!rec.best) return null;
   return { market: rec.best.market, selection: rec.best.selection, probability: rec.best.probability };
@@ -810,4 +815,224 @@ export function combineMatchQuery(
   }
 
   return rows.sort((a, b) => (b.combined ?? -1) - (a.combined ?? -1) || a.unix - b.unix).slice(0, 48);
+}
+
+const QUICK_SAMPLE = 10;
+const LEAKY_CONCEDED_HITS = 8;
+const LEAKY_BTTS_MARK = 70;
+const SECOND_HALF_NIL_MAX = 22;
+const SECOND_HALF_HOME_CONCEDED = 60;
+const SECOND_HALF_AWAY_SCORED = 70;
+const SECOND_HALF_AWAY_WINDOW = 5;
+const SECOND_HALF_HEAVY_MARK = 7;
+const SECOND_HALF_LEAGUE_GOALS = 2.5;
+
+type TeamGame = {
+  unix: number;
+  gf: number;
+  ga: number;
+  isHome: boolean;
+  htGf: number | null;
+  htGa: number | null;
+};
+
+function ratePct(hits: number, sample: number): number {
+  return Math.round((hits / sample) * 1000) / 10;
+}
+
+function secondHalfSplit(game: TeamGame): { gf: number; ga: number; first: number; second: number } | null {
+  if (game.htGf == null || game.htGa == null) return null;
+  const gf = game.gf - game.htGf;
+  const ga = game.ga - game.htGa;
+  if (gf < 0 || ga < 0) return null;
+  return { gf, ga, first: game.htGf + game.htGa, second: gf + ga };
+}
+
+/** Newest first. League games in one competition, for one side. */
+function teamHistory(fixtures: FootyFixture[]): Map<string, TeamGame[]> {
+  const map = new Map<string, TeamGame[]>();
+  const finished = fixtures
+    .filter((fx) => fx.finished && fx.homeGoals != null && fx.awayGoals != null && !fx.isFriendly && !fx.isCup)
+    .sort((a, b) => b.unix - a.unix);
+  for (const fx of finished) {
+    const sides: { name: string; gf: number; ga: number; isHome: boolean; htGf: number | null; htGa: number | null }[] = [
+      { name: fx.homeName, gf: fx.homeGoals ?? 0, ga: fx.awayGoals ?? 0, isHome: true, htGf: fx.htHome, htGa: fx.htAway },
+      { name: fx.awayName, gf: fx.awayGoals ?? 0, ga: fx.homeGoals ?? 0, isHome: false, htGf: fx.htAway, htGa: fx.htHome },
+    ];
+    for (const side of sides) {
+      const key = `${fx.competitionId}::${side.name}`;
+      const list = map.get(key) ?? [];
+      list.push({ unix: fx.unix, gf: side.gf, ga: side.ga, isHome: side.isHome, htGf: side.htGf, htGa: side.htGa });
+      map.set(key, list);
+    }
+  }
+  return map;
+}
+
+function goalsPerGame(fixtures: FootyFixture[], competitionId: number): number | null {
+  const games = fixtures.filter(
+    (fx) => fx.finished && fx.competitionId === competitionId && fx.homeGoals != null && fx.awayGoals != null && !fx.isFriendly && !fx.isCup,
+  );
+  if (games.length === 0) return null;
+  const goals = games.reduce((sum, fx) => sum + (fx.homeGoals ?? 0) + (fx.awayGoals ?? 0), 0);
+  return goals / games.length;
+}
+
+function openFixtures(upcoming: FootyFixture[]): FootyFixture[] {
+  return upcoming.filter((fx) => !fx.finished && !fx.isFriendly && !fx.isCup);
+}
+
+export type LeakyRow = {
+  id: number;
+  unix: number;
+  match: string;
+  league: string;
+  btts: number;
+  over15: number;
+  over25: number;
+  homeBttsPct: number;
+  awayBttsPct: number;
+  homeBttsPass: boolean;
+  awayBttsPass: boolean;
+  expectedHome: number;
+  expectedAway: number;
+};
+
+/**
+ * Both teams conceded in at least 8 of their last 10. Ranked by the model
+ * both-teams-to-score probability. The 70% both-teams-to-score marks are
+ * columns, not a reason to drop the fixture.
+ */
+export function rankLeakyFixtures(finished: FootyFixture[], upcoming: FootyFixture[]): LeakyRow[] {
+  const history = teamHistory(finished);
+  const byComp = new Map<number, FootyFixture[]>();
+  for (const game of finished) {
+    if (!game.finished || game.homeGoals == null || game.awayGoals == null) continue;
+    const list = byComp.get(game.competitionId) ?? [];
+    list.push(game);
+    byComp.set(game.competitionId, list);
+  }
+  const rows: LeakyRow[] = [];
+  for (const fx of openFixtures(upcoming)) {
+    const home = history.get(`${fx.competitionId}::${fx.homeName}`) ?? [];
+    const away = history.get(`${fx.competitionId}::${fx.awayName}`) ?? [];
+    if (home.length < QUICK_SAMPLE || away.length < QUICK_SAMPLE) continue;
+    const homeLast = home.slice(0, QUICK_SAMPLE);
+    const awayLast = away.slice(0, QUICK_SAMPLE);
+    const homeConceded = homeLast.filter((game) => game.ga >= 1).length;
+    const awayConceded = awayLast.filter((game) => game.ga >= 1).length;
+    if (homeConceded < LEAKY_CONCEDED_HITS || awayConceded < LEAKY_CONCEDED_HITS) continue;
+    const prediction = fixtureModel(fx, byComp.get(fx.competitionId) ?? []);
+    if (!prediction) continue;
+    const homeBttsPct = ratePct(homeLast.filter((game) => game.gf > 0 && game.ga > 0).length, QUICK_SAMPLE);
+    const awayBttsPct = ratePct(awayLast.filter((game) => game.gf > 0 && game.ga > 0).length, QUICK_SAMPLE);
+    rows.push({
+      id: fx.id,
+      unix: fx.unix,
+      match: `${fx.homeName} vs ${fx.awayName}`,
+      league: fx.competitionName,
+      btts: prediction.btts,
+      over15: prediction.over15,
+      over25: prediction.over25,
+      homeBttsPct,
+      awayBttsPct,
+      homeBttsPass: homeBttsPct >= LEAKY_BTTS_MARK,
+      awayBttsPass: awayBttsPct >= LEAKY_BTTS_MARK,
+      expectedHome: prediction.expectedHome,
+      expectedAway: prediction.expectedAway,
+    });
+  }
+  return rows.sort((a, b) => b.btts - a.btts || a.unix - b.unix).slice(0, SL_LIMIT);
+}
+
+export type SecondHalfRow = {
+  id: number;
+  unix: number;
+  match: string;
+  league: string;
+  awayGoalsLast5: number;
+  homeNilPct: number;
+  awayNilPct: number;
+  homeConcededPct: number;
+  awayScoredPct: number;
+  homeHeavy: number;
+  awayHeavy: number;
+  homeHeavyPass: boolean;
+  awayHeavyPass: boolean;
+  midweek: boolean;
+};
+
+function nilRate(games: TeamGame[]): number | null {
+  const splits = games.map(secondHalfSplit).filter((split): split is NonNullable<typeof split> => split != null);
+  if (splits.length < QUICK_SAMPLE) return null;
+  return ratePct(splits.filter((split) => split.second === 0).length, splits.length);
+}
+
+function heavyCount(games: TeamGame[]): number | null {
+  const recent = games.map(secondHalfSplit).filter((split): split is NonNullable<typeof split> => split != null).slice(0, QUICK_SAMPLE);
+  if (recent.length < QUICK_SAMPLE) return null;
+  return recent.filter((split) => split.second > split.first).length;
+}
+
+/** Tuesday, Wednesday, or Thursday in the same local clock as the kickoff label. */
+export function isMidweekKickoff(unix: number): boolean {
+  const day = new Date(unix * 1000).getDay();
+  return day === 2 || day === 3 || day === 4;
+}
+
+/**
+ * Second-half 0–0 at or below 22% for both sides, home side concedes after
+ * the break in at least 60% of home games, and the away side scores after
+ * the break in at least 70% of their last 5. With no league selected, the
+ * competition must average at least 2.5 goals. Heavy-half and midweek are
+ * columns, not extra cutoffs.
+ */
+export function rankSecondHalfFixtures(
+  finished: FootyFixture[],
+  upcoming: FootyFixture[],
+  options?: { competitionId?: number | null },
+): SecondHalfRow[] {
+  const history = teamHistory(finished);
+  const leagueSelected = options?.competitionId != null;
+  const rows: SecondHalfRow[] = [];
+  for (const fx of openFixtures(upcoming)) {
+    if (!leagueSelected) {
+      const pace = goalsPerGame(finished, fx.competitionId);
+      if (pace == null || pace < SECOND_HALF_LEAGUE_GOALS) continue;
+    }
+    const home = history.get(`${fx.competitionId}::${fx.homeName}`) ?? [];
+    const away = history.get(`${fx.competitionId}::${fx.awayName}`) ?? [];
+    if (home.length < QUICK_SAMPLE || away.length < QUICK_SAMPLE) continue;
+    const homeNil = nilRate(home);
+    const awayNil = nilRate(away);
+    if (homeNil == null || awayNil == null || homeNil > SECOND_HALF_NIL_MAX || awayNil > SECOND_HALF_NIL_MAX) continue;
+    const homeSplits = home.filter((game) => game.isHome).map(secondHalfSplit).filter((split): split is NonNullable<typeof split> => split != null);
+    if (homeSplits.length < QUICK_SAMPLE) continue;
+    const homeConcededPct = ratePct(homeSplits.filter((split) => split.ga >= 1).length, homeSplits.length);
+    if (homeConcededPct < SECOND_HALF_HOME_CONCEDED) continue;
+    const awayRecent = away.map(secondHalfSplit).filter((split): split is NonNullable<typeof split> => split != null).slice(0, SECOND_HALF_AWAY_WINDOW);
+    if (awayRecent.length < SECOND_HALF_AWAY_WINDOW) continue;
+    const awayScoredPct = ratePct(awayRecent.filter((split) => split.gf >= 1).length, SECOND_HALF_AWAY_WINDOW);
+    if (awayScoredPct < SECOND_HALF_AWAY_SCORED) continue;
+    const homeHeavy = heavyCount(home);
+    const awayHeavy = heavyCount(away);
+    if (homeHeavy == null || awayHeavy == null) continue;
+    rows.push({
+      id: fx.id,
+      unix: fx.unix,
+      match: `${fx.homeName} vs ${fx.awayName}`,
+      league: fx.competitionName,
+      awayGoalsLast5: away.slice(0, SECOND_HALF_AWAY_WINDOW).reduce((sum, game) => sum + game.gf, 0),
+      homeNilPct: homeNil,
+      awayNilPct: awayNil,
+      homeConcededPct,
+      awayScoredPct,
+      homeHeavy,
+      awayHeavy,
+      homeHeavyPass: homeHeavy >= SECOND_HALF_HEAVY_MARK,
+      awayHeavyPass: awayHeavy >= SECOND_HALF_HEAVY_MARK,
+      midweek: isMidweekKickoff(fx.unix),
+    });
+  }
+  return rows.sort((a, b) => b.awayGoalsLast5 - a.awayGoalsLast5 || a.unix - b.unix).slice(0, SL_LIMIT);
 }
