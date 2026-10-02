@@ -190,7 +190,8 @@ export default function MatchPowerDynamicsPanel({
     view === 'bhozoma' ||
     view === 'imbangi' ||
     view === 'competition_status' ||
-    view === 'middle_guys';
+    view === 'middle_guys' ||
+    view === 'form';
   const seasonFx = useSeasonFixtures(competition, season, needSeasonFx);
 
   const form = useFixtureFormAnalysis({
@@ -339,8 +340,22 @@ export default function MatchPowerDynamicsPanel({
           </View>,
         );
       case 'form':
-        return formGate(
-          <FormCards pd={pd} homeResults={form.homeResults} awayResults={form.awayResults} />,
+        if (standings.length === 0) {
+          return <Text style={styles.muted}>Need a league table for form.</Text>;
+        }
+        if (!seasonId) {
+          return <Text style={styles.muted}>No season linked to this fixture.</Text>;
+        }
+        return (
+          <FormCards
+            pd={pd}
+            standings={like}
+            matches={seasonFx.matches}
+            loading={seasonFx.loading}
+            error={seasonFx.error}
+            highlightIds={highlightIds}
+            teamLabels={teamLabels}
+          />
         );
       case 'h2h':
         return (

@@ -10,7 +10,12 @@ import {
   gradeResult,
   UKULUMBANA,
 } from '../utils/last5Analysis';
-import { analyseTeamLast6, last6FormForSides } from '../utils/last6Form';
+import {
+  analyseTeamLast6,
+  last6FormFixtureRows,
+  last6FormForSides,
+  last6FormLeagueTable,
+} from '../utils/last6Form';
 import type { TeamResult } from '../utils/teamResults';
 import { teamResultsFromFixtures } from '../utils/teamResults';
 import type { StandingLike } from '../utils/motivationEngine';
@@ -255,6 +260,26 @@ console.log('\nlast 6 form');
   check('T1 better last-6 form when 18 vs 0', pair.split && pair.call.includes('T1 is in better last-6 form'));
   check('empty results is no sample', analyseTeamLast6(1, []) == null);
   check('3 wins in 3 games still strong on PPG', analyseTeamLast6(1, sixW.slice(0, 3))?.band === 'strong');
+
+  const standings: StandingLike[] = [
+    { rank: 1, teamId: 1, name: 'Alpha', points: 20, played: 8, zone: 'top' },
+    { rank: 2, teamId: 2, name: 'Bravo', points: 14, played: 8, zone: 'mid' },
+    { rank: 3, teamId: 3, name: 'Charlie', points: 6, played: 8, zone: 'bottom' },
+  ];
+  const season = [
+    { homeId: 1, awayId: 2, homeGoals: 2, awayGoals: 0, unix: 6 },
+    { homeId: 3, awayId: 1, homeGoals: 0, awayGoals: 1, unix: 5 },
+    { homeId: 2, awayId: 3, homeGoals: 1, awayGoals: 1, unix: 4 },
+    { homeId: 1, awayId: 3, homeGoals: 3, awayGoals: 0, unix: 3 },
+    { homeId: 2, awayId: 1, homeGoals: 0, awayGoals: 2, unix: 2 },
+    { homeId: 3, awayId: 2, homeGoals: 2, awayGoals: 0, unix: 1 },
+  ];
+  const league = last6FormLeagueTable(standings, season);
+  check('full table has every side', league.length === 3 && league[0]?.teamId === 1);
+  check('Alpha last-6 is 4 wins', league[0]?.form?.won === 4 && league[0]?.form?.points === 12);
+  const fixtureOnly = last6FormFixtureRows(league, [1, 2]);
+  check('this fixture lists only those two sides', fixtureOnly.length === 2 && fixtureOnly[0]?.teamId === 1 && fixtureOnly[1]?.teamId === 2);
+  check('Charlie is not on the fixture table', fixtureOnly.every((r) => r.teamId !== 3));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

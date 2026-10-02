@@ -3,6 +3,8 @@
  * in their most recent six finished league games.
  */
 
+import type { SeasonMatch } from '@/utils/bhozomaEngine';
+import type { StandingLike } from '@/utils/motivationEngine';
 import {
   lastN,
   pointsFromOutcomes,
@@ -76,6 +78,20 @@ export const LAST6_TREND_LABEL: Record<Last6Trend, string> = {
   picking_up: 'Picking up — last 3 better than the 3 before',
   dropping: 'Dropping off — last 3 worse than the 3 before',
   steady: 'Steady across the last 6',
+};
+
+export const LAST6_TREND_SHORT: Record<Last6Trend, string> = {
+  picking_up: 'Up',
+  dropping: 'Down',
+  steady: 'Steady',
+};
+
+export type Last6LeagueRow = {
+  teamId: number;
+  name: string;
+  rank: number;
+  zone: 'top' | 'mid' | 'bottom' | undefined;
+  form: TeamLast6Form | null;
 };
 
 export function last6Band(points: number, mp: number): Last6FormBand {
@@ -240,4 +256,78 @@ export function last6FormForSides(opts: {
   const t1 = analyseTeamLast6(opts.t1TeamId, opts.t1Results);
   const t2 = analyseTeamLast6(opts.t2TeamId, opts.t2Results);
   return compareLast6Form(t1, t2, opts.t1Label, opts.t2Label);
+}
+
+function outcomeOf(gf: number, ga: number): ResultOutcome {
+  if (gf > ga) return 'W';
+  if (gf < ga) return 'L';
+  return 'D';
+}
+
+/** Finished season matches as a newest-first result feed for one side. */
+export function resultsFromSeasonMatches(
+  teamId: number,
+  matches: SeasonMatch[],
+  standings: StandingLike[],
+): TeamResult[] {
+  const rankById = new Map(standings.map((s) => [s.teamId, s.rank]));
+  const nameById = new Map(standings.map((s) => [s.teamId, s.name]));
+  const teamRank = rankById.get(teamId) ?? null;
+  const out: TeamResult[] = [];
+
+  for (const m of matches) {
+    const isHome = m.homeId === teamId;
+    const isAway = m.awayId === teamId;
+    if (!isHome && !isAway) continue;
+    const gf = isHome ? m.homeGoals : m.awayGoals;
+    const ga = isHome ? m.awayGoals : m.homeGoals;
+    const oppId = isHome ? m.awayId : m.homeId;
+    const oppRank = rankById.get(oppId) ?? null;
+    out.push({
+      fixtureId: m.unix * 10_000 + m.homeId * 10 + (isHome ? 1 : 2),
+      unix: m.unix,
+      teamId,
+      opponentId: oppId,
+      opponentName: nameById.get(oppId) ?? `#${oppId}`,
+      isHome,
+      gf,
+      ga,
+      outcome: outcomeOf(gf, ga),
+      opponentRank: oppRank,
+      teamRank,
+      opponentAbove: teamRank != null && oppRank != null ? oppRank < teamRank : null,
+      goalDiff: gf - ga,
+    });
+  }
+
+  return out.sort((a, b) => b.unix - a.unix || b.fixtureId - a.fixtureId);
+}
+
+/** Last-6 form for every side on the league table, table order. */
+export function last6FormLeagueTable(
+  standings: StandingLike[],
+  matches: SeasonMatch[],
+): Last6LeagueRow[] {
+  return [...standings]
+    .sort((a, b) => a.rank - b.rank)
+    .map((row) => ({
+      teamId: row.teamId,
+      name: row.name,
+      rank: row.rank,
+      zone: row.zone,
+      form: analyseTeamLast6(row.teamId, resultsFromSeasonMatches(row.teamId, matches, standings)),
+    }));
+}
+
+/** Fixture form table: only the sides in this match, T1 then T2 order. */
+export function last6FormFixtureRows(table: Last6LeagueRow[], teamIds: number[]): Last6LeagueRow[] {
+  const seen = new Set<number>();
+  const out: Last6LeagueRow[] = [];
+  for (const id of teamIds) {
+    if (!Number.isFinite(id) || seen.has(id)) continue;
+    seen.add(id);
+    const row = table.find((r) => r.teamId === id);
+    if (row) out.push(row);
+  }
+  return out;
 }
