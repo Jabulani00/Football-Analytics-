@@ -17,6 +17,7 @@ import {
   GapAnalysisCards,
   IndlelaCards,
   Last5Cards,
+  FormCards,
   MiddleGuysCards,
   PointsDiffCards,
   SectorIntro,
@@ -31,7 +32,7 @@ import { useFixtureFormAnalysis } from '@/hooks/useFixtureFormAnalysis';
 import { useSeasonFixtures } from '@/hooks/useSeasonFixtures';
 import { useFixtureBook1x2 } from '@/hooks/useFixtureBook1x2';
 import type { Competition, H2HMatch, OddsByMarket, Probability, StandingRow } from '@/services/oddAlerts';
-import { evaluatePowerDynamics, ftOdds, STREAM_ORDER } from '@/utils/powerDynamicsEngine';
+import { evaluatePowerDynamics, ftOdds } from '@/utils/powerDynamicsEngine';
 import { findUkulumbana } from '@/utils/last5Analysis';
 import type { StandingLike } from '@/utils/motivationEngine';
 import { fonts, spacing, theme } from '@/styles/theme';
@@ -41,6 +42,7 @@ export const POWER_DYNAMICS_TABS = [
   { id: 'baseline', label: '1. Baseline' },
   { id: 'importance_3pts', label: '2. Importance of 3 pts' },
   { id: 'last5', label: '3. Last 5' },
+  { id: 'form', label: 'Form' },
   { id: 'h2h', label: '4. H2H' },
   { id: 'form_child_beater', label: '5. Form + Child beater' },
   { id: 'home_away_strong', label: '6. Home/Away strong' },
@@ -188,7 +190,8 @@ export default function MatchPowerDynamicsPanel({
     view === 'bhozoma' ||
     view === 'imbangi' ||
     view === 'competition_status' ||
-    view === 'middle_guys';
+    view === 'middle_guys' ||
+    view === 'form';
   const seasonFx = useSeasonFixtures(competition, season, needSeasonFx);
 
   const form = useFixtureFormAnalysis({
@@ -278,7 +281,7 @@ export default function MatchPowerDynamicsPanel({
                 <SubTabBar
                   tabs={[...STREAMLINE_SUBS]}
                   active={streamlineSub}
-                  highlighted={STREAM_ORDER.filter((id) => pd.streamline.inStreams[id])}
+                  highlighted={pd.streamline.t1Stream}
                   onChange={(id) => setStreamlineSub(id)}
                 />
                 <StreamlineCards pd={pd} focus={streamlineSub} />
@@ -335,6 +338,24 @@ export default function MatchPowerDynamicsPanel({
               </Text>
             ))}
           </View>,
+        );
+      case 'form':
+        if (standings.length === 0) {
+          return <Text style={styles.muted}>Need a league table for form.</Text>;
+        }
+        if (!seasonId) {
+          return <Text style={styles.muted}>No season linked to this fixture.</Text>;
+        }
+        return (
+          <FormCards
+            pd={pd}
+            standings={like}
+            matches={seasonFx.matches}
+            loading={seasonFx.loading}
+            error={seasonFx.error}
+            highlightIds={highlightIds}
+            teamLabels={teamLabels}
+          />
         );
       case 'h2h':
         return (

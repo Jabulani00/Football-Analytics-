@@ -66,7 +66,7 @@ export type FixtureStreamInputs = {
 };
 
 /**
- * Same Streamline membership as Power Dynamics on the match screen.
+ * The one Streamline this fixture falls under — same engine as Power Dynamics.
  * Needs the same table + H2H + 1X2 inputs — do not invent a stream without them.
  */
 export function streamForFixture(

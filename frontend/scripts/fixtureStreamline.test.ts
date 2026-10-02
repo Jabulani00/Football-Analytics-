@@ -115,10 +115,8 @@ console.log('\nchip matches Power Dynamics');
   const closeBook = streamForFixture(fx({ id: 31, status: 'NS' }), table, {
     book1x2: { home: 1.55, away: 5.4 },
   });
-  check(
-    'close + T1 shorter lists Bateteme and Compliant',
-    closeBook.join(',') === 'bateteme,compliant',
-  );
+  check('close + T1 shorter is Bateteme only', closeBook.join(',') === 'bateteme');
+  check('a fixture never lists two streams', closeBook.length === 1);
 }
 
 console.log('\nsame-season H2H from finished list');

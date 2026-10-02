@@ -30,7 +30,18 @@ import {
   type VenueRead,
 } from '@/utils/powerDynamicsEngine';
 import { CHANGE_LABEL, OPTION_LABEL, type TeamLast5 } from '@/utils/last5Analysis';
-import { GRADE_LABEL, STANCE_LABEL } from '@/utils/motivationEngine';
+import {
+  LAST6_BAND_LABEL,
+  LAST6_TREND_SHORT,
+  compareLast6Form,
+  last6FormFixtureRows,
+  last6FormLeagueTable,
+  type Last6FormBand,
+  type Last6LeagueRow,
+} from '@/utils/last6Form';
+import type { SeasonMatch } from '@/utils/bhozomaEngine';
+import { GRADE_LABEL, STANCE_LABEL, type StandingLike } from '@/utils/motivationEngine';
+import SubTabBar from '@/components/shared/SubTabBar';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
 function toneColor(t: Tone): string {
@@ -353,7 +364,7 @@ export function StreamlineCards({
   const inFocus = focus != null && s.inStreams[focus];
   const introNote =
     focus == null
-      ? 'Order: Bateteme stream, Compliant stream, Zidane Law, Bookie mistake, Bookie mistake 2.'
+      ? 'One stream per fixture. Order: Bateteme, Compliant, Zidane Law, Bookie mistake, Bookie mistake 2.'
       : focus === 'zidane_law' || focus === 'bookie' || focus === 'bookie2'
         ? focus === 'bookie2'
           ? `${ZIDANE_PPG_ODDS_RULE}. No H2H games were found.`
@@ -491,6 +502,172 @@ export function Last5Cards({
     <View>
       {block(pd.t1.label, t1Team, pd.lastGame.t1)}
       {block(pd.t2.label, t2Team, pd.lastGame.t2)}
+    </View>
+  );
+}
+
+function last6Tone(band: Last6FormBand): Tone {
+  if (band === 'strong') return 'good';
+  if (band === 'poor') return 'bad';
+  return 'warn';
+}
+
+const FORM_SUBS = [
+  { id: 'table', label: 'Full table' },
+  { id: 'fixture', label: 'This fixture' },
+] as const;
+
+type FormSubId = (typeof FORM_SUBS)[number]['id'];
+
+function FormCell({
+  children,
+  style,
+  tone,
+}: {
+  children: string;
+  style?: object;
+  tone?: Tone;
+}) {
+  return (
+    <Text style={[styles.formTd, style, tone ? { color: toneColor(tone) } : null]} numberOfLines={1}>
+      {children}
+    </Text>
+  );
+}
+
+function FormDataRow({
+  row,
+  highlight,
+  extraLabel,
+}: {
+  row: Last6LeagueRow;
+  highlight?: boolean;
+  extraLabel?: string;
+}) {
+  const f = row.form;
+  return (
+    <View style={[styles.formRow, highlight && styles.formRowFocus, row.zone === 'mid' && styles.formRowMid]}>
+      <FormCell style={styles.formPos}>{String(row.rank)}</FormCell>
+      <View style={styles.formTeam}>
+        <Text style={styles.formTeamName} numberOfLines={1}>
+          {extraLabel ?? row.name}
+        </Text>
+        {f ? (
+          <Text style={styles.formScores} numberOfLines={1}>
+            {f.games.map((g) => `${g.gf}-${g.ga}`).join(' · ')}
+          </Text>
+        ) : null}
+      </View>
+      <FormCell style={styles.formSeq}>{f ? f.sequence.join(' ') : '—'}</FormCell>
+      <FormCell style={styles.formNum}>{f ? String(f.mp) : '—'}</FormCell>
+      <FormCell style={styles.formWdl}>{f ? `${f.won}-${f.drawn}-${f.lost}` : '—'}</FormCell>
+      <FormCell style={styles.formNum}>{f ? String(f.points) : '—'}</FormCell>
+      <FormCell style={styles.formNum}>{f?.ppg != null ? f.ppg.toFixed(2) : '—'}</FormCell>
+      <FormCell style={styles.formNum}>
+        {f ? `${f.gd >= 0 ? '+' : ''}${f.gd}` : '—'}
+      </FormCell>
+      <FormCell style={styles.formRead} tone={f ? last6Tone(f.band) : undefined}>
+        {f ? LAST6_BAND_LABEL[f.band] : 'No sample'}
+      </FormCell>
+      <FormCell
+        style={styles.formTrend}
+        tone={f?.trend === 'picking_up' ? 'good' : f?.trend === 'dropping' ? 'bad' : 'info'}>
+        {f ? LAST6_TREND_SHORT[f.trend] : '—'}
+      </FormCell>
+    </View>
+  );
+}
+
+export function FormCards({
+  pd,
+  standings,
+  matches,
+  loading,
+  error,
+  highlightIds,
+  teamLabels,
+}: {
+  pd: PowerDynamicsBundle;
+  standings: StandingLike[];
+  matches: SeasonMatch[];
+  loading?: boolean;
+  error?: string | null;
+  highlightIds?: number[];
+  teamLabels?: Record<number, string>;
+}) {
+  const [sub, setSub] = useState<FormSubId>('fixture');
+  const table = last6FormLeagueTable(standings, matches);
+  const fixtureIds = (highlightIds ?? [pd.t1.teamId, pd.t2.teamId]).filter(
+    (id): id is number => id != null && Number.isFinite(id),
+  );
+  const fixtureRows = last6FormFixtureRows(table, fixtureIds);
+  const highlightSet = new Set(fixtureIds);
+  const t1Row = table.find((r) => r.teamId === pd.t1.teamId);
+  const t2Row = table.find((r) => r.teamId === pd.t2.teamId);
+  const pair = compareLast6Form(t1Row?.form ?? null, t2Row?.form ?? null, pd.t1.label, pd.t2.label);
+  const rows = sub === 'table' ? table : fixtureRows;
+
+  if (loading) {
+    return (
+      <View>
+        <SectorIntro title="Form" note="Last 6 finished league games." />
+        <Text style={styles.note}>Building last-6 form from season results…</Text>
+      </View>
+    );
+  }
+  if (error) {
+    return (
+      <View>
+        <SectorIntro title="Form" />
+        <Text style={styles.note}>{error}</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View>
+      <SectorIntro
+        title="Form"
+        note="Last 6 finished league games. Full table is every side; This fixture is only T1 and T2."
+      />
+      <SubTabBar tabs={[...FORM_SUBS]} active={sub} onChange={setSub} />
+      {sub === 'fixture' ? <Callout text={pair.call} tone={pair.split ? 'warn' : 'info'} /> : null}
+      {sub === 'table' && fixtureRows.length > 0 ? (
+        <Text style={styles.note}>
+          Fixture sides highlighted
+          {fixtureRows.map((r) => ` · ${teamLabels?.[r.teamId] ?? r.name} (#${r.rank})`).join('')}
+        </Text>
+      ) : null}
+      {matches.length === 0 ? (
+        <Text style={styles.note}>No finished season fixtures loaded yet.</Text>
+      ) : rows.length === 0 ? (
+        <Text style={styles.note}>No sides to show on this form table.</Text>
+      ) : (
+        <ScrollView horizontal showsHorizontalScrollIndicator>
+          <View style={styles.formTable}>
+            <View style={[styles.formRow, styles.formHead]}>
+              <Text style={[styles.formTh, styles.formPos]}>#</Text>
+              <Text style={[styles.formTh, styles.formTeam]}>Team</Text>
+              <Text style={[styles.formTh, styles.formSeq]}>Last 6</Text>
+              <Text style={[styles.formTh, styles.formNum]}>MP</Text>
+              <Text style={[styles.formTh, styles.formWdl]}>W-D-L</Text>
+              <Text style={[styles.formTh, styles.formNum]}>Pts</Text>
+              <Text style={[styles.formTh, styles.formNum]}>PPG</Text>
+              <Text style={[styles.formTh, styles.formNum]}>GD</Text>
+              <Text style={[styles.formTh, styles.formRead]}>Read</Text>
+              <Text style={[styles.formTh, styles.formTrend]}>Trend</Text>
+            </View>
+            {rows.map((r) => (
+              <FormDataRow
+                key={r.teamId}
+                row={r}
+                highlight={highlightSet.has(r.teamId)}
+                extraLabel={teamLabels?.[r.teamId]}
+              />
+            ))}
+          </View>
+        </ScrollView>
+      )}
     </View>
   );
 }
@@ -1058,4 +1235,40 @@ const styles = StyleSheet.create({
   modalGradeCurrent: {
     color: theme.accentBlue,
   },
+  formTable: {
+    backgroundColor: theme.surface,
+    borderWidth: layout.borderWidth,
+    borderColor: theme.border,
+    borderRadius: layout.borderRadius,
+    overflow: 'hidden',
+    minWidth: 28 + 150 + 88 + 32 + 52 + 36 + 44 + 36 + 110 + 52,
+  },
+  formRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 40,
+    borderBottomWidth: layout.borderWidth,
+    borderBottomColor: theme.border,
+    paddingHorizontal: spacing.xs,
+  },
+  formHead: { backgroundColor: theme.surfaceMuted, minHeight: 32 },
+  formRowFocus: { backgroundColor: 'rgba(37, 99, 235, 0.08)' },
+  formRowMid: { backgroundColor: 'rgba(217, 119, 6, 0.05)' },
+  formTh: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 10,
+    color: theme.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  formTd: { fontFamily: fonts.body, fontSize: 12, color: theme.textPrimary },
+  formPos: { width: 28, textAlign: 'center', fontFamily: fonts.bodySemiBold },
+  formTeam: { width: 150, paddingRight: spacing.xs },
+  formTeamName: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: theme.textPrimary },
+  formScores: { fontFamily: fonts.body, fontSize: 9, color: theme.textFaint, marginTop: 1 },
+  formSeq: { width: 88, fontFamily: fonts.bodySemiBold },
+  formNum: { width: 36, textAlign: 'center' },
+  formWdl: { width: 52, textAlign: 'center' },
+  formRead: { width: 110, paddingHorizontal: 4, fontFamily: fonts.bodySemiBold, fontSize: 11 },
+  formTrend: { width: 52, textAlign: 'center', fontFamily: fonts.bodySemiBold },
 });

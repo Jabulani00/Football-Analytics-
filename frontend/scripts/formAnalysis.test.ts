@@ -10,6 +10,12 @@ import {
   gradeResult,
   UKULUMBANA,
 } from '../utils/last5Analysis';
+import {
+  analyseTeamLast6,
+  last6FormFixtureRows,
+  last6FormForSides,
+  last6FormLeagueTable,
+} from '../utils/last6Form';
 import type { TeamResult } from '../utils/teamResults';
 import { teamResultsFromFixtures } from '../utils/teamResults';
 import type { StandingLike } from '../utils/motivationEngine';
@@ -195,6 +201,85 @@ console.log('\nleague-only results (no cups)');
   const thisSeason = teamResultsFromFixtures(list, 1, null, { competitionId: 423, seasonId: 2263973 });
   check('last-season league game dropped', thisSeason.length === 2);
   check('this-season games only', thisSeason.every((r) => r.seasonId === 2263973));
+}
+
+console.log('\nlast 6 form');
+{
+  const sixW: TeamResult[] = Array.from({ length: 6 }, (_, i) =>
+    res({ outcome: 'W', isHome: i % 2 === 0, unix: 10 - i, fixtureId: i + 1, opponentAbove: false }),
+  );
+  const hot = analyseTeamLast6(1, sixW);
+  check('6 wins is strong', hot?.band === 'strong' && hot.points === 18);
+  check('6 wins WDL is 6-0-0', hot?.won === 6 && hot.drawn === 0 && hot.lost === 0);
+
+  const sixL: TeamResult[] = Array.from({ length: 6 }, (_, i) =>
+    res({ outcome: 'L', isHome: true, unix: 10 - i, fixtureId: i + 1 }),
+  );
+  const cold = analyseTeamLast6(1, sixL);
+  check('6 losses is poor', cold?.band === 'poor' && cold.points === 0);
+
+  const mixed: TeamResult[] = [
+    res({ outcome: 'W', isHome: true, unix: 6, fixtureId: 1 }),
+    res({ outcome: 'D', isHome: false, unix: 5, fixtureId: 2 }),
+    res({ outcome: 'W', isHome: true, unix: 4, fixtureId: 3 }),
+    res({ outcome: 'L', isHome: false, unix: 3, fixtureId: 4 }),
+    res({ outcome: 'D', isHome: true, unix: 2, fixtureId: 5 }),
+    res({ outcome: 'L', isHome: false, unix: 1, fixtureId: 6 }),
+  ];
+  const mid = analyseTeamLast6(1, mixed);
+  check('2W 2D 2L is mixed 8 pts', mid?.band === 'mixed' && mid.points === 8, `band=${mid?.band} pts=${mid?.points}`);
+
+  const pickup: TeamResult[] = [
+    res({ outcome: 'W', isHome: true, unix: 6, fixtureId: 1 }),
+    res({ outcome: 'W', isHome: true, unix: 5, fixtureId: 2 }),
+    res({ outcome: 'W', isHome: true, unix: 4, fixtureId: 3 }),
+    res({ outcome: 'L', isHome: true, unix: 3, fixtureId: 4 }),
+    res({ outcome: 'L', isHome: true, unix: 2, fixtureId: 5 }),
+    res({ outcome: 'L', isHome: true, unix: 1, fixtureId: 6 }),
+  ];
+  check('WWW then LLL (newest first) is picking up', analyseTeamLast6(1, pickup)?.trend === 'picking_up');
+
+  const drop: TeamResult[] = [
+    res({ outcome: 'L', isHome: true, unix: 6, fixtureId: 1 }),
+    res({ outcome: 'L', isHome: true, unix: 5, fixtureId: 2 }),
+    res({ outcome: 'L', isHome: true, unix: 4, fixtureId: 3 }),
+    res({ outcome: 'W', isHome: true, unix: 3, fixtureId: 4 }),
+    res({ outcome: 'W', isHome: true, unix: 2, fixtureId: 5 }),
+    res({ outcome: 'W', isHome: true, unix: 1, fixtureId: 6 }),
+  ];
+  check('LLL then WWW (newest first) is dropping', analyseTeamLast6(1, drop)?.trend === 'dropping');
+
+  const pair = last6FormForSides({
+    t1TeamId: 1,
+    t2TeamId: 2,
+    t1Results: sixW,
+    t2Results: sixL,
+    t1Label: 'T1',
+    t2Label: 'T2',
+  });
+  check('T1 better last-6 form when 18 vs 0', pair.split && pair.call.includes('T1 is in better last-6 form'));
+  check('empty results is no sample', analyseTeamLast6(1, []) == null);
+  check('3 wins in 3 games still strong on PPG', analyseTeamLast6(1, sixW.slice(0, 3))?.band === 'strong');
+
+  const standings: StandingLike[] = [
+    { rank: 1, teamId: 1, name: 'Alpha', points: 20, played: 8, zone: 'top' },
+    { rank: 2, teamId: 2, name: 'Bravo', points: 14, played: 8, zone: 'mid' },
+    { rank: 3, teamId: 3, name: 'Charlie', points: 6, played: 8, zone: 'bottom' },
+  ];
+  const season = [
+    { homeId: 1, awayId: 2, homeGoals: 2, awayGoals: 0, unix: 6 },
+    { homeId: 3, awayId: 1, homeGoals: 0, awayGoals: 1, unix: 5 },
+    { homeId: 2, awayId: 3, homeGoals: 1, awayGoals: 1, unix: 4 },
+    { homeId: 1, awayId: 3, homeGoals: 3, awayGoals: 0, unix: 3 },
+    { homeId: 2, awayId: 1, homeGoals: 0, awayGoals: 2, unix: 2 },
+    { homeId: 3, awayId: 2, homeGoals: 2, awayGoals: 0, unix: 1 },
+  ];
+  const league = last6FormLeagueTable(standings, season);
+  check('full table has every side', league.length === 3 && league[0]?.teamId === 1);
+  check('Alpha last-6 is 4 wins', league[0]?.form?.won === 4 && league[0]?.form?.points === 12);
+  const fixtureOnly = last6FormFixtureRows(league, [1, 2]);
+  check('this fixture lists only those two sides', fixtureOnly.length === 2 && fixtureOnly[0]?.teamId === 1 && fixtureOnly[1]?.teamId === 2);
+  check('Charlie is not on the fixture table', fixtureOnly.every((r) => r.teamId !== 3));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
