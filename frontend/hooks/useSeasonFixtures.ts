@@ -11,6 +11,7 @@ import {
 import { clientStaleTime } from '@/services/oddAlertsCachePolicy';
 import { oddAlertsKeys } from '@/services/oddAlertsKeys';
 import type { SeasonMatch } from '@/utils/bhozomaEngine';
+import type { ImbangiScheduleMatch } from '@/utils/imbangiEngine';
 
 function parseHtScore(ht: string | null | undefined): { home: number; away: number } | null {
   if (!ht) return null;
@@ -21,6 +22,7 @@ function parseHtScore(ht: string | null | undefined): { home: number; away: numb
 
 type State = {
   matches: SeasonMatch[];
+  schedule: ImbangiScheduleMatch[];
   loading: boolean;
   error: string | null;
 };
@@ -62,14 +64,24 @@ export function useSeasonFixtures(
     staleTime: clientStaleTime('fixtures/between'),
   });
 
-  const matches = useMemo(() => {
-    if (!active || !query.data || !season) return [];
+  const { matches, schedule } = useMemo(() => {
+    if (!active || !query.data || !season) return { matches: [] as SeasonMatch[], schedule: [] as ImbangiScheduleMatch[] };
     const rows: SeasonMatch[] = [];
+    const cards: ImbangiScheduleMatch[] = [];
     for (const fixture of query.data) {
-      if (normaliseStatus(fixture.status) !== 'FT') continue;
       if (fixture.home_id == null || fixture.away_id == null) continue;
-      if (fixture.home_goals == null || fixture.away_goals == null) continue;
       if (fixture.season_id != null && fixture.season_id !== season.seasonId) continue;
+      const status = normaliseStatus(fixture.status);
+      cards.push({
+        homeId: fixture.home_id,
+        awayId: fixture.away_id,
+        unix: fixture.unix,
+        finished: status === 'FT',
+        homeGoals: fixture.home_goals,
+        awayGoals: fixture.away_goals,
+      });
+      if (status !== 'FT') continue;
+      if (fixture.home_goals == null || fixture.away_goals == null) continue;
       const ht = parseHtScore(fixture.ht_score);
       const usable = ht != null && ht.home <= fixture.home_goals && ht.away <= fixture.away_goals;
       rows.push({
@@ -82,13 +94,14 @@ export function useSeasonFixtures(
         unix: fixture.unix,
       });
     }
-    return rows;
+    return { matches: rows, schedule: cards };
   }, [active, query.data, season]);
 
-  if (!active) return { matches: [], loading: false, error: null };
+  if (!active) return { matches: [], schedule: [], loading: false, error: null };
 
   return {
     matches,
+    schedule,
     loading: query.isPending,
     error:
       query.error instanceof Error

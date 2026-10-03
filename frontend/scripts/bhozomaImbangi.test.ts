@@ -9,7 +9,13 @@ import {
   BHOZOMA_MIN_MP,
   type SeasonMatch,
 } from '../utils/bhozomaEngine';
-import { buildImbangiTable, leagueProgressInfo } from '../utils/imbangiEngine';
+import {
+  buildImbangiTable,
+  gradeImbangiRow,
+  lastTeamResult,
+  leagueProgressInfo,
+  sameDayMotivation,
+} from '../utils/imbangiEngine';
 import type { StandingLike } from '../utils/motivationEngine';
 
 let passed = 0;
@@ -252,6 +258,63 @@ console.log('\nSection 9 — Imbangi + progress');
 
   const withScore = imb.rows.find((r) => r.teamId === 3 && r.opponentId === 2);
   check('last meeting score filled when played', withScore?.lastScore != null, `${withScore?.lastScore}`);
+
+  const wide = gradeImbangiRow({
+    pointsDiff: 5,
+    teamId: 3,
+    teamLastResult: 'L',
+    oppLastResult: 'W',
+    sameDay: { sameDay: false, motivated: false, motivatedId: null },
+  });
+  check('ΔP 5 has no grade', wide.grade == null);
+
+  const gradeC = gradeImbangiRow({
+    pointsDiff: 4,
+    teamId: 3,
+    teamLastResult: 'W',
+    oppLastResult: 'D',
+    sameDay: { sameDay: false, motivated: false, motivatedId: null },
+  });
+  check('ΔP ≤ 4 is grade C', gradeC.grade === 'C');
+
+  const gradeB = gradeImbangiRow({
+    pointsDiff: 2,
+    teamId: 3,
+    teamLastResult: 'L',
+    oppLastResult: 'W',
+    sameDay: { sameDay: false, motivated: false, motivatedId: null },
+  });
+  check('ΔP ≤ 4 + a last-game loss is grade B', gradeB.grade === 'B');
+
+  const day = 1_700_000_000;
+  const sameDay = sameDayMotivation(
+    3,
+    4,
+    [
+      { homeId: 4, awayId: 6, unix: day, finished: true, homeGoals: 2, awayGoals: 0 },
+      { homeId: 3, awayId: 5, unix: day + 3600, finished: false, homeGoals: null, awayGoals: null },
+    ],
+    day + 100,
+  );
+  check('same-day first win motivates the later side', sameDay.motivated && sameDay.motivatedId === 3);
+  const gradeA = gradeImbangiRow({
+    pointsDiff: 2,
+    teamId: 3,
+    teamLastResult: 'L',
+    oppLastResult: 'W',
+    sameDay,
+  });
+  check('motivated side is grade A over B', gradeA.grade === 'A');
+  const firstSide = gradeImbangiRow({
+    pointsDiff: 2,
+    teamId: 4,
+    teamLastResult: 'W',
+    oppLastResult: 'L',
+    sameDay: { ...sameDay, motivatedId: 3 },
+  });
+  check('already-won same-day side is not A', firstSide.grade === 'B');
+
+  check('Charlie last finished game is a win', lastTeamResult(3, matches) === 'W');
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

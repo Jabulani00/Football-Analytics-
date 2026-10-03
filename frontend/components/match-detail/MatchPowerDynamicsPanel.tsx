@@ -440,6 +440,7 @@ export default function MatchPowerDynamicsPanel({
           <ImbangiView
             standings={like}
             matches={seasonFx.matches}
+            schedule={seasonFx.schedule}
             loading={seasonFx.loading}
             error={seasonFx.error}
             seasonProgress={seasonProgress}

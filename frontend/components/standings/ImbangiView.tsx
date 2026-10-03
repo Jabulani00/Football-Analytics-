@@ -3,8 +3,11 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-nat
 import type { SeasonMatch } from '@/utils/bhozomaEngine';
 import {
   buildImbangiTable,
+  IMBANGI_GRADE_PTS,
   IMBANGI_TIGHT_PTS,
+  type ImbangiGrade,
   type ImbangiRow,
+  type ImbangiScheduleMatch,
 } from '@/utils/imbangiEngine';
 import type { StandingLike } from '@/utils/motivationEngine';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
@@ -12,6 +15,7 @@ import { fonts, layout, spacing, theme } from '@/styles/theme';
 type Props = {
   standings: StandingLike[];
   matches: SeasonMatch[];
+  schedule?: ImbangiScheduleMatch[];
   loading: boolean;
   error: string | null;
   seasonProgress?: number | null;
@@ -35,6 +39,13 @@ function Cell({
       {children}
     </Text>
   );
+}
+
+function gradeColor(g: ImbangiGrade | null): string {
+  if (g === 'A') return theme.accentGreen;
+  if (g === 'B') return theme.accentOrange;
+  if (g === 'C') return theme.accentBlue;
+  return theme.textMuted;
 }
 
 function resultColor(r: ImbangiRow['lastResult']): string {
@@ -102,6 +113,9 @@ function DataRow({
         color={row.tight ? theme.accentOrange : theme.textMuted}>
         {row.tight ? 'Tight' : 'Wide'}
       </Cell>
+      <Cell style={styles.cGrade} color={gradeColor(row.grade)}>
+        {row.grade ?? '—'}
+      </Cell>
     </View>
   );
 }
@@ -112,6 +126,7 @@ function DataRow({
 export default function ImbangiView({
   standings,
   matches,
+  schedule,
   loading,
   error,
   seasonProgress,
@@ -130,10 +145,13 @@ export default function ImbangiView({
   if (error) return <Text style={styles.muted}>{error}</Text>;
   if (standings.length === 0) return <Text style={styles.muted}>No standings.</Text>;
 
-  const table = buildImbangiTable(standings, matches, seasonProgress);
+  const table = buildImbangiTable(standings, matches, seasonProgress, schedule ?? []);
   const { progress } = table;
   const competition = competitionName?.trim() || 'League';
   const tightCount = table.closest.filter((r) => r.tight).length;
+  const gradeA = table.closest.filter((r) => r.grade === 'A').length;
+  const gradeB = table.closest.filter((r) => r.grade === 'B').length;
+  const gradeC = table.closest.filter((r) => r.grade === 'C').length;
   const sortedTable = [...standings].sort((a, b) => a.rank - b.rank);
   const first = sortedTable.find((r) => r.rank === 1) ?? sortedTable[0] ?? null;
   const second = sortedTable.find((r) => r.rank === 2) ?? sortedTable[1] ?? null;
@@ -141,13 +159,29 @@ export default function ImbangiView({
     first && second && first.points != null && second.points != null
       ? Math.abs(first.points - second.points)
       : null;
+  const titlePair = table.rows.filter(
+    (r) =>
+      (r.position === 1 && r.opponentPosition === 2) ||
+      (r.position === 2 && r.opponentPosition === 1),
+  );
+  const titleGrade: ImbangiGrade | null = titlePair.some((r) => r.grade === 'A')
+    ? 'A'
+    : titlePair.some((r) => r.grade === 'B')
+      ? 'B'
+      : titlePair.some((r) => r.grade === 'C')
+        ? 'C'
+        : null;
+  const titleReason =
+    titlePair.find((r) => r.grade === titleGrade)?.gradeReason ??
+    (titleGap != null && titleGap > IMBANGI_GRADE_PTS ? `ΔP ${titleGap} — outside the grade band` : null);
 
   return (
     <View>
       <Text style={styles.blurb}>
         Imbangi compares each team to the neighbour one place above and one place below.
-        Smaller ΔP (points difference) means a tighter fight — {IMBANGI_TIGHT_PTS} pts or less
-        is marked Tight. Last meeting is from that team’s lens (score, W/D/L, points taken).
+        Smaller ΔP means a tighter fight — {IMBANGI_TIGHT_PTS} pts or less is Tight.
+        Grades: C when ΔP ≤ {IMBANGI_GRADE_PTS}; B if one side lost their last game; A if both
+        play the same day, the first side already won, and this side still has to play.
       </Text>
 
       <View style={[styles.progressCard, progress.lateStretch && styles.progressLate]}>
@@ -184,8 +218,16 @@ export default function ImbangiView({
       </View>
 
       {first && second ? (
-        <View style={styles.titleCard}>
-          <Text style={styles.titleEyebrow}>1st vs 2nd</Text>
+        <View style={[styles.titleCard, titleGrade === 'A' && styles.titleCardA]}>
+          <View style={styles.titleHead}>
+            <Text style={styles.titleEyebrow}>1st vs 2nd</Text>
+            <View style={styles.titleGradeBox}>
+              <Text style={[styles.titleGrade, { color: gradeColor(titleGrade) }]}>
+                {titleGrade ?? '—'}
+              </Text>
+              <Text style={styles.titleGradeCap}>grade</Text>
+            </View>
+          </View>
           <View style={styles.titleRow}>
             <View style={styles.titleSide}>
               <Text style={styles.titlePlace}>#1</Text>
@@ -206,11 +248,14 @@ export default function ImbangiView({
               <Text style={styles.titlePts}>{second.points} pts</Text>
             </View>
           </View>
+          {titleReason ? <Text style={styles.titleReason}>{titleReason}</Text> : null}
         </View>
       ) : null}
 
       <Text style={styles.summary}>
         {table.closest.length} neighbour pairs · {tightCount} tight (ΔP ≤ {IMBANGI_TIGHT_PTS})
+        {' · '}
+        A {gradeA} · B {gradeB} · C {gradeC}
         {matches.length === 0 ? ' · no finished fixtures loaded yet for last meetings' : ''}
       </Text>
 
@@ -233,6 +278,7 @@ export default function ImbangiView({
             <Text style={[styles.th, styles.cRes]}>Res</Text>
             <Text style={[styles.th, styles.cNum]}>LP</Text>
             <Text style={[styles.th, styles.cInterest]}>Interest</Text>
+            <Text style={[styles.th, styles.cGrade]}>Grade</Text>
           </View>
 
           {table.closest.length === 0 ? (
@@ -254,6 +300,7 @@ export default function ImbangiView({
 
       <Text style={styles.legend}>
         LP = points taken by the team in the last meeting (3 / 1 / 0). Sorted by closest ΔP first.
+        Grade A is only on the side that still has to play after their neighbour won the same day.
       </Text>
     </View>
   );
@@ -341,7 +388,7 @@ const styles = StyleSheet.create({
     borderColor: theme.border,
     borderRadius: layout.borderRadius,
     overflow: 'hidden',
-    minWidth: 980,
+    minWidth: 1024,
   },
   row: {
     flexDirection: 'row',
@@ -372,13 +419,46 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
     marginBottom: spacing.md,
   },
+  titleCardA: { borderColor: theme.accentGreen },
+  titleHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.xs,
+  },
   titleEyebrow: {
     fontFamily: fonts.bodySemiBold,
     fontSize: 10,
     color: theme.yellow,
     textTransform: 'uppercase',
     letterSpacing: 0.6,
-    marginBottom: spacing.xs,
+  },
+  titleGradeBox: {
+    minWidth: 52,
+    alignItems: 'center',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: layout.borderRadius,
+    backgroundColor: theme.surfaceMuted,
+  },
+  titleGrade: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 18,
+    lineHeight: 22,
+  },
+  titleGradeCap: {
+    fontFamily: fonts.body,
+    fontSize: 8,
+    color: theme.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  titleReason: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: theme.textMuted,
+    marginTop: spacing.xs,
+    lineHeight: 15,
   },
   titleRow: {
     flexDirection: 'row',
@@ -448,4 +528,5 @@ const styles = StyleSheet.create({
   cScore: { width: 88, textAlign: 'center' },
   cRes: { width: 36, textAlign: 'center', fontFamily: fonts.bodySemiBold },
   cInterest: { width: 56, textAlign: 'center', fontFamily: fonts.bodySemiBold },
+  cGrade: { width: 44, textAlign: 'center', fontFamily: fonts.bodySemiBold },
 });

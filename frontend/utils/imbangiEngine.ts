@@ -9,8 +9,22 @@ import {
 } from '@/utils/motivationEngine';
 import type { SeasonMatch } from '@/utils/bhozomaEngine';
 
-/** ΔP at or below this = tight Imbangi fight. */
-export const IMBANGI_TIGHT_PTS = 3;
+/** ΔP at or below this = tight Imbangi fight + grade band. */
+export const IMBANGI_TIGHT_PTS = 4;
+/** Same threshold as tight — C / B / A only fire at this gap or closer. */
+export const IMBANGI_GRADE_PTS = 4;
+
+export type ImbangiGrade = 'A' | 'B' | 'C';
+
+/** League fixtures used to spot same-day neighbour cards. */
+export type ImbangiScheduleMatch = {
+  homeId: number;
+  awayId: number;
+  unix: number;
+  finished: boolean;
+  homeGoals: number | null;
+  awayGoals: number | null;
+};
 
 export type ImbangiRow = {
   teamId: number;
@@ -34,8 +48,13 @@ export type ImbangiRow = {
   lastPtsForTeam: number | null;
   lastUnix: number | null;
   lastDate: string | null;
+  /** Each side’s last finished league game (any opponent). */
+  teamLastResult: 'W' | 'D' | 'L' | null;
+  oppLastResult: 'W' | 'D' | 'L' | null;
   /** True when pointsDiff ≤ IMBANGI_TIGHT_PTS. */
   tight: boolean;
+  grade: ImbangiGrade | null;
+  gradeReason: string | null;
 };
 
 export type LeagueProgressInfo = {
@@ -97,6 +116,115 @@ function lastMeeting(
   };
 }
 
+function resultFromScore(teamId: number, homeId: number, awayId: number, homeGoals: number, awayGoals: number): 'W' | 'D' | 'L' | null {
+  const asHome = homeId === teamId;
+  if (!asHome && awayId !== teamId) return null;
+  const gf = asHome ? homeGoals : awayGoals;
+  const ga = asHome ? awayGoals : homeGoals;
+  if (gf > ga) return 'W';
+  if (gf < ga) return 'L';
+  return 'D';
+}
+
+export function lastTeamResult(
+  teamId: number,
+  matches: SeasonMatch[],
+): 'W' | 'D' | 'L' | null {
+  let best: SeasonMatch | null = null;
+  for (const m of matches) {
+    if (m.homeId !== teamId && m.awayId !== teamId) continue;
+    if (!best || m.unix > best.unix) best = m;
+  }
+  if (!best) return null;
+  return resultFromScore(teamId, best.homeId, best.awayId, best.homeGoals, best.awayGoals);
+}
+
+function involves(teamId: number, m: ImbangiScheduleMatch): boolean {
+  return m.homeId === teamId || m.awayId === teamId;
+}
+
+function calendarDay(unix: number): string {
+  return formatDate(unix);
+}
+
+function todayKey(nowUnix?: number): string {
+  const unix = nowUnix ?? Math.floor(Date.now() / 1000);
+  return calendarDay(unix);
+}
+
+/**
+ * Same-day neighbour cards. Prefers today; otherwise the latest day both played.
+ * Grade A: earlier kickoff finished as a win, later card is still not finished.
+ */
+export function sameDayMotivation(
+  teamId: number,
+  oppId: number,
+  schedule: ImbangiScheduleMatch[],
+  nowUnix?: number,
+): { sameDay: boolean; motivated: boolean; firstWonId: number | null; motivatedId: number | null } {
+  const empty = { sameDay: false, motivated: false, firstWonId: null, motivatedId: null };
+  const byDay = new Map<string, { team: ImbangiScheduleMatch | null; opp: ImbangiScheduleMatch | null }>();
+
+  for (const m of schedule) {
+    const teamIn = involves(teamId, m);
+    const oppIn = involves(oppId, m);
+    if (!teamIn && !oppIn) continue;
+    if (teamIn && oppIn) continue;
+    const day = calendarDay(m.unix);
+    const slot = byDay.get(day) ?? { team: null, opp: null };
+    if (teamIn && (!slot.team || m.unix > slot.team.unix)) slot.team = m;
+    if (oppIn && (!slot.opp || m.unix > slot.opp.unix)) slot.opp = m;
+    byDay.set(day, slot);
+  }
+
+  const bothDays = [...byDay.entries()].filter(([, s]) => s.team && s.opp);
+  if (bothDays.length === 0) return empty;
+
+  const today = todayKey(nowUnix);
+  const picked = bothDays.find(([day]) => day === today) ?? bothDays.sort((a, b) => b[0].localeCompare(a[0]))[0];
+  const teamCard = picked[1].team;
+  const oppCard = picked[1].opp;
+  if (!teamCard || !oppCard) return empty;
+  if (teamCard.unix === oppCard.unix) return { sameDay: true, motivated: false, firstWonId: null, motivatedId: null };
+
+  const first = teamCard.unix < oppCard.unix ? teamCard : oppCard;
+  const second = teamCard.unix < oppCard.unix ? oppCard : teamCard;
+  const firstId = involves(teamId, first) ? teamId : oppId;
+  const secondId = involves(teamId, second) ? teamId : oppId;
+  if (!first.finished || first.homeGoals == null || first.awayGoals == null || second.finished) {
+    return { sameDay: true, motivated: false, firstWonId: null, motivatedId: null };
+  }
+  const firstResult = resultFromScore(firstId, first.homeId, first.awayId, first.homeGoals, first.awayGoals);
+  if (firstResult !== 'W') {
+    return { sameDay: true, motivated: false, firstWonId: null, motivatedId: null };
+  }
+  return { sameDay: true, motivated: true, firstWonId: firstId, motivatedId: secondId };
+}
+
+export function gradeImbangiRow(opts: {
+  pointsDiff: number;
+  teamId: number;
+  teamLastResult: 'W' | 'D' | 'L' | null;
+  oppLastResult: 'W' | 'D' | 'L' | null;
+  sameDay: { sameDay: boolean; motivated: boolean; motivatedId: number | null };
+}): { grade: ImbangiGrade | null; reason: string | null } {
+  if (opts.pointsDiff > IMBANGI_GRADE_PTS) return { grade: null, reason: null };
+
+  if (opts.sameDay.motivated && opts.sameDay.motivatedId === opts.teamId) {
+    return {
+      grade: 'A',
+      reason: 'ΔP ≤ 4 · same-day cards · neighbour already won · this side is motivated',
+    };
+  }
+  if (opts.teamLastResult === 'L' || opts.oppLastResult === 'L') {
+    return {
+      grade: 'B',
+      reason: 'ΔP ≤ 4 · one side lost their last game',
+    };
+  }
+  return { grade: 'C', reason: 'ΔP ≤ 4' };
+}
+
 /**
  * One Imbangi row per team vs the neighbour immediately above and below
  * (when they exist). Sorted later by pointsDiff ascending.
@@ -105,9 +233,12 @@ export function buildImbangiRows(
   standings: StandingLike[],
   matches: SeasonMatch[],
   seasonProgress?: number | null,
+  schedule: ImbangiScheduleMatch[] = [],
+  nowUnix?: number,
 ): ImbangiRow[] {
   const sorted = [...standings].sort((a, b) => a.rank - b.rank);
   const byRank = new Map(sorted.map((r) => [r.rank, r]));
+  const lastById = new Map(sorted.map((r) => [r.teamId, lastTeamResult(r.teamId, matches)]));
   const rows: ImbangiRow[] = [];
 
   for (const team of sorted) {
@@ -118,6 +249,16 @@ export function buildImbangiRows(
       if (!opp) continue;
       const meet = lastMeeting(team.teamId, opp.teamId, matches);
       const pointsDiff = Math.abs(team.points - opp.points);
+      const teamLastResult = lastById.get(team.teamId) ?? null;
+      const oppLastResult = lastById.get(opp.teamId) ?? null;
+      const sameDay = sameDayMotivation(team.teamId, opp.teamId, schedule, nowUnix);
+      const graded = gradeImbangiRow({
+        pointsDiff,
+        teamId: team.teamId,
+        teamLastResult,
+        oppLastResult,
+        sameDay,
+      });
       rows.push({
         teamId: team.teamId,
         teamName: team.name,
@@ -136,7 +277,11 @@ export function buildImbangiRows(
         lastPtsForTeam: meet?.pts ?? null,
         lastUnix: meet?.unix ?? null,
         lastDate: meet?.date ?? null,
+        teamLastResult,
+        oppLastResult,
         tight: pointsDiff <= IMBANGI_TIGHT_PTS,
+        grade: graded.grade,
+        gradeReason: graded.reason,
       });
     }
   }
@@ -184,8 +329,10 @@ export function buildImbangiTable(
   standings: StandingLike[],
   matches: SeasonMatch[],
   seasonProgress?: number | null,
+  schedule: ImbangiScheduleMatch[] = [],
+  nowUnix?: number,
 ): ImbangiTable {
-  const rows = buildImbangiRows(standings, matches, seasonProgress);
+  const rows = buildImbangiRows(standings, matches, seasonProgress, schedule, nowUnix);
   const closest = [...rows].sort((a, b) => {
     if (a.pointsDiff !== b.pointsDiff) return a.pointsDiff - b.pointsDiff;
     return a.position - b.position;
