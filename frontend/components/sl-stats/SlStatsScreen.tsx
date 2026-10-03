@@ -46,7 +46,9 @@ import {
   rankCornerLeagues,
   rankCornerMatches,
   rankLeagueAverages,
+  rankLeakyFixtures,
   rankOrdinaryTeams,
+  rankSecondHalfFixtures,
   rankSeriesTeams,
   rankTopBoard,
   seriesMatches,
@@ -63,6 +65,7 @@ type AnalysisId =
   | 'goals'
   | 'wdw'
   | 'halves'
+  | 'filters'
   | 'both'
   | 'clean'
   | 'score'
@@ -78,6 +81,7 @@ const ANALYSES: { value: AnalysisId; label: string; blurb: string }[] = [
   { value: 'goals', label: 'Over and under goals', blurb: 'Share of matches over or under a goal line.' },
   { value: 'wdw', label: 'Win, draw and loss', blurb: 'Win, draw and loss rates, with the best bet on each upcoming match.' },
   { value: 'halves', label: 'First half and second half goals', blurb: 'Goals scored in one half. Only matches with a half-time score count.' },
+  { value: 'filters', label: 'Quick filters', blurb: 'Leaky Leaky and Second Half Delight, from the matches already loaded on this page.' },
   { value: 'both', label: 'Scored in both halves', blurb: 'A side scores before the break and again after it.' },
   { value: 'clean', label: 'Clean sheets', blurb: 'Matches with no goal conceded. A team needs at least 7 matches.' },
   { value: 'score', label: 'Correct score', blurb: 'The full-time scorelines that have come up most often.' },
@@ -106,6 +110,11 @@ const BTTS_RESULTS: { value: '' | BttsSplit; label: string }[] = [
   { value: 'win', label: 'Both teams to score and win' },
   { value: 'draw', label: 'Both teams to score and draw' },
   { value: 'loss', label: 'Both teams to score and lose' },
+];
+
+const QUICK_SYSTEMS: { value: 'leaky' | 'second'; label: string }[] = [
+  { value: 'leaky', label: 'Leaky Leaky' },
+  { value: 'second', label: 'Second Half Delight' },
 ];
 
 const HALF_CHOICES: { value: '' | HalfSide; label: string }[] = [
@@ -225,6 +234,7 @@ export default function SlStatsScreen({ onBack }: { onBack: () => void }) {
   const [scope, setScope] = useState<Scope>('overall');
   const [bttsResult, setBttsResult] = useState<'' | BttsSplit>('');
   const [half, setHalf] = useState<'' | HalfSide>('');
+  const [quickSystem, setQuickSystem] = useState<'leaky' | 'second'>('leaky');
   const [goalLine, setGoalLine] = useState<GoalLine>(2.5);
   const [goalSide, setGoalSide] = useState<GoalSide>('over');
   const [bothMode, setBothMode] = useState<BothHalvesMode>('team');
@@ -376,6 +386,9 @@ export default function SlStatsScreen({ onBack }: { onBack: () => void }) {
           {analysis === 'halves' ? (
             <FilterDropdown style={narrow ? styles.filterFull : undefined} label="Half" value={half || 'first'} options={HALF_CHOICES.filter((item) => item.value !== '')} onChange={(value) => setHalf(value as HalfSide)} />
           ) : null}
+          {analysis === 'filters' ? (
+            <FilterDropdown style={narrow ? styles.filterFull : undefined} label="System" value={quickSystem} options={QUICK_SYSTEMS} onChange={(value) => setQuickSystem(value as 'leaky' | 'second')} />
+          ) : null}
           {analysis === 'both' ? (
             <FilterDropdown style={narrow ? styles.filterFull : undefined} label="Both halves" value={bothMode} options={BOTH_MODES} onChange={(value) => setBothMode(value as BothHalvesMode)} />
           ) : null}
@@ -426,6 +439,8 @@ export default function SlStatsScreen({ onBack }: { onBack: () => void }) {
                 query={query}
                 bttsResult={bttsResult}
                 half={half}
+                quickSystem={quickSystem}
+                competitionId={leagueId ? Number(leagueId) : null}
                 goalLine={goalLine}
                 goalSide={goalSide}
                 bothMode={bothMode}
@@ -807,6 +822,8 @@ function AnalysisBody(props: {
   query: { country: string | null; competitionId: number | null; kind: CompetitionKind; scope: Scope };
   bttsResult: '' | BttsSplit;
   half: '' | HalfSide;
+  quickSystem: 'leaky' | 'second';
+  competitionId: number | null;
   goalLine: GoalLine;
   goalSide: GoalSide;
   bothMode: BothHalvesMode;
@@ -915,6 +932,113 @@ function AnalysisBody(props: {
         <Block dropdown title="Upcoming matches" note="Next 48 hours. The best bet is the same pick shown on a fixture.">
           <UpcomingList rows={lines(props.upcoming, () => '')} />
         </Block>
+      </>
+    );
+  }
+
+  if (props.analysis === 'filters') {
+    const betFor = (id: number) => {
+      const fx = props.upcoming.find((item) => item.id === id);
+      if (!fx) return null;
+      return props.bets.get(id) ?? bestBetForFixture(fx, props.finished);
+    };
+    if (props.quickSystem === 'leaky') {
+      const rows = rankLeakyFixtures(props.finished, props.upcoming);
+      return (
+        <>
+          <Text style={styles.note}>Both teams conceded in at least 8 of their last 10. Listed by the model both-teams-to-score probability. A 70% recent rate is marked and does not remove a match.</Text>
+          <StatsTable
+            columns={[
+              { key: 'rank', label: '#', flex: 0.4 },
+              { key: 'ko', label: 'Kickoff', flex: 1.1 },
+              { key: 'match', label: 'Match', flex: 1.6 },
+              { key: 'league', label: 'League', flex: 1.2 },
+              { key: 'figure', label: 'BTTS', flex: 0.7 },
+              { key: 'over15', label: 'Over 1.5', flex: 0.8 },
+              { key: 'over25', label: 'Over 2.5', flex: 0.8 },
+              { key: 'home', label: 'Home BTTS', flex: 0.9 },
+              { key: 'away', label: 'Away BTTS', flex: 0.9 },
+              { key: 'xg', label: 'Expected goals', flex: 1.1 },
+            ]}
+            empty="No upcoming match has both teams conceding in at least 8 of their last 10."
+            rows={rows.map((row, index) => ({
+              id: String(row.id),
+              cells: {
+                rank: String(index + 1),
+                ko: kickoff(row.unix),
+                match: row.match,
+                league: row.league,
+                figure: `${Math.round(row.btts * 100)}%`,
+                over15: `${Math.round(row.over15 * 100)}%`,
+                over25: `${Math.round(row.over25 * 100)}%`,
+                home: `${row.homeBttsPct.toFixed(1)}% · ${row.homeBttsPass ? 'yes' : 'no'}`,
+                away: `${row.awayBttsPct.toFixed(1)}% · ${row.awayBttsPass ? 'yes' : 'no'}`,
+                xg: `${row.expectedHome.toFixed(1)}–${row.expectedAway.toFixed(1)}`,
+              },
+            }))}
+          />
+          <View style={styles.matchList}>
+            {rows.map((row) => (
+              <View key={row.id} style={styles.matchCard}>
+                <Text style={styles.matchKo}>{kickoff(row.unix)}</Text>
+                <Text style={styles.matchTitle}>{row.match}</Text>
+                <BestBetLine bet={betFor(row.id)} />
+              </View>
+            ))}
+          </View>
+        </>
+      );
+    }
+    const rows = rankSecondHalfFixtures(props.finished, props.upcoming, { competitionId: props.competitionId });
+    const empty = props.competitionId != null
+      ? 'No upcoming match in this league has both teams at or below a 22% second-half 0–0 rate, a home side conceding in the second half in at least 60% of home games, and an away side scoring in the second half in at least 70% of their last 5.'
+      : 'No upcoming match has both teams at or below a 22% second-half 0–0 rate, a home side conceding in the second half in at least 60% of home games, and an away side scoring in the second half in at least 70% of their last 5. Competitions also need at least 2.5 goals per game unless one league is selected.';
+    return (
+      <>
+        <Text style={styles.note}>Second-half 0–0 at or below 22% for both teams, home side concedes after the break in at least 60% of home games, and the away side scores after the break in at least 70% of their last 5. Listed by the away side’s goals in those last 5. A second-half-heavy run and a midweek kickoff are marked and do not remove a match.</Text>
+        <StatsTable
+          columns={[
+            { key: 'rank', label: '#', flex: 0.4 },
+            { key: 'ko', label: 'Kickoff', flex: 1.1 },
+            { key: 'match', label: 'Match', flex: 1.6 },
+            { key: 'league', label: 'League', flex: 1.2 },
+            { key: 'figure', label: 'Away goals, last 5', flex: 1 },
+            { key: 'homeNil', label: 'Home 2H 0–0', flex: 0.9 },
+            { key: 'awayNil', label: 'Away 2H 0–0', flex: 0.9 },
+            { key: 'homeConc', label: 'Home 2H conceded', flex: 1 },
+            { key: 'awaySc', label: 'Away 2H scored', flex: 1 },
+            { key: 'homeHeavy', label: 'Home 2nd half', flex: 0.9 },
+            { key: 'awayHeavy', label: 'Away 2nd half', flex: 0.9 },
+            { key: 'midweek', label: 'Midweek', flex: 0.7 },
+          ]}
+          empty={empty}
+          rows={rows.map((row, index) => ({
+            id: String(row.id),
+            cells: {
+              rank: String(index + 1),
+              ko: kickoff(row.unix),
+              match: row.match,
+              league: row.league,
+              figure: String(row.awayGoalsLast5),
+              homeNil: `${row.homeNilPct.toFixed(1)}%`,
+              awayNil: `${row.awayNilPct.toFixed(1)}%`,
+              homeConc: `${row.homeConcededPct.toFixed(1)}%`,
+              awaySc: `${row.awayScoredPct.toFixed(1)}%`,
+              homeHeavy: `${row.homeHeavy}/10 · ${row.homeHeavyPass ? 'yes' : 'no'}`,
+              awayHeavy: `${row.awayHeavy}/10 · ${row.awayHeavyPass ? 'yes' : 'no'}`,
+              midweek: row.midweek ? 'Yes' : 'No',
+            },
+          }))}
+        />
+        <View style={styles.matchList}>
+          {rows.map((row) => (
+            <View key={row.id} style={styles.matchCard}>
+              <Text style={styles.matchKo}>{kickoff(row.unix)}</Text>
+              <Text style={styles.matchTitle}>{row.match}</Text>
+              <BestBetLine bet={betFor(row.id)} />
+            </View>
+          ))}
+        </View>
       </>
     );
   }
