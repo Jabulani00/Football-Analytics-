@@ -16,6 +16,17 @@ export const IMBANGI_GRADE_PTS = 4;
 
 export type ImbangiGrade = 'A' | 'B' | 'C';
 
+export const IMBANGI_GRADE_SCORE: Record<ImbangiGrade, number> = {
+  A: 10,
+  B: 8,
+  C: 6,
+};
+
+export function imbangiGradeScore(grade: ImbangiGrade | null | undefined): number | null {
+  if (grade == null) return null;
+  return IMBANGI_GRADE_SCORE[grade];
+}
+
 /** League fixtures used to spot same-day neighbour cards. */
 export type ImbangiScheduleMatch = {
   homeId: number;

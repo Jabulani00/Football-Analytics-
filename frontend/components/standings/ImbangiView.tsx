@@ -5,6 +5,7 @@ import {
   buildImbangiTable,
   IMBANGI_GRADE_PTS,
   IMBANGI_TIGHT_PTS,
+  imbangiGradeScore,
   type ImbangiGrade,
   type ImbangiRow,
   type ImbangiScheduleMatch,
@@ -132,7 +133,7 @@ function DataRow({
         {row.tight ? 'Tight' : 'Wide'}
       </Cell>
       <Cell style={styles.cGrade} color={gradeColor(row.grade)}>
-        {row.grade ?? '—'}
+        {row.grade ? `${row.grade} ${imbangiGradeScore(row.grade)}` : '—'}
       </Cell>
     </View>
   );
@@ -199,8 +200,8 @@ export default function ImbangiView({
       <Text style={styles.blurb}>
         Imbangi compares each team to the neighbour one place above and one place below.
         Smaller ΔP means a tighter fight — {IMBANGI_TIGHT_PTS} pts or less is Tight.
-        Grades: C when ΔP ≤ {IMBANGI_GRADE_PTS}; B names the side that lost their last game;
-        A if both play the same day, the first side already won, and this side still has to play.
+        Grades: C (6) when ΔP ≤ {IMBANGI_GRADE_PTS}; B (8) names the side that lost their last game;
+        A (10) if both play the same day, the first side already won, and this side still has to play.
       </Text>
 
       <View style={[styles.progressCard, progress.lateStretch && styles.progressLate]}>
@@ -244,7 +245,9 @@ export default function ImbangiView({
               <Text style={[styles.titleGrade, { color: gradeColor(titleGrade) }]}>
                 {titleGrade ?? '—'}
               </Text>
-              <Text style={styles.titleGradeCap}>grade</Text>
+              <Text style={styles.titleGradeCap}>
+                {titleGrade != null ? `${imbangiGradeScore(titleGrade)} pts` : 'grade'}
+              </Text>
             </View>
           </View>
           <View style={styles.titleRow}>
@@ -567,5 +570,5 @@ const styles = StyleSheet.create({
   cScore: { width: 88, textAlign: 'center' },
   cRes: { width: 36, textAlign: 'center', fontFamily: fonts.bodySemiBold },
   cInterest: { width: 56, textAlign: 'center', fontFamily: fonts.bodySemiBold },
-  cGrade: { width: 44, textAlign: 'center', fontFamily: fonts.bodySemiBold },
+  cGrade: { width: 56, textAlign: 'center', fontFamily: fonts.bodySemiBold },
 });

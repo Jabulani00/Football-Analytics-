@@ -4,7 +4,7 @@
  */
 import type { H2HMatch } from '../services/oddAlerts';
 import { h2hOutcomeForTeam } from '../utils/h2hDisplay';
-import { evaluateH2HOptions, formatNeverBeatenSequence, h2hGradeGuide, hasBeenBeaten, isNikaNikaRecord, matchPolarSequences, neverBeatGrade, outcomeForSide, polarEdgeGrade } from '../utils/h2hOptions';
+import { evaluateH2HOptions, formatNeverBeatenSequence, h2hGradeGuide, h2hGradeScore, hasBeenBeaten, isNikaNikaRecord, matchPolarSequences, neverBeatGrade, outcomeForSide, polarEdgeGrade } from '../utils/h2hOptions';
 import { evaluateHiddenLayers, polarityCounts, problemPatternFor } from '../utils/hiddenLayers';
 import type { StandingLike } from '../utils/motivationEngine';
 import type { TeamResult } from '../utils/teamResults';
@@ -229,6 +229,7 @@ console.log('\nSection 7 — H2H options');
 
 console.log('\nSection 7 — numbered H2H says + never-beat grades');
 {
+  check('H2H A=10 B=7 C=4', h2hGradeScore('A') === 10 && h2hGradeScore('B') === 7 && h2hGradeScore('C') === 4);
   check('5W is Grade A', neverBeatGrade(5, 5, 0) === 'A');
   check('4W1D is Grade A', neverBeatGrade(5, 4, 1) === 'A');
   check('3W2D is Grade A', neverBeatGrade(5, 3, 2) === 'A');

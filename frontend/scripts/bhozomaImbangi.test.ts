@@ -12,6 +12,7 @@ import {
 import {
   buildImbangiTable,
   gradeImbangiRow,
+  imbangiGradeScore,
   lastTeamResult,
   leagueProgressInfo,
   sameDayMotivation,
@@ -276,6 +277,7 @@ console.log('\nSection 9 — Imbangi + progress');
     sameDay: { sameDay: false, motivated: false, motivatedId: null },
   });
   check('ΔP ≤ 4 is grade C', gradeC.grade === 'C');
+  check('A=10 B=8 C=6', imbangiGradeScore('A') === 10 && imbangiGradeScore('B') === 8 && imbangiGradeScore('C') === 6);
 
   const gradeB = gradeImbangiRow({
     pointsDiff: 2,

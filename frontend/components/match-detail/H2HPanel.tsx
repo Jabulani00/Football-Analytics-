@@ -20,6 +20,7 @@ import {
 import {
   evaluateH2HOptions,
   h2hGradeGuide,
+  h2hGradeScore,
   type H2HGrade,
   type H2HGradeGuideKind,
   type H2HOptionTag,
@@ -205,9 +206,11 @@ function SayBlock({
             }}
             disabled={!block.gradeKind}
             accessibilityRole="button"
-            accessibilityLabel={`Grade ${block.grade} definition`}>
+            accessibilityLabel={`Grade ${block.grade} ${h2hGradeScore(block.grade)} definition`}>
             <View style={[styles.gradePill, { borderColor: gradeColor(block.grade) }]}>
-              <Text style={[styles.gradeText, { color: gradeColor(block.grade) }]}>Grade {block.grade}</Text>
+              <Text style={[styles.gradeText, { color: gradeColor(block.grade) }]}>
+                Grade {block.grade} · {h2hGradeScore(block.grade)}
+              </Text>
             </View>
           </Pressable>
         ) : null}
@@ -275,7 +278,7 @@ function GradeGuideModal({
                   return (
                     <View key={row.grade} style={[styles.modalGrade, active && styles.modalGradeOn]}>
                       <Text style={[styles.modalGradeLabel, { color: gradeColor(row.grade) }]}>
-                        Grade {row.grade}
+                        Grade {row.grade} · {h2hGradeScore(row.grade)}
                       </Text>
                       {row.lines.map((line) => (
                         <Text key={line} style={styles.modalLine}>

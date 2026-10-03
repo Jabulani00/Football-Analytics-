@@ -34,6 +34,17 @@ export type PolarSequenceHit = {
 
 export type H2HGrade = 'A' | 'B' | 'C';
 
+export const H2H_GRADE_SCORE: Record<H2HGrade, number> = {
+  A: 10,
+  B: 7,
+  C: 4,
+};
+
+export function h2hGradeScore(grade: H2HGrade | null | undefined): number | null {
+  if (grade == null) return null;
+  return H2H_GRADE_SCORE[grade];
+}
+
 export type H2HSayBlock = {
   n: 1 | 2 | 3 | 4;
   id: string;
