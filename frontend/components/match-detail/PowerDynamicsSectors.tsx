@@ -10,11 +10,13 @@ import {
   STREAM_LABEL,
   STREAM_ROLE,
   ZIDANE_PPG_ODDS_RULE,
-  positionGapScale,
+  baselineGapFor,
   colourWord,
+  evaluatePositionGap,
   fmtGapScore,
   fmtPct,
   fmtPpg,
+  positionGapScale,
   wdl,
   type BaselineGap,
   type ChildBeaterSide,
@@ -36,6 +38,7 @@ import {
   compareLast6Form,
   last6FormFixtureRows,
   last6FormLeagueTable,
+  last6FormStandings,
   type Last6FormBand,
   type Last6LeagueRow,
 } from '@/utils/last6Form';
@@ -226,7 +229,15 @@ function PositionGapBoard({ pd }: { pd: PowerDynamicsBundle }) {
   );
 }
 
-export function BaselineCards({ pd }: { pd: PowerDynamicsBundle }) {
+export function BaselineCards({
+  pd,
+  title = 'Baseline — original state',
+  note = 'Natural table state before separators. T1 is the better table side (points, then GD, then goals scored); T2 is who they face. A–F types come from the G-grade: k/(N−1), then 100 minus that percentage, on the 0–10 gap scale.',
+}: {
+  pd: PowerDynamicsBundle;
+  title?: string;
+  note?: string;
+}) {
   const gap = pd.baselineGap;
   const row = (s: SideSnapshot, letter: typeof gap.t1) => (
     <SideCard
@@ -242,10 +253,7 @@ export function BaselineCards({ pd }: { pd: PowerDynamicsBundle }) {
   );
   return (
     <View>
-      <SectorIntro
-        title="Baseline — original state"
-        note="Natural table state before separators. T1 is the better table side (points, then GD, then goals scored); T2 is who they face. A–F types come from the G-grade: k/(N−1), then 100 minus that percentage, on the 0–10 gap scale."
-      />
+      <SectorIntro title={title} note={note} />
       {gap.leagueAvgPpg != null ? (
         <Text style={styles.note}>League average PPG {gap.leagueAvgPpg.toFixed(2)}</Text>
       ) : null}
@@ -265,7 +273,15 @@ export function BaselineCards({ pd }: { pd: PowerDynamicsBundle }) {
   );
 }
 
-export function GapAnalysisCards({ pd }: { pd: PowerDynamicsBundle }) {
+export function GapAnalysisCards({
+  pd,
+  title = 'Gap analysis',
+  note,
+}: {
+  pd: PowerDynamicsBundle;
+  title?: string;
+  note?: string;
+}) {
   const g = pd.positionGap;
   const one = (s: SideSnapshot, rank: number | null) => (
     <SideCard
@@ -288,7 +304,7 @@ export function GapAnalysisCards({ pd }: { pd: PowerDynamicsBundle }) {
 
   return (
     <View>
-      <SectorIntro title="Gap analysis" />
+      <SectorIntro title={title} note={note} />
       <PositionGapBoard pd={pd} />
       {one(pd.t1, g.t1Rank)}
       {one(pd.t2, g.t2Rank)}
@@ -539,15 +555,19 @@ function FormDataRow({
   row,
   highlight,
   extraLabel,
+  typeLetter,
+  gapScore,
 }: {
   row: Last6LeagueRow;
   highlight?: boolean;
   extraLabel?: string;
+  typeLetter?: string | null;
+  gapScore?: number | null;
 }) {
   const f = row.form;
   return (
     <View style={[styles.formRow, highlight && styles.formRowFocus, row.zone === 'mid' && styles.formRowMid]}>
-      <FormCell style={styles.formPos}>{String(row.rank)}</FormCell>
+      <FormCell style={styles.formPos}>{String(row.formRank)}</FormCell>
       <View style={styles.formTeam}>
         <Text style={styles.formTeamName} numberOfLines={1}>
           {extraLabel ?? row.name}
@@ -566,6 +586,8 @@ function FormDataRow({
       <FormCell style={styles.formNum}>
         {f ? `${f.gd >= 0 ? '+' : ''}${f.gd}` : '—'}
       </FormCell>
+      <FormCell style={styles.formType}>{typeLetter ?? '—'}</FormCell>
+      <FormCell style={styles.formNum}>{gapScore != null ? fmtGapScore(gapScore) : '—'}</FormCell>
       <FormCell style={styles.formRead} tone={f ? last6Tone(f.band) : undefined}>
         {f ? LAST6_BAND_LABEL[f.band] : 'No sample'}
       </FormCell>
@@ -576,6 +598,50 @@ function FormDataRow({
       </FormCell>
     </View>
   );
+}
+
+function overlayFormBaseline(
+  pd: PowerDynamicsBundle,
+  table: Last6LeagueRow[],
+): PowerDynamicsBundle {
+  const formStandings = last6FormStandings(table);
+  const t1Row = table.find((r) => r.teamId === pd.t1.teamId);
+  const t2Row = table.find((r) => r.teamId === pd.t2.teamId);
+  const t1: SideSnapshot = {
+    ...pd.t1,
+    rank: t1Row?.formRank ?? null,
+    points: t1Row?.form?.points ?? null,
+    played: t1Row?.form?.mp ?? null,
+    goalDiff: t1Row?.form?.gd ?? null,
+    goalsFor: t1Row?.form?.gf ?? null,
+  };
+  const t2: SideSnapshot = {
+    ...pd.t2,
+    rank: t2Row?.formRank ?? null,
+    points: t2Row?.form?.points ?? null,
+    played: t2Row?.form?.mp ?? null,
+    goalDiff: t2Row?.form?.gd ?? null,
+    goalsFor: t2Row?.form?.gf ?? null,
+  };
+  const positionGap = evaluatePositionGap({
+    tableSize: table.length,
+    t1Rank: t1.rank,
+    t2Rank: t2.rank,
+    t1Label: t1.label,
+    t2Label: t2.label,
+  });
+  const baselineGap = baselineGapFor(t1, t2, formStandings, positionGap);
+  const pointsDiff =
+    t1.points != null && t2.points != null ? Math.abs(t1.points - t2.points) : null;
+  return {
+    ...pd,
+    t1,
+    t2,
+    positionGap,
+    baselineGap,
+    pointsDiff,
+    closeOnTable: pointsDiff != null && pointsDiff <= 4,
+  };
 }
 
 export function FormCards({
@@ -605,7 +671,15 @@ export function FormCards({
   const t1Row = table.find((r) => r.teamId === pd.t1.teamId);
   const t2Row = table.find((r) => r.teamId === pd.t2.teamId);
   const pair = compareLast6Form(t1Row?.form ?? null, t2Row?.form ?? null, pd.t1.label, pd.t2.label);
-  const rows = sub === 'table' ? table : fixtureRows;
+  const rows = sub === 'table' ? [...table].sort((a, b) => a.formRank - b.formRank) : fixtureRows;
+  const formPd = overlayFormBaseline(pd, table);
+  const typeById = new Map<number, { letter: string | null; score: number | null }>();
+  if (pd.t1.teamId != null) {
+    typeById.set(pd.t1.teamId, { letter: formPd.baselineGap.t1.letter, score: formPd.baselineGap.t1.score });
+  }
+  if (pd.t2.teamId != null) {
+    typeById.set(pd.t2.teamId, { letter: formPd.baselineGap.t2.letter, score: formPd.baselineGap.t2.score });
+  }
 
   if (loading) {
     return (
@@ -628,14 +702,19 @@ export function FormCards({
     <View>
       <SectorIntro
         title="Form"
-        note="Last 6 finished league games. Full table is every side; This fixture is only T1 and T2."
+        note="Last 6 finished league games. Baseline types and gap grades use the same method as the Baseline tab, from last-6 form places."
       />
       <SubTabBar tabs={[...FORM_SUBS]} active={sub} onChange={setSub} />
       {sub === 'fixture' ? <Callout text={pair.call} tone={pair.split ? 'warn' : 'info'} /> : null}
       {sub === 'table' && fixtureRows.length > 0 ? (
         <Text style={styles.note}>
           Fixture sides highlighted
-          {fixtureRows.map((r) => ` · ${teamLabels?.[r.teamId] ?? r.name} (#${r.rank})`).join('')}
+          {fixtureRows
+            .map(
+              (r) =>
+                ` · ${teamLabels?.[r.teamId] ?? r.name} (table #${r.rank} · form #${r.formRank})`,
+            )
+            .join('')}
         </Text>
       ) : null}
       {matches.length === 0 ? (
@@ -654,20 +733,37 @@ export function FormCards({
               <Text style={[styles.formTh, styles.formNum]}>Pts</Text>
               <Text style={[styles.formTh, styles.formNum]}>PPG</Text>
               <Text style={[styles.formTh, styles.formNum]}>GD</Text>
+              <Text style={[styles.formTh, styles.formType]}>Type</Text>
+              <Text style={[styles.formTh, styles.formNum]}>Gap</Text>
               <Text style={[styles.formTh, styles.formRead]}>Read</Text>
               <Text style={[styles.formTh, styles.formTrend]}>Trend</Text>
             </View>
-            {rows.map((r) => (
-              <FormDataRow
-                key={r.teamId}
-                row={r}
-                highlight={highlightSet.has(r.teamId)}
-                extraLabel={teamLabels?.[r.teamId]}
-              />
-            ))}
+            {rows.map((r) => {
+              const typed = typeById.get(r.teamId);
+              return (
+                <FormDataRow
+                  key={r.teamId}
+                  row={r}
+                  highlight={highlightSet.has(r.teamId)}
+                  extraLabel={teamLabels?.[r.teamId]}
+                  typeLetter={typed?.letter}
+                  gapScore={typed?.score}
+                />
+              );
+            })}
           </View>
         </ScrollView>
       )}
+      <BaselineCards
+        pd={formPd}
+        title="Baseline — original state"
+        note="Same A–F types and 0–10 gap scale as Baseline, calculated from last-6 form places (points, then GD, then goals scored)."
+      />
+      <GapAnalysisCards
+        pd={formPd}
+        title="Gap analysis"
+        note="G-grades from the last-6 form table. G1 is the largest form gap; neighbours sit on the last grade."
+      />
     </View>
   );
 }
@@ -1241,7 +1337,7 @@ const styles = StyleSheet.create({
     borderColor: theme.border,
     borderRadius: layout.borderRadius,
     overflow: 'hidden',
-    minWidth: 28 + 150 + 88 + 32 + 52 + 36 + 44 + 36 + 110 + 52,
+    minWidth: 28 + 150 + 88 + 32 + 52 + 36 + 44 + 36 + 36 + 36 + 110 + 52,
   },
   formRow: {
     flexDirection: 'row',
@@ -1269,6 +1365,7 @@ const styles = StyleSheet.create({
   formSeq: { width: 88, fontFamily: fonts.bodySemiBold },
   formNum: { width: 36, textAlign: 'center' },
   formWdl: { width: 52, textAlign: 'center' },
+  formType: { width: 36, textAlign: 'center', fontFamily: fonts.bodySemiBold },
   formRead: { width: 110, paddingHorizontal: 4, fontFamily: fonts.bodySemiBold, fontSize: 11 },
   formTrend: { width: 52, textAlign: 'center', fontFamily: fonts.bodySemiBold },
 });

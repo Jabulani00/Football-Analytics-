@@ -865,7 +865,10 @@ export function baselineGapFor(
 
   const letter = letterFromGapValue(value);
   const grade = separationGrade(value);
-  const stronger: SideId | 'level' = value > 0 ? 't1' : 'level';
+  const stronger: SideId | 'level' =
+    value <= 0 || positionGap.higher === 'level' || positionGap.higher == null
+      ? 'level'
+      : positionGap.higher;
   const weakLetter: BaselineLetter = 'F';
 
   const s1: BaselineSideGap = {
@@ -875,10 +878,10 @@ export function baselineGapFor(
     score: stronger === 't1' ? value : 0,
   };
   const s2: BaselineSideGap = {
-    letter: weakLetter,
-    meaning: BASELINE_LETTER_MEANING[weakLetter],
-    received: 0,
-    score: 0,
+    letter: stronger === 't2' ? letter : weakLetter,
+    meaning: BASELINE_LETTER_MEANING[stronger === 't2' ? letter : weakLetter],
+    received: stronger === 't2' ? value : 0,
+    score: stronger === 't2' ? value : 0,
   };
 
   const pair = `${s1.letter}${s2.letter}`;

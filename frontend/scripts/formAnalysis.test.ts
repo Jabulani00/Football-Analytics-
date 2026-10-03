@@ -15,9 +15,11 @@ import {
   last6FormFixtureRows,
   last6FormForSides,
   last6FormLeagueTable,
+  last6FormStandings,
 } from '../utils/last6Form';
 import type { TeamResult } from '../utils/teamResults';
 import { teamResultsFromFixtures } from '../utils/teamResults';
+import { baselineGapFor, evaluatePositionGap } from '../utils/powerDynamicsEngine';
 import type { StandingLike } from '../utils/motivationEngine';
 import type { RawFixture } from '../services/oddAlerts';
 
@@ -280,6 +282,72 @@ console.log('\nlast 6 form');
   const fixtureOnly = last6FormFixtureRows(league, [1, 2]);
   check('this fixture lists only those two sides', fixtureOnly.length === 2 && fixtureOnly[0]?.teamId === 1 && fixtureOnly[1]?.teamId === 2);
   check('Charlie is not on the fixture table', fixtureOnly.every((r) => r.teamId !== 3));
+  check('Alpha is form #1 on last-6 points', league[0]?.formRank === 1);
+  const formTable = last6FormStandings(league);
+  check('form standings ranked by last-6', formTable[0]?.teamId === 1 && formTable[0]?.rank === 1);
+  check(
+    'Charlie outranks Bravo on last-6 points',
+    formTable[1]?.teamId === 3 && formTable[2]?.teamId === 2,
+    `order=${formTable.map((r) => r.teamId).join(',')}`,
+  );
+
+  const t1Form = league.find((r) => r.teamId === 1);
+  const t2Form = league.find((r) => r.teamId === 2);
+  const formGap = evaluatePositionGap({
+    tableSize: league.length,
+    t1Rank: t1Form?.formRank,
+    t2Rank: t2Form?.formRank,
+    t1Label: 'T1 (Alpha)',
+    t2Label: 'T2 (Bravo)',
+  });
+  const formBaseline = baselineGapFor(
+    {
+      side: 't1',
+      venue: 'home',
+      teamId: 1,
+      name: 'Alpha',
+      label: 'T1 (Alpha)',
+      rank: t1Form?.formRank ?? null,
+      points: t1Form?.form?.points ?? null,
+      played: t1Form?.form?.mp ?? null,
+      goalDiff: t1Form?.form?.gd ?? null,
+      goalsFor: t1Form?.form?.gf ?? null,
+      zone: 'top',
+      colour: 'green',
+      overall: { mp: 0, won: 0, drawn: 0, lost: 0, points: 0, ppg: null, ppga: null, scored: null, conceded: null },
+      home: { mp: 0, won: 0, drawn: 0, lost: 0, points: 0, ppg: null, ppga: null, scored: null, conceded: null },
+      away: { mp: 0, won: 0, drawn: 0, lost: 0, points: 0, ppg: null, ppga: null, scored: null, conceded: null },
+      vsAbove: { mp: 0, won: 0, drawn: 0, lost: 0, points: 0, ppg: null, ppga: null, scored: null, conceded: null },
+      vsBelow: { mp: 0, won: 0, drawn: 0, lost: 0, points: 0, ppg: null, ppga: null, scored: null, conceded: null },
+      vsTopThird: { mp: 0, won: 0, drawn: 0, lost: 0, points: 0, ppg: null, ppga: null, scored: null, conceded: null },
+      vsBottomThird: { mp: 0, won: 0, drawn: 0, lost: 0, points: 0, ppg: null, ppga: null, scored: null, conceded: null },
+    },
+    {
+      side: 't2',
+      venue: 'away',
+      teamId: 2,
+      name: 'Bravo',
+      label: 'T2 (Bravo)',
+      rank: t2Form?.formRank ?? null,
+      points: t2Form?.form?.points ?? null,
+      played: t2Form?.form?.mp ?? null,
+      goalDiff: t2Form?.form?.gd ?? null,
+      goalsFor: t2Form?.form?.gf ?? null,
+      zone: 'mid',
+      colour: 'yellow',
+      overall: { mp: 0, won: 0, drawn: 0, lost: 0, points: 0, ppg: null, ppga: null, scored: null, conceded: null },
+      home: { mp: 0, won: 0, drawn: 0, lost: 0, points: 0, ppg: null, ppga: null, scored: null, conceded: null },
+      away: { mp: 0, won: 0, drawn: 0, lost: 0, points: 0, ppg: null, ppga: null, scored: null, conceded: null },
+      vsAbove: { mp: 0, won: 0, drawn: 0, lost: 0, points: 0, ppg: null, ppga: null, scored: null, conceded: null },
+      vsBelow: { mp: 0, won: 0, drawn: 0, lost: 0, points: 0, ppg: null, ppga: null, scored: null, conceded: null },
+      vsTopThird: { mp: 0, won: 0, drawn: 0, lost: 0, points: 0, ppg: null, ppga: null, scored: null, conceded: null },
+      vsBottomThird: { mp: 0, won: 0, drawn: 0, lost: 0, points: 0, ppg: null, ppga: null, scored: null, conceded: null },
+    },
+    formTable,
+    formGap,
+  );
+  check('form gap uses last-6 places', formGap.t1Rank === 1 && formGap.t2Rank === 3);
+  check('form baseline assigns the type to the higher form side', formBaseline.stronger === 't1' && formBaseline.t1.letter != null);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -18,7 +18,12 @@ export type SeasonMatch = {
   homeGoals: number;
   awayGoals: number;
   unix: number;
+  /** Half-time goals when the provider carried an `ht_score`. */
+  homeGoalsHt?: number | null;
+  awayGoalsHt?: number | null;
 };
+
+export type BhozomaPeriod = 'ft' | '1h' | '2h';
 
 export type BhozomaSideStats = {
   mp: number;
@@ -64,6 +69,20 @@ function ptsFor(gf: number, ga: number): number {
   return 0;
 }
 
+/** Goals for a period. Half tables skip matches with no usable `ht_score`. */
+export function seasonMatchPeriodGoals(
+  m: SeasonMatch,
+  period: BhozomaPeriod = 'ft',
+): { home: number; away: number } | null {
+  if (period === 'ft') return { home: m.homeGoals, away: m.awayGoals };
+  if (m.homeGoalsHt == null || m.awayGoalsHt == null) return null;
+  if (period === '1h') return { home: m.homeGoalsHt, away: m.awayGoalsHt };
+  const home = m.homeGoals - m.homeGoalsHt;
+  const away = m.awayGoals - m.awayGoalsHt;
+  if (home < 0 || away < 0) return null;
+  return { home, away };
+}
+
 export function formatBhozomaSpan(span: BhozomaRankSpan | null): string {
   if (!span) return '—';
   return `${span.from}–${span.to}`;
@@ -103,6 +122,7 @@ function sideStats(
   matches: SeasonMatch[],
   kind: 'above' | 'below',
   venue: BhozomaVenue = 'overall',
+  period: BhozomaPeriod = 'ft',
 ): BhozomaSideStats {
   if (opponentIds.size === 0) return emptySide(kind);
 
@@ -115,10 +135,12 @@ function sideStats(
     if (!asHome && !asAway) continue;
     if (venue === 'home' && !asHome) continue;
     if (venue === 'away' && !asAway) continue;
+    const goals = seasonMatchPeriodGoals(m, period);
+    if (!goals) continue;
     const oppId = asHome ? m.awayId : m.homeId;
     if (!opponentIds.has(oppId)) continue;
-    const gf = asHome ? m.homeGoals : m.awayGoals;
-    const ga = asHome ? m.awayGoals : m.homeGoals;
+    const gf = asHome ? goals.home : goals.away;
+    const ga = asHome ? goals.away : goals.home;
     const pts = ptsFor(gf, ga);
     pointsAttained += pts;
     results.push({
@@ -158,6 +180,7 @@ export function buildBhozomaTable(
   matches: SeasonMatch[],
   competitionId?: number | string | null,
   venue: BhozomaVenue = 'overall',
+  period: BhozomaPeriod = 'ft',
 ): BhozomaTable {
   const lines = criticalLinesFor(competitionId ?? null, standings.length);
   const midBand = lines.midBand;
@@ -187,8 +210,8 @@ export function buildBhozomaTable(
       isMidTable,
       aboveRanks: team.rank > 1 ? { from: team.rank - 1, to: 1 } : null,
       belowRanks: team.rank < lastPlace ? { from: team.rank + 1, to: lastPlace } : null,
-      above: sideStats(team.teamId, aboveIds, nameById, matches, 'above', venue),
-      below: sideStats(team.teamId, belowIds, nameById, matches, 'below', venue),
+      above: sideStats(team.teamId, aboveIds, nameById, matches, 'above', venue, period),
+      below: sideStats(team.teamId, belowIds, nameById, matches, 'below', venue, period),
     };
   });
 

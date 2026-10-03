@@ -12,6 +12,13 @@ import { clientStaleTime } from '@/services/oddAlertsCachePolicy';
 import { oddAlertsKeys } from '@/services/oddAlertsKeys';
 import type { SeasonMatch } from '@/utils/bhozomaEngine';
 
+function parseHtScore(ht: string | null | undefined): { home: number; away: number } | null {
+  if (!ht) return null;
+  const m = ht.match(/(\d+)\s*[-–]\s*(\d+)/);
+  if (!m) return null;
+  return { home: Number(m[1]), away: Number(m[2]) };
+}
+
 type State = {
   matches: SeasonMatch[];
   loading: boolean;
@@ -63,11 +70,15 @@ export function useSeasonFixtures(
       if (fixture.home_id == null || fixture.away_id == null) continue;
       if (fixture.home_goals == null || fixture.away_goals == null) continue;
       if (fixture.season_id != null && fixture.season_id !== season.seasonId) continue;
+      const ht = parseHtScore(fixture.ht_score);
+      const usable = ht != null && ht.home <= fixture.home_goals && ht.away <= fixture.away_goals;
       rows.push({
         homeId: fixture.home_id,
         awayId: fixture.away_id,
         homeGoals: fixture.home_goals,
         awayGoals: fixture.away_goals,
+        homeGoalsHt: usable ? ht!.home : null,
+        awayGoalsHt: usable ? ht!.away : null,
         unix: fixture.unix,
       });
     }

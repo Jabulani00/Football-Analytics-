@@ -6,6 +6,7 @@ import {
   bhozomaFixtureRows,
   buildBhozomaTable,
   formatBhozomaSpan,
+  type BhozomaPeriod,
   type BhozomaSideStats,
   type BhozomaTeamRow,
   type BhozomaVenue,
@@ -18,6 +19,12 @@ const VENUE_TABS: { id: BhozomaVenue; label: string }[] = [
   { id: 'overall', label: 'Overall' },
   { id: 'home', label: 'Home' },
   { id: 'away', label: 'Away' },
+];
+
+const PERIOD_TABS: { id: BhozomaPeriod; label: string }[] = [
+  { id: 'ft', label: 'Full time' },
+  { id: '1h', label: '1st half' },
+  { id: '2h', label: '2nd half' },
 ];
 
 type Props = {
@@ -131,11 +138,15 @@ export default function BhozomaView({
   teamLabels,
 }: Props) {
   const [venue, setVenue] = useState<BhozomaVenue>('overall');
+  const [period, setPeriod] = useState<BhozomaPeriod>('ft');
 
   const table = useMemo(
-    () => buildBhozomaTable(standings, matches, competitionId, venue),
-    [standings, matches, competitionId, venue],
+    () => buildBhozomaTable(standings, matches, competitionId, venue, period),
+    [standings, matches, competitionId, venue, period],
   );
+  const htCovered = matches.filter(
+    (m) => m.homeGoalsHt != null && m.awayGoalsHt != null,
+  ).length;
 
   const fixtureIds = (highlightIds ?? []).filter((id) => Number.isFinite(id));
   const focus = bhozomaFixtureRows(table, fixtureIds);
@@ -156,10 +167,17 @@ export default function BhozomaView({
     <View>
       <Text style={styles.blurb}>
         Yellow-band sides in this fixture only. vs Above is the places above that side
-        (e.g. 9th → 8–1). vs Below is the places under them (10–last). Home / Away / Overall
-        filters which finished games count.
+        (e.g. 9th → 8–1). vs Below is the places under them (10–last). Overall / Home / Away
+        pick the venue; Full time / 1st half / 2nd half pick which goals count.
       </Text>
       <SubTabBar tabs={VENUE_TABS} active={venue} onChange={setVenue} />
+      <SubTabBar tabs={PERIOD_TABS} active={period} onChange={setPeriod} />
+      {period !== 'ft' ? (
+        <Text style={styles.summary}>
+          {htCovered} of {matches.length} finished games have a half-time score
+          {htCovered === 0 ? ' — half tables stay empty until that data lands' : ''}.
+        </Text>
+      ) : null}
       {table.midBand ? (
         <Text style={styles.summary}>
           Yellow band {table.midBand.from}–{table.midBand.to}

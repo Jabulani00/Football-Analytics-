@@ -90,9 +90,49 @@ export type Last6LeagueRow = {
   teamId: number;
   name: string;
   rank: number;
+  /** Place on the last-6 form table (points, then GD, then goals scored). */
+  formRank: number;
   zone: 'top' | 'mid' | 'bottom' | undefined;
   form: TeamLast6Form | null;
 };
+
+function zoneFromFormRank(rank: number, n: number): 'top' | 'mid' | 'bottom' {
+  const third = Math.max(1, Math.floor(n / 3));
+  if (rank <= third) return 'top';
+  if (rank > n - third) return 'bottom';
+  return 'mid';
+}
+
+/** Sort key for the last-6 form table: points → GD → goals scored → season rank. */
+export function compareLast6FormRows(a: Last6LeagueRow, b: Last6LeagueRow): number {
+  const ap = a.form?.points;
+  const bp = b.form?.points;
+  if (ap != null && bp != null && ap !== bp) return bp - ap;
+  if (ap != null && bp == null) return -1;
+  if (bp != null && ap == null) return 1;
+  const agd = a.form?.gd;
+  const bgd = b.form?.gd;
+  if (agd != null && bgd != null && agd !== bgd) return bgd - agd;
+  const agf = a.form?.gf;
+  const bgf = b.form?.gf;
+  if (agf != null && bgf != null && agf !== bgf) return bgf - agf;
+  return a.rank - b.rank;
+}
+
+export function last6FormStandings(rows: Last6LeagueRow[]): StandingLike[] {
+  return [...rows]
+    .sort((a, b) => a.formRank - b.formRank)
+    .map((r) => ({
+      rank: r.formRank,
+      teamId: r.teamId,
+      name: r.name,
+      points: r.form?.points ?? 0,
+      played: r.form?.mp ?? 0,
+      zone: zoneFromFormRank(r.formRank, rows.length),
+      goalDiff: r.form?.gd,
+      goalsFor: r.form?.gf,
+    }));
+}
 
 export function last6Band(points: number, mp: number): Last6FormBand {
   if (mp <= 0) return 'mixed';
@@ -303,20 +343,24 @@ export function resultsFromSeasonMatches(
   return out.sort((a, b) => b.unix - a.unix || b.fixtureId - a.fixtureId);
 }
 
-/** Last-6 form for every side on the league table, table order. */
+/** Last-6 form for every side on the league table, season-table order. */
 export function last6FormLeagueTable(
   standings: StandingLike[],
   matches: SeasonMatch[],
 ): Last6LeagueRow[] {
-  return [...standings]
+  const rows: Last6LeagueRow[] = [...standings]
     .sort((a, b) => a.rank - b.rank)
     .map((row) => ({
       teamId: row.teamId,
       name: row.name,
       rank: row.rank,
+      formRank: 0,
       zone: row.zone,
       form: analyseTeamLast6(row.teamId, resultsFromSeasonMatches(row.teamId, matches, standings)),
     }));
+  const byForm = [...rows].sort(compareLast6FormRows);
+  const formRankById = new Map(byForm.map((r, i) => [r.teamId, i + 1]));
+  return rows.map((r) => ({ ...r, formRank: formRankById.get(r.teamId) ?? r.rank }));
 }
 
 /** Fixture form table: only the sides in this match, T1 then T2 order. */

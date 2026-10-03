@@ -178,6 +178,26 @@ console.log('\nSection 8 — Bhozoma');
   check('away filter keeps only away vs above', cAway?.above.mp === 1, `mp=${cAway?.above.mp}`);
   check('home filter keeps only home vs below', cHome?.below.mp === 0, `mp=${cHome?.below.mp}`);
   check('away filter keeps away vs below', cAway?.below.mp === 1, `mp=${cAway?.below.mp}`);
+
+  const periodMix: SeasonMatch[] = [
+    { homeId: 3, awayId: 1, homeGoals: 2, awayGoals: 2, homeGoalsHt: 0, awayGoalsHt: 2, unix: 1 },
+    { homeId: 3, awayId: 2, homeGoals: 2, awayGoals: 1, homeGoalsHt: 0, awayGoalsHt: 1, unix: 2 },
+    { homeId: 3, awayId: 1, homeGoals: 1, awayGoals: 1, homeGoalsHt: 0, awayGoalsHt: 1, unix: 3 },
+  ];
+  const ftP = buildBhozomaTable(TABLE, periodMix, 999999, 'overall', 'ft').rows.find((r) => r.teamId === 3);
+  const h1P = buildBhozomaTable(TABLE, periodMix, 999999, 'overall', '1h').rows.find((r) => r.teamId === 3);
+  const h2P = buildBhozomaTable(TABLE, periodMix, 999999, 'overall', '2h').rows.find((r) => r.teamId === 3);
+  check('FT counts all three vs above', ftP?.above.mp === 3, `mp=${ftP?.above.mp}`);
+  check('1H is three losses vs above', h1P?.above.mp === 3 && h1P.above.pointsAttained === 0);
+  check('2H takes points vs above', h2P?.above.mp === 3 && (h2P.above.pointsAttained ?? 0) > 0);
+  const noHt = buildBhozomaTable(
+    TABLE,
+    [{ homeId: 3, awayId: 1, homeGoals: 1, awayGoals: 0, unix: 1 }],
+    999999,
+    'overall',
+    '1h',
+  ).rows.find((r) => r.teamId === 3);
+  check('1H skips matches without ht_score', noHt?.above.mp === 0, `mp=${noHt?.above.mp}`);
   check(
     'venue filter does not change table ranks',
     cHome?.rank === 3 && cAway?.rank === 3 && cHome.aboveRanks?.from === 2,

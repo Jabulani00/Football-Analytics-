@@ -49,15 +49,26 @@ function DataRow({
   competition,
   highlight,
   extraLabel,
+  placeTone,
 }: {
   row: ImbangiRow;
   competition: string;
   highlight?: boolean;
   extraLabel?: string;
+  placeTone?: 1 | 2;
 }) {
   return (
-    <View style={[styles.row, row.tight && styles.rowTight, highlight && styles.rowFocus]}>
-      <Cell style={styles.cPos}>{String(row.position)}</Cell>
+    <View
+      style={[
+        styles.row,
+        row.tight && styles.rowTight,
+        highlight && styles.rowFocus,
+        placeTone === 1 && styles.rowFirst,
+        placeTone === 2 && styles.rowSecond,
+      ]}>
+      <Cell style={styles.cPos} color={placeTone === 1 ? theme.yellow : placeTone === 2 ? theme.textMuted : undefined}>
+        {String(row.position)}
+      </Cell>
       <Cell style={styles.cTeam}>{extraLabel ?? row.teamName}</Cell>
       <Cell style={styles.cNum}>{String(row.teamPoints)}</Cell>
       <Cell style={styles.cNum}>{String(row.teamPlayed)}</Cell>
@@ -123,6 +134,13 @@ export default function ImbangiView({
   const { progress } = table;
   const competition = competitionName?.trim() || 'League';
   const tightCount = table.closest.filter((r) => r.tight).length;
+  const sortedTable = [...standings].sort((a, b) => a.rank - b.rank);
+  const first = sortedTable.find((r) => r.rank === 1) ?? sortedTable[0] ?? null;
+  const second = sortedTable.find((r) => r.rank === 2) ?? sortedTable[1] ?? null;
+  const titleGap =
+    first && second && first.points != null && second.points != null
+      ? Math.abs(first.points - second.points)
+      : null;
 
   return (
     <View>
@@ -165,6 +183,32 @@ export default function ImbangiView({
         <Text style={styles.progressNote}>{progress.note}</Text>
       </View>
 
+      {first && second ? (
+        <View style={styles.titleCard}>
+          <Text style={styles.titleEyebrow}>1st vs 2nd</Text>
+          <View style={styles.titleRow}>
+            <View style={styles.titleSide}>
+              <Text style={styles.titlePlace}>#1</Text>
+              <Text style={styles.titleName} numberOfLines={1}>
+                {teamLabels?.[first.teamId] ?? first.name}
+              </Text>
+              <Text style={styles.titlePts}>{first.points} pts</Text>
+            </View>
+            <View style={styles.titleGapBox}>
+              <Text style={styles.titleGap}>{titleGap != null ? titleGap : '—'}</Text>
+              <Text style={styles.titleGapCap}>pts apart</Text>
+            </View>
+            <View style={[styles.titleSide, styles.titleSideRight]}>
+              <Text style={styles.titlePlace}>#2</Text>
+              <Text style={styles.titleName} numberOfLines={1}>
+                {teamLabels?.[second.teamId] ?? second.name}
+              </Text>
+              <Text style={styles.titlePts}>{second.points} pts</Text>
+            </View>
+          </View>
+        </View>
+      ) : null}
+
       <Text style={styles.summary}>
         {table.closest.length} neighbour pairs · {tightCount} tight (ΔP ≤ {IMBANGI_TIGHT_PTS})
         {matches.length === 0 ? ' · no finished fixtures loaded yet for last meetings' : ''}
@@ -201,6 +245,7 @@ export default function ImbangiView({
                 competition={competition}
                 highlight={Boolean(highlightIds?.includes(r.teamId))}
                 extraLabel={teamLabels?.[r.teamId]}
+                placeTone={r.position === 1 ? 1 : r.position === 2 ? 2 : undefined}
               />
             ))
           )}
@@ -309,6 +354,78 @@ const styles = StyleSheet.create({
   headRow: { backgroundColor: theme.surfaceMuted },
   rowTight: { backgroundColor: 'rgba(234, 88, 12, 0.06)' },
   rowFocus: { backgroundColor: 'rgba(37, 99, 235, 0.08)' },
+  rowFirst: {
+    backgroundColor: 'rgba(202, 138, 4, 0.16)',
+    borderLeftWidth: 3,
+    borderLeftColor: theme.yellow,
+  },
+  rowSecond: {
+    backgroundColor: 'rgba(100, 116, 139, 0.14)',
+    borderLeftWidth: 3,
+    borderLeftColor: theme.textMuted,
+  },
+  titleCard: {
+    backgroundColor: theme.surface,
+    borderWidth: layout.borderWidth,
+    borderColor: theme.yellow,
+    borderRadius: layout.borderRadius,
+    padding: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  titleEyebrow: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 10,
+    color: theme.yellow,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: spacing.xs,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  titleSide: { flex: 1, minWidth: 0 },
+  titleSideRight: { alignItems: 'flex-end' },
+  titlePlace: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 11,
+    color: theme.textMuted,
+  },
+  titleName: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 14,
+    color: theme.textPrimary,
+    marginTop: 1,
+  },
+  titlePts: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: theme.textMuted,
+    marginTop: 1,
+  },
+  titleGapBox: {
+    minWidth: 72,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    borderRadius: layout.borderRadius,
+    backgroundColor: theme.surfaceMuted,
+  },
+  titleGap: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 22,
+    color: theme.textPrimary,
+    lineHeight: 26,
+  },
+  titleGapCap: {
+    fontFamily: fonts.body,
+    fontSize: 9,
+    color: theme.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
   th: {
     fontFamily: fonts.bodySemiBold,
     fontSize: 10,
