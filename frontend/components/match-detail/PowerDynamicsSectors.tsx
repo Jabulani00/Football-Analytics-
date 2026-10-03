@@ -36,11 +36,14 @@ import {
   LAST6_BAND_LABEL,
   LAST6_TREND_SHORT,
   compareLast6Form,
+  last6FormFixtureLensRows,
   last6FormFixtureRows,
   last6FormLeagueTable,
   last6FormStandings,
+  type Last6FixtureLens,
   type Last6FormBand,
   type Last6LeagueRow,
+  type Last6Period,
 } from '@/utils/last6Form';
 import type { SeasonMatch } from '@/utils/bhozomaEngine';
 import { GRADE_LABEL, STANCE_LABEL, type StandingLike } from '@/utils/motivationEngine';
@@ -533,6 +536,19 @@ const FORM_SUBS = [
   { id: 'fixture', label: 'This fixture' },
 ] as const;
 
+const FIXTURE_LENS_TABS: { id: Last6FixtureLens; label: string }[] = [
+  { id: 'overall', label: 'Overall' },
+  { id: 'home', label: 'Home' },
+  { id: 'away', label: 'Away' },
+  { id: 'home_away', label: 'Home/Away' },
+];
+
+const FORM_PERIOD_TABS: { id: Last6Period; label: string }[] = [
+  { id: 'ft', label: 'Full time' },
+  { id: '1h', label: '1st half' },
+  { id: '2h', label: '2nd half' },
+];
+
 type FormSubId = (typeof FORM_SUBS)[number]['id'];
 
 function FormCell({
@@ -557,18 +573,30 @@ function FormDataRow({
   extraLabel,
   typeLetter,
   gapScore,
+  venueRole,
 }: {
   row: Last6LeagueRow;
   highlight?: boolean;
   extraLabel?: string;
   typeLetter?: string | null;
   gapScore?: number | null;
+  venueRole?: 'Home' | 'Away' | null;
 }) {
   const f = row.form;
   return (
     <View style={[styles.formRow, highlight && styles.formRowFocus, row.zone === 'mid' && styles.formRowMid]}>
       <FormCell style={styles.formPos}>{String(row.formRank)}</FormCell>
       <View style={styles.formTeam}>
+        {venueRole ? (
+          <Text
+            style={[
+              styles.formVenue,
+              venueRole === 'Home' ? styles.formVenueHome : styles.formVenueAway,
+            ]}
+            numberOfLines={1}>
+            {venueRole}
+          </Text>
+        ) : null}
         <Text style={styles.formTeamName} numberOfLines={1}>
           {extraLabel ?? row.name}
         </Text>
@@ -662,16 +690,31 @@ export function FormCards({
   teamLabels?: Record<number, string>;
 }) {
   const [sub, setSub] = useState<FormSubId>('fixture');
+  const [lens, setLens] = useState<Last6FixtureLens>('overall');
+  const [period, setPeriod] = useState<Last6Period>('ft');
   const table = last6FormLeagueTable(standings, matches);
   const fixtureIds = (highlightIds ?? [pd.t1.teamId, pd.t2.teamId]).filter(
     (id): id is number => id != null && Number.isFinite(id),
   );
+  const fixtureHomeId = pd.t1.venue === 'home' ? pd.t1.teamId : pd.t2.teamId;
+  const fixtureAwayId = pd.t1.venue === 'away' ? pd.t1.teamId : pd.t2.teamId;
+  const homeLabel = pd.t1.venue === 'home' ? pd.t1.label : pd.t2.label;
+  const awayLabel = pd.t1.venue === 'away' ? pd.t1.label : pd.t2.label;
   const fixtureRows = last6FormFixtureRows(table, fixtureIds);
+  const scopedRows = last6FormFixtureLensRows({
+    standings,
+    matches,
+    homeId: fixtureHomeId,
+    awayId: fixtureAwayId,
+    orderIds: fixtureIds,
+    lens,
+    period,
+  });
   const highlightSet = new Set(fixtureIds);
-  const t1Row = table.find((r) => r.teamId === pd.t1.teamId);
-  const t2Row = table.find((r) => r.teamId === pd.t2.teamId);
+  const t1Row = scopedRows.find((r) => r.teamId === pd.t1.teamId);
+  const t2Row = scopedRows.find((r) => r.teamId === pd.t2.teamId);
   const pair = compareLast6Form(t1Row?.form ?? null, t2Row?.form ?? null, pd.t1.label, pd.t2.label);
-  const rows = sub === 'table' ? [...table].sort((a, b) => a.formRank - b.formRank) : fixtureRows;
+  const rows = sub === 'table' ? [...table].sort((a, b) => a.formRank - b.formRank) : scopedRows;
   const formPd = overlayFormBaseline(pd, table);
   const typeById = new Map<number, { letter: string | null; score: number | null }>();
   if (pd.t1.teamId != null) {
@@ -680,6 +723,15 @@ export function FormCards({
   if (pd.t2.teamId != null) {
     typeById.set(pd.t2.teamId, { letter: formPd.baselineGap.t2.letter, score: formPd.baselineGap.t2.score });
   }
+  const htCovered = matches.filter((m) => m.homeGoalsHt != null && m.awayGoalsHt != null).length;
+  const lensNote =
+    lens === 'home'
+      ? `Home form for ${homeLabel} — last 6 at home.`
+      : lens === 'away'
+        ? `Away form for ${awayLabel} — last 6 on the road.`
+        : lens === 'home_away'
+          ? 'Home side’s last 6 at home and away side’s last 6 on the road.'
+          : 'Both sides, last 6 in any venue.';
 
   if (loading) {
     return (
@@ -705,7 +757,20 @@ export function FormCards({
         note="Last 6 finished league games. Baseline types and gap grades use the same method as the Baseline tab, from last-6 form places."
       />
       <SubTabBar tabs={[...FORM_SUBS]} active={sub} onChange={setSub} />
-      {sub === 'fixture' ? <Callout text={pair.call} tone={pair.split ? 'warn' : 'info'} /> : null}
+      {sub === 'fixture' ? (
+        <View>
+          <SubTabBar tabs={FIXTURE_LENS_TABS} active={lens} onChange={setLens} />
+          <SubTabBar tabs={FORM_PERIOD_TABS} active={period} onChange={setPeriod} />
+          <Text style={styles.note}>{lensNote}</Text>
+          {period !== 'ft' ? (
+            <Text style={styles.note}>
+              {htCovered} of {matches.length} finished games have a half-time score
+              {htCovered === 0 ? ' — half tables stay empty until that data lands' : ''}.
+            </Text>
+          ) : null}
+          <Callout text={pair.call} tone={pair.split ? 'warn' : 'info'} />
+        </View>
+      ) : null}
       {sub === 'table' && fixtureRows.length > 0 ? (
         <Text style={styles.note}>
           Fixture sides highlighted
@@ -740,6 +805,14 @@ export function FormCards({
             </View>
             {rows.map((r) => {
               const typed = typeById.get(r.teamId);
+              const venueRole =
+                sub !== 'fixture'
+                  ? null
+                  : lens === 'home' || r.teamId === fixtureHomeId
+                    ? 'Home'
+                    : lens === 'away' || r.teamId === fixtureAwayId
+                      ? 'Away'
+                      : null;
               return (
                 <FormDataRow
                   key={r.teamId}
@@ -748,6 +821,7 @@ export function FormCards({
                   extraLabel={teamLabels?.[r.teamId]}
                   typeLetter={typed?.letter}
                   gapScore={typed?.score}
+                  venueRole={lens === 'home_away' ? venueRole : null}
                 />
               );
             })}
@@ -1361,6 +1435,15 @@ const styles = StyleSheet.create({
   formPos: { width: 28, textAlign: 'center', fontFamily: fonts.bodySemiBold },
   formTeam: { width: 150, paddingRight: spacing.xs },
   formTeamName: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: theme.textPrimary },
+  formVenue: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 9,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 1,
+  },
+  formVenueHome: { color: theme.accentBlue },
+  formVenueAway: { color: theme.accentOrange },
   formScores: { fontFamily: fonts.body, fontSize: 9, color: theme.textFaint, marginTop: 1 },
   formSeq: { width: 88, fontFamily: fonts.bodySemiBold },
   formNum: { width: 36, textAlign: 'center' },

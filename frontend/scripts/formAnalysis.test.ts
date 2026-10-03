@@ -12,6 +12,7 @@ import {
 } from '../utils/last5Analysis';
 import {
   analyseTeamLast6,
+  last6FormFixtureLensRows,
   last6FormFixtureRows,
   last6FormForSides,
   last6FormLeagueTable,
@@ -348,6 +349,58 @@ console.log('\nlast 6 form');
   );
   check('form gap uses last-6 places', formGap.t1Rank === 1 && formGap.t2Rank === 3);
   check('form baseline assigns the type to the higher form side', formBaseline.stronger === 't1' && formBaseline.t1.letter != null);
+
+  const homeOnly = last6FormFixtureLensRows({
+    standings,
+    matches: season,
+    homeId: 1,
+    awayId: 2,
+    orderIds: [1, 2],
+    lens: 'home',
+  });
+  check('home lens is only the fixture home side', homeOnly.length === 1 && homeOnly[0]?.teamId === 1);
+  check('Alpha home form is 2 wins', homeOnly[0]?.form?.mp === 2 && homeOnly[0]?.form?.won === 2);
+
+  const awayOnly = last6FormFixtureLensRows({
+    standings,
+    matches: season,
+    homeId: 1,
+    awayId: 2,
+    orderIds: [1, 2],
+    lens: 'away',
+  });
+  check('away lens is only the fixture away side', awayOnly.length === 1 && awayOnly[0]?.teamId === 2);
+  check('Bravo away form is 2 losses', awayOnly[0]?.form?.mp === 2 && awayOnly[0]?.form?.lost === 2);
+
+  const split = last6FormFixtureLensRows({
+    standings,
+    matches: season,
+    homeId: 1,
+    awayId: 2,
+    orderIds: [1, 2],
+    lens: 'home_away',
+  });
+  check('home/away has both sides', split.length === 2 && split[0]?.teamId === 1 && split[1]?.teamId === 2);
+  check('home/away keeps Alpha home haul', split[0]?.form?.points === 6);
+  check('home/away keeps Bravo away haul', split[1]?.form?.points === 0);
+
+  const halfSeason = [
+    { homeId: 1, awayId: 2, homeGoals: 2, awayGoals: 1, homeGoalsHt: 0, awayGoalsHt: 1, unix: 3 },
+    { homeId: 1, awayId: 3, homeGoals: 3, awayGoals: 0, homeGoalsHt: 1, awayGoalsHt: 0, unix: 2 },
+    { homeId: 2, awayId: 1, homeGoals: 0, awayGoals: 2, homeGoalsHt: 0, awayGoalsHt: 0, unix: 1 },
+  ];
+  const firstHalf = last6FormFixtureLensRows({
+    standings,
+    matches: halfSeason,
+    homeId: 1,
+    awayId: 2,
+    orderIds: [1, 2],
+    lens: 'overall',
+    period: '1h',
+  });
+  const alpha1h = firstHalf.find((r) => r.teamId === 1);
+  check('1H skips no sample when ht is present', (alpha1h?.form?.mp ?? 0) === 3);
+  check('Alpha 1H is mixed (loss, win, draw)', alpha1h?.form?.points === 4, `pts=${alpha1h?.form?.points}`);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

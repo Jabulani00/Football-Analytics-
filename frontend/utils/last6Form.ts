@@ -3,7 +3,11 @@
  * in their most recent six finished league games.
  */
 
-import type { SeasonMatch } from '@/utils/bhozomaEngine';
+import {
+  seasonMatchPeriodGoals,
+  type BhozomaPeriod,
+  type SeasonMatch,
+} from '@/utils/bhozomaEngine';
 import type { StandingLike } from '@/utils/motivationEngine';
 import {
   lastN,
@@ -24,6 +28,14 @@ export const LAST6_SPLIT_PTS = 3;
 
 export type Last6FormBand = 'strong' | 'mixed' | 'poor';
 export type Last6Trend = 'picking_up' | 'dropping' | 'steady';
+export type Last6Venue = 'overall' | 'home' | 'away';
+export type Last6Period = BhozomaPeriod;
+export type Last6FixtureLens = 'overall' | 'home' | 'away' | 'home_away';
+
+export type Last6Scope = {
+  venue?: Last6Venue;
+  period?: Last6Period;
+};
 
 export type Last6Game = {
   opponentName: string;
@@ -304,23 +316,41 @@ function outcomeOf(gf: number, ga: number): ResultOutcome {
   return 'D';
 }
 
+function venueOf(teamId: number, m: SeasonMatch): Last6Venue | null {
+  if (m.homeId === teamId) return 'home';
+  if (m.awayId === teamId) return 'away';
+  return null;
+}
+
+function withFormRanks(rows: Last6LeagueRow[]): Last6LeagueRow[] {
+  const byForm = [...rows].sort(compareLast6FormRows);
+  const formRankById = new Map(byForm.map((r, i) => [r.teamId, i + 1]));
+  return rows.map((r) => ({ ...r, formRank: formRankById.get(r.teamId) ?? r.rank }));
+}
+
 /** Finished season matches as a newest-first result feed for one side. */
 export function resultsFromSeasonMatches(
   teamId: number,
   matches: SeasonMatch[],
   standings: StandingLike[],
+  scope: Last6Scope = {},
 ): TeamResult[] {
+  const venue = scope.venue ?? 'overall';
+  const period = scope.period ?? 'ft';
   const rankById = new Map(standings.map((s) => [s.teamId, s.rank]));
   const nameById = new Map(standings.map((s) => [s.teamId, s.name]));
   const teamRank = rankById.get(teamId) ?? null;
   const out: TeamResult[] = [];
 
   for (const m of matches) {
-    const isHome = m.homeId === teamId;
-    const isAway = m.awayId === teamId;
-    if (!isHome && !isAway) continue;
-    const gf = isHome ? m.homeGoals : m.awayGoals;
-    const ga = isHome ? m.awayGoals : m.homeGoals;
+    const side = venueOf(teamId, m);
+    if (!side) continue;
+    if (venue !== 'overall' && side !== venue) continue;
+    const goals = seasonMatchPeriodGoals(m, period);
+    if (!goals) continue;
+    const isHome = side === 'home';
+    const gf = isHome ? goals.home : goals.away;
+    const ga = isHome ? goals.away : goals.home;
     const oppId = isHome ? m.awayId : m.homeId;
     const oppRank = rankById.get(oppId) ?? null;
     out.push({
@@ -343,24 +373,81 @@ export function resultsFromSeasonMatches(
   return out.sort((a, b) => b.unix - a.unix || b.fixtureId - a.fixtureId);
 }
 
+export function last6FormRowForTeam(
+  row: StandingLike,
+  matches: SeasonMatch[],
+  standings: StandingLike[],
+  scope: Last6Scope = {},
+): Last6LeagueRow {
+  return {
+    teamId: row.teamId,
+    name: row.name,
+    rank: row.rank,
+    formRank: 0,
+    zone: row.zone,
+    form: analyseTeamLast6(row.teamId, resultsFromSeasonMatches(row.teamId, matches, standings, scope)),
+  };
+}
+
 /** Last-6 form for every side on the league table, season-table order. */
 export function last6FormLeagueTable(
   standings: StandingLike[],
   matches: SeasonMatch[],
+  scope: Last6Scope = {},
 ): Last6LeagueRow[] {
-  const rows: Last6LeagueRow[] = [...standings]
+  const rows = [...standings]
     .sort((a, b) => a.rank - b.rank)
-    .map((row) => ({
-      teamId: row.teamId,
-      name: row.name,
-      rank: row.rank,
-      formRank: 0,
-      zone: row.zone,
-      form: analyseTeamLast6(row.teamId, resultsFromSeasonMatches(row.teamId, matches, standings)),
-    }));
-  const byForm = [...rows].sort(compareLast6FormRows);
-  const formRankById = new Map(byForm.map((r, i) => [r.teamId, i + 1]));
-  return rows.map((r) => ({ ...r, formRank: formRankById.get(r.teamId) ?? r.rank }));
+    .map((row) => last6FormRowForTeam(row, matches, standings, scope));
+  return withFormRanks(rows);
+}
+
+/**
+ * This-fixture form lens.
+ * Overall = both sides, all venues.
+ * Home = fixture home side’s last-6 home games.
+ * Away = fixture away side’s last-6 away games.
+ * Home/Away = those two rows in one table.
+ */
+export function last6FormFixtureLensRows(opts: {
+  standings: StandingLike[];
+  matches: SeasonMatch[];
+  homeId: number | null | undefined;
+  awayId: number | null | undefined;
+  orderIds: number[];
+  lens: Last6FixtureLens;
+  period?: Last6Period;
+}): Last6LeagueRow[] {
+  const period = opts.period ?? 'ft';
+  const byId = new Map(opts.standings.map((s) => [s.teamId, s]));
+  const wanted: { id: number; venue: Last6Venue }[] = [];
+
+  if (opts.lens === 'home') {
+    if (opts.homeId != null) wanted.push({ id: opts.homeId, venue: 'home' });
+  } else if (opts.lens === 'away') {
+    if (opts.awayId != null) wanted.push({ id: opts.awayId, venue: 'away' });
+  } else if (opts.lens === 'home_away') {
+    if (opts.homeId != null) wanted.push({ id: opts.homeId, venue: 'home' });
+    if (opts.awayId != null) wanted.push({ id: opts.awayId, venue: 'away' });
+  } else {
+    for (const id of opts.orderIds) wanted.push({ id, venue: 'overall' });
+  }
+
+  const seen = new Set<number>();
+  const ordered = [...wanted].sort((a, b) => {
+    const ai = opts.orderIds.indexOf(a.id);
+    const bi = opts.orderIds.indexOf(b.id);
+    return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+  });
+
+  const rows: Last6LeagueRow[] = [];
+  for (const item of ordered) {
+    if (!Number.isFinite(item.id) || seen.has(item.id)) continue;
+    seen.add(item.id);
+    const standing = byId.get(item.id);
+    if (!standing) continue;
+    rows.push(last6FormRowForTeam(standing, opts.matches, opts.standings, { venue: item.venue, period }));
+  }
+  return withFormRanks(rows);
 }
 
 /** Fixture form table: only the sides in this match, T1 then T2 order. */
