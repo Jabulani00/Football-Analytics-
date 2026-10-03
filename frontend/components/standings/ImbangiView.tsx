@@ -80,7 +80,16 @@ function DataRow({
       <Cell style={styles.cPos} color={placeTone === 1 ? theme.yellow : placeTone === 2 ? theme.textMuted : undefined}>
         {String(row.position)}
       </Cell>
-      <Cell style={styles.cTeam}>{extraLabel ?? row.teamName}</Cell>
+      <View style={styles.cTeam}>
+        <Text style={[styles.td, styles.teamName]} numberOfLines={1}>
+          {extraLabel ?? row.teamName}
+        </Text>
+        {row.teamLastResult === 'L' ? (
+          <Text style={styles.lostHint} numberOfLines={1}>
+            Lost last
+          </Text>
+        ) : null}
+      </View>
       <Cell style={styles.cNum}>{String(row.teamPoints)}</Cell>
       <Cell style={styles.cNum}>{String(row.teamPlayed)}</Cell>
       <Cell style={styles.cNum}>{String(row.remaining)}</Cell>
@@ -91,7 +100,16 @@ function DataRow({
         {row.relation === 'above' ? 'Above' : 'Below'}
       </Cell>
       <Cell style={styles.cPos}>{String(row.opponentPosition)}</Cell>
-      <Cell style={styles.cTeam}>{row.opponentName}</Cell>
+      <View style={styles.cTeam}>
+        <Text style={[styles.td, styles.teamName]} numberOfLines={1}>
+          {row.opponentName}
+        </Text>
+        {row.oppLastResult === 'L' ? (
+          <Text style={styles.lostHint} numberOfLines={1}>
+            Lost last
+          </Text>
+        ) : null}
+      </View>
       <Cell style={styles.cNum}>{String(row.opponentPoints)}</Cell>
       <Cell
         style={styles.cDiff}
@@ -171,6 +189,7 @@ export default function ImbangiView({
       : titlePair.some((r) => r.grade === 'C')
         ? 'C'
         : null;
+  const firstVsSecond = titlePair.find((r) => r.position === 1 && r.opponentPosition === 2);
   const titleReason =
     titlePair.find((r) => r.grade === titleGrade)?.gradeReason ??
     (titleGap != null && titleGap > IMBANGI_GRADE_PTS ? `ΔP ${titleGap} — outside the grade band` : null);
@@ -180,8 +199,8 @@ export default function ImbangiView({
       <Text style={styles.blurb}>
         Imbangi compares each team to the neighbour one place above and one place below.
         Smaller ΔP means a tighter fight — {IMBANGI_TIGHT_PTS} pts or less is Tight.
-        Grades: C when ΔP ≤ {IMBANGI_GRADE_PTS}; B if one side lost their last game; A if both
-        play the same day, the first side already won, and this side still has to play.
+        Grades: C when ΔP ≤ {IMBANGI_GRADE_PTS}; B names the side that lost their last game;
+        A if both play the same day, the first side already won, and this side still has to play.
       </Text>
 
       <View style={[styles.progressCard, progress.lateStretch && styles.progressLate]}>
@@ -235,6 +254,9 @@ export default function ImbangiView({
                 {teamLabels?.[first.teamId] ?? first.name}
               </Text>
               <Text style={styles.titlePts}>{first.points} pts</Text>
+              {firstVsSecond?.teamLastResult === 'L' ? (
+                <Text style={styles.titleLost}>Lost last</Text>
+              ) : null}
             </View>
             <View style={styles.titleGapBox}>
               <Text style={styles.titleGap}>{titleGap != null ? titleGap : '—'}</Text>
@@ -246,6 +268,9 @@ export default function ImbangiView({
                 {teamLabels?.[second.teamId] ?? second.name}
               </Text>
               <Text style={styles.titlePts}>{second.points} pts</Text>
+              {firstVsSecond?.oppLastResult === 'L' ? (
+                <Text style={[styles.titleLost, styles.titleLostRight]}>Lost last</Text>
+              ) : null}
             </View>
           </View>
           {titleReason ? <Text style={styles.titleReason}>{titleReason}</Text> : null}
@@ -484,6 +509,13 @@ const styles = StyleSheet.create({
     color: theme.textMuted,
     marginTop: 1,
   },
+  titleLost: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 11,
+    color: theme.loss,
+    marginTop: 2,
+  },
+  titleLostRight: { textAlign: 'right' },
   titleGapBox: {
     minWidth: 72,
     alignItems: 'center',
@@ -519,7 +551,14 @@ const styles = StyleSheet.create({
     color: theme.textPrimary,
   },
   cPos: { width: 36, textAlign: 'center', fontFamily: fonts.bodySemiBold },
-  cTeam: { width: 120, paddingRight: 4, fontFamily: fonts.bodySemiBold },
+  cTeam: { width: 120, paddingRight: 4 },
+  teamName: { fontFamily: fonts.bodySemiBold },
+  lostHint: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 9,
+    color: theme.loss,
+    marginTop: 1,
+  },
   cNum: { width: 40, textAlign: 'center' },
   cComp: { width: 110, paddingHorizontal: 4 },
   cRel: { width: 52, textAlign: 'center', fontFamily: fonts.bodySemiBold },

@@ -201,25 +201,57 @@ export function sameDayMotivation(
   return { sameDay: true, motivated: true, firstWonId: firstId, motivatedId: secondId };
 }
 
+function lostLastLine(
+  teamLost: boolean,
+  oppLost: boolean,
+  teamName: string,
+  oppName: string,
+): string {
+  if (teamLost && oppLost) return `${teamName} and ${oppName} both lost their last game`;
+  if (teamLost) return `${teamName} lost their last game`;
+  if (oppLost) return `${oppName} lost their last game`;
+  return 'one side lost their last game';
+}
+
 export function gradeImbangiRow(opts: {
   pointsDiff: number;
   teamId: number;
+  teamName?: string;
+  oppName?: string;
   teamLastResult: 'W' | 'D' | 'L' | null;
   oppLastResult: 'W' | 'D' | 'L' | null;
-  sameDay: { sameDay: boolean; motivated: boolean; motivatedId: number | null };
+  sameDay: {
+    sameDay: boolean;
+    motivated: boolean;
+    firstWonId?: number | null;
+    motivatedId: number | null;
+  };
 }): { grade: ImbangiGrade | null; reason: string | null } {
+  const teamName = opts.teamName?.trim() || 'This side';
+  const oppName = opts.oppName?.trim() || 'the neighbour';
   if (opts.pointsDiff > IMBANGI_GRADE_PTS) return { grade: null, reason: null };
 
   if (opts.sameDay.motivated && opts.sameDay.motivatedId === opts.teamId) {
+    const winner =
+      opts.sameDay.firstWonId === opts.teamId
+        ? teamName
+        : opts.sameDay.firstWonId != null
+          ? oppName
+          : 'the neighbour';
     return {
       grade: 'A',
-      reason: 'ΔP ≤ 4 · same-day cards · neighbour already won · this side is motivated',
+      reason: `ΔP ≤ 4 · ${winner} already won today · ${teamName} still to play`,
     };
   }
   if (opts.teamLastResult === 'L' || opts.oppLastResult === 'L') {
     return {
       grade: 'B',
-      reason: 'ΔP ≤ 4 · one side lost their last game',
+      reason: `ΔP ≤ 4 · ${lostLastLine(
+        opts.teamLastResult === 'L',
+        opts.oppLastResult === 'L',
+        teamName,
+        oppName,
+      )}`,
     };
   }
   return { grade: 'C', reason: 'ΔP ≤ 4' };
@@ -255,6 +287,8 @@ export function buildImbangiRows(
       const graded = gradeImbangiRow({
         pointsDiff,
         teamId: team.teamId,
+        teamName: team.name,
+        oppName: opp.name,
         teamLastResult,
         oppLastResult,
         sameDay,

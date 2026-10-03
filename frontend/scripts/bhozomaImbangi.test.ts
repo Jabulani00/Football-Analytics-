@@ -280,11 +280,14 @@ console.log('\nSection 9 — Imbangi + progress');
   const gradeB = gradeImbangiRow({
     pointsDiff: 2,
     teamId: 3,
+    teamName: 'Charlie',
+    oppName: 'Delta',
     teamLastResult: 'L',
     oppLastResult: 'W',
     sameDay: { sameDay: false, motivated: false, motivatedId: null },
   });
   check('ΔP ≤ 4 + a last-game loss is grade B', gradeB.grade === 'B');
+  check('grade B names the side that lost', gradeB.reason?.includes('Charlie lost their last game') === true);
 
   const day = 1_700_000_000;
   const sameDay = sameDayMotivation(
