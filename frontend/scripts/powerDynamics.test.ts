@@ -11,6 +11,7 @@ import {
   evaluatePowerDynamics,
   evaluatePositionGap,
   evaluateStreamline,
+  batetemeKindFor,
   ftOdds,
   impliedOddsFromProb,
   leaguePpg,
@@ -408,6 +409,30 @@ console.log('\nstreamline');
   });
   check('ΔP 3 is close', close.close === true && close.delta === 3);
   check('close → both Bateteme', close.t1Stream === 'bateteme' && close.t2Stream === 'bateteme');
+  check('small PPG + large odds is Bateteme 1', batetemeKindFor(1.0, 2.0, 4.2, 1.6) === 1);
+  check('small PPG + small odds is Bateteme 2', batetemeKindFor(1.0, 2.0, 1.5, 3.8) === 2);
+  const b1 = evaluateStreamline({
+    t1Points: 16,
+    t2Points: 14,
+    t1Label: 'T1 (A)',
+    t2Label: 'T2 (B)',
+    t1Ppg: 1.8,
+    t2Ppg: 1.1,
+    t1Odds: 1.7,
+    t2Odds: 4.4,
+  });
+  check('close + small PPG long price is Bateteme 1', b1.t1Stream === 'bateteme' && b1.batetemeKind === 1);
+  const b2 = evaluateStreamline({
+    t1Points: 16,
+    t2Points: 14,
+    t1Label: 'T1 (A)',
+    t2Label: 'T2 (B)',
+    t1Ppg: 1.8,
+    t2Ppg: 1.1,
+    t1Odds: 3.6,
+    t2Odds: 1.8,
+  });
+  check('close + small PPG short price is Bateteme 2', b2.t1Stream === 'bateteme' && b2.batetemeKind === 2);
 
   const zidane = evaluateStreamline({
     t1Points: 28,

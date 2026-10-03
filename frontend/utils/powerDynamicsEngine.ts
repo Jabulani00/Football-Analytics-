@@ -191,6 +191,7 @@ export const ZIDANE_PPG_ODDS_RULE =
   'IF PPG is high then the odds are high, if PPG is low then odds are Low';
 
 export type StreamName = 'bateteme' | 'compliant' | 'zidane_law' | 'bookie' | 'bookie2';
+export type BatetemeKind = 1 | 2;
 export type OddsOutcome = 'compliant' | 'non_compliant';
 
 export const STREAM_ORDER: StreamName[] = [
@@ -216,6 +217,16 @@ export const STREAM_CHIP: Record<StreamName, string> = {
   zidane_law: 'Zidane',
   bookie: 'Bookie',
   bookie2: 'Bookie 2',
+};
+
+export const BATETEME_KIND_LABEL: Record<BatetemeKind, string> = {
+  1: 'Bateteme 1',
+  2: 'Bateteme 2',
+};
+
+export const BATETEME_KIND_ROLE: Record<BatetemeKind, string> = {
+  1: 'The smaller-PPG side has the larger 1X2 price.',
+  2: 'The smaller-PPG side has the smaller 1X2 price.',
 };
 
 export const STREAM_ROLE: Record<StreamName, string> = {
@@ -255,6 +266,8 @@ export type StreamlineRead = {
   t2BeatsT1: boolean;
   /** High PPG ↔ high odds, low PPG ↔ low odds. */
   ppgOddsZidane: boolean;
+  /** Close-table Bateteme split from the smaller-PPG side’s odds. */
+  batetemeKind: BatetemeKind | null;
   inStreams: Record<StreamName, boolean>;
   oddsCall: string;
   call: string;
@@ -398,9 +411,26 @@ export function streamlineH2hWindow(matches: H2HMatch[]): H2HMatch[] {
 }
 
 /**
- * Zidane / Bookie pricing: high PPG → high odds, low PPG → low odds.
- * The side with the higher PPG should have the higher 1X2 price.
+ * Bateteme 1 = smaller PPG has the larger odds.
+ * Bateteme 2 = smaller PPG has the smaller odds.
+ * Equal PPG uses T2 (weaker table side) as the small-PPG side.
  */
+export function batetemeKindFor(
+  t1Ppg: number | null | undefined,
+  t2Ppg: number | null | undefined,
+  t1Odds: number | null | undefined,
+  t2Odds: number | null | undefined,
+): BatetemeKind | null {
+  if (t1Ppg == null || t2Ppg == null || t1Odds == null || t2Odds == null) return null;
+  const smallIsT1 = t1Ppg < t2Ppg;
+  const smallOdds = smallIsT1 ? t1Odds : t2Odds;
+  const otherOdds = smallIsT1 ? t2Odds : t1Odds;
+  if (smallOdds > otherOdds) return 1;
+  if (smallOdds < otherOdds) return 2;
+  return null;
+}
+
+/** High PPG → high odds, low PPG → low odds. */
 export function ppgOddsZidaneAligned(
   t1Ppg: number | null | undefined,
   t2Ppg: number | null | undefined,
@@ -549,6 +579,7 @@ export function evaluateStreamline(opts: {
   const t1NeverBeatenT2 = h2hMeetings > 0 && t1H2hWins === 0;
   const t2BeatsT1 = h2hMeetings > 0 && t2H2hWins > 0;
   const ppgOddsZidane = ppgOddsZidaneAligned(t1Ppg, t2Ppg, t1Odds, t2Odds);
+  const batetemeKind = close ? batetemeKindFor(t1Ppg, t2Ppg, t1Odds, t2Odds) : null;
   // T1 is already the stronger table side. High PPG and short odds are one bundle:
   // T1’s 1X2 price should be lower than T2. Do not skip the check when PPG is close.
   const t1PpgHigh = t1Ppg != null && t2Ppg != null && t1Ppg > t2Ppg;
@@ -593,7 +624,13 @@ export function evaluateStreamline(opts: {
   if (delta == null) {
     call = 'Need both sides on the table to run Streamline (T1 pts − T2 pts).';
   } else if (primary === 'bateteme') {
-    call = `${t1Label} − ${t2Label} = ${delta} pts (≤ 4). Both sides sit in Bateteme stream.`;
+    const kindLine =
+      batetemeKind === 1
+        ? ' Bateteme 1 — smaller PPG has the larger odds.'
+        : batetemeKind === 2
+          ? ' Bateteme 2 — smaller PPG has the smaller odds.'
+          : '';
+    call = `${t1Label} − ${t2Label} = ${delta} pts (≤ 4). Both sides sit in Bateteme stream.${kindLine}`;
   } else if (primary === 'compliant') {
     call = `Compliant stream — T1’s 1X2 odds are lower than T2, as expected.`;
   } else if (primary === 'zidane_law') {
@@ -632,6 +669,7 @@ export function evaluateStreamline(opts: {
     t1DidBeatT2,
     t2BeatsT1,
     ppgOddsZidane,
+    batetemeKind,
     inStreams,
     oddsCall,
     call,

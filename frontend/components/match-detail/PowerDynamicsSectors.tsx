@@ -7,6 +7,8 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 
 import {
   PPG_BAND_LABEL,
+  BATETEME_KIND_LABEL,
+  BATETEME_KIND_ROLE,
   STREAM_LABEL,
   STREAM_ROLE,
   ZIDANE_PPG_ODDS_RULE,
@@ -25,6 +27,7 @@ import {
   type PowerDynamicsBundle,
   type ShowRead,
   type SideSnapshot,
+  type BatetemeKind,
   type StreamName,
   type StreakSide,
   type SwingScope,
@@ -325,25 +328,35 @@ function streamTone(name: StreamName | null): Tone {
 export function StreamlineCards({
   pd,
   focus,
+  batetemeFocus,
 }: {
   pd: PowerDynamicsBundle;
   focus?: StreamName;
+  batetemeFocus?: BatetemeKind;
 }) {
   const s = pd.streamline;
+  const batetemeKindFocus = focus === 'bateteme' ? batetemeFocus : undefined;
+  const inBatetemeKind =
+    batetemeKindFocus != null && s.close && s.batetemeKind === batetemeKindFocus;
   const belong = (sideLabel: string, points: number | null, stream: StreamName) => {
-    const inIt = s.inStreams[stream];
+    const inIt = batetemeKindFocus != null ? inBatetemeKind : s.inStreams[stream];
+    const streamName =
+      batetemeKindFocus != null ? BATETEME_KIND_LABEL[batetemeKindFocus] : STREAM_LABEL[stream];
     return (
       <SideCard
-        key={`${stream}-${sideLabel}`}
+        key={`${stream}-${batetemeKindFocus ?? ''}-${sideLabel}`}
         label={sideLabel}
         meta={`${points ?? '—'} pts`}>
         <Line
-          text={inIt ? `Belongs here — ${STREAM_LABEL[stream]}` : `Does not belong in ${STREAM_LABEL[stream]}`}
+          text={inIt ? `Belongs here — ${streamName}` : `Does not belong in ${streamName}`}
           tone={inIt ? streamTone(stream) : 'info'}
         />
         <Line
           text={s.t1Stream ? `Primary stream: ${STREAM_LABEL[s.t1Stream]}` : 'Not assigned yet'}
         />
+        {s.t1Stream === 'bateteme' && s.batetemeKind != null ? (
+          <Line text={`Bateteme split: ${BATETEME_KIND_LABEL[s.batetemeKind]}`} />
+        ) : null}
       </SideCard>
     );
   };
@@ -380,19 +393,23 @@ export function StreamlineCards({
     return out;
   };
 
-  const inFocus = focus != null && s.inStreams[focus];
+  const inFocus =
+    focus != null &&
+    (batetemeKindFocus != null ? inBatetemeKind : s.inStreams[focus]);
   const introNote =
     focus == null
       ? 'One stream per fixture. Order: Bateteme, Compliant, Zidane Law, Bookie mistake, Bookie mistake 2.'
-      : focus === 'zidane_law' || focus === 'bookie' || focus === 'bookie2'
-        ? focus === 'bookie2'
-          ? `${ZIDANE_PPG_ODDS_RULE}. No H2H games were found.`
-          : ZIDANE_PPG_ODDS_RULE
-        : !inFocus
-          ? undefined
-          : focus === 'bateteme'
-            ? 'ΔP ≤ 4. Both sides sit here when the points gap is close.'
-            : 'T1 is the stronger table side, so T1’s bookmaker 1X2 odds should be lower than T2.';
+      : batetemeKindFocus != null
+        ? BATETEME_KIND_ROLE[batetemeKindFocus]
+        : focus === 'zidane_law' || focus === 'bookie' || focus === 'bookie2'
+          ? focus === 'bookie2'
+            ? `${ZIDANE_PPG_ODDS_RULE}. No H2H games were found.`
+            : ZIDANE_PPG_ODDS_RULE
+          : !inFocus
+            ? undefined
+            : focus === 'bateteme'
+              ? 'ΔP ≤ 4. Both sides sit here when the points gap is close.'
+              : 'T1 is the stronger table side, so T1’s bookmaker 1X2 odds should be lower than T2.';
 
   const h2hRec = `${s.h2hMeetings} H2H, T1 ${s.t1H2hWins}W / ${s.t1H2hDraws}D / ${s.t1H2hLosses}L`;
   const h2hNote =
@@ -425,15 +442,28 @@ export function StreamlineCards({
     focus === 'bookie2';
   const showOdds =
     focus == null ||
+    focus === 'bateteme' ||
     focus === 'compliant' ||
     focus === 'zidane_law' ||
     focus === 'bookie' ||
     focus === 'bookie2';
-  const showCall = focus == null || s.t1Stream === focus;
+  const showCall =
+    focus == null ||
+    s.t1Stream === focus ||
+    (focus === 'bateteme' && batetemeKindFocus != null && s.batetemeKind === batetemeKindFocus);
 
   return (
     <View>
-      <SectorIntro title={focus ? STREAM_LABEL[focus] : 'Streamline'} note={introNote} />
+      <SectorIntro
+        title={
+          batetemeKindFocus != null
+            ? BATETEME_KIND_LABEL[batetemeKindFocus]
+            : focus
+              ? STREAM_LABEL[focus]
+              : 'Streamline'
+        }
+        note={introNote}
+      />
       {showDelta ? (
         <Callout
           text={
@@ -472,7 +502,22 @@ export function StreamlineCards({
       ) : null}
       {focus ? (
         <>
-          {inFocus ? bucket(focus, inStream(focus)) : null}
+          {inFocus && batetemeKindFocus != null ? (
+            <View
+              style={[styles.streamBucket, { borderColor: toneColor(streamTone('bateteme')) }]}>
+              <Text style={[styles.streamName, { color: toneColor(streamTone('bateteme')) }]}>
+                {BATETEME_KIND_LABEL[batetemeKindFocus]}
+              </Text>
+              <Text style={styles.streamRole}>{BATETEME_KIND_ROLE[batetemeKindFocus]}</Text>
+              {inStream('bateteme').map((t) => (
+                <Text key={t} style={styles.streamTeam}>
+                  {t}
+                </Text>
+              ))}
+            </View>
+          ) : inFocus ? (
+            bucket(focus, inStream(focus))
+          ) : null}
           {belong(pd.t1.label, s.t1Points, focus)}
           {belong(pd.t2.label, s.t2Points, focus)}
         </>

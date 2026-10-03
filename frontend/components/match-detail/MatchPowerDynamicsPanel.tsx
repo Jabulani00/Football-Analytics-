@@ -82,8 +82,14 @@ const STREAMLINE_SUBS = [
   { id: 'bookie2', label: 'Bookie mistake 2' },
 ] as const;
 
+const BATETEME_SUBS = [
+  { id: '1', label: 'Bateteme 1' },
+  { id: '2', label: 'Bateteme 2' },
+] as const;
+
 type BaselineSubId = (typeof BASELINE_SUBS)[number]['id'];
 type StreamlineSubId = (typeof STREAMLINE_SUBS)[number]['id'];
+type BatetemeSubId = (typeof BATETEME_SUBS)[number]['id'];
 
 type Props = {
   standings: StandingRow[];
@@ -143,6 +149,7 @@ export default function MatchPowerDynamicsPanel({
   const [view, setView] = useState<PowerDynamicsTabId>('baseline');
   const [baselineSub, setBaselineSub] = useState<BaselineSubId>('original');
   const [streamlineSub, setStreamlineSub] = useState<StreamlineSubId>('bateteme');
+  const [batetemeSub, setBatetemeSub] = useState<BatetemeSubId>('1');
 
   const like = useMemo(() => toStandingLike(standings), [standings]);
   const oa1x2Ready = ftOdds(odds, 'home') != null && ftOdds(odds, 'away') != null;
@@ -284,7 +291,23 @@ export default function MatchPowerDynamicsPanel({
                   highlighted={pd.streamline.t1Stream}
                   onChange={(id) => setStreamlineSub(id)}
                 />
-                <StreamlineCards pd={pd} focus={streamlineSub} />
+                {streamlineSub === 'bateteme' ? (
+                  <SubTabBar
+                    tabs={[...BATETEME_SUBS]}
+                    active={batetemeSub}
+                    highlighted={
+                      pd.streamline.batetemeKind != null
+                        ? String(pd.streamline.batetemeKind)
+                        : null
+                    }
+                    onChange={(id) => setBatetemeSub(id)}
+                  />
+                ) : null}
+                <StreamlineCards
+                  pd={pd}
+                  focus={streamlineSub}
+                  batetemeFocus={streamlineSub === 'bateteme' ? Number(batetemeSub) as 1 | 2 : undefined}
+                />
               </View>
             ) : (
               <BaselineCards pd={pd} />
