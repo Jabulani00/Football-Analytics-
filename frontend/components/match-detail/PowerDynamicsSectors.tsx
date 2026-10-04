@@ -37,6 +37,9 @@ import {
 import {
   CHANGE_LABEL,
   OPTION_LABEL,
+  bandFromTablePoints,
+  statusFromOutcome,
+  type FormBand,
   type InitialStateSide,
   type InitialStatus,
   type TeamLast5,
@@ -45,6 +48,7 @@ import {
   LAST6_BAND_LABEL,
   LAST6_TREND_SHORT,
   compareLast6Form,
+  last5FormLeagueTable,
   last6FormFixtureLensRows,
   last6FormFixtureRows,
   last6FormLeagueTable,
@@ -54,6 +58,7 @@ import {
   type Last6FormBand,
   type Last6LeagueRow,
   type Last6Period,
+  type Last6Venue,
 } from '@/utils/last6Form';
 import { lastN } from '@/utils/teamResults';
 import type { SeasonMatch } from '@/utils/bhozomaEngine';
@@ -879,6 +884,182 @@ export function Last5Cards({
   );
 }
 
+const LAST5_VENUE_TABS: { id: Last6Venue; label: string }[] = [
+  { id: 'overall', label: 'Overall' },
+  { id: 'home', label: 'Home' },
+  { id: 'away', label: 'Away' },
+];
+
+function last5BandLabel(band: FormBand): string {
+  if (band === 'good') return 'Good';
+  if (band === 'bad') return 'Bad';
+  return 'Med';
+}
+
+function last5BandTone(band: FormBand): Tone {
+  if (band === 'good') return 'good';
+  if (band === 'bad') return 'bad';
+  return 'warn';
+}
+
+export function Last5LeagueCards({
+  pd,
+  standings,
+  matches,
+  loading,
+  error,
+  highlightIds,
+  teamLabels,
+}: {
+  pd: PowerDynamicsBundle;
+  standings: StandingLike[];
+  matches: SeasonMatch[];
+  loading?: boolean;
+  error?: string | null;
+  highlightIds?: number[];
+  teamLabels?: Record<number, string>;
+}) {
+  const [venue, setVenue] = useState<Last6Venue>('overall');
+  const [period, setPeriod] = useState<Last6Period>('ft');
+  const table = last5FormLeagueTable(standings, matches, { venue, period });
+  const rows = [...table].sort((a, b) => a.formRank - b.formRank);
+  const fixtureIds = (highlightIds ?? [pd.t1.teamId, pd.t2.teamId]).filter(
+    (id): id is number => id != null && Number.isFinite(id),
+  );
+  const highlightSet = new Set(fixtureIds);
+  const formPd = overlayFormBaseline(pd, table);
+  const typeById = new Map<number, { letter: string | null; score: number | null }>();
+  if (pd.t1.teamId != null) {
+    typeById.set(pd.t1.teamId, { letter: formPd.baselineGap.t1.letter, score: formPd.baselineGap.t1.score });
+  }
+  if (pd.t2.teamId != null) {
+    typeById.set(pd.t2.teamId, { letter: formPd.baselineGap.t2.letter, score: formPd.baselineGap.t2.score });
+  }
+  const htCovered = matches.filter((m) => m.homeGoalsHt != null && m.awayGoalsHt != null).length;
+  const venueNote =
+    venue === 'home'
+      ? 'Last 5 home matches for every side.'
+      : venue === 'away'
+        ? 'Last 5 away matches for every side.'
+        : 'Last 5 matches in any venue for every side.';
+
+  if (loading) {
+    return (
+      <View>
+        <SectorIntro title="Section 2: LAST 5" preserveCase note="Ranking every side by last-5 form." />
+        <Text style={styles.note}>Building last-5 ranking from season results…</Text>
+      </View>
+    );
+  }
+  if (error) {
+    return (
+      <View>
+        <SectorIntro title="Section 2: LAST 5" preserveCase />
+        <Text style={styles.note}>{error}</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View>
+      <SectorIntro
+        title="Section 2: LAST 5"
+        preserveCase
+        note="League ranking from last 5. Fixture sides are highlighted."
+      />
+      <SubTabBar tabs={LAST5_VENUE_TABS} active={venue} onChange={setVenue} />
+      <SubTabBar tabs={FORM_PERIOD_TABS} active={period} onChange={setPeriod} />
+      <Text style={styles.note}>{venueNote} W = Good · D = Med · L = Bad</Text>
+      {period !== 'ft' ? (
+        <Text style={styles.note}>
+          {htCovered} of {matches.length} finished games have a half-time score
+          {htCovered === 0 ? ' — half tables stay empty until that data lands' : ''}.
+        </Text>
+      ) : null}
+      {standings.length < 2 ? (
+        <Text style={styles.note}>Need a league table for this ranking.</Text>
+      ) : matches.length === 0 ? (
+        <Text style={styles.note}>No finished season fixtures loaded yet.</Text>
+      ) : (
+        <ScrollView horizontal showsHorizontalScrollIndicator style={styles.initialScroll}>
+          <View style={[styles.formTable, styles.last5LeagueTable]}>
+            <View style={[styles.formRow, styles.formHead]}>
+              <Text style={[styles.formTh, styles.formPos]}>#</Text>
+              <Text style={[styles.formTh, styles.formTeam]}>Team</Text>
+              <Text style={[styles.formTh, styles.initialSeqHead]}>Last 5</Text>
+              <Text style={[styles.formTh, styles.formNum]}>MP</Text>
+              <Text style={[styles.formTh, styles.formWdl]}>W-D-L</Text>
+              <Text style={[styles.formTh, styles.formNum]}>Pts</Text>
+              <Text style={[styles.formTh, styles.formNum]}>PPG</Text>
+              <Text style={[styles.formTh, styles.formNum]}>GD</Text>
+              <Text style={[styles.formTh, styles.formType]}>Type</Text>
+              <Text style={[styles.formTh, styles.formNum]}>Gap</Text>
+              <Text style={[styles.formTh, styles.formRead]}>Read</Text>
+            </View>
+            {rows.map((r) => {
+              const f = r.form;
+              const typed = typeById.get(r.teamId);
+              const band = f ? bandFromTablePoints(f.points) : null;
+              return (
+                <View
+                  key={r.teamId}
+                  style={[styles.formRow, highlightSet.has(r.teamId) && styles.formRowFocus]}>
+                  <FormCell style={styles.formPos}>{String(r.formRank)}</FormCell>
+                  <View style={styles.formTeam}>
+                    <Text style={styles.formTeamName} numberOfLines={1}>
+                      {teamLabels?.[r.teamId] ?? r.name}
+                    </Text>
+                    {f ? (
+                      <Text style={styles.formScores} numberOfLines={1}>
+                        {f.games.map((g) => `${g.gf}-${g.ga}`).join(' · ')}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <View style={styles.initialSeq}>
+                    {f && f.games.length > 0 ? (
+                      f.games.map((g, i) => {
+                        const status = statusFromOutcome(g.outcome);
+                        return (
+                          <Text
+                            key={`${r.teamId}-${i}`}
+                            style={[styles.initialSeqTag, { color: toneColor(statusTone(status)) }]}>
+                            {g.outcome} ({status})
+                          </Text>
+                        );
+                      })
+                    ) : (
+                      <Text style={styles.formTd}>—</Text>
+                    )}
+                  </View>
+                  <FormCell style={styles.formNum}>{f ? String(f.mp) : '—'}</FormCell>
+                  <FormCell style={styles.formWdl}>{f ? `${f.won}-${f.drawn}-${f.lost}` : '—'}</FormCell>
+                  <FormCell style={styles.formNum}>{f ? String(f.points) : '—'}</FormCell>
+                  <FormCell style={styles.formNum}>{f?.ppg != null ? f.ppg.toFixed(2) : '—'}</FormCell>
+                  <FormCell style={styles.formNum}>{f ? `${f.gd >= 0 ? '+' : ''}${f.gd}` : '—'}</FormCell>
+                  <FormCell style={styles.formType}>{typed?.letter ?? '—'}</FormCell>
+                  <FormCell style={styles.formNum}>
+                    {typed?.score != null ? fmtGapScore(typed.score) : '—'}
+                  </FormCell>
+                  <FormCell style={styles.formRead} tone={band ? last5BandTone(band) : undefined}>
+                    {band ? last5BandLabel(band) : 'No sample'}
+                  </FormCell>
+                </View>
+              );
+            })}
+          </View>
+        </ScrollView>
+      )}
+      {standings.length >= 2 && matches.length > 0 ? (
+        <BaselineCards
+          pd={formPd}
+          title="Baseline — last 5"
+          note="Same A–F types and 0–10 gap scale as Baseline, from last-5 places on this table (points, then GD, then goals scored)."
+        />
+      ) : null}
+    </View>
+  );
+}
+
 function last6Tone(band: Last6FormBand): Tone {
   if (band === 'strong') return 'good';
   if (band === 'poor') return 'bad';
@@ -1579,6 +1760,7 @@ const styles = StyleSheet.create({
   },
   initialScroll: { marginBottom: spacing.sm },
   initialTable: { minWidth: 28 + 150 + 360 + 36 + 52 + 36 + 36 + 36 },
+  last5LeagueTable: { minWidth: 28 + 150 + 360 + 36 + 52 + 36 + 36 + 36 + 36 + 36 + 110 },
   initialSeqHead: { width: 360 },
   initialSeq: {
     width: 360,

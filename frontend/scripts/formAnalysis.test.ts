@@ -17,6 +17,7 @@ import {
   last6FormFixtureLensRows,
   last6FormFixtureRows,
   last6FormForSides,
+  last5FormLeagueTable,
   last6FormLeagueTable,
   last6FormStandings,
 } from '../utils/last6Form';
@@ -462,6 +463,24 @@ console.log('\nlast 6 form');
   const alpha1h = firstHalf.find((r) => r.teamId === 1);
   check('1H skips no sample when ht is present', (alpha1h?.form?.mp ?? 0) === 3);
   check('Alpha 1H is mixed (loss, win, draw)', alpha1h?.form?.points === 4, `pts=${alpha1h?.form?.points}`);
+
+  const last5League = last5FormLeagueTable(standings, season);
+  check('last-5 table has every side', last5League.length === 3);
+  check('last-5 Alpha sample is at most 5', (last5League[0]?.form?.mp ?? 0) <= 5);
+  check('last-5 Alpha is still top', last5League.find((r) => r.teamId === 1)?.formRank === 1);
+  const last5Home = last5FormLeagueTable(standings, season, { venue: 'home' });
+  check(
+    'last-5 home Alpha is two home wins',
+    last5Home.find((r) => r.teamId === 1)?.form?.won === 2 &&
+      last5Home.find((r) => r.teamId === 1)?.form?.mp === 2,
+  );
+  const last5Away = last5FormLeagueTable(standings, season, { venue: 'away' });
+  check(
+    'last-5 away Bravo has no wins',
+    last5Away.find((r) => r.teamId === 2)?.form?.won === 0,
+  );
+  const last51h = last5FormLeagueTable(standings, halfSeason, { period: '1h' });
+  check('last-5 1H Alpha has three half samples', last51h.find((r) => r.teamId === 1)?.form?.mp === 3);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

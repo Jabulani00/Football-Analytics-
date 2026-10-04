@@ -18,6 +18,7 @@ import {
   IndlelaCards,
   InitialStateCards,
   Last5Cards,
+  Last5LeagueCards,
   FormCards,
   MiddleGuysCards,
   PointsDiffCards,
@@ -361,6 +362,15 @@ export default function MatchPowerDynamicsPanel({
               standings={like}
               matches={seasonFx.matches}
               tableLoading={seasonFx.loading}
+            />
+            <Last5LeagueCards
+              pd={pd}
+              standings={like}
+              matches={seasonFx.matches}
+              loading={seasonFx.loading}
+              error={seasonFx.error}
+              highlightIds={highlightIds}
+              teamLabels={teamLabels}
             />
             {(() => {
               const t1L5 = pd.t1.venue === 'home' ? form.last5?.home : form.last5?.away;
