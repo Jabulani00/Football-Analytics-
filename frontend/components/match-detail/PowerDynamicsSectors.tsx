@@ -34,7 +34,13 @@ import {
   type Tone,
   type VenueRead,
 } from '@/utils/powerDynamicsEngine';
-import { CHANGE_LABEL, OPTION_LABEL, type TeamLast5 } from '@/utils/last5Analysis';
+import {
+  CHANGE_LABEL,
+  OPTION_LABEL,
+  type InitialStateSide,
+  type InitialStatus,
+  type TeamLast5,
+} from '@/utils/last5Analysis';
 import {
   LAST6_BAND_LABEL,
   LAST6_TREND_SHORT,
@@ -524,6 +530,59 @@ export function StreamlineCards({
       ) : s.t1Stream ? (
         bucket(s.t1Stream, inStream(s.t1Stream))
       ) : null}
+    </View>
+  );
+}
+
+function statusTone(status: InitialStatus): Tone {
+  if (status === 'Good') return 'good';
+  if (status === 'Bad') return 'bad';
+  return 'warn';
+}
+
+export function InitialStateCards({
+  homeName,
+  awayName,
+  home,
+  away,
+}: {
+  homeName: string;
+  awayName: string;
+  home: InitialStateSide | null;
+  away: InitialStateSide | null;
+}) {
+  const block = (name: string, side: InitialStateSide | null, venue: 'home' | 'away') => {
+    const venueLabel = venue === 'home' ? 'home' : 'away';
+    return (
+      <SideCard label={name} meta={`Last 5 ${venueLabel} matches`}>
+        <View style={styles.matchHead}>
+          <Text style={[styles.matchHeadText, styles.matchResultCol]}>Result</Text>
+          <Text style={[styles.matchHeadText, styles.matchStatusCol]}>Status</Text>
+        </View>
+        {side && side.matches.length > 0 ? (
+          side.matches.map((m, i) => (
+            <View key={`${m.result.fixtureId}-${i}`} style={styles.matchRow}>
+              <Text style={styles.matchResult} numberOfLines={1}>
+                {m.outcome}  {m.result.gf}–{m.result.ga}  vs {m.result.opponentName}
+              </Text>
+              <Text style={[styles.matchStatus, { color: toneColor(statusTone(m.status)) }]}>
+                {m.status}
+              </Text>
+            </View>
+          ))
+        ) : (
+          <Line text={`No ${venueLabel} matches yet`} />
+        )}
+      </SideCard>
+    );
+  };
+
+  return (
+    <View>
+      <Text style={styles.subHead}>Initial state</Text>
+      <Line text="W = Good · D = Med · L = Bad" />
+      {block(homeName, home, 'home')}
+      {block(awayName, away, 'away')}
     </View>
   );
 }
@@ -1263,6 +1322,40 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     textTransform: 'uppercase',
     letterSpacing: 0.4,
+  },
+  matchHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.xs,
+    marginBottom: 2,
+  },
+  matchHeadText: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 10,
+    color: theme.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  matchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 3,
+    borderTopWidth: layout.borderWidth,
+    borderTopColor: theme.border,
+  },
+  matchResultCol: { flex: 1 },
+  matchStatusCol: { width: 52, textAlign: 'right' },
+  matchResult: {
+    flex: 1,
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: theme.textPrimary,
+  },
+  matchStatus: {
+    width: 52,
+    textAlign: 'right',
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 12,
   },
   callout: {
     borderWidth: layout.borderWidth,

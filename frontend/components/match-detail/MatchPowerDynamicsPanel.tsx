@@ -16,6 +16,7 @@ import {
   ContestedCards,
   GapAnalysisCards,
   IndlelaCards,
+  InitialStateCards,
   Last5Cards,
   FormCards,
   MiddleGuysCards,
@@ -33,7 +34,7 @@ import { useSeasonFixtures } from '@/hooks/useSeasonFixtures';
 import { useFixtureBook1x2 } from '@/hooks/useFixtureBook1x2';
 import type { Competition, H2HMatch, OddsByMarket, Probability, StandingRow } from '@/services/oddAlerts';
 import { evaluatePowerDynamics, ftOdds } from '@/utils/powerDynamicsEngine';
-import { findUkulumbana } from '@/utils/last5Analysis';
+import { buildInitialState, findUkulumbana } from '@/utils/last5Analysis';
 import type { StandingLike } from '@/utils/motivationEngine';
 import { fonts, spacing, theme } from '@/styles/theme';
 
@@ -108,6 +109,7 @@ type Props = {
   odds?: OddsByMarket;
   probability?: Probability;
   kickoffUnix?: number;
+  fixtureId?: number | null;
 };
 
 function toStandingLike(rows: StandingRow[]): StandingLike[] {
@@ -145,6 +147,7 @@ export default function MatchPowerDynamicsPanel({
   h2hMatches,
   odds,
   probability,
+  fixtureId,
 }: Props) {
   const [view, setView] = useState<PowerDynamicsTabId>('baseline');
   const [baselineSub, setBaselineSub] = useState<BaselineSubId>('original');
@@ -248,6 +251,18 @@ export default function MatchPowerDynamicsPanel({
     ],
   );
 
+  const initialState = useMemo(
+    () =>
+      buildInitialState({
+        homeId,
+        awayId,
+        homeResults: form.homeResults,
+        awayResults: form.awayResults,
+        excludeFixtureId: fixtureId,
+      }),
+    [homeId, awayId, form.homeResults, form.awayResults, fixtureId],
+  );
+
   const t1Label = pd.t1.label;
   const t2Label = pd.t2.label;
   const homePdLabel = pd.t1.venue === 'home' ? t1Label : t2Label;
@@ -333,7 +348,13 @@ export default function MatchPowerDynamicsPanel({
           <View>
             <SectorIntro
               title="Last 5"
-              note="Graded last-5, Ukulumbana matchup, and last-game flags for T1 vs T2."
+              note="Initial state uses the home side’s last 5 home matches and the away side’s last 5 away matches."
+            />
+            <InitialStateCards
+              homeName={homeName}
+              awayName={awayName}
+              home={initialState.home}
+              away={initialState.away}
             />
             {(() => {
               const t1L5 = pd.t1.venue === 'home' ? form.last5?.home : form.last5?.away;
