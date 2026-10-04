@@ -201,7 +201,8 @@ export default function MatchPowerDynamicsPanel({
     view === 'imbangi' ||
     view === 'competition_status' ||
     view === 'middle_guys' ||
-    view === 'form';
+    view === 'form' ||
+    view === 'last5';
   const seasonFx = useSeasonFixtures(competition, season, needSeasonFx);
 
   const form = useFixtureFormAnalysis({
@@ -349,13 +350,17 @@ export default function MatchPowerDynamicsPanel({
             <SectorIntro
               title="Section 1: INITIAL STATE"
               preserveCase
-              note="Home side: last 5 home matches. Away side: last 5 away matches."
+              note="Overall is the last 5 in any venue. Home/Away keeps the home side at home and the away side on the road."
             />
             <InitialStateCards
-              homeName={homeName}
-              awayName={awayName}
+              pd={pd}
               home={initialState.home}
               away={initialState.away}
+              overallHome={initialState.overallHome}
+              overallAway={initialState.overallAway}
+              standings={like}
+              matches={seasonFx.matches}
+              tableLoading={seasonFx.loading}
             />
             {(() => {
               const t1L5 = pd.t1.venue === 'home' ? form.last5?.home : form.last5?.away;

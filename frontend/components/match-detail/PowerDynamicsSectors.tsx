@@ -49,11 +49,13 @@ import {
   last6FormFixtureRows,
   last6FormLeagueTable,
   last6FormStandings,
+  resultsFromSeasonMatches,
   type Last6FixtureLens,
   type Last6FormBand,
   type Last6LeagueRow,
   type Last6Period,
 } from '@/utils/last6Form';
+import { lastN } from '@/utils/teamResults';
 import type { SeasonMatch } from '@/utils/bhozomaEngine';
 import { GRADE_LABEL, STANCE_LABEL, type StandingLike } from '@/utils/motivationEngine';
 import SubTabBar from '@/components/shared/SubTabBar';
@@ -548,48 +550,289 @@ function statusTone(status: InitialStatus): Tone {
   return 'warn';
 }
 
+function tallyInitial(side: InitialStateSide | null | undefined) {
+  const matches = side?.matches ?? [];
+  let won = 0;
+  let drawn = 0;
+  let lost = 0;
+  let gf = 0;
+  let ga = 0;
+  for (const m of matches) {
+    if (m.outcome === 'W') won += 1;
+    else if (m.outcome === 'D') drawn += 1;
+    else lost += 1;
+    gf += m.result.gf;
+    ga += m.result.ga;
+  }
+  const mp = matches.length;
+  const points = won * 3 + drawn;
+  return { matches, won, drawn, lost, gf, ga, mp, points, gd: gf - ga, ppg: mp > 0 ? points / mp : null };
+}
+
+type InitialTally = ReturnType<typeof tallyInitial>;
+
+type InitialLens = 'overall' | 'home_away';
+
+const INITIAL_LENS_TABS: { id: InitialLens; label: string }[] = [
+  { id: 'overall', label: 'Overall' },
+  { id: 'home_away', label: 'Home/Away' },
+];
+
+/** Last-5 places. Fixture sides keep the sample already shown in the table. */
+function venueLast5Rows(
+  standings: StandingLike[],
+  matches: SeasonMatch[],
+  venue: 'home' | 'away' | 'overall',
+  focus: { teamId: number | null; tally: InitialTally }[],
+): StandingLike[] {
+  const focusById = new Map(
+    focus
+      .filter((f): f is { teamId: number; tally: InitialTally } => f.teamId != null)
+      .map((f) => [f.teamId, f.tally]),
+  );
+  const rows = standings.map((s) => {
+    const kept = focusById.get(s.teamId);
+    if (kept) {
+      return { teamId: s.teamId, name: s.name, zone: s.zone, points: kept.points, gd: kept.gd, gf: kept.gf, played: kept.mp };
+    }
+    const window = lastN(resultsFromSeasonMatches(s.teamId, matches, standings, { venue }), 5);
+    let points = 0;
+    let gf = 0;
+    let ga = 0;
+    for (const r of window) {
+      if (r.outcome === 'W') points += 3;
+      else if (r.outcome === 'D') points += 1;
+      gf += r.gf;
+      ga += r.ga;
+    }
+    return { teamId: s.teamId, name: s.name, zone: s.zone, points, gd: gf - ga, gf, played: window.length };
+  });
+  rows.sort((a, b) => {
+    if (b.points !== a.points) return b.points - a.points;
+    if (b.gd !== a.gd) return b.gd - a.gd;
+    if (b.gf !== a.gf) return b.gf - a.gf;
+    return a.teamId - b.teamId;
+  });
+  return rows.map((r, i) => ({
+    rank: i + 1,
+    teamId: r.teamId,
+    name: r.name,
+    points: r.points,
+    played: r.played,
+    zone: r.zone,
+    goalDiff: r.gd,
+    goalsFor: r.gf,
+  }));
+}
+
+function initialBaselineBundle(
+  pd: PowerDynamicsBundle,
+  home: InitialStateSide | null,
+  away: InitialStateSide | null,
+  overallHome: InitialStateSide | null,
+  overallAway: InitialStateSide | null,
+  standings: StandingLike[],
+  matches: SeasonMatch[],
+  lens: InitialLens,
+): PowerDynamicsBundle {
+  const homeId = pd.t1.venue === 'home' ? pd.t1.teamId : pd.t2.teamId;
+  const awayId = pd.t1.venue === 'away' ? pd.t1.teamId : pd.t2.teamId;
+  const homeTable =
+    lens === 'overall'
+      ? venueLast5Rows(standings, matches, 'overall', [
+          { teamId: homeId, tally: tallyInitial(overallHome) },
+          { teamId: awayId, tally: tallyInitial(overallAway) },
+        ])
+      : venueLast5Rows(standings, matches, 'home', [{ teamId: homeId, tally: tallyInitial(home) }]);
+  const awayTable =
+    lens === 'overall'
+      ? homeTable
+      : venueLast5Rows(standings, matches, 'away', [{ teamId: awayId, tally: tallyInitial(away) }]);
+  const homeRank = homeId != null ? homeTable.find((r) => r.teamId === homeId) : undefined;
+  const awayRank = awayId != null ? awayTable.find((r) => r.teamId === awayId) : undefined;
+  const apply = (snap: SideSnapshot): SideSnapshot => {
+    const row = snap.venue === 'home' ? homeRank : awayRank;
+    return {
+      ...snap,
+      rank: row?.rank ?? null,
+      points: row && row.played > 0 ? row.points : null,
+      played: row && row.played > 0 ? row.played : null,
+      goalDiff: row && row.played > 0 ? row.goalDiff ?? null : null,
+      goalsFor: row && row.played > 0 ? row.goalsFor ?? null : null,
+    };
+  };
+  const t1 = apply(pd.t1);
+  const t2 = apply(pd.t2);
+  const positionGap = evaluatePositionGap({
+    tableSize: standings.length,
+    t1Rank: t1.rank,
+    t2Rank: t2.rank,
+    t1Label: t1.label,
+    t2Label: t2.label,
+  });
+  const baselineGap = baselineGapFor(
+    t1,
+    t2,
+    lens === 'overall' ? homeTable : [...homeTable, ...awayTable],
+    positionGap,
+  );
+  const pointsDiff = t1.points != null && t2.points != null ? Math.abs(t1.points - t2.points) : null;
+  return {
+    ...pd,
+    t1,
+    t2,
+    positionGap,
+    baselineGap,
+    pointsDiff,
+    closeOnTable: pointsDiff != null && pointsDiff <= 4,
+  };
+}
+
 export function InitialStateCards({
-  homeName,
-  awayName,
+  pd,
   home,
   away,
+  overallHome,
+  overallAway,
+  standings,
+  matches,
+  tableLoading,
 }: {
-  homeName: string;
-  awayName: string;
+  pd: PowerDynamicsBundle;
   home: InitialStateSide | null;
   away: InitialStateSide | null;
+  overallHome: InitialStateSide | null;
+  overallAway: InitialStateSide | null;
+  standings: StandingLike[];
+  matches: SeasonMatch[];
+  tableLoading?: boolean;
 }) {
-  const block = (name: string, side: InitialStateSide | null, venue: 'home' | 'away') => {
-    const venueLabel = venue === 'home' ? 'home' : 'away';
-    return (
-      <SideCard label={name} meta={`Last 5 ${venueLabel} matches`}>
-        <View style={styles.matchHead}>
-          <Text style={[styles.matchHeadText, styles.matchResultCol]}>Result</Text>
-          <Text style={[styles.matchHeadText, styles.matchStatusCol]}>Status</Text>
-        </View>
-        {side && side.matches.length > 0 ? (
-          side.matches.map((m, i) => (
-            <View key={`${m.result.fixtureId}-${i}`} style={styles.matchRow}>
-              <Text style={styles.matchResult} numberOfLines={1}>
-                {m.outcome}  {m.result.gf}–{m.result.ga}  vs {m.result.opponentName}
-              </Text>
-              <Text style={[styles.matchStatus, { color: toneColor(statusTone(m.status)) }]}>
-                {m.status}
-              </Text>
-            </View>
-          ))
-        ) : (
-          <Line text={`No ${venueLabel} matches yet`} />
-        )}
-      </SideCard>
-    );
-  };
+  const [lens, setLens] = useState<InitialLens>('overall');
+  const sides = [pd.t1, pd.t2].map((snap) => {
+    const sample =
+      lens === 'home_away'
+        ? snap.venue === 'home'
+          ? home
+          : away
+        : snap.venue === 'home'
+          ? overallHome
+          : overallAway;
+    return { snap, tally: tallyInitial(sample) };
+  });
+  const ranked = [...sides].sort((a, b) => {
+    if (b.tally.points !== a.tally.points) return b.tally.points - a.tally.points;
+    if (b.tally.gd !== a.tally.gd) return b.tally.gd - a.tally.gd;
+    return b.tally.gf - a.tally.gf;
+  });
+  const rankBySide = new Map(ranked.map((row, i) => [row.snap.side, i + 1]));
+  const [left, right] = sides;
+  let call = 'Need finished games for the initial state.';
+  let callTone: Tone = 'info';
+  if (left && right && left.tally.mp > 0 && right.tally.mp > 0) {
+    const gap = left.tally.points - right.tally.points;
+    if (gap >= 3) {
+      call = `${left.snap.label} is in better last-5 form (${left.tally.points}–${right.tally.points} pts).`;
+      callTone = 'warn';
+    } else if (gap <= -3) {
+      call = `${right.snap.label} is in better last-5 form (${right.tally.points}–${left.tally.points} pts).`;
+      callTone = 'warn';
+    } else {
+      call = `Similar last-5 form — ${left.snap.label} ${left.tally.points} pts, ${right.snap.label} ${right.tally.points} pts.`;
+    }
+  } else if ((left?.tally.mp ?? 0) > 0 || (right?.tally.mp ?? 0) > 0) {
+    const only = (left?.tally.mp ?? 0) > 0 ? left : right;
+    call = `Only ${only?.snap.label} has a last-5 sample so far.`;
+  }
 
   return (
     <View>
-      <Line text="W = Good · D = Med · L = Bad" />
-      {block(homeName, home, 'home')}
-      {block(awayName, away, 'away')}
+      <SubTabBar tabs={INITIAL_LENS_TABS} active={lens} onChange={setLens} />
+      <Text style={styles.note}>
+        {lens === 'overall'
+          ? 'Last 5 in any venue. W = Good · D = Med · L = Bad'
+          : 'Home side at home, away side away. W = Good · D = Med · L = Bad'}
+      </Text>
+      <Callout text={call} tone={callTone} />
+      <ScrollView horizontal showsHorizontalScrollIndicator style={styles.initialScroll}>
+        <View style={[styles.formTable, styles.initialTable]}>
+          <View style={[styles.formRow, styles.formHead]}>
+            <Text style={[styles.formTh, styles.formPos]}>#</Text>
+            <Text style={[styles.formTh, styles.formTeam]}>Team</Text>
+            <Text style={[styles.formTh, styles.initialSeqHead]}>Last 5</Text>
+            <Text style={[styles.formTh, styles.formNum]}>MP</Text>
+            <Text style={[styles.formTh, styles.formWdl]}>W-D-L</Text>
+            <Text style={[styles.formTh, styles.formNum]}>Pts</Text>
+            <Text style={[styles.formTh, styles.formNum]}>PPG</Text>
+            <Text style={[styles.formTh, styles.formNum]}>GD</Text>
+          </View>
+          {sides.map(({ snap, tally }) => (
+            <View key={snap.side} style={[styles.formRow, styles.formRowFocus]}>
+              <FormCell style={styles.formPos}>{String(rankBySide.get(snap.side) ?? '—')}</FormCell>
+              <View style={styles.formTeam}>
+                {lens === 'home_away' ? (
+                  <Text
+                    style={[
+                      styles.formVenue,
+                      snap.venue === 'home' ? styles.formVenueHome : styles.formVenueAway,
+                    ]}
+                    numberOfLines={1}>
+                    {snap.venue === 'home' ? 'Home' : 'Away'}
+                  </Text>
+                ) : null}
+                <Text style={styles.formTeamName} numberOfLines={1}>
+                  {snap.label}
+                </Text>
+                {tally.matches.length > 0 ? (
+                  <Text style={styles.formScores} numberOfLines={1}>
+                    {tally.matches.map((m) => `${m.result.gf}-${m.result.ga}`).join(' · ')}
+                  </Text>
+                ) : null}
+              </View>
+              <View style={styles.initialSeq}>
+                {tally.matches.length > 0 ? (
+                  tally.matches.map((m, i) => (
+                    <Text
+                      key={`${m.result.fixtureId}-${i}`}
+                      style={[styles.initialSeqTag, { color: toneColor(statusTone(m.status)) }]}>
+                      {m.outcome} ({m.status})
+                    </Text>
+                  ))
+                ) : (
+                  <Text style={styles.formTd}>—</Text>
+                )}
+              </View>
+              <FormCell style={styles.formNum}>{tally.mp > 0 ? String(tally.mp) : '—'}</FormCell>
+              <FormCell style={styles.formWdl}>
+                {tally.mp > 0 ? `${tally.won}-${tally.drawn}-${tally.lost}` : '—'}
+              </FormCell>
+              <FormCell style={styles.formNum}>{tally.mp > 0 ? String(tally.points) : '—'}</FormCell>
+              <FormCell style={styles.formNum}>
+                {tally.ppg != null ? tally.ppg.toFixed(2) : '—'}
+              </FormCell>
+              <FormCell style={styles.formNum}>
+                {tally.mp > 0 ? `${tally.gd >= 0 ? '+' : ''}${tally.gd}` : '—'}
+              </FormCell>
+            </View>
+          ))}
+        </View>
+      </ScrollView>
+      {standings.length < 2 ? (
+        <Text style={styles.note}>Need a league table for the initial-state baseline.</Text>
+      ) : matches.length === 0 ? (
+        <Text style={styles.note}>
+          {tableLoading ? 'Building the last-5 baseline from season results…' : 'No season results for the initial-state baseline yet.'}
+        </Text>
+      ) : (
+        <BaselineCards
+          pd={initialBaselineBundle(pd, home, away, overallHome, overallAway, standings, matches, lens)}
+          title="Baseline — initial state"
+          note={
+            lens === 'overall'
+              ? 'Same A–F types and 0–10 gap scale as Baseline, from each side’s last 5 in any venue.'
+              : 'Same A–F types and 0–10 gap scale as Baseline. Home side is placed on last-5 home form, away side on last-5 away form.'
+          }
+        />
+      )}
     </View>
   );
 }
@@ -1334,40 +1577,17 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.4,
   },
-  matchHead: {
+  initialScroll: { marginBottom: spacing.sm },
+  initialTable: { minWidth: 28 + 150 + 360 + 36 + 52 + 36 + 36 + 36 },
+  initialSeqHead: { width: 360 },
+  initialSeq: {
+    width: 360,
     flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: spacing.xs,
-    marginBottom: 2,
+    flexWrap: 'wrap',
+    gap: 6,
+    paddingVertical: 4,
   },
-  matchHeadText: {
-    fontFamily: fonts.bodySemiBold,
-    fontSize: 10,
-    color: theme.textMuted,
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-  },
-  matchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 3,
-    borderTopWidth: layout.borderWidth,
-    borderTopColor: theme.border,
-  },
-  matchResultCol: { flex: 1 },
-  matchStatusCol: { width: 52, textAlign: 'right' },
-  matchResult: {
-    flex: 1,
-    fontFamily: fonts.body,
-    fontSize: 12,
-    color: theme.textPrimary,
-  },
-  matchStatus: {
-    width: 52,
-    textAlign: 'right',
-    fontFamily: fonts.bodySemiBold,
-    fontSize: 12,
-  },
+  initialSeqTag: { fontFamily: fonts.bodySemiBold, fontSize: 12 },
   callout: {
     borderWidth: layout.borderWidth,
     borderRadius: layout.borderRadius,

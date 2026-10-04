@@ -295,15 +295,21 @@ export type InitialStateMatch = {
 
 export type InitialStateSide = {
   teamId: number;
-  /** Home side uses home games only; away side uses away games only. */
-  venue: 'home' | 'away';
+  /** `overall` is any venue. `home` / `away` keep only that venue. */
+  venue: 'home' | 'away' | 'overall';
   matches: InitialStateMatch[];
 };
 
-/** Last 5 going into the current fixture, split by the venue each side has today. */
+/** Last 5 going into the current fixture. */
 export type FixtureInitialState = {
+  /** Home side, home matches only. */
   home: InitialStateSide | null;
+  /** Away side, away matches only. */
   away: InitialStateSide | null;
+  /** Home side, last 5 in any venue. */
+  overallHome: InitialStateSide | null;
+  /** Away side, last 5 in any venue. */
+  overallAway: InitialStateSide | null;
 };
 
 export const STATUS_FROM_OUTCOME: Record<ResultOutcome, InitialStatus> = {
@@ -319,11 +325,13 @@ export function statusFromOutcome(outcome: ResultOutcome): InitialStatus {
 function initialStateSide(
   teamId: number | null | undefined,
   results: TeamResult[],
-  venue: 'home' | 'away',
+  venue: 'home' | 'away' | 'overall',
   excludeFixtureId?: number | null,
 ): InitialStateSide | null {
   if (teamId == null) return null;
-  const sample = lastN(filterScope(excludeFixture(results, excludeFixtureId), venue), 5);
+  const cleaned = excludeFixture(results, excludeFixtureId);
+  const scoped = venue === 'overall' ? cleaned : filterScope(cleaned, venue);
+  const sample = lastN(scoped, 5);
   return {
     teamId,
     venue,
@@ -337,8 +345,8 @@ function initialStateSide(
 
 /**
  * Initial state for the current fixture.
- * The side playing at home contributes its last 5 home matches.
- * The side playing away contributes its last 5 away matches.
+ * Home/Away: the home side’s last 5 home matches and the away side’s last 5 away matches.
+ * Overall: each side’s last 5 matches in any venue.
  * The fixture itself is left out so the read is the form going into it.
  */
 export function buildInitialState(opts: {
@@ -351,5 +359,7 @@ export function buildInitialState(opts: {
   return {
     home: initialStateSide(opts.homeId, opts.homeResults, 'home', opts.excludeFixtureId),
     away: initialStateSide(opts.awayId, opts.awayResults, 'away', opts.excludeFixtureId),
+    overallHome: initialStateSide(opts.homeId, opts.homeResults, 'overall', opts.excludeFixtureId),
+    overallAway: initialStateSide(opts.awayId, opts.awayResults, 'overall', opts.excludeFixtureId),
   };
 }

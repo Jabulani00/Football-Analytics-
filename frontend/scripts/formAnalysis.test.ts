@@ -160,6 +160,14 @@ console.log('\nlast5 initial state');
   );
   check('newest away match is a loss', state.away?.matches[0]?.status === 'Bad');
   check('away draw is Med', state.away?.matches[1]?.status === 'Med');
+  check('overall home sample mixes venues', state.overallHome?.matches.some((m) => !m.result.isHome) === true);
+  check('overall home sample is five games', state.overallHome?.matches.length === 5);
+  check(
+    'overall home statuses keep the away loss',
+    state.overallHome?.matches.map((m) => m.status).join(',') === 'Good,Bad,Med,Good,Bad',
+  );
+  check('overall away sample keeps a home win', state.overallAway?.matches.some((m) => m.result.isHome) === true);
+  check('overall away sample drops the sixth game', state.overallAway?.matches.every((m) => m.result.fixtureId !== 205) === true);
 }
 
 console.log('\nseparators (Section 4)');
