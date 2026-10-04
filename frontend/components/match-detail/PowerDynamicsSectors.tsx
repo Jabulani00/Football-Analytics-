@@ -158,19 +158,104 @@ function GapScoreRow({
   );
 }
 
+function gapCellRole(pd: PowerDynamicsBundle, pos: number): 't1' | 't2' | 'span' | 'idle' {
+  const g = pd.positionGap;
+  if (g.t1Rank === pos) return 't1';
+  if (g.t2Rank === pos) return 't2';
+  if (g.from != null && g.to != null && pos >= g.from && pos <= g.to) return 'span';
+  return 'idle';
+}
+
+function GapPlaces({ pd }: { pd: PowerDynamicsBundle }) {
+  const g = pd.positionGap;
+  if (g.tableSize < 2) return null;
+  const cols = g.tableSize < 10 ? g.tableSize : 10;
+  return (
+    <View style={styles.posGrid}>
+      {Array.from({ length: g.tableSize }, (_, i) => i + 1).map((pos) => {
+        const role = gapCellRole(pd, pos);
+        return (
+          <View key={pos} style={[styles.posSlot, { width: `${100 / cols}%` }]}>
+            <View
+              style={[
+                styles.posCell,
+                role === 't1' && styles.posCellT1,
+                role === 't2' && styles.posCellT2,
+                role === 'span' && styles.posCellSpan,
+              ]}>
+              <Text style={[styles.posNum, (role === 't1' || role === 't2') && styles.posNumOn]}>{pos}</Text>
+              {role === 't1' || role === 't2' ? (
+                <Text style={styles.posTag}>{role === 't1' ? 'T1' : 'T2'}</Text>
+              ) : null}
+            </View>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+function GapGradeModal({
+  pd,
+  visible,
+  onClose,
+}: {
+  pd: PowerDynamicsBundle;
+  visible: boolean;
+  onClose: () => void;
+}) {
+  const g = pd.positionGap;
+  const scale = positionGapScale(g.tableSize);
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalRoot}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <View style={styles.modalSheet}>
+          <View style={styles.modalHead}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.modalTitle}>{g.grade ? `Gap analysis · ${g.grade}` : 'Gap analysis'}</Text>
+              <Text style={styles.modalSub}>
+                {g.tableSize} teams
+                {g.t1Rank != null && g.t2Rank != null
+                  ? ` · ${pd.t1.label} #${g.t1Rank} · ${pd.t2.label} #${g.t2Rank}`
+                  : ''}
+              </Text>
+            </View>
+            <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Close">
+              <Text style={styles.modalClose}>Close</Text>
+            </Pressable>
+          </View>
+          <ScrollView style={styles.modalList}>
+            <Text style={styles.modalLead}>
+              {g.grade
+                ? `${g.grade} covers places ${g.from}–${g.to}. G1 is the largest gap. Each next grade is one place closer.`
+                : 'G1 is the largest gap. Each next grade is one place closer.'}
+            </Text>
+            <GapPlaces pd={pd} />
+            <View style={styles.modalRowHead}>
+              <Text style={styles.modalHeadCol}>Grade</Text>
+              <Text style={styles.modalHeadCol}>Gap</Text>
+            </View>
+            {scale.map((row) => {
+              const current = row.grade === g.grade;
+              return (
+                <View key={row.grade} style={[styles.modalRow, current && styles.modalRowCurrent]}>
+                  <Text style={[styles.modalGrade, current && styles.modalGradeCurrent]}>{row.grade}</Text>
+                  <Text style={[styles.modalGap, current && styles.modalGradeCurrent]}>{row.span}</Text>
+                </View>
+              );
+            })}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function PositionGapBoard({ pd }: { pd: PowerDynamicsBundle }) {
   const [open, setOpen] = useState(false);
   const g = pd.positionGap;
-  const scale = positionGapScale(g.tableSize);
-  const cols = g.tableSize > 0 && g.tableSize < 10 ? g.tableSize : 10;
-  const inSpan = (pos: number) => g.from != null && g.to != null && pos >= g.from && pos <= g.to;
-  const cellRole = (pos: number): 't1' | 't2' | 'span' | 'idle' => {
-    if (g.t1Rank === pos) return 't1';
-    if (g.t2Rank === pos) return 't2';
-    if (inSpan(pos)) return 'span';
-    return 'idle';
-  };
-  const canOpen = scale.length > 0;
+  const canOpen = positionGapScale(g.tableSize).length > 0;
 
   return (
     <View>
@@ -189,71 +274,8 @@ function PositionGapBoard({ pd }: { pd: PowerDynamicsBundle }) {
           </View>
         ) : null}
       </View>
-      {g.tableSize >= 2 ? (
-        <View style={styles.posGrid}>
-          {Array.from({ length: g.tableSize }, (_, i) => i + 1).map((pos) => {
-            const role = cellRole(pos);
-            return (
-              <View key={pos} style={[styles.posSlot, { width: `${100 / cols}%` }]}>
-                <View
-                  style={[
-                    styles.posCell,
-                    role === 't1' && styles.posCellT1,
-                    role === 't2' && styles.posCellT2,
-                    role === 'span' && styles.posCellSpan,
-                  ]}>
-                  <Text
-                    style={[
-                      styles.posNum,
-                      (role === 't1' || role === 't2') && styles.posNumOn,
-                    ]}>
-                    {pos}
-                  </Text>
-                  {role === 't1' || role === 't2' ? (
-                    <Text style={styles.posTag}>{role === 't1' ? 'T1' : 'T2'}</Text>
-                  ) : null}
-                </View>
-              </View>
-            );
-          })}
-        </View>
-      ) : null}
-      <Modal
-        visible={open}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setOpen(false)}>
-        <View style={styles.modalRoot}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setOpen(false)} />
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHead}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.modalTitle}>Gap grades</Text>
-                <Text style={styles.modalSub}>{g.tableSize} teams</Text>
-              </View>
-              <Pressable onPress={() => setOpen(false)} accessibilityRole="button" accessibilityLabel="Close">
-                <Text style={styles.modalClose}>Close</Text>
-              </Pressable>
-            </View>
-            <Text style={styles.modalLead}>G1 is the largest gap. Each next grade is one place closer.</Text>
-            <View style={styles.modalRowHead}>
-              <Text style={styles.modalHeadCol}>Grade</Text>
-              <Text style={styles.modalHeadCol}>Gap</Text>
-            </View>
-            <ScrollView style={styles.modalList}>
-              {scale.map((row) => {
-                const current = row.grade === g.grade;
-                return (
-                  <View key={row.grade} style={[styles.modalRow, current && styles.modalRowCurrent]}>
-                    <Text style={[styles.modalGrade, current && styles.modalGradeCurrent]}>{row.grade}</Text>
-                    <Text style={[styles.modalGap, current && styles.modalGradeCurrent]}>{row.span}</Text>
-                  </View>
-                );
-              })}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
+      <GapPlaces pd={pd} />
+      <GapGradeModal pd={pd} visible={open} onClose={() => setOpen(false)} />
     </View>
   );
 }
@@ -269,7 +291,10 @@ export function BaselineCards({
   note?: string;
   hideHeading?: boolean;
 }) {
+  const [gradeOpen, setGradeOpen] = useState(false);
   const gap = pd.baselineGap;
+  const grade = pd.positionGap.grade;
+  const gradeInCall = grade != null && gap.call.startsWith(grade);
   const row = (s: SideSnapshot, letter: typeof gap.t1) => (
     <SideCard
       key={s.side}
@@ -288,10 +313,26 @@ export function BaselineCards({
       {gap.leagueAvgPpg != null ? (
         <Text style={styles.note}>League average PPG {gap.leagueAvgPpg.toFixed(2)}</Text>
       ) : null}
-      <Callout
-        text={gap.call}
-        tone={gap.supports ? 'warn' : gap.stronger === 'level' ? 'info' : 'good'}
-      />
+      {gradeInCall && grade ? (
+        <Pressable
+          onPress={() => setGradeOpen(true)}
+          accessibilityRole="button"
+          accessibilityLabel={`Open gap analysis for ${grade}`}
+          style={[styles.callout, { borderColor: toneColor(gap.supports ? 'warn' : gap.stronger === 'level' ? 'info' : 'good') }]}>
+          <Text style={[styles.calloutText, { color: toneColor(gap.supports ? 'warn' : gap.stronger === 'level' ? 'info' : 'good') }]}>
+            <Text style={[styles.gradeLink, { color: toneColor(gap.supports ? 'warn' : gap.stronger === 'level' ? 'info' : 'good') }]}>
+              {grade}
+            </Text>
+            {gap.call.slice(grade.length)}
+          </Text>
+        </Pressable>
+      ) : (
+        <Callout
+          text={gap.call}
+          tone={gap.supports ? 'warn' : gap.stronger === 'level' ? 'info' : 'good'}
+        />
+      )}
+      <GapGradeModal pd={pd} visible={gradeOpen} onClose={() => setGradeOpen(false)} />
       {row(pd.t1, gap.t1)}
       {row(pd.t2, gap.t2)}
       {pd.pointsDiff != null ? (
@@ -1820,6 +1861,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.surface,
   },
   calloutText: { fontFamily: fonts.bodySemiBold, fontSize: 12, lineHeight: 17 },
+  gradeLink: { fontFamily: fonts.bodySemiBold, textDecorationLine: 'underline' },
   gapRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.xs },
   gapScoreBox: {
     width: 64,
