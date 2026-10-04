@@ -20,6 +20,8 @@ import {
   lastGameFlags,
   mshayiNote,
   neverTwiceInRow,
+  ppgSwing,
+  streakSide,
   ppgAlignsWithColour,
   ppgBandForColour,
   recordFromResults,
@@ -173,6 +175,39 @@ console.log('\nrecords / last game / streaks');
   check('win streak 6', currentStreak(sixW, 'W') === 6);
   check('never lost twice on all wins', neverTwiceInRow(sixW, 'L') === true);
   check('never won twice is false', neverTwiceInRow(sixW, 'W') === false);
+  check('short sample with no double is never lost twice', neverTwiceInRow(sixW.slice(0, 3), 'L') === true);
+
+  const split = [
+    res({ outcome: 'L', isHome: true, opponentName: 'A', gf: 0, ga: 1, unix: 10 }),
+    res({ outcome: 'W', isHome: false, opponentName: 'B', gf: 1, ga: 0, unix: 9 }),
+    res({ outcome: 'L', isHome: true, opponentName: 'C', gf: 0, ga: 2, unix: 8 }),
+    res({ outcome: 'L', isHome: false, opponentName: 'D', gf: 1, ga: 3, unix: 7 }),
+  ];
+  const lossRead = streakSide(split, 'L');
+  check('never lost twice is false when a pair exists', lossRead.neverTwice === false);
+  check('loss proof is the back-to-back pair', lossRead.runs.length === 1 && lossRead.runs[0].length === 2);
+  check('loss proof names the opponents', lossRead.runs[0][0].includes('C') && lossRead.runs[0][1].includes('D'));
+  check('never won twice on a split sample', streakSide(split, 'W').neverTwice === true);
+
+  const dropping: TeamResult[] = [
+    res({ outcome: 'L', isHome: true, unix: 12 }),
+    res({ outcome: 'L', isHome: false, unix: 11 }),
+    res({ outcome: 'D', isHome: true, unix: 10 }),
+    res({ outcome: 'L', isHome: false, unix: 9 }),
+    res({ outcome: 'D', isHome: true, unix: 8 }),
+    res({ outcome: 'W', isHome: true, unix: 7 }),
+    res({ outcome: 'W', isHome: false, unix: 6 }),
+    res({ outcome: 'W', isHome: true, unix: 5 }),
+  ];
+  const dropSwing = ppgSwing(dropping);
+  check('earlier PPG above last 5 is a sudden drop', dropSwing.drop === true && dropSwing.rise === false);
+  check('last 5 is excluded from the earlier sample', dropSwing.recentMp === 5 && dropSwing.priorMp === 3);
+  check('last 5 results are listed', dropSwing.recentLines.length === 5);
+
+  const picking = [...dropping].reverse().map((r, i) => ({ ...r, unix: 20 - i }));
+  const pickSwing = ppgSwing(picking);
+  check('earlier PPG below last 5 is a sudden pick up', pickSwing.rise === true && pickSwing.drop === false);
+  check('five games is not enough to compare', ppgSwing(dropping.slice(0, 5)).drop === false);
 }
 
 console.log('\nevaluatePowerDynamics T1 vs T2');

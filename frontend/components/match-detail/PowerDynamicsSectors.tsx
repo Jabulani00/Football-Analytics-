@@ -32,8 +32,8 @@ import {
   type SideSnapshot,
   type BatetemeKind,
   type StreamName,
+  type PpgSwing,
   type StreakSide,
-  type SwingScope,
   type Tone,
 } from '@/utils/powerDynamicsEngine';
 import {
@@ -1586,37 +1586,77 @@ export function IndlelaCards({ pd }: { pd: PowerDynamicsBundle }) {
   );
 }
 
+function YesMark() {
+  return <Text style={styles.yesMark}>YES</Text>;
+}
+
+function VerdictMark({ text, tone }: { text: string; tone: Tone }) {
+  return <Text style={[styles.yesMark, { color: toneColor(tone) }]}>{text}</Text>;
+}
+
 export function StreakCards({
   title,
   note,
   t1,
   t2,
   kind,
+  mode,
+  threshold = 2,
 }: {
   title: string;
   note: string;
   t1: { label: string; streak: StreakSide };
   t2: { label: string; streak: StreakSide };
   kind: 'win' | 'loss';
+  /** never = they have never done it twice. streak = current run is at least `threshold`. */
+  mode: 'never' | 'streak';
+  threshold?: number;
 }) {
-  const threshold = title.includes('6') ? 6 : 2;
+  const verb = kind === 'win' ? 'Won' : 'Lost';
   const one = (label: string, s: StreakSide) => {
-    const hit = s.current >= threshold;
+    if (s.results.length === 0) {
+      return (
+        <SideCard label={label}>
+          <Line text="No finished games yet" />
+        </SideCard>
+      );
+    }
+    if (mode === 'never') {
+      if (s.neverTwice) {
+        return (
+          <SideCard label={label}>
+            <YesMark />
+          </SideCard>
+        );
+      }
+      return (
+        <SideCard label={label}>
+          {s.runs.map((run, i) => (
+            <View key={`${label}-run-${i}`}>
+              <Text style={styles.subHead}>
+                {verb} {run.length} in a row
+              </Text>
+              {run.map((line, n) => (
+                <Line key={`${i}-${n}`} text={line} />
+              ))}
+            </View>
+          ))}
+        </SideCard>
+      );
+    }
+    if (s.current >= threshold) {
+      return (
+        <SideCard label={label}>
+          <YesMark />
+        </SideCard>
+      );
+    }
+    const shown = s.results.slice(0, Math.max(threshold + 2, 8));
     return (
       <SideCard label={label}>
-        <Line
-          text={`Current ${kind} streak: ${s.current}${hit ? ' — active' : ''}`}
-          tone={hit ? 'warn' : 'info'}
-        />
-        <Line text={`Recent: ${s.sequence || '—'}`} />
-        <Line
-          text={
-            s.neverTwice
-              ? `Never ${kind === 'win' ? 'won' : 'lost'} twice in a row (last 10)`
-              : `Has ${kind === 'win' ? 'won' : 'lost'} twice in a row in last 10`
-          }
-        />
-        {s.last10 ? <Line text={`Last 10: ${s.last10}`} /> : null}
+        {shown.map((line, i) => (
+          <Line key={`${label}-${i}-${line}`} text={line} />
+        ))}
       </SideCard>
     );
   };
@@ -1631,35 +1671,46 @@ export function StreakCards({
 
 export function SwingCards({
   title,
+  note,
   want,
-  pd,
+  t1,
+  t2,
 }: {
   title: string;
+  note: string;
   want: 'drop' | 'rise';
-  pd: PowerDynamicsBundle;
+  t1: { label: string; swing: PpgSwing };
+  t2: { label: string; swing: PpgSwing };
 }) {
-  const one = (label: string, swings: SwingScope[]) => (
-    <SideCard label={label}>
-      {swings.map((s) => {
-        const hit = want === 'drop' ? s.drop : s.rise;
-        return (
-          <Line
-            key={s.scope}
-            text={`${s.detail}${hit ? ' — flagged' : ''}`}
-            tone={hit ? (want === 'drop' ? 'bad' : 'good') : 'info'}
-          />
-        );
-      })}
-    </SideCard>
-  );
+  const yesLabel = want === 'drop' ? 'SUDDEN DROP' : 'SUDDEN PICK UP';
+  const noLabel = want === 'drop' ? 'NO SUDDEN DROP' : 'NO SUDDEN PICKUP';
+  const one = (label: string, s: PpgSwing) => {
+    const hit = want === 'drop' ? s.drop : s.rise;
+    return (
+      <SideCard label={label}>
+        <VerdictMark
+          text={hit ? yesLabel : noLabel}
+          tone={hit ? (want === 'drop' ? 'bad' : 'good') : 'info'}
+        />
+        {s.recentPpg != null && s.priorPpg != null ? (
+          <>
+            <Line text={`Last 5 PPG ${s.recentPpg.toFixed(2)} (${s.recentPts} pts / ${s.recentMp})`} />
+            <Line text={`Earlier games PPG ${s.priorPpg.toFixed(2)} (${s.priorPts} pts / ${s.priorMp})`} />
+          </>
+        ) : (
+          <Line text={s.detail} />
+        )}
+        {s.recentLines.map((line, i) => (
+          <Line key={`${label}-${i}`} text={line} />
+        ))}
+      </SideCard>
+    );
+  };
   return (
     <View>
-      <SectorIntro
-        title={title}
-        note="Last 3 vs previous 3, overall / home / away. Flag when the swing is ≥ 5 points."
-      />
-      {one(pd.t1.label, pd.swing.t1)}
-      {one(pd.t2.label, pd.swing.t2)}
+      <SectorIntro title={title} note={note} />
+      {one(t1.label, t1.swing)}
+      {one(t2.label, t2.swing)}
     </View>
   );
 }
@@ -1830,6 +1881,13 @@ const styles = StyleSheet.create({
   sideLabel: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: theme.textPrimary },
   meta: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted, marginTop: 2, marginBottom: 4 },
   line: { fontFamily: fonts.body, fontSize: 12, color: theme.textPrimary, lineHeight: 17, marginTop: 2 },
+  yesMark: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 22,
+    letterSpacing: 1,
+    color: theme.accentGreen,
+    marginTop: 4,
+  },
   seq: { fontFamily: fonts.bodySemiBold, fontSize: 14, color: theme.textPrimary, marginTop: 4 },
   subHead: {
     fontFamily: fonts.bodySemiBold,

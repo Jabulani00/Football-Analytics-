@@ -34,8 +34,10 @@ import { useFixtureFormAnalysis } from '@/hooks/useFixtureFormAnalysis';
 import { useSeasonFixtures } from '@/hooks/useSeasonFixtures';
 import { useFixtureBook1x2 } from '@/hooks/useFixtureBook1x2';
 import type { Competition, H2HMatch, OddsByMarket, Probability, StandingRow } from '@/services/oddAlerts';
-import { evaluatePowerDynamics, ftOdds } from '@/utils/powerDynamicsEngine';
+import { evaluatePowerDynamics, ftOdds, ppgSwing, streakSide } from '@/utils/powerDynamicsEngine';
+import { resultsFromSeasonMatches } from '@/utils/last6Form';
 import { buildInitialState, findUkulumbana } from '@/utils/last5Analysis';
+import { excludeFixture, type TeamResult } from '@/utils/teamResults';
 import type { StandingLike } from '@/utils/motivationEngine';
 import { fonts, spacing, theme } from '@/styles/theme';
 
@@ -56,9 +58,10 @@ export const POWER_DYNAMICS_TABS = [
   { id: 'imbangi', label: '12. Imbangi' },
   { id: 'indlela', label: '13. Indlela' },
   { id: 'competition_status', label: '14. Competition status' },
-  { id: 'lost_twice', label: '15. Lost twice in a row' },
-  { id: 'won_twice', label: '16. Won twice in a row' },
+  { id: 'lost_twice', label: '15. Never lost twice' },
+  { id: 'won_twice', label: '16. Never won twice' },
   { id: 'won_6', label: '17. Won 6 in a row' },
+  { id: 'won_5', label: 'Won 5 in a row' },
   { id: 'lost_6', label: '18. Lost 6 in a row' },
   { id: 'points_diff', label: '19. Points difference' },
   { id: 'child_beater_2', label: '20. Child beater (2)' },
@@ -148,6 +151,7 @@ export default function MatchPowerDynamicsPanel({
   h2hMatches,
   odds,
   probability,
+  kickoffUnix,
   fixtureId,
 }: Props) {
   const [view, setView] = useState<PowerDynamicsTabId>('baseline');
@@ -203,7 +207,14 @@ export default function MatchPowerDynamicsPanel({
     view === 'competition_status' ||
     view === 'middle_guys' ||
     view === 'form' ||
-    view === 'last5';
+    view === 'last5' ||
+    view === 'lost_twice' ||
+    view === 'won_twice' ||
+    view === 'won_6' ||
+    view === 'won_5' ||
+    view === 'lost_6' ||
+    view === 'sudden_drop' ||
+    view === 'sudden_pickup';
   const seasonFx = useSeasonFixtures(competition, season, needSeasonFx);
 
   const form = useFixtureFormAnalysis({
@@ -265,6 +276,40 @@ export default function MatchPowerDynamicsPanel({
     [homeId, awayId, form.homeResults, form.awayResults, fixtureId],
   );
 
+  const history = useMemo(() => {
+    const finished = seasonFx.matches.filter((m) => {
+      if (kickoffUnix == null || homeId == null || awayId == null) return true;
+      return !(m.unix === kickoffUnix && m.homeId === homeId && m.awayId === awayId);
+    });
+    const fromSeason = seasonFx.matches.length > 0;
+    const forSide = (id: number | null, formRows: TeamResult[]): TeamResult[] => {
+      if (id == null) return [];
+      if (fromSeason) return resultsFromSeasonMatches(id, finished, like);
+      return excludeFixture(formRows, fixtureId);
+    };
+    const home = forSide(homeId, form.homeResults);
+    const away = forSide(awayId, form.awayResults);
+    const t1Results = pd.t1.venue === 'home' ? home : away;
+    const t2Results = pd.t2.venue === 'home' ? home : away;
+    return {
+      fromSeason,
+      loss: { t1: streakSide(t1Results, 'L'), t2: streakSide(t2Results, 'L') },
+      win: { t1: streakSide(t1Results, 'W'), t2: streakSide(t2Results, 'W') },
+      swing: { t1: ppgSwing(t1Results), t2: ppgSwing(t2Results) },
+    };
+  }, [
+    seasonFx.matches,
+    kickoffUnix,
+    homeId,
+    awayId,
+    like,
+    fixtureId,
+    form.homeResults,
+    form.awayResults,
+    pd.t1.venue,
+    pd.t2.venue,
+  ]);
+
   const t1Label = pd.t1.label;
   const t2Label = pd.t2.label;
   const homePdLabel = pd.t1.venue === 'home' ? t1Label : t2Label;
@@ -287,6 +332,22 @@ export default function MatchPowerDynamicsPanel({
     }
     return node;
   };
+
+  const historyGate = (node: ReactNode) => {
+    if (seasonId != null && seasonFx.loading && seasonFx.matches.length === 0) {
+      return (
+        <View style={styles.center}>
+          <ActivityIndicator color={theme.accentGreen} />
+          <Text style={styles.muted}>Loading previous matches…</Text>
+        </View>
+      );
+    }
+    return formGate(node);
+  };
+
+  const sampleNote = history.fromSeason
+    ? 'Counted across every finished league game this season, excluding this fixture.'
+    : 'Counted from the recent finished games on file.';
 
   const body = (() => {
     switch (view) {
@@ -514,43 +575,61 @@ export default function MatchPowerDynamicsPanel({
       case 'competition_status':
         return <CompetitionCards pd={pd} />;
       case 'lost_twice':
-        return formGate(
+        return historyGate(
           <StreakCards
-            title="Lost twice in a row"
-            note="Current losing streak plus whether they ever lose back-to-back in the last 10."
+            title="Never lost twice in a row"
+            note={`YES means they have never lost two matches back to back. ${sampleNote}`}
             kind="loss"
-            t1={{ label: t1Label, streak: pd.streaks.loss.t1 }}
-            t2={{ label: t2Label, streak: pd.streaks.loss.t2 }}
+            mode="never"
+            t1={{ label: t1Label, streak: history.loss.t1 }}
+            t2={{ label: t2Label, streak: history.loss.t2 }}
           />,
         );
       case 'won_twice':
-        return formGate(
+        return historyGate(
           <StreakCards
-            title="Won twice in a row"
-            note="Current winning streak plus whether they ever win back-to-back in the last 10."
+            title="Never won twice in a row"
+            note={`YES means they have never won two matches back to back. ${sampleNote}`}
             kind="win"
-            t1={{ label: t1Label, streak: pd.streaks.win.t1 }}
-            t2={{ label: t2Label, streak: pd.streaks.win.t2 }}
+            mode="never"
+            t1={{ label: t1Label, streak: history.win.t1 }}
+            t2={{ label: t2Label, streak: history.win.t2 }}
           />,
         );
       case 'won_6':
-        return formGate(
+        return historyGate(
           <StreakCards
             title="Won 6 matches in a row"
-            note="Warning when a side is on a 6+ win run."
+            note={`YES means the current run is 6 wins or more. Otherwise the recent results are shown. ${sampleNote}`}
             kind="win"
-            t1={{ label: t1Label, streak: pd.streaks.win.t1 }}
-            t2={{ label: t2Label, streak: pd.streaks.win.t2 }}
+            mode="streak"
+            threshold={6}
+            t1={{ label: t1Label, streak: history.win.t1 }}
+            t2={{ label: t2Label, streak: history.win.t2 }}
+          />,
+        );
+      case 'won_5':
+        return historyGate(
+          <StreakCards
+            title="Won 5 matches in a row"
+            note={`YES means the current run is 5 wins or more. Otherwise the recent results are shown. ${sampleNote}`}
+            kind="win"
+            mode="streak"
+            threshold={5}
+            t1={{ label: t1Label, streak: history.win.t1 }}
+            t2={{ label: t2Label, streak: history.win.t2 }}
           />,
         );
       case 'lost_6':
-        return formGate(
+        return historyGate(
           <StreakCards
             title="Lost 6 matches in a row"
-            note="Warning when a side is on a 6+ loss run."
+            note={`YES means the current run is 6 losses or more. Otherwise the recent results are shown. ${sampleNote}`}
             kind="loss"
-            t1={{ label: t1Label, streak: pd.streaks.loss.t1 }}
-            t2={{ label: t2Label, streak: pd.streaks.loss.t2 }}
+            mode="streak"
+            threshold={6}
+            t1={{ label: t1Label, streak: history.loss.t1 }}
+            t2={{ label: t2Label, streak: history.loss.t2 }}
           />,
         );
       case 'points_diff':
@@ -565,9 +644,20 @@ export default function MatchPowerDynamicsPanel({
           />,
         );
       case 'sudden_drop':
-        return formGate(<SwingCards title="Sudden drop" want="drop" pd={pd} />);
       case 'sudden_pickup':
-        return formGate(<SwingCards title="Sudden pick up" want="rise" pd={pd} />);
+        return historyGate(
+          <SwingCards
+            title={view === 'sudden_drop' ? 'Sudden drop' : 'Sudden pick up'}
+            want={view === 'sudden_drop' ? 'drop' : 'rise'}
+            note={
+              view === 'sudden_drop'
+                ? `Earlier PPG higher than the last 5. Otherwise NO SUDDEN DROP. ${sampleNote}`
+                : `Earlier PPG lower than the last 5. Otherwise NO SUDDEN PICKUP. ${sampleNote}`
+            }
+            t1={{ label: t1Label, swing: history.swing.t1 }}
+            t2={{ label: t2Label, swing: history.swing.t2 }}
+          />,
+        );
       case 'contested_leagues':
         return <ContestedCards pd={pd} />;
       case 'struggle':
