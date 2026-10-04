@@ -4,7 +4,6 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import BhozomaView from '@/components/standings/BhozomaView';
 import ImbangiView from '@/components/standings/ImbangiView';
 import FixtureMotivationPanel from '@/components/standings/FixtureMotivationPanel';
-import { HiddenLayersView } from '@/components/standings/FixtureHiddenLayersPanel';
 import H2HPanel from '@/components/match-detail/H2HPanel';
 import {
   BaselineCards,
@@ -34,7 +33,9 @@ import { useFixtureFormAnalysis } from '@/hooks/useFixtureFormAnalysis';
 import { useSeasonFixtures } from '@/hooks/useSeasonFixtures';
 import { useFixtureBook1x2 } from '@/hooks/useFixtureBook1x2';
 import type { Competition, H2HMatch, OddsByMarket, Probability, StandingRow } from '@/services/oddAlerts';
-import { evaluatePowerDynamics, ftOdds, indlelaPath, ppgSwing, streakSide } from '@/utils/powerDynamicsEngine';
+import ProblemCauserView from '@/components/match-detail/ProblemCauserView';
+import { evaluatePowerDynamics, ftOdds, indlelaLetter, indlelaPath, ppgSwing, streakSide } from '@/utils/powerDynamicsEngine';
+import { evaluateProblemCauser } from '@/utils/problemCauser';
 import { resultsFromSeasonMatches } from '@/utils/last6Form';
 import { buildInitialState, findUkulumbana } from '@/utils/last5Analysis';
 import { excludeFixture, type TeamResult } from '@/utils/teamResults';
@@ -331,6 +332,14 @@ export default function MatchPowerDynamicsPanel({
     [pd.t1.teamId, pd.t2.teamId, homeId, awayId, kickoffUnix, seasonFx.schedule, like],
   );
 
+  const problem = useMemo(() => {
+    const home = excludeFixture(form.homeResults, fixtureId);
+    const away = excludeFixture(form.awayResults, fixtureId);
+    const t1 = pd.t1.venue === 'home' ? home : away;
+    const t2 = pd.t2.venue === 'home' ? home : away;
+    return evaluateProblemCauser(t1, t2);
+  }, [form.homeResults, form.awayResults, fixtureId, pd.t1.venue, pd.t2.venue]);
+
   const t1Label = pd.t1.label;
   const t2Label = pd.t2.label;
   const homePdLabel = pd.t1.venue === 'home' ? t1Label : t2Label;
@@ -552,24 +561,8 @@ export default function MatchPowerDynamicsPanel({
           />
         );
       case 'problem_causer':
-        if (loadingForm) {
-          return (
-            <View style={styles.center}>
-              <ActivityIndicator color={theme.accentGreen} />
-            </View>
-          );
-        }
-        if (!form.hidden) {
-          return <Text style={styles.muted}>No hidden-layer / problem-causer read yet.</Text>;
-        }
-        return (
-          <HiddenLayersView
-            layers={form.hidden}
-            homeName={homeName}
-            awayName={awayName}
-            homeLabel={homePdLabel}
-            awayLabel={awayPdLabel}
-          />
+        return formGate(
+          <ProblemCauserView t1Label={t1Label} t2Label={t2Label} read={problem} />,
         );
       case 'imbangi':
         if (standings.length === 0) {
@@ -594,8 +587,8 @@ export default function MatchPowerDynamicsPanel({
       case 'indlela':
         return historyGate(
           <IndlelaCards
-            t1={{ label: t1Label, path: indlela.t1 }}
-            t2={{ label: t2Label, path: indlela.t2 }}
+            t1={{ label: t1Label, path: indlela.t1, teamLetter: indlelaLetter(pd.t1.colour), teamRank: pd.t1.rank }}
+            t2={{ label: t2Label, path: indlela.t2, teamLetter: indlelaLetter(pd.t2.colour), teamRank: pd.t2.rank }}
           />,
         );
       case 'competition_status':

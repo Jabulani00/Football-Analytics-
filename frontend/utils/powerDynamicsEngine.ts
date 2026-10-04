@@ -1046,7 +1046,7 @@ export type IndlelaScheduleFixture = {
   finished: boolean;
 };
 
-function indlelaLetter(colour: TableColour | null): IndlelaLetter {
+export function indlelaLetter(colour: TableColour | null): IndlelaLetter {
   if (colour === 'green') return 'G';
   if (colour === 'red') return 'R';
   if (colour === 'yellow') return 'Y';

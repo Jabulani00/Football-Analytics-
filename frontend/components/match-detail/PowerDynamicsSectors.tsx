@@ -26,6 +26,7 @@ import {
   type BaselineGap,
   type ChildBeaterSide,
   type ColourSideRead,
+  type IndlelaLetter,
   type IndlelaPath,
   type LastGameFlag,
   type PowerDynamicsBundle,
@@ -1570,11 +1571,11 @@ const BAND_CHIP: Record<'G' | 'R' | 'Y', string> = {
   R: '#DC2626',
 };
 
-function BandChip({ letter }: { letter: string }) {
+function BandChip({ letter, small }: { letter: string; small?: boolean }) {
   const known = letter === 'G' || letter === 'R' || letter === 'Y';
   return (
-    <View style={[styles.bandChip, { backgroundColor: known ? BAND_CHIP[letter] : theme.surfaceMuted }]}>
-      <Text style={[styles.bandLetter, { color: known ? '#FFFFFF' : theme.textMuted }]}>{letter}</Text>
+    <View style={[styles.bandChip, small ? styles.bandChipSmall : null, { backgroundColor: known ? BAND_CHIP[letter] : theme.surfaceMuted }]}>
+      <Text style={[styles.bandLetter, small ? styles.bandLetterSmall : null, { color: known ? '#FFFFFF' : theme.textMuted }]}>{letter}</Text>
     </View>
   );
 }
@@ -1595,21 +1596,41 @@ export function IndlelaCards({
   t1,
   t2,
 }: {
-  t1: { label: string; path: IndlelaPath };
-  t2: { label: string; path: IndlelaPath };
+  t1: { label: string; path: IndlelaPath; teamLetter: IndlelaLetter; teamRank: number | null };
+  t2: { label: string; path: IndlelaPath; teamLetter: IndlelaLetter; teamRank: number | null };
 }) {
-  const one = (label: string, path: IndlelaPath) => {
+  const one = (
+    label: string,
+    path: IndlelaPath,
+    teamLetter: IndlelaLetter,
+    teamRank: number | null,
+  ) => {
     const last = path.stops[1];
     const current = path.stops[2];
     const next = path.stops[3];
     const who = (s: IndlelaPath['stops'][number]) =>
       s.opponentRank != null ? `${s.opponentName} (${s.letter}, #${s.opponentRank})` : s.opponentName;
+    const playing =
+      teamRank != null ? `Playing ${teamLetter} · #${teamRank}` : `Playing ${teamLetter}`;
     return (
-      <SideCard label={label}>
+      <SideCard label={label} meta={playing}>
         <View style={styles.bandRow}>
           {path.stops.map((s) => (
             <View key={s.slot} style={styles.bandCol}>
-              <BandChip letter={s.letter} />
+              {s.slot === 3 ? (
+                <View style={styles.bandPair}>
+                  <View style={styles.bandMini}>
+                    <BandChip letter={teamLetter} small />
+                    <Text style={styles.bandRole}>Team</Text>
+                  </View>
+                  <View style={styles.bandMini}>
+                    <BandChip letter={s.letter} small />
+                    <Text style={styles.bandRole}>Opp</Text>
+                  </View>
+                </View>
+              ) : (
+                <BandChip letter={s.letter} />
+              )}
               <Text style={styles.bandRole}>{s.role}</Text>
               <Text style={styles.bandOpp} numberOfLines={2}>
                 {s.opponentName}
@@ -1639,10 +1660,10 @@ export function IndlelaCards({
     <View>
       <SectorIntro
         title="Indlela — path"
-        note="Two previous opponents, this opponent, then the next one. G is the top third, Y the middle, R the bottom. The match is easy when both the last opponent and the next one are stronger than this opponent."
+        note="Two previous opponents, this opponent, then the next one. On the current fixture the Team chip is the side playing and Opp is who they face. G is the top third, Y the middle, R the bottom. The match is easy when both the last opponent and the next one are stronger than this opponent."
       />
-      {one(t1.label, t1.path)}
-      {one(t2.label, t2.path)}
+      {one(t1.label, t1.path, t1.teamLetter, t1.teamRank)}
+      {one(t2.label, t2.path, t2.teamLetter, t2.teamRank)}
     </View>
   );
 }
@@ -1959,7 +1980,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  bandChipSmall: { width: 28, height: 28, borderRadius: 5 },
   bandLetter: { fontFamily: fonts.bodySemiBold, fontSize: 16 },
+  bandLetterSmall: { fontSize: 13 },
+  bandPair: { flexDirection: 'row', gap: 4, justifyContent: 'center' },
+  bandMini: { alignItems: 'center' },
   bandRole: {
     fontFamily: fonts.bodySemiBold,
     fontSize: 9,
