@@ -1,9 +1,9 @@
 /**
- * Problem causer marks and levels.
+ * Problem causer marks and levels, from head-to-head meetings.
  * Run: npx tsx scripts/problemCauser.test.ts
  */
 import { evaluateProblemCauser, problemLevel } from '../utils/problemCauser';
-import type { TeamResult } from '../utils/teamResults';
+import type { H2HMatch } from '../services/oddAlerts';
 
 let passed = 0;
 let failed = 0;
@@ -18,27 +18,25 @@ function check(name: string, cond: boolean, detail = ''): void {
   }
 }
 
-function game(
-  outcome: 'W' | 'D' | 'L',
-  gf: number,
-  ga: number,
-  opponent: string,
-  unix: number,
-): TeamResult {
+function meet(
+  id: number,
+  home: string,
+  away: string,
+  hg: number,
+  ag: number,
+  date: string,
+): H2HMatch {
   return {
-    fixtureId: unix,
-    unix,
-    teamId: 1,
-    opponentId: unix,
-    opponentName: opponent,
-    isHome: true,
-    gf,
-    ga,
-    outcome,
-    opponentRank: null,
-    teamRank: null,
-    opponentAbove: null,
-    goalDiff: gf - ga,
+    id,
+    home_name: home,
+    away_name: away,
+    home_goals: hg,
+    away_goals: ag,
+    ht_score: null,
+    total_goals: hg + ag,
+    btts: hg > 0 && ag > 0,
+    date,
+    league: 'League',
   };
 }
 
@@ -54,54 +52,49 @@ console.log('\nlevels');
   check('20 is Extreme', problemLevel(20).score === 10);
 }
 
-console.log('\nmarks');
+console.log('\nhead-to-head marks');
 {
-  const t1 = [
-    game('W', 2, 1, 'A', 50),
-    game('D', 1, 1, 'B', 40),
-    game('L', 0, 3, 'C', 30),
-    game('W', 4, 0, 'D', 20),
-    game('W', 1, 0, 'E', 10),
-    game('W', 5, 0, 'Old', 1),
+  const matches = [
+    meet(6, 'Alpha', 'Beta', 5, 0, '2020-01-01'),
+    meet(5, 'Beta', 'Alpha', 0, 1, '2026-01-01'),
+    meet(4, 'Alpha', 'Beta', 4, 0, '2026-02-01'),
+    meet(3, 'Alpha', 'Beta', 0, 3, '2026-03-01'),
+    meet(2, 'Beta', 'Alpha', 1, 1, '2026-04-01'),
+    meet(1, 'Alpha', 'Beta', 2, 1, '2026-05-01'),
+    meet(99, 'Alpha', 'Other', 3, 0, '2026-06-01'),
+    meet(7, 'Alpha', 'Beta', 1, 0, '2026-07-01'),
   ];
-  const t2 = [
-    game('W', 1, 0, 'F', 50),
-    game('L', 0, 1, 'G', 40),
-    game('D', 0, 0, 'H', 30),
-  ];
-  const read = evaluateProblemCauser(t1, t2);
-  check('only the last 5 count', read.t1.played === 5);
-  check('short sample stays under 5', read.t2.played === 3);
-  check('win gap above 1 is a red 0', read.winRatio.difference === 2 && read.winRatio.bit === 0);
-  check('sixth game is dropped from the win count', read.winRatio.t1Wins === 3);
+  const read = evaluateProblemCauser({
+    matches,
+    t1Name: 'Alpha',
+    t2Name: 'Beta',
+    excludeFixtureId: 7,
+  });
+  check('only the last 5 meetings count', read.meetings === 5 && read.t1.played === 5 && read.t2.played === 5);
+  check('a game against someone else is ignored', read.t1.goalDiff.every((m) => m.opponent === 'Beta'));
+  check('the current fixture is left out', read.t1.wins === 3);
+  check('win gap above 1 is a red 0', read.winRatio.t1Wins === 3 && read.winRatio.t2Wins === 1 && read.winRatio.bit === 0);
 
-  check('2-1 is a close game', read.t1.goalDiff[0].bit === 1 && read.t1.goalDiff[0].btts === true);
-  check('0-3 is not close', read.t1.goalDiff[2].bit === 0);
-  check('4-0 is not close', read.t1.goalDiff[3].bit === 0);
-  check('draw is 1', read.t1.draws[1].bit === 1);
-  check('win is not a draw', read.t1.draws[0].bit === 0);
-  check('2-1 is a one-goal win', read.t1.oneGoalWins[0].bit === 1);
-  check('4-0 is not a one-goal win', read.t1.oneGoalWins[3].bit === 0);
-  check('1-0 loss is not a one-goal win', read.t2.oneGoalWins[1].bit === 0);
+  check('newest meeting is 2-1 from T1', read.t1.goalDiff[0].score === '2–1' && read.t1.goalDiff[0].bit === 1 && read.t1.goalDiff[0].btts);
+  check('same meeting is 1-2 from T2', read.t2.goalDiff[0].score === '1–2' && read.t2.goalDiff[0].bit === 1);
+  check('0-3 is not a close game', read.t1.goalDiff[2].score === '0–3' && read.t1.goalDiff[2].bit === 0);
+  check('the draw is 1 for both sides', read.t1.draws[1].bit === 1 && read.t2.draws[1].bit === 1);
+  check('2-1 is a one-goal win only for the winner', read.t1.oneGoalWins[0].bit === 1 && read.t2.oneGoalWins[0].bit === 0);
 
-  const t1Ones =
+  const ones =
     read.winRatio.bit +
     read.t1.goalDiff.reduce((s, m) => s + m.bit, 0) +
     read.t1.draws.reduce((s, m) => s + m.bit, 0) +
     read.t1.oneGoalWins.reduce((s, m) => s + m.bit, 0);
-  check('total is 1s minus games played', read.t1.ones === t1Ones && read.t1.total === t1Ones - 5);
+  check('total is 1s minus the meetings', read.t1.ones === ones && read.t1.total === ones - 5);
 
-  const close = evaluateProblemCauser(
-    [game('W', 1, 0, 'A', 2), game('L', 0, 1, 'B', 1)],
-    [game('D', 1, 1, 'C', 1)],
-  );
+  const close = evaluateProblemCauser({
+    matches: [meet(1, 'Alpha', 'Beta', 1, 0, '2026-02-01'), meet(2, 'Beta', 'Alpha', 1, 1, '2026-01-01')],
+    t1Name: 'Alpha',
+    t2Name: 'Beta',
+  });
   check('win gap of 1 is a green 1', close.winRatio.difference === 1 && close.winRatio.bit === 1);
-
-  const wide = evaluateProblemCauser(
-    [game('W', 1, 0, 'A', 3), game('W', 1, 0, 'B', 2), game('W', 1, 0, 'C', 1)],
-    [game('L', 0, 1, 'D', 1)],
-  );
-  check('win gap above 1 is a red 0', wide.winRatio.difference === 3 && wide.winRatio.bit === 0);
+  check('fewer than 5 meetings are kept', close.meetings === 2);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

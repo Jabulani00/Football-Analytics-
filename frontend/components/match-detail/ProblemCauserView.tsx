@@ -19,7 +19,7 @@ function Bit({ value }: { value: 0 | 1 }) {
 
 function MarkRow({ label, marks, showBtts }: { label: string; marks: ProblemMark[]; showBtts?: boolean }) {
   if (marks.length === 0) {
-    return <Text style={styles.empty}>{label}: no finished games yet</Text>;
+    return <Text style={styles.empty}>{label}: no head-to-head meetings yet</Text>;
   }
   return (
     <View style={styles.markBlock}>
@@ -50,7 +50,7 @@ function LevelCard({ label, side }: { label: string; side: ProblemCauserSide }) 
         {side.level.name} · {side.level.score}
       </Text>
       <Text style={styles.note}>
-        1s include the shared win-ratio mark. Games used: {side.played} (last 5, or fewer if that is all they have played).
+        1s include the shared win-ratio mark. Meetings used: {side.played} (last 5 between these sides, or fewer).
       </Text>
     </SideCard>
   );
@@ -70,12 +70,12 @@ export default function ProblemCauserView({
     <View>
       <SectorIntro
         title="Problem causer"
-        note="Each mark is 1 in green or 0 in red. The level uses every 1 minus the games in the sample."
+        note="Head-to-head only, when these two sides play each other. Each mark is 1 in green or 0 in red. The level uses every 1 minus the meetings in the sample."
       />
 
       <SideCard label="1. Win ratio">
         <Text style={styles.note}>
-          Wins in the last 5. A gap of 0 or 1 is 1. A wider gap is 0.
+          Wins in their last 5 meetings. A gap of 0 or 1 is 1. A wider gap is 0.
         </Text>
         <Text style={styles.line}>
           {t1Label} {win.t1Wins}/{win.t1Played} · {t2Label} {win.t2Wins}/{win.t2Played} · difference {win.difference}

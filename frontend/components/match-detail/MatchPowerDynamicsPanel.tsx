@@ -332,13 +332,16 @@ export default function MatchPowerDynamicsPanel({
     [pd.t1.teamId, pd.t2.teamId, homeId, awayId, kickoffUnix, seasonFx.schedule, like],
   );
 
-  const problem = useMemo(() => {
-    const home = excludeFixture(form.homeResults, fixtureId);
-    const away = excludeFixture(form.awayResults, fixtureId);
-    const t1 = pd.t1.venue === 'home' ? home : away;
-    const t2 = pd.t2.venue === 'home' ? home : away;
-    return evaluateProblemCauser(t1, t2);
-  }, [form.homeResults, form.awayResults, fixtureId, pd.t1.venue, pd.t2.venue]);
+  const problem = useMemo(
+    () =>
+      evaluateProblemCauser({
+        matches: h2hMatches,
+        t1Name: pd.t1.name,
+        t2Name: pd.t2.name,
+        excludeFixtureId: fixtureId,
+      }),
+    [h2hMatches, pd.t1.name, pd.t2.name, fixtureId],
+  );
 
   const t1Label = pd.t1.label;
   const t2Label = pd.t2.label;
