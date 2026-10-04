@@ -28,6 +28,7 @@ import {
   streamlineForMatchup,
   streamsForMatchup,
   t1IsHomeSide,
+  venuePpgSplit,
 } from '../utils/powerDynamicsEngine';
 import type { TeamResult } from '../utils/teamResults';
 import type { StandingLike } from '../utils/motivationEngine';
@@ -774,6 +775,24 @@ console.log('\nposition gap analysis (G1 = largest)');
   check('22-team G1 gap is 22', scale22[0].grade === 'G1' && scale22[0].span === 22);
   check('22-team last grade is G21 gap 2', scale22[20].grade === 'G21' && scale22[20].span === 2);
   check('20-team G1 gap is 20', positionGapScale(20)[0].span === 20);
+}
+
+console.log('\nhome/away PPG split');
+{
+  const balanced = venuePpgSplit({ homePpg: 2.1, awayPpg: 1.4, playing: 'home', leaguePpg: 1.3 });
+  check('diff of 0.7 is balanced', balanced.diff != null && balanced.diff < 4 && balanced.split === 'Balanced');
+  const atHome = venuePpgSplit({ homePpg: 6.2, awayPpg: 1.5, playing: 'home', leaguePpg: 1.4 });
+  check('4.7 at home is strong', atHome.split === 'Strong' && atHome.vsLeague === 'Above average');
+  const onRoad = venuePpgSplit({ homePpg: 6.2, awayPpg: 1.5, playing: 'away', leaguePpg: 1.4 });
+  check('4.7 away is weak', onRoad.split === 'Weak' && onRoad.venuePpg === 1.5 && onRoad.vsLeague === 'Above average');
+  const under = venuePpgSplit({ homePpg: 1.2, awayPpg: 0.8, playing: 'away', leaguePpg: 1.4 });
+  check('away venue PPG under the league average', under.split === 'Balanced' && under.vsLeague === 'Below average');
+  const edge = venuePpgSplit({ homePpg: 5, awayPpg: 1, playing: 'home', leaguePpg: 1 });
+  check('diff of exactly 4 stays balanced', edge.diff === 4 && edge.split === 'Balanced');
+  const awayLift = venuePpgSplit({ homePpg: 1.1, awayPpg: 1.8, playing: 'away', leaguePpg: 1.4 });
+  check('negative diff on the away side is strong', awayLift.diff != null && awayLift.diff < 0 && awayLift.split === 'Strong');
+  const homeWithAwayLift = venuePpgSplit({ homePpg: 1.1, awayPpg: 1.8, playing: 'home', leaguePpg: 1.4 });
+  check('negative diff on the home side stays balanced', homeWithAwayLift.split === 'Balanced');
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

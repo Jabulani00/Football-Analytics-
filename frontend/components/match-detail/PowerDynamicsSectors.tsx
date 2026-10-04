@@ -18,6 +18,9 @@ import {
   fmtGapScore,
   fmtPct,
   fmtPpg,
+  venuePpgSplit,
+  type VenueLeagueRead,
+  type VenueSplitLabel,
   positionGapScale,
   wdl,
   type BaselineGap,
@@ -32,7 +35,6 @@ import {
   type StreakSide,
   type SwingScope,
   type Tone,
-  type VenueRead,
 } from '@/utils/powerDynamicsEngine';
 import {
   CHANGE_LABEL,
@@ -260,10 +262,12 @@ export function BaselineCards({
   pd,
   title = 'Baseline — original state',
   note = 'Natural table state before separators. T1 is the better table side (points, then GD, then goals scored); T2 is who they face. A–F types come from the G-grade: k/(N−1), then 100 minus that percentage, on the 0–10 gap scale.',
+  hideHeading,
 }: {
   pd: PowerDynamicsBundle;
   title?: string;
   note?: string;
+  hideHeading?: boolean;
 }) {
   const gap = pd.baselineGap;
   const row = (s: SideSnapshot, letter: typeof gap.t1) => (
@@ -280,7 +284,7 @@ export function BaselineCards({
   );
   return (
     <View>
-      <SectorIntro title={title} note={note} />
+      {hideHeading ? null : <SectorIntro title={title} note={note} />}
       {gap.leagueAvgPpg != null ? (
         <Text style={styles.note}>League average PPG {gap.leagueAvgPpg.toFixed(2)}</Text>
       ) : null}
@@ -830,12 +834,7 @@ export function InitialStateCards({
       ) : (
         <BaselineCards
           pd={initialBaselineBundle(pd, home, away, overallHome, overallAway, standings, matches, lens)}
-          title="Baseline — initial state"
-          note={
-            lens === 'overall'
-              ? 'Same A–F types and 0–10 gap scale as Baseline, from each side’s last 5 in any venue.'
-              : 'Same A–F types and 0–10 gap scale as Baseline. Home side is placed on last-5 home form, away side on last-5 away form.'
-          }
+          hideHeading
         />
       )}
     </View>
@@ -1050,11 +1049,7 @@ export function Last5LeagueCards({
         </ScrollView>
       )}
       {standings.length >= 2 && matches.length > 0 ? (
-        <BaselineCards
-          pd={formPd}
-          title="Baseline — last 5"
-          note="Same A–F types and 0–10 gap scale as Baseline, from last-5 places on this table (points, then GD, then goals scored)."
-        />
+        <BaselineCards pd={formPd} hideHeading />
       ) : null}
     </View>
   );
@@ -1415,29 +1410,74 @@ export function ColourCards({ pd }: { pd: PowerDynamicsBundle }) {
   );
 }
 
+function splitTone(label: VenueSplitLabel | null): Tone | undefined {
+  if (label === 'Strong') return 'good';
+  if (label === 'Weak') return 'bad';
+  if (label === 'Balanced') return 'info';
+  return undefined;
+}
+
+function leagueTone(read: VenueLeagueRead | null): Tone | undefined {
+  if (read === 'Above average') return 'good';
+  if (read === 'Below average') return 'bad';
+  if (read === 'Level') return 'info';
+  return undefined;
+}
+
 export function VenueCards({ pd }: { pd: PowerDynamicsBundle }) {
-  const one = (snap: SideSnapshot, v: VenueRead) => {
-    const atHome = snap.venue === 'home';
-    return (
-      <SideCard label={snap.label} meta={atHome ? 'Playing at home' : 'Playing away'}>
-        <Line text={`Overall PPG ${fmtPpg(v.overallPpg)} · home ${fmtPpg(v.homePpg)} · away ${fmtPpg(v.awayPpg)}`} />
-        <Line
-          text={atHome ? (v.homeStrong ? 'Strong at home' : 'No home lift vs overall') : v.awayStrong ? 'Strong away' : 'No away lift vs overall'}
-          tone={atHome ? (v.homeStrong ? 'good' : 'info') : v.awayStrong ? 'good' : 'info'}
-        />
-        <Line text={v.detail} />
-      </SideCard>
-    );
-  };
+  const leaguePpg = pd.baselineGap.leagueAvgPpg;
+  const sides = [pd.t1.venue === 'home' ? pd.t1 : pd.t2, pd.t1.venue === 'away' ? pd.t1 : pd.t2];
   return (
     <View>
       <SectorIntro
-        title="Home / Away strong → underdog strength"
-        note="T1 is the better table side (points, then GD, then goals scored); T2 is the underdog. A venue lift of 0.3+ PPG vs overall counts as strength."
+        title="Home / Away strong"
+        note="Home PPG minus away PPG. 4 or less is Balanced. 4.1 or more is Strong at home and Weak away. A negative diff on the away side means they are Strong. Venue PPG is then set against the league average."
       />
-      <Callout text={pd.venue.call} tone="warn" />
-      {one(pd.t1, pd.venue.t1)}
-      {one(pd.t2, pd.venue.t2)}
+      <ScrollView horizontal showsHorizontalScrollIndicator style={styles.initialScroll}>
+        <View style={[styles.formTable, styles.venueTable]}>
+          <View style={[styles.formRow, styles.formHead]}>
+            <Text style={[styles.formTh, styles.formTeam]}>Team</Text>
+            <Text style={[styles.formTh, styles.formWdl]}>Playing</Text>
+            <Text style={[styles.formTh, styles.venueNum]}>Home PPG</Text>
+            <Text style={[styles.formTh, styles.venueNum]}>Away PPG</Text>
+            <Text style={[styles.formTh, styles.venueNum]}>Diff</Text>
+            <Text style={[styles.formTh, styles.formRead]}>Label</Text>
+            <Text style={[styles.formTh, styles.venueNum]}>League</Text>
+            <Text style={[styles.formTh, styles.venueNum]}>Venue PPG</Text>
+            <Text style={[styles.formTh, styles.formRead]}>vs league</Text>
+          </View>
+          {sides.map((snap) => {
+            const row = venuePpgSplit({
+              homePpg: snap.home.ppg,
+              awayPpg: snap.away.ppg,
+              playing: snap.venue,
+              leaguePpg,
+            });
+            return (
+              <View key={snap.side} style={[styles.formRow, styles.formRowFocus]}>
+                <View style={styles.formTeam}>
+                  <Text style={styles.formTeamName} numberOfLines={1}>
+                    {snap.label}
+                  </Text>
+                </View>
+                <FormCell style={styles.formWdl}>{snap.venue === 'home' ? 'Home' : 'Away'}</FormCell>
+                <FormCell style={styles.venueNum}>{fmtPpg(snap.home.ppg)}</FormCell>
+                <FormCell style={styles.venueNum}>{fmtPpg(snap.away.ppg)}</FormCell>
+                <FormCell style={styles.venueNum}>{row.diff != null ? fmtPpg(row.diff) : '—'}</FormCell>
+                <FormCell style={styles.formRead} tone={splitTone(row.split)}>
+                  {row.split ?? '—'}
+                </FormCell>
+                <FormCell style={styles.venueNum}>{fmtPpg(leaguePpg)}</FormCell>
+                <FormCell style={styles.venueNum}>{fmtPpg(row.venuePpg)}</FormCell>
+                <FormCell style={styles.formRead} tone={leagueTone(row.vsLeague)}>
+                  {row.vsLeague ?? '—'}
+                </FormCell>
+              </View>
+            );
+          })}
+        </View>
+      </ScrollView>
+      <BaselineCards pd={pd} hideHeading />
     </View>
   );
 }
@@ -1761,6 +1801,8 @@ const styles = StyleSheet.create({
   initialScroll: { marginBottom: spacing.sm },
   initialTable: { minWidth: 28 + 150 + 360 + 36 + 52 + 36 + 36 + 36 },
   last5LeagueTable: { minWidth: 28 + 150 + 360 + 36 + 52 + 36 + 36 + 36 + 36 + 36 + 110 },
+  venueTable: { minWidth: 150 + 52 + 64 * 5 + 110 * 2 },
+  venueNum: { width: 64, textAlign: 'center' },
   initialSeqHead: { width: 360 },
   initialSeq: {
     width: 360,
