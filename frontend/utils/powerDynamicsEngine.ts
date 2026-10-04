@@ -8,6 +8,7 @@ import {
   type StandingLike,
   type TeamMotivation,
 } from '@/utils/motivationEngine';
+import { bandOf } from '@/utils/leagueTables';
 import { contestedLeagueTop } from '@/utils/separatorTools';
 import { leagueProgressInfo } from '@/utils/imbangiEngine';
 import {
@@ -1013,6 +1014,161 @@ export function colourWord(c: TableColour | null): string {
   if (c === 'yellow') return 'Yellow';
   if (c === 'red') return 'Red';
   return 'Unknown';
+}
+
+export type IndlelaLetter = 'G' | 'R' | 'Y' | '—';
+
+export type IndlelaStop = {
+  /** 1 and 2 are the two previous games, 3 is this fixture, 4 is the next one. */
+  slot: 1 | 2 | 3 | 4;
+  role: string;
+  opponentName: string;
+  opponentRank: number | null;
+  letter: IndlelaLetter;
+};
+
+export type IndlelaPath = {
+  stops: IndlelaStop[];
+  sequence: string;
+  /** Opponent in game 2 is stronger (better rank) than the opponent in game 3. */
+  secondStronger: boolean | null;
+  /** Opponent in game 4 is stronger than the opponent in game 3. */
+  fourthStronger: boolean | null;
+  /** Both neighbours are stronger, so this opponent is the weaker one. */
+  easy: boolean | null;
+  call: string;
+};
+
+export type IndlelaScheduleFixture = {
+  homeId: number;
+  awayId: number;
+  unix: number;
+  finished: boolean;
+};
+
+function indlelaLetter(colour: TableColour | null): IndlelaLetter {
+  if (colour === 'green') return 'G';
+  if (colour === 'red') return 'R';
+  if (colour === 'yellow') return 'Y';
+  return '—';
+}
+
+function opponentBand(
+  teamId: number | null,
+  table: StandingLike[],
+): { name: string; rank: number | null; letter: IndlelaLetter } {
+  if (teamId == null) return { name: '—', rank: null, letter: '—' };
+  const row = table.find((t) => t.teamId === teamId);
+  if (!row) return { name: '—', rank: null, letter: '—' };
+  const colour =
+    colourFromZone(row.zone) ??
+    (row.rank != null && table.length > 0 ? bandOf(row.rank, table.length) : null);
+  return { name: row.name, rank: row.rank ?? null, letter: indlelaLetter(colour) };
+}
+
+function emptyStop(slot: 1 | 2 | 3 | 4, role: string): IndlelaStop {
+  return { slot, role, opponentName: '—', opponentRank: null, letter: '—' };
+}
+
+/** Lower rank is stronger. Missing rank cannot be compared. */
+function rankIsStronger(a: number | null, b: number | null): boolean | null {
+  if (a == null || b == null || a === b) return a == null || b == null ? null : false;
+  return a < b;
+}
+
+/**
+ * Colour path for one side: two previous opponents, this opponent, the next opponent.
+ * This match is easy when both the last opponent and the next one are stronger than this opponent.
+ */
+export function indlelaPath(opts: {
+  teamId: number | null;
+  homeId: number | null;
+  awayId: number | null;
+  kickoffUnix: number | null;
+  schedule: IndlelaScheduleFixture[];
+  table: StandingLike[];
+}): IndlelaPath {
+  const roles: { slot: 1 | 2 | 3 | 4; role: string }[] = [
+    { slot: 1, role: '2 ago' },
+    { slot: 2, role: 'Last' },
+    { slot: 3, role: 'Current' },
+    { slot: 4, role: 'Next' },
+  ];
+  const blank = (): IndlelaPath => ({
+    stops: roles.map((r) => emptyStop(r.slot, r.role)),
+    sequence: '— — — —',
+    secondStronger: null,
+    fourthStronger: null,
+    easy: null,
+    call: 'Need this fixture on the league schedule',
+  });
+  const { teamId, homeId, awayId, kickoffUnix, schedule, table } = opts;
+  if (teamId == null || homeId == null || awayId == null || kickoffUnix == null) return blank();
+
+  const keyOf = (m: IndlelaScheduleFixture) => `${m.unix}:${m.homeId}:${m.awayId}`;
+  const currentKey = `${kickoffUnix}:${homeId}:${awayId}`;
+  const involves = (m: IndlelaScheduleFixture, id: number) => m.homeId === id || m.awayId === id;
+  const games = schedule
+    .filter((m) => involves(m, teamId))
+    .slice()
+    .sort((a, b) => a.unix - b.unix || a.homeId - b.homeId);
+  if (!games.some((m) => keyOf(m) === currentKey)) {
+    games.push({ homeId, awayId, unix: kickoffUnix, finished: false });
+    games.sort((a, b) => a.unix - b.unix || a.homeId - b.homeId);
+  }
+  const current = games.find((m) => keyOf(m) === currentKey);
+  if (!current) return blank();
+
+  const earlier = games.filter((m) => m.unix < current.unix && m.finished);
+  const prev = earlier.slice(-2);
+  const next = games.find((m) => m.unix > current.unix) ?? null;
+  const chosen: (IndlelaScheduleFixture | null)[] = [
+    prev.length === 2 ? prev[0] : null,
+    prev.length >= 1 ? prev[prev.length - 1] : null,
+    current,
+    next,
+  ];
+  if (prev.length === 1) {
+    chosen[0] = null;
+    chosen[1] = prev[0];
+  }
+
+  const stops: IndlelaStop[] = chosen.map((m, i) => {
+    const meta = roles[i];
+    if (!m) return emptyStop(meta.slot, meta.role);
+    const oppId = m.homeId === teamId ? m.awayId : m.homeId;
+    const band = opponentBand(oppId, table);
+    return {
+      slot: meta.slot,
+      role: meta.role,
+      opponentName: band.name,
+      opponentRank: band.rank,
+      letter: band.letter,
+    };
+  });
+
+  const second = stops[1];
+  const third = stops[2];
+  const fourth = stops[3];
+  const secondStronger = rankIsStronger(second.opponentRank, third.opponentRank);
+  const fourthStronger = rankIsStronger(fourth.opponentRank, third.opponentRank);
+  const easy =
+    secondStronger == null || fourthStronger == null ? null : secondStronger && fourthStronger;
+  const call =
+    easy == null
+      ? 'Need the last opponent, this opponent and the next one before calling the match'
+      : easy
+        ? 'EASY — this opponent is weaker than the last opponent and the next one'
+        : 'NOT EASY — this opponent is not weaker than both the last opponent and the next one';
+
+  return {
+    stops,
+    sequence: stops.map((s) => s.letter).join(' '),
+    secondStronger,
+    fourthStronger,
+    easy,
+    call,
+  };
 }
 
 /** SKM PPG bands — thresholds change by table colour. */

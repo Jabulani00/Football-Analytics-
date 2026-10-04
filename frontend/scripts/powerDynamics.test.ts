@@ -14,6 +14,7 @@ import {
   batetemeKindFor,
   ftOdds,
   impliedOddsFromProb,
+  indlelaPath,
   leaguePpg,
   ppgOddsZidaneAligned,
   positionGapScale,
@@ -208,6 +209,64 @@ console.log('\nrecords / last game / streaks');
   const pickSwing = ppgSwing(picking);
   check('earlier PPG below last 5 is a sudden pick up', pickSwing.rise === true && pickSwing.drop === false);
   check('five games is not enough to compare', ppgSwing(dropping.slice(0, 5)).drop === false);
+}
+
+console.log('\nindlela colour path');
+{
+  const table: StandingLike[] = [
+    row({ teamId: 1, name: 'Us', rank: 4, zone: 'yellow' }),
+    row({ teamId: 10, name: 'Top', rank: 1, zone: 'top' }),
+    row({ teamId: 11, name: 'Bottom', rank: 18, zone: 'bottom' }),
+    row({ teamId: 12, name: 'Mid', rank: 10, zone: 'mid' }),
+    row({ teamId: 13, name: 'Higher', rank: 3, zone: 'top' }),
+  ];
+  const schedule = [
+    { homeId: 1, awayId: 10, unix: 100, finished: true },
+    { homeId: 11, awayId: 1, unix: 200, finished: true },
+    { homeId: 1, awayId: 12, unix: 300, finished: false },
+    { homeId: 13, awayId: 1, unix: 400, finished: false },
+  ];
+  const path = indlelaPath({
+    teamId: 1,
+    homeId: 1,
+    awayId: 12,
+    kickoffUnix: 300,
+    schedule,
+    table,
+  });
+  check('sequence is the four opponent bands', path.sequence === 'G R Y G');
+  check('slot 2 is the more recent previous opponent', path.stops[1].opponentName === 'Bottom');
+  check('current opponent is the yellow side', path.stops[2].letter === 'Y' && path.stops[2].opponentName === 'Mid');
+  check('next opponent is green', path.stops[3].letter === 'G');
+  check('last opponent is not stronger than this one', path.secondStronger === false);
+  check('next opponent is stronger than this one', path.fourthStronger === true);
+  check('not easy unless both neighbours are stronger', path.easy === false);
+
+  const easy = indlelaPath({
+    teamId: 1,
+    homeId: 1,
+    awayId: 11,
+    kickoffUnix: 300,
+    schedule: [
+      { homeId: 1, awayId: 12, unix: 100, finished: true },
+      { homeId: 10, awayId: 1, unix: 200, finished: true },
+      { homeId: 1, awayId: 11, unix: 300, finished: false },
+      { homeId: 1, awayId: 13, unix: 400, finished: false },
+    ],
+    table,
+  });
+  check('easy when last and next are both stronger than this opponent', easy.easy === true);
+  check('easy path reads the four opponent bands in order', easy.sequence === 'Y G R G');
+
+  const thin = indlelaPath({
+    teamId: 1,
+    homeId: 1,
+    awayId: 12,
+    kickoffUnix: 300,
+    schedule: [{ homeId: 1, awayId: 12, unix: 300, finished: false }],
+    table,
+  });
+  check('missing neighbours cannot call the match', thin.easy == null && thin.sequence === '— — Y —');
 }
 
 console.log('\nevaluatePowerDynamics T1 vs T2');

@@ -26,6 +26,7 @@ import {
   type BaselineGap,
   type ChildBeaterSide,
   type ColourSideRead,
+  type IndlelaPath,
   type LastGameFlag,
   type PowerDynamicsBundle,
   type ShowRead,
@@ -1563,25 +1564,85 @@ export function MiddleGuysCards({ pd }: { pd: PowerDynamicsBundle }) {
   );
 }
 
-export function IndlelaCards({ pd }: { pd: PowerDynamicsBundle }) {
+const BAND_CHIP: Record<'G' | 'R' | 'Y', string> = {
+  G: '#16A34A',
+  Y: '#D97706',
+  R: '#DC2626',
+};
+
+function BandChip({ letter }: { letter: string }) {
+  const known = letter === 'G' || letter === 'R' || letter === 'Y';
+  return (
+    <View style={[styles.bandChip, { backgroundColor: known ? BAND_CHIP[letter] : theme.surfaceMuted }]}>
+      <Text style={[styles.bandLetter, { color: known ? '#FFFFFF' : theme.textMuted }]}>{letter}</Text>
+    </View>
+  );
+}
+
+function AnswerLine({ lead, answer, tail }: { lead: string; answer: boolean | null; tail: string }) {
+  const word = answer == null ? '—' : answer ? 'YES' : 'NO';
+  const color = answer === true ? theme.accentGreen : answer === false ? theme.loss : theme.textMuted;
+  return (
+    <Text style={styles.line}>
+      {lead}{' '}
+      <Text style={[styles.answerWord, { color }]}>{word}</Text>
+      {tail ? ` · ${tail}` : ''}
+    </Text>
+  );
+}
+
+export function IndlelaCards({
+  t1,
+  t2,
+}: {
+  t1: { label: string; path: IndlelaPath };
+  t2: { label: string; path: IndlelaPath };
+}) {
+  const one = (label: string, path: IndlelaPath) => {
+    const last = path.stops[1];
+    const current = path.stops[2];
+    const next = path.stops[3];
+    const who = (s: IndlelaPath['stops'][number]) =>
+      s.opponentRank != null ? `${s.opponentName} (${s.letter}, #${s.opponentRank})` : s.opponentName;
+    return (
+      <SideCard label={label}>
+        <View style={styles.bandRow}>
+          {path.stops.map((s) => (
+            <View key={s.slot} style={styles.bandCol}>
+              <BandChip letter={s.letter} />
+              <Text style={styles.bandRole}>{s.role}</Text>
+              <Text style={styles.bandOpp} numberOfLines={2}>
+                {s.opponentName}
+              </Text>
+            </View>
+          ))}
+        </View>
+        <AnswerLine
+          lead="Last opponent stronger than this one?"
+          answer={path.secondStronger}
+          tail={`${who(last)} vs ${who(current)}`}
+        />
+        <AnswerLine
+          lead="Next opponent stronger than this one?"
+          answer={path.fourthStronger}
+          tail={`${who(next)} vs ${who(current)}`}
+        />
+        {path.easy == null ? (
+          <Line text={path.call} />
+        ) : (
+          <VerdictMark text={path.easy ? 'EASY' : 'NOT EASY'} tone={path.easy ? 'good' : 'warn'} />
+        )}
+      </SideCard>
+    );
+  };
   return (
     <View>
       <SectorIntro
-        title="Indlela — path / method"
-        note="Win/loss paths and never-twice patterns. Yellow-band fixtures get extra weight. T2 as the negative counterpart of T1."
+        title="Indlela — path"
+        note="Two previous opponents, this opponent, then the next one. G is the top third, Y the middle, R the bottom. The match is easy when both the last opponent and the next one are stronger than this opponent."
       />
-      {pd.indlela.yellow ? <Callout text="Yellow-band application — path matters more" tone="warn" /> : null}
-      <Callout text={pd.indlela.counterpart} />
-      <SideCard label={pd.t1.label}>
-        {pd.indlela.t1.map((p) => (
-          <Line key={p} text={`· ${p}`} />
-        ))}
-      </SideCard>
-      <SideCard label={pd.t2.label}>
-        {pd.indlela.t2.map((p) => (
-          <Line key={p} text={`· ${p}`} />
-        ))}
-      </SideCard>
+      {one(t1.label, t1.path)}
+      {one(t2.label, t2.path)}
     </View>
   );
 }
@@ -1690,7 +1751,7 @@ export function SwingCards({
       <SideCard label={label}>
         <VerdictMark
           text={hit ? yesLabel : noLabel}
-          tone={hit ? (want === 'drop' ? 'bad' : 'good') : 'info'}
+          tone={hit ? (want === 'drop' ? 'bad' : 'good') : 'bad'}
         />
         {s.recentPpg != null && s.priorPpg != null ? (
           <>
@@ -1881,12 +1942,38 @@ const styles = StyleSheet.create({
   sideLabel: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: theme.textPrimary },
   meta: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted, marginTop: 2, marginBottom: 4 },
   line: { fontFamily: fonts.body, fontSize: 12, color: theme.textPrimary, lineHeight: 17, marginTop: 2 },
+  answerWord: { fontFamily: fonts.bodySemiBold },
   yesMark: {
     fontFamily: fonts.bodySemiBold,
     fontSize: 22,
     letterSpacing: 1,
     color: theme.accentGreen,
     marginTop: 4,
+  },
+  bandRow: { flexDirection: 'row', gap: spacing.xs, marginTop: spacing.xs, marginBottom: spacing.sm },
+  bandCol: { flex: 1, alignItems: 'center' },
+  bandChip: {
+    width: 36,
+    height: 36,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bandLetter: { fontFamily: fonts.bodySemiBold, fontSize: 16 },
+  bandRole: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 9,
+    color: theme.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+    marginTop: 4,
+  },
+  bandOpp: {
+    fontFamily: fonts.body,
+    fontSize: 10,
+    color: theme.textPrimary,
+    textAlign: 'center',
+    marginTop: 2,
   },
   seq: { fontFamily: fonts.bodySemiBold, fontSize: 14, color: theme.textPrimary, marginTop: 4 },
   subHead: {

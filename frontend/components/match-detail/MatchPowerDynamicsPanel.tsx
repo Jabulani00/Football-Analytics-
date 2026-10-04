@@ -34,7 +34,7 @@ import { useFixtureFormAnalysis } from '@/hooks/useFixtureFormAnalysis';
 import { useSeasonFixtures } from '@/hooks/useSeasonFixtures';
 import { useFixtureBook1x2 } from '@/hooks/useFixtureBook1x2';
 import type { Competition, H2HMatch, OddsByMarket, Probability, StandingRow } from '@/services/oddAlerts';
-import { evaluatePowerDynamics, ftOdds, ppgSwing, streakSide } from '@/utils/powerDynamicsEngine';
+import { evaluatePowerDynamics, ftOdds, indlelaPath, ppgSwing, streakSide } from '@/utils/powerDynamicsEngine';
 import { resultsFromSeasonMatches } from '@/utils/last6Form';
 import { buildInitialState, findUkulumbana } from '@/utils/last5Analysis';
 import { excludeFixture, type TeamResult } from '@/utils/teamResults';
@@ -61,7 +61,6 @@ export const POWER_DYNAMICS_TABS = [
   { id: 'lost_twice', label: '15. Never lost twice' },
   { id: 'won_twice', label: '16. Never won twice' },
   { id: 'won_6', label: '17. Won 6 in a row' },
-  { id: 'won_5', label: 'Won 5 in a row' },
   { id: 'lost_6', label: '18. Lost 6 in a row' },
   { id: 'points_diff', label: '19. Points difference' },
   { id: 'child_beater_2', label: '20. Child beater (2)' },
@@ -208,10 +207,10 @@ export default function MatchPowerDynamicsPanel({
     view === 'middle_guys' ||
     view === 'form' ||
     view === 'last5' ||
+    view === 'indlela' ||
     view === 'lost_twice' ||
     view === 'won_twice' ||
     view === 'won_6' ||
-    view === 'won_5' ||
     view === 'lost_6' ||
     view === 'sudden_drop' ||
     view === 'sudden_pickup';
@@ -309,6 +308,28 @@ export default function MatchPowerDynamicsPanel({
     pd.t1.venue,
     pd.t2.venue,
   ]);
+
+  const indlela = useMemo(
+    () => ({
+      t1: indlelaPath({
+        teamId: pd.t1.teamId,
+        homeId,
+        awayId,
+        kickoffUnix: kickoffUnix ?? null,
+        schedule: seasonFx.schedule,
+        table: like,
+      }),
+      t2: indlelaPath({
+        teamId: pd.t2.teamId,
+        homeId,
+        awayId,
+        kickoffUnix: kickoffUnix ?? null,
+        schedule: seasonFx.schedule,
+        table: like,
+      }),
+    }),
+    [pd.t1.teamId, pd.t2.teamId, homeId, awayId, kickoffUnix, seasonFx.schedule, like],
+  );
 
   const t1Label = pd.t1.label;
   const t2Label = pd.t2.label;
@@ -571,7 +592,12 @@ export default function MatchPowerDynamicsPanel({
           />
         );
       case 'indlela':
-        return formGate(<IndlelaCards pd={pd} />);
+        return historyGate(
+          <IndlelaCards
+            t1={{ label: t1Label, path: indlela.t1 }}
+            t2={{ label: t2Label, path: indlela.t2 }}
+          />,
+        );
       case 'competition_status':
         return <CompetitionCards pd={pd} />;
       case 'lost_twice':
@@ -604,18 +630,6 @@ export default function MatchPowerDynamicsPanel({
             kind="win"
             mode="streak"
             threshold={6}
-            t1={{ label: t1Label, streak: history.win.t1 }}
-            t2={{ label: t2Label, streak: history.win.t2 }}
-          />,
-        );
-      case 'won_5':
-        return historyGate(
-          <StreakCards
-            title="Won 5 matches in a row"
-            note={`YES means the current run is 5 wins or more. Otherwise the recent results are shown. ${sampleNote}`}
-            kind="win"
-            mode="streak"
-            threshold={5}
             t1={{ label: t1Label, streak: history.win.t1 }}
             t2={{ label: t2Label, streak: history.win.t2 }}
           />,
