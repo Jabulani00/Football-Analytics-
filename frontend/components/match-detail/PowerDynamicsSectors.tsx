@@ -66,10 +66,18 @@ function toneColor(t: Tone): string {
   return theme.textMuted;
 }
 
-export function SectorIntro({ title, note }: { title: string; note?: string }) {
+export function SectorIntro({
+  title,
+  note,
+  preserveCase,
+}: {
+  title: string;
+  note?: string;
+  preserveCase?: boolean;
+}) {
   return (
     <View style={styles.intro}>
-      <Text style={styles.sectorTitle}>{title}</Text>
+      <Text style={[styles.sectorTitle, preserveCase ? styles.sectorTitleAsWritten : null]}>{title}</Text>
       {note ? <Text style={styles.note}>{note}</Text> : null}
     </View>
   );
@@ -579,7 +587,6 @@ export function InitialStateCards({
 
   return (
     <View>
-      <Text style={styles.subHead}>Initial state</Text>
       <Line text="W = Good · D = Med · L = Bad" />
       {block(homeName, home, 'home')}
       {block(awayName, away, 'away')}
@@ -1295,6 +1302,10 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 2,
+  },
+  sectorTitleAsWritten: {
+    textTransform: 'none',
+    letterSpacing: 0,
   },
   note: {
     fontFamily: fonts.body,

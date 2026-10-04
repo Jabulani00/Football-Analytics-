@@ -347,8 +347,9 @@ export default function MatchPowerDynamicsPanel({
         return formGate(
           <View>
             <SectorIntro
-              title="Last 5"
-              note="Initial state uses the home side’s last 5 home matches and the away side’s last 5 away matches."
+              title="Section 1: INITIAL STATE"
+              preserveCase
+              note="Home side: last 5 home matches. Away side: last 5 away matches."
             />
             <InitialStateCards
               homeName={homeName}
