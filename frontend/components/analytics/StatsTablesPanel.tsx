@@ -4,12 +4,11 @@ import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, View, useWin
 import LeagueStatsPanel from '@/components/league/LeagueStatsPanel';
 import CompetitionPicker from '@/components/shared/CompetitionPicker';
 import FilterDropdown from '@/components/shared/FilterDropdown';
-import { useLiveCompetitions } from '@/hooks/useLiveCompetitions';
+import { useLiveCompetitionFeed } from '@/hooks/useLiveCompetitions';
 import { useLiveStatsTables } from '@/hooks/useLiveStatsTables';
-import { getTeamStatsForTable } from '@/mock/analyticsData';
 import type { StatFamily } from '@/types/analytics';
 import { complianceColor, COMPLIANCE_RULE_TEXT } from '@/utils/compliance';
-import { liveRowsToDisplay, sortByPrimary } from '@/utils/statsTableAdapter';
+import { liveRowsToDisplay, sampleRowsForFamily, sortByPrimary } from '@/utils/statsTableAdapter';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
 // The 72 tables reduced to three simple controls: a family/window, a period and
@@ -19,12 +18,14 @@ const FAMILIES: FamilyOption[] = [
   { key: 'ordinary', label: 'Ordinary', family: 'ordinary', blurb: 'Core goal & result rates — win / draw / BTTS / over-under.' },
   { key: 'ppg', label: 'PPG', family: 'ppg', blurb: 'Points per game, plus form and result rates.' },
   { key: 'series', label: 'Series', family: 'series', blurb: 'Current streaks — consecutive wins, unbeaten, BTTS, overs…' },
-  { key: 'ft_only', label: 'FT-Only', family: 'ft_only', blurb: 'Full-time patterns — won both halves, win-to-nil, led at HT.' },
-  { key: 'league_avg', label: 'League Stats', family: 'league_avg', blurb: 'Spec §4.7 — every team ranked on one stat, with the league average pinned underneath.' },
+  { key: 'ft_only', label: 'FT-Only', family: 'ft_only', blurb: 'Full-time patterns — won both halves, win-to-nil, led at HT. Counted on the full match, so the period control does not apply.' },
+  { key: 'league_avg', label: 'League Stats', family: 'league_avg', blurb: 'Every team ranked on one stat, with the league average pinned underneath.' },
   { key: 'last10', label: 'Last 10', family: 'ordinary', blurb: 'Core stats over each team’s last 10 games.' },
   { key: 'last8', label: 'Last 8', family: 'ordinary', blurb: 'Core stats over each team’s last 8 games.' },
   { key: 'last6', label: 'Last 6', family: 'ordinary', blurb: 'Core stats over each team’s last 6 games.' },
 ];
+
+const ADDITIONAL_KEYS = new Set(['ppg', 'series', 'ft_only', 'league_avg']);
 
 type PeriodKey = 'fulltime' | 'firsthalf' | 'secondhalf';
 type ScopeKey = 'overall' | 'home' | 'away';
@@ -40,14 +41,16 @@ const SCOPES: { key: ScopeKey; label: string }[] = [
 ];
 const PERIOD_TO_BUILDER: Record<PeriodKey, string> = { fulltime: 'ft', firsthalf: 'ht', secondhalf: '2h' };
 
-export default function StatsTablesPanel() {
+export default function StatsTablesPanel({ variant = 'all' }: { variant?: 'all' | 'additional' }) {
+  const families = variant === 'additional' ? FAMILIES.filter((item) => ADDITIONAL_KEYS.has(item.key)) : FAMILIES;
   const narrow = useWindowDimensions().width < 720;
-  const [familyKey, setFamilyKey] = useState('ordinary');
+  const [familyKey, setFamilyKey] = useState(variant === 'additional' ? 'ppg' : 'ordinary');
   const [period, setPeriod] = useState<PeriodKey>('fulltime');
   const [scope, setScope] = useState<ScopeKey>('overall');
   const family = FAMILIES.find((f) => f.key === familyKey) ?? FAMILIES[0];
 
-  const competitions = useLiveCompetitions(3);
+  const feed = useLiveCompetitionFeed(3);
+  const competitions = feed.competitions;
   const [competitionId, setCompetitionId] = useState<number | null>(null);
   useEffect(() => {
     if (competitionId == null && competitions.length > 0) setCompetitionId(competitions[0].id);
@@ -59,25 +62,32 @@ export default function StatsTablesPanel() {
     seasonName: activeComp?.season,
   });
 
-  const tableName = `${familyKey}_${PERIOD_TO_BUILDER[period]}_${scope}`;
+  // Won-both-halves and the other FT-only patterns use the whole match. The
+  // half tables repeat those columns, so this view stays on the full-time table.
+  const periodApplies = familyKey !== 'ft_only';
+  const activePeriod: PeriodKey = periodApplies ? period : 'fulltime';
+  const tableName = `${familyKey}_${PERIOD_TO_BUILDER[activePeriod]}_${scope}`;
   const liveTable = competitionId != null ? live.data?.tables[tableName] : undefined;
   // League Stats ranks the teams, so it reads the ordinary table too — the
   // league_avg table is only the single averaged row.
   const isLeagueStats = familyKey === 'league_avg';
   const leagueTeamRows =
     competitionId != null && isLeagueStats
-      ? live.data?.tables[`ordinary_${PERIOD_TO_BUILDER[period]}_${scope}`]
+      ? live.data?.tables[`ordinary_${PERIOD_TO_BUILDER[activePeriod]}_${scope}`]
       : undefined;
   const liveRows = isLeagueStats ? leagueTeamRows : liveTable;
   const isLive = !!(liveRows && liveRows.length);
 
-  const teams = useMemo(
-    () =>
-      isLive
-        ? sortByPrimary(liveRowsToDisplay(liveTable!, family.family))
-        : getTeamStatsForTable('sample'),
-    [isLive, liveTable, family.family],
-  );
+  const waiting = feed.loading || (!!competitionId && live.loading && !isLive);
+  const feedError = feed.error ?? live.error;
+  const teams = useMemo(() => {
+    if (isLeagueStats || waiting) return [];
+    if (isLive && liveTable) return sortByPrimary(liveRowsToDisplay(liveTable, family.family));
+    const salt =
+      PERIODS.findIndex((item) => item.key === activePeriod) * 3 +
+      SCOPES.findIndex((item) => item.key === scope);
+    return sortByPrimary(sampleRowsForFamily(family.family, salt));
+  }, [isLeagueStats, waiting, isLive, liveTable, family.family, activePeriod, scope]);
 
   return (
     <View style={styles.container}>
@@ -86,14 +96,17 @@ export default function StatsTablesPanel() {
         competitions={competitions}
         selectedId={competitionId}
         onSelect={setCompetitionId}
+        emptyLabel={feed.loading ? 'Loading…' : feed.error ? 'Couldn’t load' : 'No competitions'}
       />
 
       {/* Status */}
       <View style={styles.statusRow}>
-        {live.loading ? (
+        {waiting ? (
           <>
             <ActivityIndicator size="small" color={theme.accentGreen} />
-            <Text style={styles.statusMuted}>Building tables live…</Text>
+            <Text style={styles.statusMuted}>
+              {feed.loading ? 'Loading competitions…' : 'Building tables live…'}
+            </Text>
           </>
         ) : isLive ? (
           <Text style={[styles.statusText, styles.statusLive]}>
@@ -101,7 +114,13 @@ export default function StatsTablesPanel() {
           </Text>
         ) : (
           <Text style={styles.statusMuted}>
-            {live.error ? 'Live unavailable — showing sample' : 'Sample data'}
+            {feedError
+              ? isLeagueStats
+                ? 'Live unavailable'
+                : 'Live unavailable — showing sample'
+              : isLeagueStats
+                ? 'No finished results yet'
+                : 'Sample data'}
           </Text>
         )}
       </View>
@@ -110,17 +129,19 @@ export default function StatsTablesPanel() {
         <FilterDropdown
           label="Table"
           value={familyKey}
-          options={FAMILIES.map((item) => ({ value: item.key, label: item.label }))}
+          options={families.map((item) => ({ value: item.key, label: item.label }))}
           onChange={setFamilyKey}
           style={narrow ? styles.filterFull : undefined}
         />
-        <FilterDropdown
-          label="Period"
-          value={period}
-          options={PERIODS.map((item) => ({ value: item.key, label: item.label }))}
-          onChange={(value) => setPeriod(value as PeriodKey)}
-          style={narrow ? styles.filterFull : undefined}
-        />
+        {periodApplies ? (
+          <FilterDropdown
+            label="Period"
+            value={period}
+            options={PERIODS.map((item) => ({ value: item.key, label: item.label }))}
+            onChange={(value) => setPeriod(value as PeriodKey)}
+            style={narrow ? styles.filterFull : undefined}
+          />
+        ) : null}
         <FilterDropdown
           label="Scope"
           value={scope}
@@ -136,11 +157,11 @@ export default function StatsTablesPanel() {
         <LeagueStatsPanel
           teamRows={leagueTeamRows}
           leagueRow={liveTable?.[0]}
-          loading={live.loading}
-          error={live.error}
-          contextLabel={`${PERIODS.find((p) => p.key === period)?.label} ${scope}`}
+          loading={waiting}
+          error={feedError}
+          contextLabel={`${PERIODS.find((p) => p.key === activePeriod)?.label} ${scope}`}
         />
-      ) : (
+      ) : teams.length === 0 ? null : (
         <>
           <ScrollView
             horizontal
@@ -184,8 +205,10 @@ export default function StatsTablesPanel() {
           <Text style={styles.footHint}>
             Colour = how often the stat lands, not whether it is good:{' '}
             {COMPLIANCE_RULE_TEXT}. Streaks are counted in matches (🟢 3+) and PPG
-            on its 0–3 scale (🟢 1.80+). Tap a table, period or scope above to
-            explore all 72 views.
+            on its 0–3 scale (🟢 1.80+).
+            {variant === 'additional'
+              ? ' These are the extra families: points per game, series, full-time patterns, and league averages.'
+              : ' Tap a table, period or scope above to explore all 72 views.'}
           </Text>
         </>
       )}

@@ -11,9 +11,11 @@ type Props = {
   options: FilterOption[];
   onChange: (value: string) => void;
   style?: StyleProp<ViewStyle>;
+  /** Shown when `value` matches no option. Defaults to "All". */
+  emptyLabel?: string;
 };
 
-export default function FilterDropdown({ label, value, options, onChange, style }: Props) {
+export default function FilterDropdown({ label, value, options, onChange, style, emptyLabel = 'All' }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const selected = options.find((opt) => opt.value === value);
@@ -38,7 +40,7 @@ export default function FilterDropdown({ label, value, options, onChange, style 
           (pressed || (Platform.OS === 'web' && hovered)) && styles.controlHover,
         ]}>
         <Text style={styles.value} numberOfLines={1}>
-          {selected?.label ?? 'All'}
+          {selected?.label ?? emptyLabel}
         </Text>
         <Text style={styles.chevron}>▾</Text>
       </Pressable>

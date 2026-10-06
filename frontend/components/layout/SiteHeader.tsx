@@ -1,4 +1,4 @@
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
 
 import {
@@ -38,6 +38,7 @@ type SiteHeaderProps = {
 };
 
 export default function SiteHeader({ showFilters = true }: SiteHeaderProps) {
+  const narrow = useWindowDimensions().width < 720;
   const router = useRouter();
   const {
     statusFilter,
@@ -61,18 +62,23 @@ export default function SiteHeader({ showFilters = true }: SiteHeaderProps) {
 
   return (
     <View style={styles.wrap}>
-      <View style={styles.row}>
+      <View style={[styles.row, narrow && styles.rowNarrow]}>
         <Pressable onPress={() => router.push('/')} style={styles.logoWrap}>
           <View style={styles.logoDot} />
           <Text style={styles.logo}>SCORELINE</Text>
         </Pressable>
         <Text style={styles.date}>{formatTopBarDate(new Date())}</Text>
-        <Pressable onPress={() => router.push('/analytics')} style={styles.analyticsLink}>
-          <Text style={styles.analyticsText}>Analytics</Text>
-        </Pressable>
-        <Pressable onPress={() => router.push('/sl-stats' as Href)} style={styles.analyticsLink}>
-          <Text style={styles.analyticsText}>SL-STATS</Text>
-        </Pressable>
+        <View style={[styles.nav, narrow && styles.navNarrow]}>
+          <Pressable onPress={() => router.push('/analytics')} style={styles.analyticsLink}>
+            <Text style={styles.analyticsText}>Analytics</Text>
+          </Pressable>
+          <Pressable onPress={() => router.push('/sl-stats' as Href)} style={styles.analyticsLink}>
+            <Text style={styles.analyticsText}>SL-STATS</Text>
+          </Pressable>
+          <Pressable onPress={() => router.push('/additional-stats' as Href)} style={styles.analyticsLink}>
+            <Text style={styles.analyticsText}>Additional</Text>
+          </Pressable>
+        </View>
       </View>
 
       {showFilters ? (
@@ -157,6 +163,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     height: layout.headerHeight,
     gap: spacing.md,
+  },
+  rowNarrow: {
+    height: undefined,
+    minHeight: layout.headerHeight,
+    flexWrap: 'wrap',
+    paddingVertical: spacing.sm,
+  },
+  nav: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  navNarrow: {
+    flexBasis: '100%',
+    marginLeft: -spacing.sm,
   },
   logoWrap: {
     flexDirection: 'row',

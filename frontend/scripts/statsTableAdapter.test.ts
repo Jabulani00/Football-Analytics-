@@ -1,0 +1,100 @@
+/**
+ * Display mapping for the additional-stats families.
+ * Run: npx tsx scripts/statsTableAdapter.test.ts
+ */
+import type { TeamStatRow } from '../types/data';
+import {
+  columnsForFamily,
+  liveRowsToDisplay,
+  sampleRowsForFamily,
+  sortByPrimary,
+} from '../utils/statsTableAdapter';
+
+let passed = 0;
+let failed = 0;
+
+function check(name: string, cond: boolean, detail?: string) {
+  if (cond) {
+    console.log(`  ✓ ${name}`);
+    passed += 1;
+  } else {
+    console.log(`  ✗ ${name}${detail ? ` — ${detail}` : ''}`);
+    failed += 1;
+  }
+}
+
+const ppgCols = columnsForFamily('ppg').map((col) => col.key);
+const seriesCols = columnsForFamily('series').map((col) => col.key);
+const ftCols = columnsForFamily('ft_only').map((col) => col.key);
+
+check('ppg leads with points per game', ppgCols[0] === 'ppg');
+check('series leads with the win streak', seriesCols[0] === 'win_streak');
+check('ft-only leads with won both halves', ftCols[0] === 'won_both_halves');
+check('ordinary stays on win percentage', columnsForFamily('ordinary')[0]?.key === 'w_pct');
+check('ft-only does not repeat the ordinary win column', !ftCols.includes('w_pct'));
+
+const samplePpg = sampleRowsForFamily('ppg');
+const sampleSeries = sampleRowsForFamily('series');
+const sampleFt = sampleRowsForFamily('ft_only');
+
+check('sample ppg is a raw figure', samplePpg[0]?.metrics[0]?.raw === true && samplePpg[0]?.metrics[0]?.label === 'PPG');
+check('sample series has no percent columns', sampleSeries.every((row) => row.metrics.every((metric) => metric.raw)));
+check(
+  'sample ft-only uses the pattern labels',
+  sampleFt[0]?.metrics.map((metric) => metric.label).join(',') === 'Won BH,Win-Nil,Scr BH,Cnc BH,Led HT,CS%',
+);
+check(
+  'sample series rows are not copies of each other',
+  new Set(sampleSeries.map((row) => row.metrics.map((metric) => metric.value).join(','))).size === 3,
+);
+check(
+  'period salt changes the sample',
+  sampleRowsForFamily('ppg', 0)[0]?.metrics[0]?.value !== sampleRowsForFamily('ppg', 3)[0]?.metrics[0]?.value,
+);
+check('sample families do not share a first column', new Set([
+  samplePpg[0]?.metrics[0]?.key,
+  sampleSeries[0]?.metrics[0]?.key,
+  sampleFt[0]?.metrics[0]?.key,
+]).size === 3);
+
+const ranked = sortByPrimary(samplePpg);
+check(
+  'primary metric sorts high to low',
+  (ranked[0]?.metrics[0]?.value ?? 0) >= (ranked[1]?.metrics[0]?.value ?? 0) &&
+    (ranked[1]?.metrics[0]?.value ?? 0) >= (ranked[2]?.metrics[0]?.value ?? 0),
+);
+
+const live = liveRowsToDisplay(
+  [
+    {
+      team_name: 'Visit',
+      ppg: 1.666,
+      ppg_signal: '',
+      w_pct: 40,
+      w_pct_signal: 'red',
+      win_streak: 4,
+      won_both_halves: Number.NaN,
+    } as TeamStatRow,
+  ],
+  'ppg',
+);
+check('ppg rounds to two decimals', live[0]?.metrics[0]?.value === 1.67);
+check('ppg under 1.80 is yellow', live[0]?.metrics[0]?.compliance === 'yellow');
+check('a stored percent signal is kept', live[0]?.metrics.find((metric) => metric.key === 'w_pct')?.compliance === 'red');
+
+const patterns = liveRowsToDisplay(
+  [{ team_name: 'Visit', won_both_halves: Number.NaN, win_to_nil: 50, cs_pct: 80 } as TeamStatRow],
+  'ft_only',
+);
+check('missing pattern becomes zero', patterns[0]?.metrics[0]?.value === 0);
+check('present pattern is kept', patterns[0]?.metrics[1]?.value === 50);
+
+const streaks = liveRowsToDisplay(
+  [{ team_name: 'Visit', win_streak: 4, loss_streak: 0 } as TeamStatRow],
+  'series',
+);
+check('a streak of 4 is green', streaks[0]?.metrics[0]?.compliance === 'green');
+check('a streak of 0 is red', streaks[0]?.metrics.find((metric) => metric.key === 'loss_streak')?.compliance === 'red');
+
+console.log(`\n${passed}/${passed + failed} checks passed`);
+process.exit(failed === 0 ? 0 : 1);

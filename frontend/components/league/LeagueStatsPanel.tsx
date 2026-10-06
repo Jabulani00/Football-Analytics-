@@ -134,7 +134,7 @@ export default function LeagueStatsPanel({
         </View>
       ) : !table || table.rows.length === 0 ? (
         <Text style={styles.muted}>
-          No finished results yet for this competition{error ? ` — ${error}` : ''}.
+          {error ?? 'No finished results yet for this competition.'}
         </Text>
       ) : (
         <>

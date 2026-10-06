@@ -7,10 +7,12 @@ type Props = {
   competitions: LiveCompetition[];
   selectedId: number | null;
   onSelect: (id: number) => void;
+  /** Shown before a competition is selected, including while the list is empty. */
+  emptyLabel?: string;
 };
 
 /** Same competition choice as before, shown as a searchable dropdown. */
-export default function CompetitionPicker({ competitions, selectedId, onSelect }: Props) {
+export default function CompetitionPicker({ competitions, selectedId, onSelect, emptyLabel }: Props) {
   const narrow = useWindowDimensions().width < 720;
   return (
     <FilterDropdown
@@ -20,6 +22,7 @@ export default function CompetitionPicker({ competitions, selectedId, onSelect }
         value: String(comp.id),
         label: comp.country ? `${comp.name} · ${comp.country}` : comp.name,
       }))}
+      emptyLabel={emptyLabel}
       onChange={(value) => {
         if (value) onSelect(Number(value));
       }}

@@ -80,6 +80,20 @@ eq('A unbeaten_streak', Aser.unbeaten_streak, 3); // W,D,D all unbeaten
 // Family: ppg = (3 + 1 + 1) / 3
 const Appg = exp.tables['ppg_ft_overall'].find((r) => r.team_name === 'A')!;
 eq('A ppg', Appg.ppg, 1.67);
+// HT points: (1-0 win, 0-0 draw, 2-1 win) = 7/3
+const AppgHt = exp.tables['ppg_ht_overall'].find((r) => r.team_name === 'A')!;
+eq('A HT ppg', AppgHt.ppg, 2.33);
+// FT-only patterns use the whole match, so the half table repeats them.
+// A: (HT 1-0 FT 2-1), (0-0), (HT 2-1 FT 3-3)
+const Aft = exp.tables['ft_only_ft_overall'].find((r) => r.team_name === 'A')!;
+eq('A won both halves', Aft.won_both_halves, 0);
+eq('A win to nil', Aft.win_to_nil, 0);
+eq('A scored both halves', Aft.scored_both_halves, 67);
+eq('A conceded both halves', Aft.conceded_both_halves, 33);
+eq('A led HT', Aft.led_ht, 67);
+const AftHt = exp.tables['ft_only_ht_overall'].find((r) => r.team_name === 'A')!;
+eq('FT-only pattern ignores period', AftHt.won_both_halves, Aft.won_both_halves);
+eq('FT-only CS follows the period', AftHt.cs_pct === Aft.cs_pct, false);
 // Family: league_avg is a single "League" row
 eq('league_avg single row', exp.tables['league_avg_ft_overall'].length, 1);
 eq('league_avg named League', exp.tables['league_avg_ft_overall'][0].team_name, 'League');

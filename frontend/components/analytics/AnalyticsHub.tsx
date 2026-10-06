@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Platform, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
+import AdditionalStatsPanel from '@/components/analytics/AdditionalStatsPanel';
 import AnalyticsNav from '@/components/analytics/AnalyticsNav';
 import BetSlipPanel from '@/components/analytics/BetSlipPanel';
 import HollywoodOddsPanel from '@/components/analytics/HollywoodOddsPanel';
@@ -38,6 +39,8 @@ function PanelForTab({
       return <OverviewPanel />;
     case 'tables':
       return <StatsTablesPanel />;
+    case 'additional':
+      return <AdditionalStatsPanel />;
     case 'footy':
       return <FootyStatsPanel />;
     case 'predictions':

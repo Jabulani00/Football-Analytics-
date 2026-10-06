@@ -58,7 +58,7 @@ const FT_ONLY_COLS: Col[] = [
   { key: 'cs_pct', label: 'CS%' },
 ];
 
-function colsForFamily(family?: StatFamily): Col[] {
+export function columnsForFamily(family?: StatFamily): Col[] {
   switch (family) {
     case 'ppg':
       return PPG_COLS;
@@ -103,8 +103,48 @@ function rawCompliance(key: string, v: number): ComplianceLevel {
 }
 
 /** Convert live builder rows into the panel's display rows for a given family. */
+const SAMPLE_TEAMS = [
+  { team: 'Manchester City', seed: 2 },
+  { team: 'Arsenal', seed: 5 },
+  { team: 'Liverpool', seed: 8 },
+];
+
+function sampleValue(col: Col, seed: number, index: number, salt: number): number {
+  const n = seed + salt * 5 + index;
+  if (col.raw && col.key.includes('streak')) return (seed * 2 + index + salt) % 7;
+  if (col.raw) return Math.round((0.8 + (seed % 5) * 0.35 + index * 0.04 + salt * 0.07) * 100) / 100;
+  return 20 + ((n * 11) % 60);
+}
+
+function sampleCompliance(col: Col, value: number): ComplianceLevel {
+  if (!col.raw) return complianceFromPercent(value);
+  if (col.key.includes('streak')) return value >= 3 ? 'green' : value >= 1 ? 'yellow' : 'red';
+  return complianceFromPpg(value);
+}
+
+/**
+ * Stand-in rows when a live table is not available. Columns follow the family,
+ * so PPG / series / full-time patterns do not render as ordinary percentages.
+ */
+export function sampleRowsForFamily(family?: StatFamily, salt = 0): TeamStatsRow[] {
+  const cols = columnsForFamily(family);
+  return SAMPLE_TEAMS.map(({ team, seed }) => ({
+    team,
+    metrics: cols.map((col, index) => {
+      const value = sampleValue(col, seed, index, salt);
+      return {
+        key: col.key,
+        label: col.label,
+        value,
+        compliance: sampleCompliance(col, value),
+        raw: col.raw,
+      };
+    }),
+  }));
+}
+
 export function liveRowsToDisplay(rows: TeamStatRow[], family?: StatFamily): TeamStatsRow[] {
-  const cols = colsForFamily(family);
+  const cols = columnsForFamily(family);
   return rows.map((row) => ({
     team: String(row.team_name),
     metrics: cols.map(({ key, label, raw }) => {
