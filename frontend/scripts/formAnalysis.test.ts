@@ -6,8 +6,10 @@ import { contestedLeagueTop, evaluateFixtureSeparators, gradeOneGoalResult } fro
 import {
   analyseFixtureLast5,
   analyseTeamLast5,
+  buildInitialState,
   findUkulumbana,
   gradeResult,
+  statusFromOutcome,
   UKULUMBANA,
 } from '../utils/last5Analysis';
 import {
@@ -15,6 +17,7 @@ import {
   last6FormFixtureLensRows,
   last6FormFixtureRows,
   last6FormForSides,
+  last5FormLeagueTable,
   last6FormLeagueTable,
   last6FormStandings,
 } from '../utils/last6Form';
@@ -107,6 +110,65 @@ console.log('\nlast5 bands / ukulumbana');
   check('21 catalog entries', UKULUMBANA.length === 21);
   check('good vs bad is #1', findUkulumbana('good', 'bad')?.id === 1);
   check('lenses A–D present', fix.lenses.length === 4);
+}
+
+console.log('\nlast5 initial state');
+{
+  check('W maps to Good', statusFromOutcome('W') === 'Good');
+  check('D maps to Med', statusFromOutcome('D') === 'Med');
+  check('L maps to Bad', statusFromOutcome('L') === 'Bad');
+
+  const homeFeed: TeamResult[] = [
+    res({ outcome: 'W', isHome: true, unix: 80, fixtureId: 999, opponentName: 'This fixture' }),
+    res({ outcome: 'W', isHome: true, unix: 70, fixtureId: 100, opponentName: 'Newest home' }),
+    res({ outcome: 'L', isHome: false, unix: 60, fixtureId: 101, opponentName: 'Away noise' }),
+    res({ outcome: 'D', isHome: true, unix: 50, fixtureId: 102, opponentName: 'Home draw' }),
+    res({ outcome: 'W', isHome: true, unix: 40, fixtureId: 103 }),
+    res({ outcome: 'L', isHome: true, unix: 30, fixtureId: 104 }),
+    res({ outcome: 'W', isHome: true, unix: 20, fixtureId: 105 }),
+    res({ outcome: 'W', isHome: true, unix: 10, fixtureId: 106, opponentName: 'Sixth home' }),
+  ];
+  const awayFeed: TeamResult[] = [
+    res({ outcome: 'L', isHome: false, unix: 60, fixtureId: 200, teamId: 2, opponentName: 'Newest away' }),
+    res({ outcome: 'W', isHome: true, unix: 50, fixtureId: 201, teamId: 2, opponentName: 'Home noise' }),
+    res({ outcome: 'D', isHome: false, unix: 40, fixtureId: 202, teamId: 2 }),
+    res({ outcome: 'W', isHome: false, unix: 30, fixtureId: 203, teamId: 2 }),
+    res({ outcome: 'L', isHome: false, unix: 20, fixtureId: 204, teamId: 2 }),
+    res({ outcome: 'D', isHome: false, unix: 10, fixtureId: 205, teamId: 2, opponentName: 'Sixth away' }),
+  ];
+  const state = buildInitialState({
+    homeId: 1,
+    awayId: 2,
+    homeResults: homeFeed,
+    awayResults: awayFeed,
+    excludeFixtureId: 999,
+  });
+  check('home sample is five home games', state.home?.matches.length === 5);
+  check(
+    'home sample drops away games and the current fixture',
+    state.home?.matches.every((m) => m.result.isHome && m.result.fixtureId !== 999) === true,
+  );
+  check('newest home match is first', state.home?.matches[0]?.result.opponentName === 'Newest home');
+  check('sixth home match is left out', state.home?.matches.every((m) => m.result.fixtureId !== 106) === true);
+  check(
+    'home statuses follow W/D/L',
+    state.home?.matches.map((m) => m.status).join(',') === 'Good,Med,Good,Bad,Good',
+  );
+  check('away sample is five away games', state.away?.matches.length === 5);
+  check(
+    'away sample drops home games',
+    state.away?.matches.every((m) => !m.result.isHome) === true,
+  );
+  check('newest away match is a loss', state.away?.matches[0]?.status === 'Bad');
+  check('away draw is Med', state.away?.matches[1]?.status === 'Med');
+  check('overall home sample mixes venues', state.overallHome?.matches.some((m) => !m.result.isHome) === true);
+  check('overall home sample is five games', state.overallHome?.matches.length === 5);
+  check(
+    'overall home statuses keep the away loss',
+    state.overallHome?.matches.map((m) => m.status).join(',') === 'Good,Bad,Med,Good,Bad',
+  );
+  check('overall away sample keeps a home win', state.overallAway?.matches.some((m) => m.result.isHome) === true);
+  check('overall away sample drops the sixth game', state.overallAway?.matches.every((m) => m.result.fixtureId !== 205) === true);
 }
 
 console.log('\nseparators (Section 4)');
@@ -401,6 +463,24 @@ console.log('\nlast 6 form');
   const alpha1h = firstHalf.find((r) => r.teamId === 1);
   check('1H skips no sample when ht is present', (alpha1h?.form?.mp ?? 0) === 3);
   check('Alpha 1H is mixed (loss, win, draw)', alpha1h?.form?.points === 4, `pts=${alpha1h?.form?.points}`);
+
+  const last5League = last5FormLeagueTable(standings, season);
+  check('last-5 table has every side', last5League.length === 3);
+  check('last-5 Alpha sample is at most 5', (last5League[0]?.form?.mp ?? 0) <= 5);
+  check('last-5 Alpha is still top', last5League.find((r) => r.teamId === 1)?.formRank === 1);
+  const last5Home = last5FormLeagueTable(standings, season, { venue: 'home' });
+  check(
+    'last-5 home Alpha is two home wins',
+    last5Home.find((r) => r.teamId === 1)?.form?.won === 2 &&
+      last5Home.find((r) => r.teamId === 1)?.form?.mp === 2,
+  );
+  const last5Away = last5FormLeagueTable(standings, season, { venue: 'away' });
+  check(
+    'last-5 away Bravo has no wins',
+    last5Away.find((r) => r.teamId === 2)?.form?.won === 0,
+  );
+  const last51h = last5FormLeagueTable(standings, halfSeason, { period: '1h' });
+  check('last-5 1H Alpha has three half samples', last51h.find((r) => r.teamId === 1)?.form?.mp === 3);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

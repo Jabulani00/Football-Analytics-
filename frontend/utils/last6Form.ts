@@ -17,6 +17,7 @@ import {
 } from '@/utils/teamResults';
 
 export const LAST6_WINDOW = 6;
+export const LAST5_WINDOW = 5;
 /** 12+ pts from 6 (2.0 PPG) is strong form. */
 export const LAST6_STRONG_PTS = 12;
 /** 6 or fewer pts from 6 (1.0 PPG) is poor form. */
@@ -184,8 +185,9 @@ function readFor(band: Last6FormBand, points: number, mp: number): string {
 export function analyseTeamLast6(
   teamId: number | null | undefined,
   results: TeamResult[],
+  windowSize = LAST6_WINDOW,
 ): TeamLast6Form | null {
-  const window = lastN(results, LAST6_WINDOW);
+  const window = lastN(results, windowSize);
   if (window.length === 0) return null;
 
   let won = 0;
@@ -378,6 +380,7 @@ export function last6FormRowForTeam(
   matches: SeasonMatch[],
   standings: StandingLike[],
   scope: Last6Scope = {},
+  windowSize = LAST6_WINDOW,
 ): Last6LeagueRow {
   return {
     teamId: row.teamId,
@@ -385,7 +388,11 @@ export function last6FormRowForTeam(
     rank: row.rank,
     formRank: 0,
     zone: row.zone,
-    form: analyseTeamLast6(row.teamId, resultsFromSeasonMatches(row.teamId, matches, standings, scope)),
+    form: analyseTeamLast6(
+      row.teamId,
+      resultsFromSeasonMatches(row.teamId, matches, standings, scope),
+      windowSize,
+    ),
   };
 }
 
@@ -394,11 +401,21 @@ export function last6FormLeagueTable(
   standings: StandingLike[],
   matches: SeasonMatch[],
   scope: Last6Scope = {},
+  windowSize = LAST6_WINDOW,
 ): Last6LeagueRow[] {
   const rows = [...standings]
     .sort((a, b) => a.rank - b.rank)
-    .map((row) => last6FormRowForTeam(row, matches, standings, scope));
+    .map((row) => last6FormRowForTeam(row, matches, standings, scope, windowSize));
   return withFormRanks(rows);
+}
+
+/** Last-5 form for every side on the league table. */
+export function last5FormLeagueTable(
+  standings: StandingLike[],
+  matches: SeasonMatch[],
+  scope: Last6Scope = {},
+): Last6LeagueRow[] {
+  return last6FormLeagueTable(standings, matches, scope, LAST5_WINDOW);
 }
 
 /**

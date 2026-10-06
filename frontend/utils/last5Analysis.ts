@@ -5,6 +5,7 @@
  */
 
 import {
+  excludeFixture,
   filterScope,
   lastN,
   pointsFromOutcomes,
@@ -282,3 +283,83 @@ export const CHANGE_LABEL: Record<FormChange, string> = {
   zero: 'Steady lately',
   negative: 'Slipping lately',
 };
+
+/** Status on each match in the Last 5 initial state. */
+export type InitialStatus = 'Good' | 'Med' | 'Bad';
+
+export type InitialStateMatch = {
+  result: TeamResult;
+  outcome: ResultOutcome;
+  status: InitialStatus;
+};
+
+export type InitialStateSide = {
+  teamId: number;
+  /** `overall` is any venue. `home` / `away` keep only that venue. */
+  venue: 'home' | 'away' | 'overall';
+  matches: InitialStateMatch[];
+};
+
+/** Last 5 going into the current fixture. */
+export type FixtureInitialState = {
+  /** Home side, home matches only. */
+  home: InitialStateSide | null;
+  /** Away side, away matches only. */
+  away: InitialStateSide | null;
+  /** Home side, last 5 in any venue. */
+  overallHome: InitialStateSide | null;
+  /** Away side, last 5 in any venue. */
+  overallAway: InitialStateSide | null;
+};
+
+export const STATUS_FROM_OUTCOME: Record<ResultOutcome, InitialStatus> = {
+  W: 'Good',
+  D: 'Med',
+  L: 'Bad',
+};
+
+export function statusFromOutcome(outcome: ResultOutcome): InitialStatus {
+  return STATUS_FROM_OUTCOME[outcome];
+}
+
+function initialStateSide(
+  teamId: number | null | undefined,
+  results: TeamResult[],
+  venue: 'home' | 'away' | 'overall',
+  excludeFixtureId?: number | null,
+): InitialStateSide | null {
+  if (teamId == null) return null;
+  const cleaned = excludeFixture(results, excludeFixtureId);
+  const scoped = venue === 'overall' ? cleaned : filterScope(cleaned, venue);
+  const sample = lastN(scoped, 5);
+  return {
+    teamId,
+    venue,
+    matches: sample.map((result) => ({
+      result,
+      outcome: result.outcome,
+      status: statusFromOutcome(result.outcome),
+    })),
+  };
+}
+
+/**
+ * Initial state for the current fixture.
+ * Home/Away: the home side’s last 5 home matches and the away side’s last 5 away matches.
+ * Overall: each side’s last 5 matches in any venue.
+ * The fixture itself is left out so the read is the form going into it.
+ */
+export function buildInitialState(opts: {
+  homeId: number | null | undefined;
+  awayId: number | null | undefined;
+  homeResults: TeamResult[];
+  awayResults: TeamResult[];
+  excludeFixtureId?: number | null;
+}): FixtureInitialState {
+  return {
+    home: initialStateSide(opts.homeId, opts.homeResults, 'home', opts.excludeFixtureId),
+    away: initialStateSide(opts.awayId, opts.awayResults, 'away', opts.excludeFixtureId),
+    overallHome: initialStateSide(opts.homeId, opts.homeResults, 'overall', opts.excludeFixtureId),
+    overallAway: initialStateSide(opts.awayId, opts.awayResults, 'overall', opts.excludeFixtureId),
+  };
+}

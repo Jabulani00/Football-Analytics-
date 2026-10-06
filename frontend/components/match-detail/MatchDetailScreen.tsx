@@ -333,6 +333,7 @@ export default function MatchDetailScreen({ matchId, onBack }: MatchDetailScreen
           odds={detail.odds}
           probability={detail.probability}
           kickoffUnix={detail.unix}
+          fixtureId={detail.id}
         />
       ) : (
         <H2HPanel

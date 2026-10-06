@@ -8,6 +8,7 @@ import {
   type StandingLike,
   type TeamMotivation,
 } from '@/utils/motivationEngine';
+import { bandOf } from '@/utils/leagueTables';
 import { contestedLeagueTop } from '@/utils/separatorTools';
 import { leagueProgressInfo } from '@/utils/imbangiEngine';
 import {
@@ -107,15 +108,28 @@ export type ShowRead = {
 export type StreakSide = {
   current: number;
   sequence: string;
+  /** No two consecutive games of this outcome in the sample. */
   neverTwice: boolean;
   last10: string;
+  /** Each inner list is one run of 2+ of this outcome, newest game first. */
+  runs: string[][];
+  /** Newest-first result lines for the whole sample. */
+  results: string[];
 };
 
-export type SwingScope = {
-  scope: 'overall' | 'home' | 'away';
-  recent: number | null;
-  prior: number | null;
+/** Last-5 PPG against the PPG of every earlier game. */
+export type PpgSwing = {
+  recentPpg: number | null;
+  priorPpg: number | null;
+  recentPts: number | null;
+  priorPts: number | null;
+  recentMp: number;
+  priorMp: number;
+  /** Newest-first lines for the last 5 (or fewer, when the sample is short). */
+  recentLines: string[];
+  /** Earlier PPG is higher than the last 5. */
   drop: boolean;
+  /** Earlier PPG is lower than the last 5. */
   rise: boolean;
   detail: string;
 };
@@ -170,7 +184,7 @@ export type PowerDynamicsBundle = {
     win: { t1: StreakSide; t2: StreakSide };
     loss: { t1: StreakSide; t2: StreakSide };
   };
-  swing: { t1: SwingScope[]; t2: SwingScope[] };
+  swing: { t1: PpgSwing; t2: PpgSwing };
   childBeater: { t1: ChildBeaterSide; t2: ChildBeaterSide };
   struggle: { t1: string; t2: string; t1Fight: boolean; t2Fight: boolean };
   contested: { flag: ReturnType<typeof contestedLeagueTop>; t1InPack: boolean; t2InPack: boolean };
@@ -1002,6 +1016,161 @@ export function colourWord(c: TableColour | null): string {
   return 'Unknown';
 }
 
+export type IndlelaLetter = 'G' | 'R' | 'Y' | '—';
+
+export type IndlelaStop = {
+  /** 1 and 2 are the two previous games, 3 is this fixture, 4 is the next one. */
+  slot: 1 | 2 | 3 | 4;
+  role: string;
+  opponentName: string;
+  opponentRank: number | null;
+  letter: IndlelaLetter;
+};
+
+export type IndlelaPath = {
+  stops: IndlelaStop[];
+  sequence: string;
+  /** Opponent in game 2 is stronger (better rank) than the opponent in game 3. */
+  secondStronger: boolean | null;
+  /** Opponent in game 4 is stronger than the opponent in game 3. */
+  fourthStronger: boolean | null;
+  /** Both neighbours are stronger, so this opponent is the weaker one. */
+  easy: boolean | null;
+  call: string;
+};
+
+export type IndlelaScheduleFixture = {
+  homeId: number;
+  awayId: number;
+  unix: number;
+  finished: boolean;
+};
+
+export function indlelaLetter(colour: TableColour | null): IndlelaLetter {
+  if (colour === 'green') return 'G';
+  if (colour === 'red') return 'R';
+  if (colour === 'yellow') return 'Y';
+  return '—';
+}
+
+function opponentBand(
+  teamId: number | null,
+  table: StandingLike[],
+): { name: string; rank: number | null; letter: IndlelaLetter } {
+  if (teamId == null) return { name: '—', rank: null, letter: '—' };
+  const row = table.find((t) => t.teamId === teamId);
+  if (!row) return { name: '—', rank: null, letter: '—' };
+  const colour =
+    colourFromZone(row.zone) ??
+    (row.rank != null && table.length > 0 ? bandOf(row.rank, table.length) : null);
+  return { name: row.name, rank: row.rank ?? null, letter: indlelaLetter(colour) };
+}
+
+function emptyStop(slot: 1 | 2 | 3 | 4, role: string): IndlelaStop {
+  return { slot, role, opponentName: '—', opponentRank: null, letter: '—' };
+}
+
+/** Lower rank is stronger. Missing rank cannot be compared. */
+function rankIsStronger(a: number | null, b: number | null): boolean | null {
+  if (a == null || b == null || a === b) return a == null || b == null ? null : false;
+  return a < b;
+}
+
+/**
+ * Colour path for one side: two previous opponents, this opponent, the next opponent.
+ * This match is easy when both the last opponent and the next one are stronger than this opponent.
+ */
+export function indlelaPath(opts: {
+  teamId: number | null;
+  homeId: number | null;
+  awayId: number | null;
+  kickoffUnix: number | null;
+  schedule: IndlelaScheduleFixture[];
+  table: StandingLike[];
+}): IndlelaPath {
+  const roles: { slot: 1 | 2 | 3 | 4; role: string }[] = [
+    { slot: 1, role: '2 ago' },
+    { slot: 2, role: 'Last' },
+    { slot: 3, role: 'Current' },
+    { slot: 4, role: 'Next' },
+  ];
+  const blank = (): IndlelaPath => ({
+    stops: roles.map((r) => emptyStop(r.slot, r.role)),
+    sequence: '— — — —',
+    secondStronger: null,
+    fourthStronger: null,
+    easy: null,
+    call: 'Need this fixture on the league schedule',
+  });
+  const { teamId, homeId, awayId, kickoffUnix, schedule, table } = opts;
+  if (teamId == null || homeId == null || awayId == null || kickoffUnix == null) return blank();
+
+  const keyOf = (m: IndlelaScheduleFixture) => `${m.unix}:${m.homeId}:${m.awayId}`;
+  const currentKey = `${kickoffUnix}:${homeId}:${awayId}`;
+  const involves = (m: IndlelaScheduleFixture, id: number) => m.homeId === id || m.awayId === id;
+  const games = schedule
+    .filter((m) => involves(m, teamId))
+    .slice()
+    .sort((a, b) => a.unix - b.unix || a.homeId - b.homeId);
+  if (!games.some((m) => keyOf(m) === currentKey)) {
+    games.push({ homeId, awayId, unix: kickoffUnix, finished: false });
+    games.sort((a, b) => a.unix - b.unix || a.homeId - b.homeId);
+  }
+  const current = games.find((m) => keyOf(m) === currentKey);
+  if (!current) return blank();
+
+  const earlier = games.filter((m) => m.unix < current.unix && m.finished);
+  const prev = earlier.slice(-2);
+  const next = games.find((m) => m.unix > current.unix) ?? null;
+  const chosen: (IndlelaScheduleFixture | null)[] = [
+    prev.length === 2 ? prev[0] : null,
+    prev.length >= 1 ? prev[prev.length - 1] : null,
+    current,
+    next,
+  ];
+  if (prev.length === 1) {
+    chosen[0] = null;
+    chosen[1] = prev[0];
+  }
+
+  const stops: IndlelaStop[] = chosen.map((m, i) => {
+    const meta = roles[i];
+    if (!m) return emptyStop(meta.slot, meta.role);
+    const oppId = m.homeId === teamId ? m.awayId : m.homeId;
+    const band = opponentBand(oppId, table);
+    return {
+      slot: meta.slot,
+      role: meta.role,
+      opponentName: band.name,
+      opponentRank: band.rank,
+      letter: band.letter,
+    };
+  });
+
+  const second = stops[1];
+  const third = stops[2];
+  const fourth = stops[3];
+  const secondStronger = rankIsStronger(second.opponentRank, third.opponentRank);
+  const fourthStronger = rankIsStronger(fourth.opponentRank, third.opponentRank);
+  const easy =
+    secondStronger == null || fourthStronger == null ? null : secondStronger && fourthStronger;
+  const call =
+    easy == null
+      ? 'Need the last opponent, this opponent and the next one before calling the match'
+      : easy
+        ? 'EASY — this opponent is weaker than the last opponent and the next one'
+        : 'NOT EASY — this opponent is not weaker than both the last opponent and the next one';
+
+  return {
+    stops,
+    sequence: stops.map((s) => s.letter).join(' '),
+    secondStronger,
+    fourthStronger,
+    easy,
+    call,
+  };
+}
+
 /** SKM PPG bands — thresholds change by table colour. */
 export function ppgBandForColour(ppg: number, colour: TableColour): PpgBand {
   if (colour === 'green') {
@@ -1143,17 +1312,38 @@ export function currentStreak(results: TeamResult[], outcome: ResultOutcome): nu
   return n;
 }
 
+/** True when `outcome` never appears in two consecutive games. Omit `window` to use the full sample. */
 export function neverTwiceInRow(
   results: TeamResult[],
   outcome: ResultOutcome,
-  window = 10,
+  window?: number,
 ): boolean {
-  const slice = results.slice(0, window);
-  if (slice.length < 6) return false;
+  const slice = window == null ? results : results.slice(0, window);
   for (let i = 0; i < slice.length - 1; i++) {
     if (slice[i].outcome === outcome && slice[i + 1].outcome === outcome) return false;
   }
   return true;
+}
+
+export function resultLine(r: TeamResult): string {
+  const ha = r.isHome ? 'H' : 'A';
+  return `${r.outcome} ${r.gf}–${r.ga} vs ${r.opponentName} (${ha})`;
+}
+
+/** Runs of 2+ `outcome`, newest run first. Games inside a run stay newest-first. */
+export function outcomeRuns(results: TeamResult[], outcome: ResultOutcome): TeamResult[][] {
+  const runs: TeamResult[][] = [];
+  let i = 0;
+  while (i < results.length) {
+    if (results[i].outcome !== outcome) {
+      i += 1;
+      continue;
+    }
+    const start = i;
+    while (i < results.length && results[i].outcome === outcome) i += 1;
+    if (i - start >= 2) runs.push(results.slice(start, i));
+  }
+  return runs;
 }
 
 function sequenceOf(results: TeamResult[], n = 6): string {
@@ -1171,29 +1361,50 @@ function pointsFrom(results: TeamResult[]): number {
   return pts;
 }
 
-function formSwing(results: TeamResult[], scope: 'overall' | 'home' | 'away'): SwingScope {
-  const scoped = filterScope(results, scope);
-  if (scoped.length < 6) {
+/**
+ * Drop the newest 5 games and compare their PPG with every game before them.
+ * Earlier PPG higher → sudden drop. Earlier PPG lower → sudden pick up.
+ */
+export function ppgSwing(results: TeamResult[]): PpgSwing {
+  const recent = results.slice(0, 5);
+  const prior = results.slice(5);
+  const recentPts = recent.length > 0 ? pointsFrom(recent) : null;
+  const priorPts = prior.length > 0 ? pointsFrom(prior) : null;
+  if (recent.length < 5 || prior.length === 0 || recentPts == null || priorPts == null) {
     return {
-      scope,
-      recent: null,
-      prior: null,
+      recentPpg: null,
+      priorPpg: null,
+      recentPts,
+      priorPts,
+      recentMp: recent.length,
+      priorMp: prior.length,
+      recentLines: recent.map(resultLine),
       drop: false,
       rise: false,
-      detail: `${scope}: need 6 ${scope === 'overall' ? '' : `${scope} `}games`,
+      detail:
+        recent.length < 5
+          ? `Need 5 recent games plus earlier games (have ${results.length})`
+          : 'Need earlier games besides the last 5',
     };
   }
-  const recent = pointsFrom(scoped.slice(0, 3));
-  const prior = pointsFrom(scoped.slice(3, 6));
-  const drop = prior - recent >= 5;
-  const rise = recent - prior >= 5;
+  const recentPpg = recentPts / recent.length;
+  const priorPpg = priorPts / prior.length;
+  const recentShown = Math.round(recentPpg * 100) / 100;
+  const priorShown = Math.round(priorPpg * 100) / 100;
+  const drop = priorShown > recentShown;
+  const rise = priorShown < recentShown;
+  const call = drop ? 'sudden drop' : rise ? 'sudden pick up' : 'level';
   return {
-    scope,
-    recent,
-    prior,
+    recentPpg,
+    priorPpg,
+    recentPts,
+    priorPts,
+    recentMp: recent.length,
+    priorMp: prior.length,
+    recentLines: recent.map(resultLine),
     drop,
     rise,
-    detail: `${scope}: last 3 = ${recent} pts, previous 3 = ${prior} pts`,
+    detail: `Last 5 PPG ${recentPpg.toFixed(2)} (${recentPts} pts) · earlier ${prior.length} PPG ${priorPpg.toFixed(2)} (${priorPts} pts) · ${call}`,
   };
 }
 
@@ -1329,6 +1540,54 @@ function colourRead(snap: SideSnapshot): ColourSideRead {
   };
 }
 
+/** Home PPG − away PPG. At or under this is Balanced. */
+export const VENUE_SPLIT_BALANCED_MAX = 4;
+/** Home PPG − away PPG at or over this is Strong (playing home) or Weak (playing away). */
+export const VENUE_SPLIT_MARKED_MIN = 4.1;
+
+export type VenueSplitLabel = 'Balanced' | 'Strong' | 'Weak';
+export type VenueLeagueRead = 'Above average' | 'Below average' | 'Level';
+
+export type VenuePpgSplit = {
+  /** Home PPG minus away PPG. */
+  diff: number | null;
+  split: VenueSplitLabel | null;
+  /** Home PPG when this side is at home today, away PPG when they are away. */
+  venuePpg: number | null;
+  vsLeague: VenueLeagueRead | null;
+};
+
+/**
+ * Split a side’s home and away PPG.
+ * Diff ≤ 4 is Balanced. Diff ≥ 4.1 is Strong if they play at home here, Weak if they play away.
+ * A negative diff on the away side means their away PPG is higher, so they are Strong.
+ * The venue PPG is then set against the league average.
+ */
+export function venuePpgSplit(opts: {
+  homePpg: number | null;
+  awayPpg: number | null;
+  playing: 'home' | 'away';
+  leaguePpg: number | null;
+}): VenuePpgSplit {
+  const { homePpg, awayPpg, playing, leaguePpg } = opts;
+  const diff = homePpg != null && awayPpg != null ? homePpg - awayPpg : null;
+  let split: VenueSplitLabel | null = null;
+  if (diff != null) {
+    if (playing === 'away' && diff < 0) split = 'Strong';
+    else if (diff <= VENUE_SPLIT_BALANCED_MAX) split = 'Balanced';
+    else if (diff >= VENUE_SPLIT_MARKED_MIN) split = playing === 'home' ? 'Strong' : 'Weak';
+    else split = 'Balanced';
+  }
+  const venuePpg = playing === 'home' ? homePpg : awayPpg;
+  let vsLeague: VenueLeagueRead | null = null;
+  if (venuePpg != null && leaguePpg != null) {
+    if (venuePpg > leaguePpg) vsLeague = 'Above average';
+    else if (venuePpg < leaguePpg) vsLeague = 'Below average';
+    else vsLeague = 'Level';
+  }
+  return { diff, split, venuePpg, vsLeague };
+}
+
 function venueRead(snap: SideSnapshot): VenueRead {
   const overall = snap.overall.ppg;
   const home = snap.home.ppg;
@@ -1391,7 +1650,7 @@ function middleShow(snap: SideSnapshot): ShowRead {
   };
 }
 
-function streakSide(results: TeamResult[], outcome: ResultOutcome): StreakSide {
+export function streakSide(results: TeamResult[], outcome: ResultOutcome): StreakSide {
   return {
     current: currentStreak(results, outcome),
     sequence: sequenceOf(results, 8),
@@ -1399,6 +1658,8 @@ function streakSide(results: TeamResult[], outcome: ResultOutcome): StreakSide {
     last10: lastN(results, 10)
       .map((r) => r.outcome)
       .join(' '),
+    runs: outcomeRuns(results, outcome).map((run) => run.map(resultLine)),
+    results: results.map(resultLine),
   };
 }
 
@@ -1641,8 +1902,8 @@ export function evaluatePowerDynamics(opts: {
       loss: { t1: streakSide(t1Results, 'L'), t2: streakSide(t2Results, 'L') },
     },
     swing: {
-      t1: (['overall', 'home', 'away'] as const).map((s) => formSwing(t1Results, s)),
-      t2: (['overall', 'home', 'away'] as const).map((s) => formSwing(t2Results, s)),
+      t1: ppgSwing(t1Results),
+      t2: ppgSwing(t2Results),
     },
     childBeater: {
       t1: childBeater(t1Results, t1.zone, n),

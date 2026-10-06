@@ -18,36 +18,53 @@ import {
   fmtGapScore,
   fmtPct,
   fmtPpg,
+  venuePpgSplit,
+  type VenueLeagueRead,
+  type VenueSplitLabel,
   positionGapScale,
   wdl,
   type BaselineGap,
   type ChildBeaterSide,
   type ColourSideRead,
+  type IndlelaLetter,
+  type IndlelaPath,
   type LastGameFlag,
   type PowerDynamicsBundle,
   type ShowRead,
   type SideSnapshot,
   type BatetemeKind,
   type StreamName,
+  type PpgSwing,
   type StreakSide,
-  type SwingScope,
   type Tone,
-  type VenueRead,
 } from '@/utils/powerDynamicsEngine';
-import { CHANGE_LABEL, OPTION_LABEL, type TeamLast5 } from '@/utils/last5Analysis';
+import {
+  CHANGE_LABEL,
+  OPTION_LABEL,
+  bandFromTablePoints,
+  statusFromOutcome,
+  type FormBand,
+  type InitialStateSide,
+  type InitialStatus,
+  type TeamLast5,
+} from '@/utils/last5Analysis';
 import {
   LAST6_BAND_LABEL,
   LAST6_TREND_SHORT,
   compareLast6Form,
+  last5FormLeagueTable,
   last6FormFixtureLensRows,
   last6FormFixtureRows,
   last6FormLeagueTable,
   last6FormStandings,
+  resultsFromSeasonMatches,
   type Last6FixtureLens,
   type Last6FormBand,
   type Last6LeagueRow,
   type Last6Period,
+  type Last6Venue,
 } from '@/utils/last6Form';
+import { lastN } from '@/utils/teamResults';
 import type { SeasonMatch } from '@/utils/bhozomaEngine';
 import { GRADE_LABEL, STANCE_LABEL, type StandingLike } from '@/utils/motivationEngine';
 import SubTabBar from '@/components/shared/SubTabBar';
@@ -60,10 +77,18 @@ function toneColor(t: Tone): string {
   return theme.textMuted;
 }
 
-export function SectorIntro({ title, note }: { title: string; note?: string }) {
+export function SectorIntro({
+  title,
+  note,
+  preserveCase,
+}: {
+  title: string;
+  note?: string;
+  preserveCase?: boolean;
+}) {
   return (
     <View style={styles.intro}>
-      <Text style={styles.sectorTitle}>{title}</Text>
+      <Text style={[styles.sectorTitle, preserveCase ? styles.sectorTitleAsWritten : null]}>{title}</Text>
       {note ? <Text style={styles.note}>{note}</Text> : null}
     </View>
   );
@@ -135,19 +160,104 @@ function GapScoreRow({
   );
 }
 
+function gapCellRole(pd: PowerDynamicsBundle, pos: number): 't1' | 't2' | 'span' | 'idle' {
+  const g = pd.positionGap;
+  if (g.t1Rank === pos) return 't1';
+  if (g.t2Rank === pos) return 't2';
+  if (g.from != null && g.to != null && pos >= g.from && pos <= g.to) return 'span';
+  return 'idle';
+}
+
+function GapPlaces({ pd }: { pd: PowerDynamicsBundle }) {
+  const g = pd.positionGap;
+  if (g.tableSize < 2) return null;
+  const cols = g.tableSize < 10 ? g.tableSize : 10;
+  return (
+    <View style={styles.posGrid}>
+      {Array.from({ length: g.tableSize }, (_, i) => i + 1).map((pos) => {
+        const role = gapCellRole(pd, pos);
+        return (
+          <View key={pos} style={[styles.posSlot, { width: `${100 / cols}%` }]}>
+            <View
+              style={[
+                styles.posCell,
+                role === 't1' && styles.posCellT1,
+                role === 't2' && styles.posCellT2,
+                role === 'span' && styles.posCellSpan,
+              ]}>
+              <Text style={[styles.posNum, (role === 't1' || role === 't2') && styles.posNumOn]}>{pos}</Text>
+              {role === 't1' || role === 't2' ? (
+                <Text style={styles.posTag}>{role === 't1' ? 'T1' : 'T2'}</Text>
+              ) : null}
+            </View>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+function GapGradeModal({
+  pd,
+  visible,
+  onClose,
+}: {
+  pd: PowerDynamicsBundle;
+  visible: boolean;
+  onClose: () => void;
+}) {
+  const g = pd.positionGap;
+  const scale = positionGapScale(g.tableSize);
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalRoot}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <View style={styles.modalSheet}>
+          <View style={styles.modalHead}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.modalTitle}>{g.grade ? `Gap analysis · ${g.grade}` : 'Gap analysis'}</Text>
+              <Text style={styles.modalSub}>
+                {g.tableSize} teams
+                {g.t1Rank != null && g.t2Rank != null
+                  ? ` · ${pd.t1.label} #${g.t1Rank} · ${pd.t2.label} #${g.t2Rank}`
+                  : ''}
+              </Text>
+            </View>
+            <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Close">
+              <Text style={styles.modalClose}>Close</Text>
+            </Pressable>
+          </View>
+          <ScrollView style={styles.modalList}>
+            <Text style={styles.modalLead}>
+              {g.grade
+                ? `${g.grade} covers places ${g.from}–${g.to}. G1 is the largest gap. Each next grade is one place closer.`
+                : 'G1 is the largest gap. Each next grade is one place closer.'}
+            </Text>
+            <GapPlaces pd={pd} />
+            <View style={styles.modalRowHead}>
+              <Text style={styles.modalHeadCol}>Grade</Text>
+              <Text style={styles.modalHeadCol}>Gap</Text>
+            </View>
+            {scale.map((row) => {
+              const current = row.grade === g.grade;
+              return (
+                <View key={row.grade} style={[styles.modalRow, current && styles.modalRowCurrent]}>
+                  <Text style={[styles.modalGrade, current && styles.modalGradeCurrent]}>{row.grade}</Text>
+                  <Text style={[styles.modalGap, current && styles.modalGradeCurrent]}>{row.span}</Text>
+                </View>
+              );
+            })}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function PositionGapBoard({ pd }: { pd: PowerDynamicsBundle }) {
   const [open, setOpen] = useState(false);
   const g = pd.positionGap;
-  const scale = positionGapScale(g.tableSize);
-  const cols = g.tableSize > 0 && g.tableSize < 10 ? g.tableSize : 10;
-  const inSpan = (pos: number) => g.from != null && g.to != null && pos >= g.from && pos <= g.to;
-  const cellRole = (pos: number): 't1' | 't2' | 'span' | 'idle' => {
-    if (g.t1Rank === pos) return 't1';
-    if (g.t2Rank === pos) return 't2';
-    if (inSpan(pos)) return 'span';
-    return 'idle';
-  };
-  const canOpen = scale.length > 0;
+  const canOpen = positionGapScale(g.tableSize).length > 0;
 
   return (
     <View>
@@ -166,71 +276,8 @@ function PositionGapBoard({ pd }: { pd: PowerDynamicsBundle }) {
           </View>
         ) : null}
       </View>
-      {g.tableSize >= 2 ? (
-        <View style={styles.posGrid}>
-          {Array.from({ length: g.tableSize }, (_, i) => i + 1).map((pos) => {
-            const role = cellRole(pos);
-            return (
-              <View key={pos} style={[styles.posSlot, { width: `${100 / cols}%` }]}>
-                <View
-                  style={[
-                    styles.posCell,
-                    role === 't1' && styles.posCellT1,
-                    role === 't2' && styles.posCellT2,
-                    role === 'span' && styles.posCellSpan,
-                  ]}>
-                  <Text
-                    style={[
-                      styles.posNum,
-                      (role === 't1' || role === 't2') && styles.posNumOn,
-                    ]}>
-                    {pos}
-                  </Text>
-                  {role === 't1' || role === 't2' ? (
-                    <Text style={styles.posTag}>{role === 't1' ? 'T1' : 'T2'}</Text>
-                  ) : null}
-                </View>
-              </View>
-            );
-          })}
-        </View>
-      ) : null}
-      <Modal
-        visible={open}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setOpen(false)}>
-        <View style={styles.modalRoot}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setOpen(false)} />
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHead}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.modalTitle}>Gap grades</Text>
-                <Text style={styles.modalSub}>{g.tableSize} teams</Text>
-              </View>
-              <Pressable onPress={() => setOpen(false)} accessibilityRole="button" accessibilityLabel="Close">
-                <Text style={styles.modalClose}>Close</Text>
-              </Pressable>
-            </View>
-            <Text style={styles.modalLead}>G1 is the largest gap. Each next grade is one place closer.</Text>
-            <View style={styles.modalRowHead}>
-              <Text style={styles.modalHeadCol}>Grade</Text>
-              <Text style={styles.modalHeadCol}>Gap</Text>
-            </View>
-            <ScrollView style={styles.modalList}>
-              {scale.map((row) => {
-                const current = row.grade === g.grade;
-                return (
-                  <View key={row.grade} style={[styles.modalRow, current && styles.modalRowCurrent]}>
-                    <Text style={[styles.modalGrade, current && styles.modalGradeCurrent]}>{row.grade}</Text>
-                    <Text style={[styles.modalGap, current && styles.modalGradeCurrent]}>{row.span}</Text>
-                  </View>
-                );
-              })}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
+      <GapPlaces pd={pd} />
+      <GapGradeModal pd={pd} visible={open} onClose={() => setOpen(false)} />
     </View>
   );
 }
@@ -239,12 +286,17 @@ export function BaselineCards({
   pd,
   title = 'Baseline — original state',
   note = 'Natural table state before separators. T1 is the better table side (points, then GD, then goals scored); T2 is who they face. A–F types come from the G-grade: k/(N−1), then 100 minus that percentage, on the 0–10 gap scale.',
+  hideHeading,
 }: {
   pd: PowerDynamicsBundle;
   title?: string;
   note?: string;
+  hideHeading?: boolean;
 }) {
+  const [gradeOpen, setGradeOpen] = useState(false);
   const gap = pd.baselineGap;
+  const grade = pd.positionGap.grade;
+  const gradeInCall = grade != null && gap.call.startsWith(grade);
   const row = (s: SideSnapshot, letter: typeof gap.t1) => (
     <SideCard
       key={s.side}
@@ -259,14 +311,30 @@ export function BaselineCards({
   );
   return (
     <View>
-      <SectorIntro title={title} note={note} />
+      {hideHeading ? null : <SectorIntro title={title} note={note} />}
       {gap.leagueAvgPpg != null ? (
         <Text style={styles.note}>League average PPG {gap.leagueAvgPpg.toFixed(2)}</Text>
       ) : null}
-      <Callout
-        text={gap.call}
-        tone={gap.supports ? 'warn' : gap.stronger === 'level' ? 'info' : 'good'}
-      />
+      {gradeInCall && grade ? (
+        <Pressable
+          onPress={() => setGradeOpen(true)}
+          accessibilityRole="button"
+          accessibilityLabel={`Open gap analysis for ${grade}`}
+          style={[styles.callout, { borderColor: toneColor(gap.supports ? 'warn' : gap.stronger === 'level' ? 'info' : 'good') }]}>
+          <Text style={[styles.calloutText, { color: toneColor(gap.supports ? 'warn' : gap.stronger === 'level' ? 'info' : 'good') }]}>
+            <Text style={[styles.gradeLink, { color: toneColor(gap.supports ? 'warn' : gap.stronger === 'level' ? 'info' : 'good') }]}>
+              {grade}
+            </Text>
+            {gap.call.slice(grade.length)}
+          </Text>
+        </Pressable>
+      ) : (
+        <Callout
+          text={gap.call}
+          tone={gap.supports ? 'warn' : gap.stronger === 'level' ? 'info' : 'good'}
+        />
+      )}
+      <GapGradeModal pd={pd} visible={gradeOpen} onClose={() => setGradeOpen(false)} />
       {row(pd.t1, gap.t1)}
       {row(pd.t2, gap.t2)}
       {pd.pointsDiff != null ? (
@@ -528,6 +596,294 @@ export function StreamlineCards({
   );
 }
 
+function statusTone(status: InitialStatus): Tone {
+  if (status === 'Good') return 'good';
+  if (status === 'Bad') return 'bad';
+  return 'warn';
+}
+
+function tallyInitial(side: InitialStateSide | null | undefined) {
+  const matches = side?.matches ?? [];
+  let won = 0;
+  let drawn = 0;
+  let lost = 0;
+  let gf = 0;
+  let ga = 0;
+  for (const m of matches) {
+    if (m.outcome === 'W') won += 1;
+    else if (m.outcome === 'D') drawn += 1;
+    else lost += 1;
+    gf += m.result.gf;
+    ga += m.result.ga;
+  }
+  const mp = matches.length;
+  const points = won * 3 + drawn;
+  return { matches, won, drawn, lost, gf, ga, mp, points, gd: gf - ga, ppg: mp > 0 ? points / mp : null };
+}
+
+type InitialTally = ReturnType<typeof tallyInitial>;
+
+type InitialLens = 'overall' | 'home_away';
+
+const INITIAL_LENS_TABS: { id: InitialLens; label: string }[] = [
+  { id: 'overall', label: 'Overall' },
+  { id: 'home_away', label: 'Home/Away' },
+];
+
+/** Last-5 places. Fixture sides keep the sample already shown in the table. */
+function venueLast5Rows(
+  standings: StandingLike[],
+  matches: SeasonMatch[],
+  venue: 'home' | 'away' | 'overall',
+  focus: { teamId: number | null; tally: InitialTally }[],
+): StandingLike[] {
+  const focusById = new Map(
+    focus
+      .filter((f): f is { teamId: number; tally: InitialTally } => f.teamId != null)
+      .map((f) => [f.teamId, f.tally]),
+  );
+  const rows = standings.map((s) => {
+    const kept = focusById.get(s.teamId);
+    if (kept) {
+      return { teamId: s.teamId, name: s.name, zone: s.zone, points: kept.points, gd: kept.gd, gf: kept.gf, played: kept.mp };
+    }
+    const window = lastN(resultsFromSeasonMatches(s.teamId, matches, standings, { venue }), 5);
+    let points = 0;
+    let gf = 0;
+    let ga = 0;
+    for (const r of window) {
+      if (r.outcome === 'W') points += 3;
+      else if (r.outcome === 'D') points += 1;
+      gf += r.gf;
+      ga += r.ga;
+    }
+    return { teamId: s.teamId, name: s.name, zone: s.zone, points, gd: gf - ga, gf, played: window.length };
+  });
+  rows.sort((a, b) => {
+    if (b.points !== a.points) return b.points - a.points;
+    if (b.gd !== a.gd) return b.gd - a.gd;
+    if (b.gf !== a.gf) return b.gf - a.gf;
+    return a.teamId - b.teamId;
+  });
+  return rows.map((r, i) => ({
+    rank: i + 1,
+    teamId: r.teamId,
+    name: r.name,
+    points: r.points,
+    played: r.played,
+    zone: r.zone,
+    goalDiff: r.gd,
+    goalsFor: r.gf,
+  }));
+}
+
+function initialBaselineBundle(
+  pd: PowerDynamicsBundle,
+  home: InitialStateSide | null,
+  away: InitialStateSide | null,
+  overallHome: InitialStateSide | null,
+  overallAway: InitialStateSide | null,
+  standings: StandingLike[],
+  matches: SeasonMatch[],
+  lens: InitialLens,
+): PowerDynamicsBundle {
+  const homeId = pd.t1.venue === 'home' ? pd.t1.teamId : pd.t2.teamId;
+  const awayId = pd.t1.venue === 'away' ? pd.t1.teamId : pd.t2.teamId;
+  const homeTable =
+    lens === 'overall'
+      ? venueLast5Rows(standings, matches, 'overall', [
+          { teamId: homeId, tally: tallyInitial(overallHome) },
+          { teamId: awayId, tally: tallyInitial(overallAway) },
+        ])
+      : venueLast5Rows(standings, matches, 'home', [{ teamId: homeId, tally: tallyInitial(home) }]);
+  const awayTable =
+    lens === 'overall'
+      ? homeTable
+      : venueLast5Rows(standings, matches, 'away', [{ teamId: awayId, tally: tallyInitial(away) }]);
+  const homeRank = homeId != null ? homeTable.find((r) => r.teamId === homeId) : undefined;
+  const awayRank = awayId != null ? awayTable.find((r) => r.teamId === awayId) : undefined;
+  const apply = (snap: SideSnapshot): SideSnapshot => {
+    const row = snap.venue === 'home' ? homeRank : awayRank;
+    return {
+      ...snap,
+      rank: row?.rank ?? null,
+      points: row && row.played > 0 ? row.points : null,
+      played: row && row.played > 0 ? row.played : null,
+      goalDiff: row && row.played > 0 ? row.goalDiff ?? null : null,
+      goalsFor: row && row.played > 0 ? row.goalsFor ?? null : null,
+    };
+  };
+  const t1 = apply(pd.t1);
+  const t2 = apply(pd.t2);
+  const positionGap = evaluatePositionGap({
+    tableSize: standings.length,
+    t1Rank: t1.rank,
+    t2Rank: t2.rank,
+    t1Label: t1.label,
+    t2Label: t2.label,
+  });
+  const baselineGap = baselineGapFor(
+    t1,
+    t2,
+    lens === 'overall' ? homeTable : [...homeTable, ...awayTable],
+    positionGap,
+  );
+  const pointsDiff = t1.points != null && t2.points != null ? Math.abs(t1.points - t2.points) : null;
+  return {
+    ...pd,
+    t1,
+    t2,
+    positionGap,
+    baselineGap,
+    pointsDiff,
+    closeOnTable: pointsDiff != null && pointsDiff <= 4,
+  };
+}
+
+export function InitialStateCards({
+  pd,
+  home,
+  away,
+  overallHome,
+  overallAway,
+  standings,
+  matches,
+  tableLoading,
+}: {
+  pd: PowerDynamicsBundle;
+  home: InitialStateSide | null;
+  away: InitialStateSide | null;
+  overallHome: InitialStateSide | null;
+  overallAway: InitialStateSide | null;
+  standings: StandingLike[];
+  matches: SeasonMatch[];
+  tableLoading?: boolean;
+}) {
+  const [lens, setLens] = useState<InitialLens>('overall');
+  const sides = [pd.t1, pd.t2].map((snap) => {
+    const sample =
+      lens === 'home_away'
+        ? snap.venue === 'home'
+          ? home
+          : away
+        : snap.venue === 'home'
+          ? overallHome
+          : overallAway;
+    return { snap, tally: tallyInitial(sample) };
+  });
+  const ranked = [...sides].sort((a, b) => {
+    if (b.tally.points !== a.tally.points) return b.tally.points - a.tally.points;
+    if (b.tally.gd !== a.tally.gd) return b.tally.gd - a.tally.gd;
+    return b.tally.gf - a.tally.gf;
+  });
+  const rankBySide = new Map(ranked.map((row, i) => [row.snap.side, i + 1]));
+  const [left, right] = sides;
+  let call = 'Need finished games for the initial state.';
+  let callTone: Tone = 'info';
+  if (left && right && left.tally.mp > 0 && right.tally.mp > 0) {
+    const gap = left.tally.points - right.tally.points;
+    if (gap >= 3) {
+      call = `${left.snap.label} is in better last-5 form (${left.tally.points}–${right.tally.points} pts).`;
+      callTone = 'warn';
+    } else if (gap <= -3) {
+      call = `${right.snap.label} is in better last-5 form (${right.tally.points}–${left.tally.points} pts).`;
+      callTone = 'warn';
+    } else {
+      call = `Similar last-5 form — ${left.snap.label} ${left.tally.points} pts, ${right.snap.label} ${right.tally.points} pts.`;
+    }
+  } else if ((left?.tally.mp ?? 0) > 0 || (right?.tally.mp ?? 0) > 0) {
+    const only = (left?.tally.mp ?? 0) > 0 ? left : right;
+    call = `Only ${only?.snap.label} has a last-5 sample so far.`;
+  }
+
+  return (
+    <View>
+      <SubTabBar tabs={INITIAL_LENS_TABS} active={lens} onChange={setLens} />
+      <Text style={styles.note}>
+        {lens === 'overall'
+          ? 'Last 5 in any venue. W = Good · D = Med · L = Bad'
+          : 'Home side at home, away side away. W = Good · D = Med · L = Bad'}
+      </Text>
+      <Callout text={call} tone={callTone} />
+      <ScrollView horizontal showsHorizontalScrollIndicator style={styles.initialScroll}>
+        <View style={[styles.formTable, styles.initialTable]}>
+          <View style={[styles.formRow, styles.formHead]}>
+            <Text style={[styles.formTh, styles.formPos]}>#</Text>
+            <Text style={[styles.formTh, styles.formTeam]}>Team</Text>
+            <Text style={[styles.formTh, styles.initialSeqHead]}>Last 5</Text>
+            <Text style={[styles.formTh, styles.formNum]}>MP</Text>
+            <Text style={[styles.formTh, styles.formWdl]}>W-D-L</Text>
+            <Text style={[styles.formTh, styles.formNum]}>Pts</Text>
+            <Text style={[styles.formTh, styles.formNum]}>PPG</Text>
+            <Text style={[styles.formTh, styles.formNum]}>GD</Text>
+          </View>
+          {sides.map(({ snap, tally }) => (
+            <View key={snap.side} style={[styles.formRow, styles.formRowFocus]}>
+              <FormCell style={styles.formPos}>{String(rankBySide.get(snap.side) ?? '—')}</FormCell>
+              <View style={styles.formTeam}>
+                {lens === 'home_away' ? (
+                  <Text
+                    style={[
+                      styles.formVenue,
+                      snap.venue === 'home' ? styles.formVenueHome : styles.formVenueAway,
+                    ]}
+                    numberOfLines={1}>
+                    {snap.venue === 'home' ? 'Home' : 'Away'}
+                  </Text>
+                ) : null}
+                <Text style={styles.formTeamName} numberOfLines={1}>
+                  {snap.label}
+                </Text>
+                {tally.matches.length > 0 ? (
+                  <Text style={styles.formScores} numberOfLines={1}>
+                    {tally.matches.map((m) => `${m.result.gf}-${m.result.ga}`).join(' · ')}
+                  </Text>
+                ) : null}
+              </View>
+              <View style={styles.initialSeq}>
+                {tally.matches.length > 0 ? (
+                  tally.matches.map((m, i) => (
+                    <Text
+                      key={`${m.result.fixtureId}-${i}`}
+                      style={[styles.initialSeqTag, { color: toneColor(statusTone(m.status)) }]}>
+                      {m.outcome} ({m.status})
+                    </Text>
+                  ))
+                ) : (
+                  <Text style={styles.formTd}>—</Text>
+                )}
+              </View>
+              <FormCell style={styles.formNum}>{tally.mp > 0 ? String(tally.mp) : '—'}</FormCell>
+              <FormCell style={styles.formWdl}>
+                {tally.mp > 0 ? `${tally.won}-${tally.drawn}-${tally.lost}` : '—'}
+              </FormCell>
+              <FormCell style={styles.formNum}>{tally.mp > 0 ? String(tally.points) : '—'}</FormCell>
+              <FormCell style={styles.formNum}>
+                {tally.ppg != null ? tally.ppg.toFixed(2) : '—'}
+              </FormCell>
+              <FormCell style={styles.formNum}>
+                {tally.mp > 0 ? `${tally.gd >= 0 ? '+' : ''}${tally.gd}` : '—'}
+              </FormCell>
+            </View>
+          ))}
+        </View>
+      </ScrollView>
+      {standings.length < 2 ? (
+        <Text style={styles.note}>Need a league table for the initial-state baseline.</Text>
+      ) : matches.length === 0 ? (
+        <Text style={styles.note}>
+          {tableLoading ? 'Building the last-5 baseline from season results…' : 'No season results for the initial-state baseline yet.'}
+        </Text>
+      ) : (
+        <BaselineCards
+          pd={initialBaselineBundle(pd, home, away, overallHome, overallAway, standings, matches, lens)}
+          hideHeading
+        />
+      )}
+    </View>
+  );
+}
+
 export function Last5Cards({
   pd,
   home,
@@ -566,6 +922,178 @@ export function Last5Cards({
     <View>
       {block(pd.t1.label, t1Team, pd.lastGame.t1)}
       {block(pd.t2.label, t2Team, pd.lastGame.t2)}
+    </View>
+  );
+}
+
+const LAST5_VENUE_TABS: { id: Last6Venue; label: string }[] = [
+  { id: 'overall', label: 'Overall' },
+  { id: 'home', label: 'Home' },
+  { id: 'away', label: 'Away' },
+];
+
+function last5BandLabel(band: FormBand): string {
+  if (band === 'good') return 'Good';
+  if (band === 'bad') return 'Bad';
+  return 'Med';
+}
+
+function last5BandTone(band: FormBand): Tone {
+  if (band === 'good') return 'good';
+  if (band === 'bad') return 'bad';
+  return 'warn';
+}
+
+export function Last5LeagueCards({
+  pd,
+  standings,
+  matches,
+  loading,
+  error,
+  highlightIds,
+  teamLabels,
+}: {
+  pd: PowerDynamicsBundle;
+  standings: StandingLike[];
+  matches: SeasonMatch[];
+  loading?: boolean;
+  error?: string | null;
+  highlightIds?: number[];
+  teamLabels?: Record<number, string>;
+}) {
+  const [venue, setVenue] = useState<Last6Venue>('overall');
+  const [period, setPeriod] = useState<Last6Period>('ft');
+  const table = last5FormLeagueTable(standings, matches, { venue, period });
+  const rows = [...table].sort((a, b) => a.formRank - b.formRank);
+  const fixtureIds = (highlightIds ?? [pd.t1.teamId, pd.t2.teamId]).filter(
+    (id): id is number => id != null && Number.isFinite(id),
+  );
+  const highlightSet = new Set(fixtureIds);
+  const formPd = overlayFormBaseline(pd, table);
+  const typeById = new Map<number, { letter: string | null; score: number | null }>();
+  if (pd.t1.teamId != null) {
+    typeById.set(pd.t1.teamId, { letter: formPd.baselineGap.t1.letter, score: formPd.baselineGap.t1.score });
+  }
+  if (pd.t2.teamId != null) {
+    typeById.set(pd.t2.teamId, { letter: formPd.baselineGap.t2.letter, score: formPd.baselineGap.t2.score });
+  }
+  const htCovered = matches.filter((m) => m.homeGoalsHt != null && m.awayGoalsHt != null).length;
+  const venueNote =
+    venue === 'home'
+      ? 'Last 5 home matches for every side.'
+      : venue === 'away'
+        ? 'Last 5 away matches for every side.'
+        : 'Last 5 matches in any venue for every side.';
+
+  if (loading) {
+    return (
+      <View>
+        <SectorIntro title="Section 2: LAST 5" preserveCase note="Ranking every side by last-5 form." />
+        <Text style={styles.note}>Building last-5 ranking from season results…</Text>
+      </View>
+    );
+  }
+  if (error) {
+    return (
+      <View>
+        <SectorIntro title="Section 2: LAST 5" preserveCase />
+        <Text style={styles.note}>{error}</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View>
+      <SectorIntro
+        title="Section 2: LAST 5"
+        preserveCase
+        note="League ranking from last 5. Fixture sides are highlighted."
+      />
+      <SubTabBar tabs={LAST5_VENUE_TABS} active={venue} onChange={setVenue} />
+      <SubTabBar tabs={FORM_PERIOD_TABS} active={period} onChange={setPeriod} />
+      <Text style={styles.note}>{venueNote} W = Good · D = Med · L = Bad</Text>
+      {period !== 'ft' ? (
+        <Text style={styles.note}>
+          {htCovered} of {matches.length} finished games have a half-time score
+          {htCovered === 0 ? ' — half tables stay empty until that data lands' : ''}.
+        </Text>
+      ) : null}
+      {standings.length < 2 ? (
+        <Text style={styles.note}>Need a league table for this ranking.</Text>
+      ) : matches.length === 0 ? (
+        <Text style={styles.note}>No finished season fixtures loaded yet.</Text>
+      ) : (
+        <ScrollView horizontal showsHorizontalScrollIndicator style={styles.initialScroll}>
+          <View style={[styles.formTable, styles.last5LeagueTable]}>
+            <View style={[styles.formRow, styles.formHead]}>
+              <Text style={[styles.formTh, styles.formPos]}>#</Text>
+              <Text style={[styles.formTh, styles.formTeam]}>Team</Text>
+              <Text style={[styles.formTh, styles.initialSeqHead]}>Last 5</Text>
+              <Text style={[styles.formTh, styles.formNum]}>MP</Text>
+              <Text style={[styles.formTh, styles.formWdl]}>W-D-L</Text>
+              <Text style={[styles.formTh, styles.formNum]}>Pts</Text>
+              <Text style={[styles.formTh, styles.formNum]}>PPG</Text>
+              <Text style={[styles.formTh, styles.formNum]}>GD</Text>
+              <Text style={[styles.formTh, styles.formType]}>Type</Text>
+              <Text style={[styles.formTh, styles.formNum]}>Gap</Text>
+              <Text style={[styles.formTh, styles.formRead]}>Read</Text>
+            </View>
+            {rows.map((r) => {
+              const f = r.form;
+              const typed = typeById.get(r.teamId);
+              const band = f ? bandFromTablePoints(f.points) : null;
+              return (
+                <View
+                  key={r.teamId}
+                  style={[styles.formRow, highlightSet.has(r.teamId) && styles.formRowFocus]}>
+                  <FormCell style={styles.formPos}>{String(r.formRank)}</FormCell>
+                  <View style={styles.formTeam}>
+                    <Text style={styles.formTeamName} numberOfLines={1}>
+                      {teamLabels?.[r.teamId] ?? r.name}
+                    </Text>
+                    {f ? (
+                      <Text style={styles.formScores} numberOfLines={1}>
+                        {f.games.map((g) => `${g.gf}-${g.ga}`).join(' · ')}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <View style={styles.initialSeq}>
+                    {f && f.games.length > 0 ? (
+                      f.games.map((g, i) => {
+                        const status = statusFromOutcome(g.outcome);
+                        return (
+                          <Text
+                            key={`${r.teamId}-${i}`}
+                            style={[styles.initialSeqTag, { color: toneColor(statusTone(status)) }]}>
+                            {g.outcome} ({status})
+                          </Text>
+                        );
+                      })
+                    ) : (
+                      <Text style={styles.formTd}>—</Text>
+                    )}
+                  </View>
+                  <FormCell style={styles.formNum}>{f ? String(f.mp) : '—'}</FormCell>
+                  <FormCell style={styles.formWdl}>{f ? `${f.won}-${f.drawn}-${f.lost}` : '—'}</FormCell>
+                  <FormCell style={styles.formNum}>{f ? String(f.points) : '—'}</FormCell>
+                  <FormCell style={styles.formNum}>{f?.ppg != null ? f.ppg.toFixed(2) : '—'}</FormCell>
+                  <FormCell style={styles.formNum}>{f ? `${f.gd >= 0 ? '+' : ''}${f.gd}` : '—'}</FormCell>
+                  <FormCell style={styles.formType}>{typed?.letter ?? '—'}</FormCell>
+                  <FormCell style={styles.formNum}>
+                    {typed?.score != null ? fmtGapScore(typed.score) : '—'}
+                  </FormCell>
+                  <FormCell style={styles.formRead} tone={band ? last5BandTone(band) : undefined}>
+                    {band ? last5BandLabel(band) : 'No sample'}
+                  </FormCell>
+                </View>
+              );
+            })}
+          </View>
+        </ScrollView>
+      )}
+      {standings.length >= 2 && matches.length > 0 ? (
+        <BaselineCards pd={formPd} hideHeading />
+      ) : null}
     </View>
   );
 }
@@ -925,29 +1453,74 @@ export function ColourCards({ pd }: { pd: PowerDynamicsBundle }) {
   );
 }
 
+function splitTone(label: VenueSplitLabel | null): Tone | undefined {
+  if (label === 'Strong') return 'good';
+  if (label === 'Weak') return 'bad';
+  if (label === 'Balanced') return 'info';
+  return undefined;
+}
+
+function leagueTone(read: VenueLeagueRead | null): Tone | undefined {
+  if (read === 'Above average') return 'good';
+  if (read === 'Below average') return 'bad';
+  if (read === 'Level') return 'info';
+  return undefined;
+}
+
 export function VenueCards({ pd }: { pd: PowerDynamicsBundle }) {
-  const one = (snap: SideSnapshot, v: VenueRead) => {
-    const atHome = snap.venue === 'home';
-    return (
-      <SideCard label={snap.label} meta={atHome ? 'Playing at home' : 'Playing away'}>
-        <Line text={`Overall PPG ${fmtPpg(v.overallPpg)} · home ${fmtPpg(v.homePpg)} · away ${fmtPpg(v.awayPpg)}`} />
-        <Line
-          text={atHome ? (v.homeStrong ? 'Strong at home' : 'No home lift vs overall') : v.awayStrong ? 'Strong away' : 'No away lift vs overall'}
-          tone={atHome ? (v.homeStrong ? 'good' : 'info') : v.awayStrong ? 'good' : 'info'}
-        />
-        <Line text={v.detail} />
-      </SideCard>
-    );
-  };
+  const leaguePpg = pd.baselineGap.leagueAvgPpg;
+  const sides = [pd.t1.venue === 'home' ? pd.t1 : pd.t2, pd.t1.venue === 'away' ? pd.t1 : pd.t2];
   return (
     <View>
       <SectorIntro
-        title="Home / Away strong → underdog strength"
-        note="T1 is the better table side (points, then GD, then goals scored); T2 is the underdog. A venue lift of 0.3+ PPG vs overall counts as strength."
+        title="Home / Away strong"
+        note="Home PPG minus away PPG. 4 or less is Balanced. 4.1 or more is Strong at home and Weak away. A negative diff on the away side means they are Strong. Venue PPG is then set against the league average."
       />
-      <Callout text={pd.venue.call} tone="warn" />
-      {one(pd.t1, pd.venue.t1)}
-      {one(pd.t2, pd.venue.t2)}
+      <ScrollView horizontal showsHorizontalScrollIndicator style={styles.initialScroll}>
+        <View style={[styles.formTable, styles.venueTable]}>
+          <View style={[styles.formRow, styles.formHead]}>
+            <Text style={[styles.formTh, styles.formTeam]}>Team</Text>
+            <Text style={[styles.formTh, styles.formWdl]}>Playing</Text>
+            <Text style={[styles.formTh, styles.venueNum]}>Home PPG</Text>
+            <Text style={[styles.formTh, styles.venueNum]}>Away PPG</Text>
+            <Text style={[styles.formTh, styles.venueNum]}>Diff</Text>
+            <Text style={[styles.formTh, styles.formRead]}>Label</Text>
+            <Text style={[styles.formTh, styles.venueNum]}>League</Text>
+            <Text style={[styles.formTh, styles.venueNum]}>Venue PPG</Text>
+            <Text style={[styles.formTh, styles.formRead]}>vs league</Text>
+          </View>
+          {sides.map((snap) => {
+            const row = venuePpgSplit({
+              homePpg: snap.home.ppg,
+              awayPpg: snap.away.ppg,
+              playing: snap.venue,
+              leaguePpg,
+            });
+            return (
+              <View key={snap.side} style={[styles.formRow, styles.formRowFocus]}>
+                <View style={styles.formTeam}>
+                  <Text style={styles.formTeamName} numberOfLines={1}>
+                    {snap.label}
+                  </Text>
+                </View>
+                <FormCell style={styles.formWdl}>{snap.venue === 'home' ? 'Home' : 'Away'}</FormCell>
+                <FormCell style={styles.venueNum}>{fmtPpg(snap.home.ppg)}</FormCell>
+                <FormCell style={styles.venueNum}>{fmtPpg(snap.away.ppg)}</FormCell>
+                <FormCell style={styles.venueNum}>{row.diff != null ? fmtPpg(row.diff) : '—'}</FormCell>
+                <FormCell style={styles.formRead} tone={splitTone(row.split)}>
+                  {row.split ?? '—'}
+                </FormCell>
+                <FormCell style={styles.venueNum}>{fmtPpg(leaguePpg)}</FormCell>
+                <FormCell style={styles.venueNum}>{fmtPpg(row.venuePpg)}</FormCell>
+                <FormCell style={styles.formRead} tone={leagueTone(row.vsLeague)}>
+                  {row.vsLeague ?? '—'}
+                </FormCell>
+              </View>
+            );
+          })}
+        </View>
+      </ScrollView>
+      <BaselineCards pd={pd} hideHeading />
     </View>
   );
 }
@@ -992,27 +1565,115 @@ export function MiddleGuysCards({ pd }: { pd: PowerDynamicsBundle }) {
   );
 }
 
-export function IndlelaCards({ pd }: { pd: PowerDynamicsBundle }) {
+const BAND_CHIP: Record<'G' | 'R' | 'Y', string> = {
+  G: '#16A34A',
+  Y: '#D97706',
+  R: '#DC2626',
+};
+
+function BandChip({ letter, small }: { letter: string; small?: boolean }) {
+  const known = letter === 'G' || letter === 'R' || letter === 'Y';
+  return (
+    <View style={[styles.bandChip, small ? styles.bandChipSmall : null, { backgroundColor: known ? BAND_CHIP[letter] : theme.surfaceMuted }]}>
+      <Text style={[styles.bandLetter, small ? styles.bandLetterSmall : null, { color: known ? '#FFFFFF' : theme.textMuted }]}>{letter}</Text>
+    </View>
+  );
+}
+
+function AnswerLine({ lead, answer, tail }: { lead: string; answer: boolean | null; tail: string }) {
+  const word = answer == null ? '—' : answer ? 'YES' : 'NO';
+  const color = answer === true ? theme.accentGreen : answer === false ? theme.loss : theme.textMuted;
+  return (
+    <Text style={styles.line}>
+      {lead}{' '}
+      <Text style={[styles.answerWord, { color }]}>{word}</Text>
+      {tail ? ` · ${tail}` : ''}
+    </Text>
+  );
+}
+
+export function IndlelaCards({
+  t1,
+  t2,
+}: {
+  t1: { label: string; path: IndlelaPath; teamLetter: IndlelaLetter; teamRank: number | null };
+  t2: { label: string; path: IndlelaPath; teamLetter: IndlelaLetter; teamRank: number | null };
+}) {
+  const one = (
+    label: string,
+    path: IndlelaPath,
+    teamLetter: IndlelaLetter,
+    teamRank: number | null,
+  ) => {
+    const last = path.stops[1];
+    const current = path.stops[2];
+    const next = path.stops[3];
+    const who = (s: IndlelaPath['stops'][number]) =>
+      s.opponentRank != null ? `${s.opponentName} (${s.letter}, #${s.opponentRank})` : s.opponentName;
+    const playing =
+      teamRank != null ? `Playing ${teamLetter} · #${teamRank}` : `Playing ${teamLetter}`;
+    return (
+      <SideCard label={label} meta={playing}>
+        <View style={styles.bandRow}>
+          {path.stops.map((s) => (
+            <View key={s.slot} style={styles.bandCol}>
+              {s.slot === 3 ? (
+                <View style={styles.bandPair}>
+                  <View style={styles.bandMini}>
+                    <BandChip letter={teamLetter} small />
+                    <Text style={styles.bandRole}>Team</Text>
+                  </View>
+                  <View style={styles.bandMini}>
+                    <BandChip letter={s.letter} small />
+                    <Text style={styles.bandRole}>Opp</Text>
+                  </View>
+                </View>
+              ) : (
+                <BandChip letter={s.letter} />
+              )}
+              <Text style={styles.bandRole}>{s.role}</Text>
+              <Text style={styles.bandOpp} numberOfLines={2}>
+                {s.opponentName}
+              </Text>
+            </View>
+          ))}
+        </View>
+        <AnswerLine
+          lead="Last opponent stronger than this one?"
+          answer={path.secondStronger}
+          tail={`${who(last)} vs ${who(current)}`}
+        />
+        <AnswerLine
+          lead="Next opponent stronger than this one?"
+          answer={path.fourthStronger}
+          tail={`${who(next)} vs ${who(current)}`}
+        />
+        {path.easy == null ? (
+          <Line text={path.call} />
+        ) : (
+          <VerdictMark text={path.easy ? 'EASY' : 'NOT EASY'} tone={path.easy ? 'good' : 'warn'} />
+        )}
+      </SideCard>
+    );
+  };
   return (
     <View>
       <SectorIntro
-        title="Indlela — path / method"
-        note="Win/loss paths and never-twice patterns. Yellow-band fixtures get extra weight. T2 as the negative counterpart of T1."
+        title="Indlela — path"
+        note="Two previous opponents, this opponent, then the next one. On the current fixture the Team chip is the side playing and Opp is who they face. G is the top third, Y the middle, R the bottom. The match is easy when both the last opponent and the next one are stronger than this opponent."
       />
-      {pd.indlela.yellow ? <Callout text="Yellow-band application — path matters more" tone="warn" /> : null}
-      <Callout text={pd.indlela.counterpart} />
-      <SideCard label={pd.t1.label}>
-        {pd.indlela.t1.map((p) => (
-          <Line key={p} text={`· ${p}`} />
-        ))}
-      </SideCard>
-      <SideCard label={pd.t2.label}>
-        {pd.indlela.t2.map((p) => (
-          <Line key={p} text={`· ${p}`} />
-        ))}
-      </SideCard>
+      {one(t1.label, t1.path, t1.teamLetter, t1.teamRank)}
+      {one(t2.label, t2.path, t2.teamLetter, t2.teamRank)}
     </View>
   );
+}
+
+function YesMark() {
+  return <Text style={styles.yesMark}>YES</Text>;
+}
+
+function VerdictMark({ text, tone }: { text: string; tone: Tone }) {
+  return <Text style={[styles.yesMark, { color: toneColor(tone) }]}>{text}</Text>;
 }
 
 export function StreakCards({
@@ -1021,31 +1682,63 @@ export function StreakCards({
   t1,
   t2,
   kind,
+  mode,
+  threshold = 2,
 }: {
   title: string;
   note: string;
   t1: { label: string; streak: StreakSide };
   t2: { label: string; streak: StreakSide };
   kind: 'win' | 'loss';
+  /** never = they have never done it twice. streak = current run is at least `threshold`. */
+  mode: 'never' | 'streak';
+  threshold?: number;
 }) {
-  const threshold = title.includes('6') ? 6 : 2;
+  const verb = kind === 'win' ? 'Won' : 'Lost';
   const one = (label: string, s: StreakSide) => {
-    const hit = s.current >= threshold;
+    if (s.results.length === 0) {
+      return (
+        <SideCard label={label}>
+          <Line text="No finished games yet" />
+        </SideCard>
+      );
+    }
+    if (mode === 'never') {
+      if (s.neverTwice) {
+        return (
+          <SideCard label={label}>
+            <YesMark />
+          </SideCard>
+        );
+      }
+      return (
+        <SideCard label={label}>
+          {s.runs.map((run, i) => (
+            <View key={`${label}-run-${i}`}>
+              <Text style={styles.subHead}>
+                {verb} {run.length} in a row
+              </Text>
+              {run.map((line, n) => (
+                <Line key={`${i}-${n}`} text={line} />
+              ))}
+            </View>
+          ))}
+        </SideCard>
+      );
+    }
+    if (s.current >= threshold) {
+      return (
+        <SideCard label={label}>
+          <YesMark />
+        </SideCard>
+      );
+    }
+    const shown = s.results.slice(0, Math.max(threshold + 2, 8));
     return (
       <SideCard label={label}>
-        <Line
-          text={`Current ${kind} streak: ${s.current}${hit ? ' — active' : ''}`}
-          tone={hit ? 'warn' : 'info'}
-        />
-        <Line text={`Recent: ${s.sequence || '—'}`} />
-        <Line
-          text={
-            s.neverTwice
-              ? `Never ${kind === 'win' ? 'won' : 'lost'} twice in a row (last 10)`
-              : `Has ${kind === 'win' ? 'won' : 'lost'} twice in a row in last 10`
-          }
-        />
-        {s.last10 ? <Line text={`Last 10: ${s.last10}`} /> : null}
+        {shown.map((line, i) => (
+          <Line key={`${label}-${i}-${line}`} text={line} />
+        ))}
       </SideCard>
     );
   };
@@ -1060,35 +1753,46 @@ export function StreakCards({
 
 export function SwingCards({
   title,
+  note,
   want,
-  pd,
+  t1,
+  t2,
 }: {
   title: string;
+  note: string;
   want: 'drop' | 'rise';
-  pd: PowerDynamicsBundle;
+  t1: { label: string; swing: PpgSwing };
+  t2: { label: string; swing: PpgSwing };
 }) {
-  const one = (label: string, swings: SwingScope[]) => (
-    <SideCard label={label}>
-      {swings.map((s) => {
-        const hit = want === 'drop' ? s.drop : s.rise;
-        return (
-          <Line
-            key={s.scope}
-            text={`${s.detail}${hit ? ' — flagged' : ''}`}
-            tone={hit ? (want === 'drop' ? 'bad' : 'good') : 'info'}
-          />
-        );
-      })}
-    </SideCard>
-  );
+  const yesLabel = want === 'drop' ? 'SUDDEN DROP' : 'SUDDEN PICK UP';
+  const noLabel = want === 'drop' ? 'NO SUDDEN DROP' : 'NO SUDDEN PICKUP';
+  const one = (label: string, s: PpgSwing) => {
+    const hit = want === 'drop' ? s.drop : s.rise;
+    return (
+      <SideCard label={label}>
+        <VerdictMark
+          text={hit ? yesLabel : noLabel}
+          tone={hit ? (want === 'drop' ? 'bad' : 'good') : 'bad'}
+        />
+        {s.recentPpg != null && s.priorPpg != null ? (
+          <>
+            <Line text={`Last 5 PPG ${s.recentPpg.toFixed(2)} (${s.recentPts} pts / ${s.recentMp})`} />
+            <Line text={`Earlier games PPG ${s.priorPpg.toFixed(2)} (${s.priorPts} pts / ${s.priorMp})`} />
+          </>
+        ) : (
+          <Line text={s.detail} />
+        )}
+        {s.recentLines.map((line, i) => (
+          <Line key={`${label}-${i}`} text={line} />
+        ))}
+      </SideCard>
+    );
+  };
   return (
     <View>
-      <SectorIntro
-        title={title}
-        note="Last 3 vs previous 3, overall / home / away. Flag when the swing is ≥ 5 points."
-      />
-      {one(pd.t1.label, pd.swing.t1)}
-      {one(pd.t2.label, pd.swing.t2)}
+      <SectorIntro title={title} note={note} />
+      {one(t1.label, t1.swing)}
+      {one(t2.label, t2.swing)}
     </View>
   );
 }
@@ -1237,6 +1941,10 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: 2,
   },
+  sectorTitleAsWritten: {
+    textTransform: 'none',
+    letterSpacing: 0,
+  },
   note: {
     fontFamily: fonts.body,
     fontSize: 11,
@@ -1255,6 +1963,43 @@ const styles = StyleSheet.create({
   sideLabel: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: theme.textPrimary },
   meta: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted, marginTop: 2, marginBottom: 4 },
   line: { fontFamily: fonts.body, fontSize: 12, color: theme.textPrimary, lineHeight: 17, marginTop: 2 },
+  answerWord: { fontFamily: fonts.bodySemiBold },
+  yesMark: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 22,
+    letterSpacing: 1,
+    color: theme.accentGreen,
+    marginTop: 4,
+  },
+  bandRow: { flexDirection: 'row', gap: spacing.xs, marginTop: spacing.xs, marginBottom: spacing.sm },
+  bandCol: { flex: 1, alignItems: 'center' },
+  bandChip: {
+    width: 36,
+    height: 36,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bandChipSmall: { width: 28, height: 28, borderRadius: 5 },
+  bandLetter: { fontFamily: fonts.bodySemiBold, fontSize: 16 },
+  bandLetterSmall: { fontSize: 13 },
+  bandPair: { flexDirection: 'row', gap: 4, justifyContent: 'center' },
+  bandMini: { alignItems: 'center' },
+  bandRole: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 9,
+    color: theme.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+    marginTop: 4,
+  },
+  bandOpp: {
+    fontFamily: fonts.body,
+    fontSize: 10,
+    color: theme.textPrimary,
+    textAlign: 'center',
+    marginTop: 2,
+  },
   seq: { fontFamily: fonts.bodySemiBold, fontSize: 14, color: theme.textPrimary, marginTop: 4 },
   subHead: {
     fontFamily: fonts.bodySemiBold,
@@ -1264,6 +2009,20 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.4,
   },
+  initialScroll: { marginBottom: spacing.sm },
+  initialTable: { minWidth: 28 + 150 + 360 + 36 + 52 + 36 + 36 + 36 },
+  last5LeagueTable: { minWidth: 28 + 150 + 360 + 36 + 52 + 36 + 36 + 36 + 36 + 36 + 110 },
+  venueTable: { minWidth: 150 + 52 + 64 * 5 + 110 * 2 },
+  venueNum: { width: 64, textAlign: 'center' },
+  initialSeqHead: { width: 360 },
+  initialSeq: {
+    width: 360,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    paddingVertical: 4,
+  },
+  initialSeqTag: { fontFamily: fonts.bodySemiBold, fontSize: 12 },
   callout: {
     borderWidth: layout.borderWidth,
     borderRadius: layout.borderRadius,
@@ -1272,6 +2031,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.surface,
   },
   calloutText: { fontFamily: fonts.bodySemiBold, fontSize: 12, lineHeight: 17 },
+  gradeLink: { fontFamily: fonts.bodySemiBold, textDecorationLine: 'underline' },
   gapRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.xs },
   gapScoreBox: {
     width: 64,

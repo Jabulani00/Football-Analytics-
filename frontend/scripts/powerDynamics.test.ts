@@ -14,12 +14,15 @@ import {
   batetemeKindFor,
   ftOdds,
   impliedOddsFromProb,
+  indlelaPath,
   leaguePpg,
   ppgOddsZidaneAligned,
   positionGapScale,
   lastGameFlags,
   mshayiNote,
   neverTwiceInRow,
+  ppgSwing,
+  streakSide,
   ppgAlignsWithColour,
   ppgBandForColour,
   recordFromResults,
@@ -28,6 +31,7 @@ import {
   streamlineForMatchup,
   streamsForMatchup,
   t1IsHomeSide,
+  venuePpgSplit,
 } from '../utils/powerDynamicsEngine';
 import type { TeamResult } from '../utils/teamResults';
 import type { StandingLike } from '../utils/motivationEngine';
@@ -172,6 +176,97 @@ console.log('\nrecords / last game / streaks');
   check('win streak 6', currentStreak(sixW, 'W') === 6);
   check('never lost twice on all wins', neverTwiceInRow(sixW, 'L') === true);
   check('never won twice is false', neverTwiceInRow(sixW, 'W') === false);
+  check('short sample with no double is never lost twice', neverTwiceInRow(sixW.slice(0, 3), 'L') === true);
+
+  const split = [
+    res({ outcome: 'L', isHome: true, opponentName: 'A', gf: 0, ga: 1, unix: 10 }),
+    res({ outcome: 'W', isHome: false, opponentName: 'B', gf: 1, ga: 0, unix: 9 }),
+    res({ outcome: 'L', isHome: true, opponentName: 'C', gf: 0, ga: 2, unix: 8 }),
+    res({ outcome: 'L', isHome: false, opponentName: 'D', gf: 1, ga: 3, unix: 7 }),
+  ];
+  const lossRead = streakSide(split, 'L');
+  check('never lost twice is false when a pair exists', lossRead.neverTwice === false);
+  check('loss proof is the back-to-back pair', lossRead.runs.length === 1 && lossRead.runs[0].length === 2);
+  check('loss proof names the opponents', lossRead.runs[0][0].includes('C') && lossRead.runs[0][1].includes('D'));
+  check('never won twice on a split sample', streakSide(split, 'W').neverTwice === true);
+
+  const dropping: TeamResult[] = [
+    res({ outcome: 'L', isHome: true, unix: 12 }),
+    res({ outcome: 'L', isHome: false, unix: 11 }),
+    res({ outcome: 'D', isHome: true, unix: 10 }),
+    res({ outcome: 'L', isHome: false, unix: 9 }),
+    res({ outcome: 'D', isHome: true, unix: 8 }),
+    res({ outcome: 'W', isHome: true, unix: 7 }),
+    res({ outcome: 'W', isHome: false, unix: 6 }),
+    res({ outcome: 'W', isHome: true, unix: 5 }),
+  ];
+  const dropSwing = ppgSwing(dropping);
+  check('earlier PPG above last 5 is a sudden drop', dropSwing.drop === true && dropSwing.rise === false);
+  check('last 5 is excluded from the earlier sample', dropSwing.recentMp === 5 && dropSwing.priorMp === 3);
+  check('last 5 results are listed', dropSwing.recentLines.length === 5);
+
+  const picking = [...dropping].reverse().map((r, i) => ({ ...r, unix: 20 - i }));
+  const pickSwing = ppgSwing(picking);
+  check('earlier PPG below last 5 is a sudden pick up', pickSwing.rise === true && pickSwing.drop === false);
+  check('five games is not enough to compare', ppgSwing(dropping.slice(0, 5)).drop === false);
+}
+
+console.log('\nindlela colour path');
+{
+  const table: StandingLike[] = [
+    row({ teamId: 1, name: 'Us', rank: 4, zone: 'yellow' }),
+    row({ teamId: 10, name: 'Top', rank: 1, zone: 'top' }),
+    row({ teamId: 11, name: 'Bottom', rank: 18, zone: 'bottom' }),
+    row({ teamId: 12, name: 'Mid', rank: 10, zone: 'mid' }),
+    row({ teamId: 13, name: 'Higher', rank: 3, zone: 'top' }),
+  ];
+  const schedule = [
+    { homeId: 1, awayId: 10, unix: 100, finished: true },
+    { homeId: 11, awayId: 1, unix: 200, finished: true },
+    { homeId: 1, awayId: 12, unix: 300, finished: false },
+    { homeId: 13, awayId: 1, unix: 400, finished: false },
+  ];
+  const path = indlelaPath({
+    teamId: 1,
+    homeId: 1,
+    awayId: 12,
+    kickoffUnix: 300,
+    schedule,
+    table,
+  });
+  check('sequence is the four opponent bands', path.sequence === 'G R Y G');
+  check('slot 2 is the more recent previous opponent', path.stops[1].opponentName === 'Bottom');
+  check('current opponent is the yellow side', path.stops[2].letter === 'Y' && path.stops[2].opponentName === 'Mid');
+  check('next opponent is green', path.stops[3].letter === 'G');
+  check('last opponent is not stronger than this one', path.secondStronger === false);
+  check('next opponent is stronger than this one', path.fourthStronger === true);
+  check('not easy unless both neighbours are stronger', path.easy === false);
+
+  const easy = indlelaPath({
+    teamId: 1,
+    homeId: 1,
+    awayId: 11,
+    kickoffUnix: 300,
+    schedule: [
+      { homeId: 1, awayId: 12, unix: 100, finished: true },
+      { homeId: 10, awayId: 1, unix: 200, finished: true },
+      { homeId: 1, awayId: 11, unix: 300, finished: false },
+      { homeId: 1, awayId: 13, unix: 400, finished: false },
+    ],
+    table,
+  });
+  check('easy when last and next are both stronger than this opponent', easy.easy === true);
+  check('easy path reads the four opponent bands in order', easy.sequence === 'Y G R G');
+
+  const thin = indlelaPath({
+    teamId: 1,
+    homeId: 1,
+    awayId: 12,
+    kickoffUnix: 300,
+    schedule: [{ homeId: 1, awayId: 12, unix: 300, finished: false }],
+    table,
+  });
+  check('missing neighbours cannot call the match', thin.easy == null && thin.sequence === '— — Y —');
 }
 
 console.log('\nevaluatePowerDynamics T1 vs T2');
@@ -774,6 +869,24 @@ console.log('\nposition gap analysis (G1 = largest)');
   check('22-team G1 gap is 22', scale22[0].grade === 'G1' && scale22[0].span === 22);
   check('22-team last grade is G21 gap 2', scale22[20].grade === 'G21' && scale22[20].span === 2);
   check('20-team G1 gap is 20', positionGapScale(20)[0].span === 20);
+}
+
+console.log('\nhome/away PPG split');
+{
+  const balanced = venuePpgSplit({ homePpg: 2.1, awayPpg: 1.4, playing: 'home', leaguePpg: 1.3 });
+  check('diff of 0.7 is balanced', balanced.diff != null && balanced.diff < 4 && balanced.split === 'Balanced');
+  const atHome = venuePpgSplit({ homePpg: 6.2, awayPpg: 1.5, playing: 'home', leaguePpg: 1.4 });
+  check('4.7 at home is strong', atHome.split === 'Strong' && atHome.vsLeague === 'Above average');
+  const onRoad = venuePpgSplit({ homePpg: 6.2, awayPpg: 1.5, playing: 'away', leaguePpg: 1.4 });
+  check('4.7 away is weak', onRoad.split === 'Weak' && onRoad.venuePpg === 1.5 && onRoad.vsLeague === 'Above average');
+  const under = venuePpgSplit({ homePpg: 1.2, awayPpg: 0.8, playing: 'away', leaguePpg: 1.4 });
+  check('away venue PPG under the league average', under.split === 'Balanced' && under.vsLeague === 'Below average');
+  const edge = venuePpgSplit({ homePpg: 5, awayPpg: 1, playing: 'home', leaguePpg: 1 });
+  check('diff of exactly 4 stays balanced', edge.diff === 4 && edge.split === 'Balanced');
+  const awayLift = venuePpgSplit({ homePpg: 1.1, awayPpg: 1.8, playing: 'away', leaguePpg: 1.4 });
+  check('negative diff on the away side is strong', awayLift.diff != null && awayLift.diff < 0 && awayLift.split === 'Strong');
+  const homeWithAwayLift = venuePpgSplit({ homePpg: 1.1, awayPpg: 1.8, playing: 'home', leaguePpg: 1.4 });
+  check('negative diff on the home side stays balanced', homeWithAwayLift.split === 'Balanced');
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
