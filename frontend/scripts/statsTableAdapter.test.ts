@@ -2,10 +2,12 @@
  * Display mapping for the additional-stats families.
  * Run: npx tsx scripts/statsTableAdapter.test.ts
  */
+import { buildStatsTables } from '../services/statsBuilder';
 import type { TeamStatRow } from '../types/data';
 import {
   columnsForFamily,
   liveRowsToDisplay,
+  metaToLiveTableName,
   sampleRowsForFamily,
   sortByPrimary,
 } from '../utils/statsTableAdapter';
@@ -95,6 +97,42 @@ const streaks = liveRowsToDisplay(
 );
 check('a streak of 4 is green', streaks[0]?.metrics[0]?.compliance === 'green');
 check('a streak of 0 is red', streaks[0]?.metrics.find((metric) => metric.key === 'loss_streak')?.compliance === 'red');
+
+check(
+  'ppg first-half home maps to the builder table',
+  metaToLiveTableName({ id: 'x', name: 'x', group: 'base', family: 'ppg', split: 'home', period: 'firsthalf', statCount: 1 }) === 'ppg_ht_home',
+);
+check(
+  'series second-half away maps to the builder table',
+  metaToLiveTableName({ id: 'x', name: 'x', group: 'base', family: 'series', split: 'away', period: 'secondhalf', statCount: 1 }) === 'series_2h_away',
+);
+check(
+  'full-time-only overall maps to the full-time table',
+  metaToLiveTableName({ id: 'x', name: 'x', group: 'base', family: 'ft_only', split: 'overall', period: 'fulltime', statCount: 1 }) === 'ft_only_ft_overall',
+);
+check(
+  'last 10 keeps the window prefix',
+  metaToLiveTableName({ id: 'x', name: 'x', group: 'lastN', family: 'ordinary', recency: 'last10', split: 'away', period: 'firsthalf', statCount: 1 }) === 'last10_ht_away',
+);
+check(
+  'scope salt changes the sample without changing the family',
+  sampleRowsForFamily('series', 0)[0]?.metrics[0]?.value !== sampleRowsForFamily('series', 1)[0]?.metrics[0]?.value,
+);
+
+const built = buildStatsTables({
+  season: '2025/2026',
+  fixtures: [
+    { id: 1, unix: 300, status: 'FT', competition_id: 100, season: '2025/2026', home_name: 'A', away_name: 'B', home_goals: 2, away_goals: 1, ht_score: '1-0' },
+    { id: 2, unix: 200, status: 'FT', competition_id: 100, season: '2025/2026', home_name: 'B', away_name: 'A', home_goals: 0, away_goals: 0, ht_score: '0-0' },
+    { id: 3, unix: 100, status: 'FT', competition_id: 100, season: '2025/2026', home_name: 'A', away_name: 'C', home_goals: 3, away_goals: 3, ht_score: '2-1' },
+  ] as never,
+});
+const shown = liveRowsToDisplay(built.tables['ft_only_ft_overall'] ?? [], 'ft_only');
+const teamA = shown.find((row) => row.team === 'A');
+check('live full-time-only scored both halves is 67', teamA?.metrics.find((metric) => metric.key === 'scored_both_halves')?.value === 67);
+check('live full-time-only led at half-time is 67', teamA?.metrics.find((metric) => metric.key === 'led_ht')?.value === 67);
+const ppgShown = liveRowsToDisplay(built.tables['ppg_ft_overall'] ?? [], 'ppg');
+check('live points per game for A is 1.67 and raw', ppgShown.find((row) => row.team === 'A')?.metrics[0]?.value === 1.67 && ppgShown.find((row) => row.team === 'A')?.metrics[0]?.raw === true);
 
 console.log(`\n${passed}/${passed + failed} checks passed`);
 process.exit(failed === 0 ? 0 : 1);

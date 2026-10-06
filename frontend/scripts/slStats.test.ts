@@ -576,5 +576,130 @@ console.log('\nQuick filters');
   check('more away goals in the last 5 ranks first', byGoals[0]?.match === 'Host vs Visit' && byGoals[0].awayGoalsLast5 === 10 && byGoals[1]?.awayGoalsLast5 === 5);
 }
 
+console.log('\nFurther boundaries');
+{
+  const home = played({ team: 'Alpha', count: 10, gf: 1, ga: 1, startUnix: 2_000_000_000, scores: leakyScores(8, 7) });
+  const away = played({ team: 'Beta', count: 10, gf: 1, ga: 1, home: false, startUnix: 2_000_100_000, scores: leakyScores(8, 8) });
+  const seven = rankLeakyFixtures([...home, ...away], [upcoming('Alpha', 'Beta', 2_100_000_000)]);
+  check('conceding 7 of 10 is left out', seven.length === 0);
+
+  const enough = played({ team: 'Alpha', count: 10, gf: 1, ga: 1, startUnix: 2_000_000_000, scores: leakyScores(8, 8) });
+  const cup = fx({
+    homeName: 'Alpha',
+    awayName: 'Beta',
+    finished: false,
+    homeGoals: null,
+    awayGoals: null,
+    isCup: true,
+    unix: 2_100_000_000,
+  });
+  const friendly = fx({
+    homeName: 'Alpha',
+    awayName: 'Beta',
+    finished: false,
+    homeGoals: null,
+    awayGoals: null,
+    isFriendly: true,
+    unix: 2_100_000_100,
+  });
+  check('a cup and a friendly are left off the leaky list', rankLeakyFixtures([...enough, ...away], [cup, friendly]).length === 0);
+
+  const otherLeague = played({
+    team: 'Alpha',
+    count: 10,
+    gf: 1,
+    ga: 1,
+    startUnix: 2_000_000_000,
+    competitionId: 9,
+    scores: leakyScores(8, 8),
+  });
+  check(
+    'history from another competition does not qualify',
+    rankLeakyFixtures([...otherLeague, ...away], [upcoming('Alpha', 'Beta', 2_100_000_000)]).length === 0,
+  );
+
+  const tied = rankLeakyFixtures(
+    [...enough, ...away],
+    [upcoming('Alpha', 'Beta', 2_100_000_200), upcoming('Alpha', 'Beta', 2_100_000_050)],
+  );
+  check('an equal model probability lists the earlier kickoff first', tied.length === 2 && tied[0].unix < tied[1].unix);
+
+  const many = rankLeakyFixtures(
+    [...enough, ...away],
+    Array.from({ length: 41 }, (_, index) => upcoming('Alpha', 'Beta', 2_200_000_000 + index)),
+  );
+  check('the leaky list stops at 40', many.length === 40);
+
+  const homeOnly = played({
+    team: 'Host',
+    count: 10,
+    gf: 1,
+    ga: 2,
+    startUnix: 2_300_000_000,
+    competitionId: 5,
+    competitionName: 'High',
+    htGf: 0,
+    htGa: 0,
+  });
+  const awayClean = played({
+    team: 'Host',
+    count: 10,
+    gf: 2,
+    ga: 0,
+    home: false,
+    startUnix: 2_300_100_000,
+    competitionId: 5,
+    competitionName: 'High',
+    htGf: 0,
+    htGa: 0,
+  });
+  const visit = played({
+    team: 'Visit',
+    count: 10,
+    gf: 2,
+    ga: 1,
+    home: false,
+    startUnix: 2_300_200_000,
+    competitionId: 5,
+    competitionName: 'High',
+  });
+  const homeGate = rankSecondHalfFixtures(
+    [...homeOnly, ...awayClean, ...visit],
+    [upcoming('Host', 'Visit', 2_400_000_000, 5, 'High')],
+    { competitionId: 5 },
+  );
+  check('home second-half conceded uses home games, not away games', homeGate.length === 1 && homeGate[0].homeConcededPct === 100);
+
+  const homeClean = played({
+    team: 'Wall',
+    count: 10,
+    gf: 2,
+    ga: 0,
+    startUnix: 2_500_000_000,
+    competitionId: 5,
+    competitionName: 'High',
+    htGf: 1,
+    htGa: 0,
+  });
+  const awayLeaky = played({
+    team: 'Wall',
+    count: 10,
+    gf: 1,
+    ga: 2,
+    home: false,
+    startUnix: 2_500_100_000,
+    competitionId: 5,
+    competitionName: 'High',
+    htGf: 0,
+    htGa: 0,
+  });
+  const ignored = rankSecondHalfFixtures(
+    [...homeClean, ...awayLeaky, ...visit],
+    [upcoming('Wall', 'Visit', 2_600_000_000, 5, 'High')],
+    { competitionId: 5 },
+  );
+  check('away concessions do not satisfy the home second-half gate', ignored.length === 0);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
