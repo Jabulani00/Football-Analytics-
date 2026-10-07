@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { fonts, spacing, theme } from '@/styles/theme';
 
@@ -22,7 +22,7 @@ export default function PageControls({
   if (pages <= 1) return null;
   const label = total === 0 ? 'None' : `${from}–${to} of ${total} · Page ${page} of ${pages}`;
   return (
-    <View style={styles.bar}>
+    <View style={styles.bar} {...(Platform.OS === 'web' ? { dataSet: { nodrag: '1' } } : {})}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Previous page"

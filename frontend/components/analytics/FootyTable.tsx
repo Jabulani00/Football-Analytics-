@@ -1,5 +1,6 @@
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import DragScroll from '@/components/shared/DragScroll';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
 export type FootyColumn = { key: string; label: string; flex?: number };
@@ -17,7 +18,7 @@ export default function FootyTable({ columns, rows, empty, onPress, selectedId }
     return <Text style={styles.empty}>{empty}</Text>;
   }
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={Platform.OS === 'web'}>
+    <DragScroll horizontal>
       <View style={styles.table}>
         <View style={[styles.row, styles.head]}>
           {columns.map((col) => (
@@ -36,7 +37,7 @@ export default function FootyTable({ columns, rows, empty, onPress, selectedId }
           </Pressable>
         ))}
       </View>
-    </ScrollView>
+    </DragScroll>
   );
 }
 

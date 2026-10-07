@@ -4,6 +4,7 @@ import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, V
 import FootyTable, { type FootyColumn } from '@/components/analytics/FootyTable';
 import AppNavMenu from '@/components/layout/AppNavMenu';
 import AppShell from '@/components/shared/AppShell';
+import DragScroll from '@/components/shared/DragScroll';
 import IncludedGamesList from '@/components/shared/IncludedGamesList';
 import PageControls from '@/components/shared/PageControls';
 import FilterDropdown from '@/components/shared/FilterDropdown';
@@ -343,7 +344,7 @@ export default function SlStatsScreen({ onBack }: { onBack: () => void }) {
 
   return (
     <AppShell>
-      <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, narrow && styles.scrollNarrow]} showsVerticalScrollIndicator={Platform.OS === 'web'}>
+      <DragScroll scrollRef={scrollRef} contentContainerStyle={[styles.scroll, narrow && styles.scrollNarrow]}>
         <StickyBack label="← HOME" onPress={onBack} trailing={<AppNavMenu />} />
         <View style={[styles.hero, narrow && styles.heroNarrow]}>
           <View style={styles.heroCopy}>
@@ -469,7 +470,7 @@ export default function SlStatsScreen({ onBack }: { onBack: () => void }) {
             </Block>
           </>
         ) : null}
-      </ScrollView>
+      </DragScroll>
     </AppShell>
   );
 }

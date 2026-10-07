@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import LeagueStatsPanel from '@/components/league/LeagueStatsPanel';
 import CompetitionPicker from '@/components/shared/CompetitionPicker';
+import DragScroll from '@/components/shared/DragScroll';
 import FilterDropdown from '@/components/shared/FilterDropdown';
 import IncludedGamesList from '@/components/shared/IncludedGamesList';
 import PageControls, { PAGE_SIZE } from '@/components/shared/PageControls';
@@ -202,11 +203,7 @@ export default function StatsTablesPanel({ variant = 'all' }: { variant?: 'all' 
             to={pageStart + visibleTeams.length}
             onChange={setPage}
           />
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={Platform.OS === 'web'}
-            style={styles.tableScroll}
-            contentContainerStyle={styles.tableScrollContent}>
+          <DragScroll horizontal style={styles.tableScroll} contentContainerStyle={styles.tableScrollContent}>
             <View style={styles.dataTable}>
               <View style={styles.tableHeader}>
                 <Text style={[styles.cell, styles.cellRank, styles.headText]}>#</Text>
@@ -242,7 +239,7 @@ export default function StatsTablesPanel({ variant = 'all' }: { variant?: 'all' 
                 </Pressable>
               ))}
             </View>
-          </ScrollView>
+          </DragScroll>
           <PageControls
             page={safePage}
             pages={pages}

@@ -1,9 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -13,6 +11,7 @@ import {
 
 import AppNavMenu from '@/components/layout/AppNavMenu';
 import AppShell from '@/components/shared/AppShell';
+import DragScroll from '@/components/shared/DragScroll';
 import FilterDropdown from '@/components/shared/FilterDropdown';
 import IncludedGamesList from '@/components/shared/IncludedGamesList';
 import PageControls, { PAGE_SIZE } from '@/components/shared/PageControls';
@@ -125,9 +124,7 @@ export default function StatBoardScreen({
 
   return (
     <AppShell>
-      <ScrollView
-        contentContainerStyle={[styles.scroll, narrow && styles.scrollNarrow]}
-        showsVerticalScrollIndicator={Platform.OS === 'web'}>
+      <DragScroll contentContainerStyle={[styles.scroll, narrow && styles.scrollNarrow]}>
         <StickyBack label="← HOME" onPress={onBack} trailing={<AppNavMenu />} />
         <View style={styles.hero}>
           <Text style={styles.kicker}>{kicker}</Text>
@@ -253,7 +250,7 @@ export default function StatBoardScreen({
               to={pageStart + visibleRows.length}
               onChange={setPage}
             />
-            <ScrollView horizontal showsHorizontalScrollIndicator>
+            <DragScroll horizontal>
               <View>
                 <View style={styles.headRow}>
                   <Text style={[styles.cell, styles.rank]}>#</Text>
@@ -298,7 +295,7 @@ export default function StatBoardScreen({
                   );
                 })}
               </View>
-            </ScrollView>
+            </DragScroll>
             <PageControls
               page={safePage}
               pages={pages}
@@ -316,7 +313,7 @@ export default function StatBoardScreen({
             ? ' Rescued and blown points are averages, not percentages. Matches with no half-time score stay out of both-halves and HT/FT rates.'
             : ' Timing shows only minutes the season feed already records, and only for a full-time view of one competition.'}
         </Text>
-      </ScrollView>
+      </DragScroll>
     </AppShell>
   );
 }

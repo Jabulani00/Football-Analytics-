@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Modal, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 
+import DragScroll from '@/components/shared/DragScroll';
 import PageControls from '@/components/shared/PageControls';
 import { fonts, spacing, theme } from '@/styles/theme';
 import type { CountedGame } from '@/utils/countedGames';
@@ -51,14 +52,14 @@ export default function IncludedGamesList({
               <Text style={styles.title}>{title}</Text>
               <Text style={styles.note}>These are the games counted for this row. Open one for the match.</Text>
             </View>
-            <Pressable onPress={onClose} style={styles.close} accessibilityLabel="Close">
+            <Pressable onPress={onClose} style={styles.close} accessibilityLabel="Close" {...(Platform.OS === 'web' ? { dataSet: { nodrag: '1' } } : {})}>
               <Text style={styles.closeText}>Close</Text>
             </Pressable>
           </View>
           {games.length === 0 ? (
             <Text style={styles.empty}>No fixtures are tied to this row.</Text>
           ) : (
-            <ScrollView style={styles.list} keyboardShouldPersistTaps="handled">
+            <DragScroll fill={false} style={[styles.list, { maxHeight: Math.round(height * 0.46) }]}>
               {visible.map((game, index) => (
                 <Pressable
                   key={`${game.id}-${start + index}`}
@@ -80,7 +81,7 @@ export default function IncludedGamesList({
                   <Text style={styles.open}>Match</Text>
                 </Pressable>
               ))}
-            </ScrollView>
+            </DragScroll>
           )}
           <PageControls
             page={safe}
@@ -155,7 +156,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: theme.textMuted,
   },
-  list: { flexGrow: 0 },
+  list: { width: '100%' },
   row: {
     minHeight: 48,
     flexDirection: 'row',

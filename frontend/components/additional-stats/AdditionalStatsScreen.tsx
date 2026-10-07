@@ -1,6 +1,7 @@
-import { Platform, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import AdditionalStatsPanel from '@/components/analytics/AdditionalStatsPanel';
+import DragScroll from '@/components/shared/DragScroll';
 import AppNavMenu from '@/components/layout/AppNavMenu';
 import AppShell from '@/components/shared/AppShell';
 import StickyBack from '@/components/shared/StickyBack';
@@ -10,9 +11,7 @@ export default function AdditionalStatsScreen({ onBack }: { onBack: () => void }
   const narrow = useWindowDimensions().width < 720;
   return (
     <AppShell>
-      <ScrollView
-        contentContainerStyle={[styles.scroll, narrow && styles.scrollNarrow]}
-        showsVerticalScrollIndicator={Platform.OS === 'web'}>
+      <DragScroll contentContainerStyle={[styles.scroll, narrow && styles.scrollNarrow]}>
         <StickyBack label="← HOME" onPress={onBack} trailing={<AppNavMenu />} />
         <View style={styles.hero}>
           <Text style={styles.kicker}>Extra families</Text>
@@ -22,7 +21,7 @@ export default function AdditionalStatsScreen({ onBack }: { onBack: () => void }
           </Text>
         </View>
         <AdditionalStatsPanel />
-      </ScrollView>
+      </DragScroll>
     </AppShell>
   );
 }
