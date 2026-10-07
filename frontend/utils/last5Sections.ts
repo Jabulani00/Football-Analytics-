@@ -1,5 +1,5 @@
 /**
- * Last-5 Sections 3–4 — T1−T2 strength subtract and 2-goal colour-band labels.
+ * Last-5 Sections 3–4 — T1−T2 strength subtract and colour-band goal-difference labels.
  */
 
 import type { SeasonMatch } from '@/utils/bhozomaEngine';
@@ -17,7 +17,13 @@ import {
 } from '@/utils/last6Form';
 import { lastN, type ResultOutcome } from '@/utils/teamResults';
 
-export type TwoGoalGrade = 'great' | 'good' | 'mediocre' | 'bad';
+export type TwoGoalGrade =
+  | 'great'
+  | 'good'
+  | 'mediocre'
+  | 'bad'
+  /** 1-goal loss R vs G / R vs Y — mediocre but counted as a positive fight. */
+  | 'mediocre_positive';
 
 export type ColourPairId = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
 
@@ -31,6 +37,32 @@ export const COLOUR_PAIR_LABEL: Record<ColourPairId, string> = {
   7: 'R vs G',
   8: 'R vs Y',
   9: 'R vs R',
+};
+
+/** Win by exactly 1 goal — labels from the SKM sheet, pairs 1–9. */
+const WIN_1GD: Record<ColourPairId, TwoGoalGrade> = {
+  1: 'good',
+  2: 'mediocre',
+  3: 'bad',
+  4: 'good',
+  5: 'good',
+  6: 'mediocre',
+  7: 'great',
+  8: 'good',
+  9: 'good',
+};
+
+/** Loss by exactly 1 goal — labels from the SKM sheet, pairs 1–9. */
+const LOSS_1GD: Record<ColourPairId, TwoGoalGrade> = {
+  1: 'bad',
+  2: 'bad',
+  3: 'bad',
+  4: 'mediocre',
+  5: 'bad',
+  6: 'bad',
+  7: 'mediocre_positive',
+  8: 'mediocre_positive',
+  9: 'bad',
 };
 
 /** Win by exactly 2 goals — labels from the SKM sheet, pairs 1–9. */
@@ -64,6 +96,7 @@ export const TWO_GOAL_GRADE_LABEL: Record<TwoGoalGrade, string> = {
   good: 'Good',
   mediocre: 'Mediocre',
   bad: 'Bad',
+  mediocre_positive: 'Mediocre + well fought battle = positive',
 };
 
 export function colourLetter(c: TableColour | null): 'G' | 'Y' | 'R' | '—' {
@@ -90,18 +123,53 @@ export function colourPairId(team: TableColour | null, opp: TableColour | null):
   return map[key] ?? null;
 }
 
+/** `all` = every last-5 game · 1–5 exact margin · 6 = six or more. */
+export type GoalDiffTab = 'all' | 1 | 2 | 3 | 4 | 5 | 6;
+
+export const GOAL_DIFF_TABS: { id: GoalDiffTab; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 1, label: '1 goal' },
+  { id: 2, label: '2 goal' },
+  { id: 3, label: '3 goal' },
+  { id: 4, label: '4 goal' },
+  { id: 5, label: '5 goal' },
+  { id: 6, label: '6+ goal' },
+];
+
+export function matchesGoalDiffTab(goalDiff: number, tab: GoalDiffTab): boolean {
+  if (tab === 'all') return true;
+  const abs = Math.abs(goalDiff);
+  if (tab === 6) return abs >= 6;
+  return abs === tab;
+}
+
+export function goalDiffTabLabel(tab: GoalDiffTab): string {
+  return GOAL_DIFF_TABS.find((t) => t.id === tab)?.label ?? `${tab} goal`;
+}
+
+/**
+ * Colour-band grade for a win/loss at the selected margin.
+ * Sheet labels are live for 1-goal and 2-goal games. Other margins show the pair only for now.
+ * On All, each game uses the sheet that matches its own margin.
+ */
 export function twoGoalGrade(
   team: TableColour | null,
   opp: TableColour | null,
   outcome: ResultOutcome,
   goalDiff: number,
+  tab: GoalDiffTab = 2,
 ): TwoGoalGrade | null {
-  if (Math.abs(goalDiff) !== 2) return null;
+  if (!matchesGoalDiffTab(goalDiff, tab)) return null;
+  const abs = Math.abs(goalDiff);
   const pair = colourPairId(team, opp);
   if (pair == null) return null;
-  if (outcome === 'W') return WIN_2GD[pair];
-  if (outcome === 'L') return LOSS_2GD[pair];
-  return null;
+  let table: Record<ColourPairId, TwoGoalGrade> | null = null;
+  if (abs === 1 && (tab === 1 || tab === 'all')) {
+    table = outcome === 'W' ? WIN_1GD : outcome === 'L' ? LOSS_1GD : null;
+  } else if (abs === 2 && (tab === 2 || tab === 'all')) {
+    table = outcome === 'W' ? WIN_2GD : outcome === 'L' ? LOSS_2GD : null;
+  }
+  return table?.[pair] ?? null;
 }
 
 function standingColour(row: StandingLike | undefined, tableSize: number): TableColour | null {
@@ -200,6 +268,7 @@ function twoGoalSide(opts: {
   venue: 'home' | 'away';
   matches: SeasonMatch[];
   standings: StandingLike[];
+  goalDiff: GoalDiffTab;
 }): TwoGoalSideRead {
   const byId = new Map(opts.standings.map((s) => [s.teamId, s]));
   const n = opts.standings.length;
@@ -208,12 +277,12 @@ function twoGoalSide(opts: {
   const results = lastN(
     resultsFromSeasonMatches(opts.teamId, opts.matches, opts.standings, { venue: opts.venue }),
     5,
-  );
+  ).filter((r) => matchesGoalDiffTab(r.goalDiff, opts.goalDiff));
   const games: TwoGoalGameRead[] = results.map((r) => {
     const opp = r.opponentId != null ? byId.get(r.opponentId) : undefined;
     const oppColour = standingColour(opp, n);
     const pairId = colourPairId(teamColour, oppColour);
-    const grade = twoGoalGrade(teamColour, oppColour, r.outcome, r.goalDiff);
+    const grade = twoGoalGrade(teamColour, oppColour, r.outcome, r.goalDiff, opts.goalDiff);
     return {
       opponentName: r.opponentName,
       isHome: r.isHome,
@@ -238,8 +307,9 @@ function twoGoalSide(opts: {
 }
 
 /**
- * Tab A (t1_home): T1 at home + T2 away.
- * Tab B (t1_away): T1 away + T2 at home.
+ * Venue tab A (t1_home): T1 at home + T2 away.
+ * Venue tab B (t1_away): T1 away + T2 at home.
+ * Goal-diff tab keeps only last-5 games at that margin.
  */
 export function twoGoalBandSides(opts: {
   t1Id: number | null;
@@ -249,7 +319,9 @@ export function twoGoalBandSides(opts: {
   matches: SeasonMatch[];
   standings: StandingLike[];
   mode: 't1_home' | 't1_away';
+  goalDiff?: GoalDiffTab;
 }): { left: TwoGoalSideRead | null; right: TwoGoalSideRead | null } {
+  const goalDiff = opts.goalDiff ?? 'all';
   if (opts.t1Id == null || opts.t2Id == null) return { left: null, right: null };
   if (opts.mode === 't1_home') {
     return {
@@ -259,6 +331,7 @@ export function twoGoalBandSides(opts: {
         venue: 'home',
         matches: opts.matches,
         standings: opts.standings,
+        goalDiff,
       }),
       right: twoGoalSide({
         teamId: opts.t2Id,
@@ -266,6 +339,7 @@ export function twoGoalBandSides(opts: {
         venue: 'away',
         matches: opts.matches,
         standings: opts.standings,
+        goalDiff,
       }),
     };
   }
@@ -276,6 +350,7 @@ export function twoGoalBandSides(opts: {
       venue: 'away',
       matches: opts.matches,
       standings: opts.standings,
+      goalDiff,
     }),
     right: twoGoalSide({
       teamId: opts.t2Id,
@@ -283,6 +358,7 @@ export function twoGoalBandSides(opts: {
       venue: 'home',
       matches: opts.matches,
       standings: opts.standings,
+      goalDiff,
     }),
   };
 }

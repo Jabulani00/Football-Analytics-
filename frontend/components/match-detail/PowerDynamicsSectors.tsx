@@ -66,12 +66,15 @@ import {
   type Last6Venue,
 } from '@/utils/last6Form';
 import {
+  GOAL_DIFF_TABS,
   PERIOD_WORD,
   VENUE_WORD,
   colourLetter,
+  goalDiffTabLabel,
   last5PointsDiff,
   peakLast5Gap,
   twoGoalBandSides,
+  type GoalDiffTab,
   type TwoGoalGrade,
   type TwoGoalSideRead,
 } from '@/utils/last5Sections';
@@ -960,7 +963,7 @@ function namingTone(name: string): Tone {
 }
 
 function twoGoalTone(grade: TwoGoalGrade | null): Tone {
-  if (grade === 'great' || grade === 'good') return 'good';
+  if (grade === 'great' || grade === 'good' || grade === 'mediocre_positive') return 'good';
   if (grade === 'bad') return 'bad';
   if (grade === 'mediocre') return 'warn';
   return 'info';
@@ -1214,14 +1217,25 @@ const TWO_GOAL_TABS = [
   { id: 't1_away', label: 'T1 as away' },
 ] as const;
 
-function TwoGoalSideTable({ side }: { side: TwoGoalSideRead }) {
+function TwoGoalSideTable({
+  side,
+  goalDiff,
+}: {
+  side: TwoGoalSideRead;
+  goalDiff: GoalDiffTab;
+}) {
+  const margin = goalDiffTabLabel(goalDiff);
   return (
     <View style={styles.twoGoalCol}>
       <Text style={styles.sideLabel}>
         {side.label} · {side.venue === 'home' ? 'Home' : 'Away'} · {colourLetter(side.teamColour)}
       </Text>
       {side.games.length === 0 ? (
-        <Text style={styles.note}>No finished {side.venue} games yet.</Text>
+        <Text style={styles.note}>
+          {goalDiff === 'all'
+            ? `No finished ${side.venue} games yet.`
+            : `No ${margin} games in the last 5 ${side.venue} matches.`}
+        </Text>
       ) : (
         side.games.map((g, i) => (
           <View key={`${side.teamId}-${i}`} style={styles.twoGoalRow}>
@@ -1256,6 +1270,7 @@ export function TwoGoalBandCards({
   error?: string | null;
 }) {
   const [mode, setMode] = useState<(typeof TWO_GOAL_TABS)[number]['id']>('t1_home');
+  const [goalDiff, setGoalDiff] = useState<GoalDiffTab>('all');
   const sides = twoGoalBandSides({
     t1Id: pd.t1.teamId,
     t2Id: pd.t2.teamId,
@@ -1264,26 +1279,29 @@ export function TwoGoalBandCards({
     matches,
     standings,
     mode,
+    goalDiff,
   });
 
   return (
     <View>
       <SectorIntro
-        title="Section 4: 2-goal colour bands"
+        title="Section 4: Colour-band goal differences"
         preserveCase
-        note="Labels only fire when the goal difference is exactly 2. The pair is this side’s colour vs the opponent’s colour (G/Y/R). T1 as home uses T1 home games and T2 away games. T1 as away swaps them."
+        note="All shows every last-5 game in that venue. The other tabs keep only that goal difference. Then pick T1 as home or away. The colour pair is this side vs the opponent (G/Y/R). Sheet labels are live for 1-goal and 2-goal games."
       />
       {loading ? <Text style={styles.note}>Loading season results…</Text> : null}
       {error ? <Text style={styles.note}>{error}</Text> : null}
+      <SubTabBar tabs={GOAL_DIFF_TABS} active={goalDiff} onChange={setGoalDiff} />
       <SubTabBar tabs={[...TWO_GOAL_TABS]} active={mode} onChange={setMode} />
       <Text style={styles.note}>
+        {goalDiffTabLabel(goalDiff)} ·{' '}
         {mode === 't1_home'
           ? `${pd.t1.label} at home · ${pd.t2.label} away`
           : `${pd.t1.label} away · ${pd.t2.label} at home`}
       </Text>
       <View style={styles.twoGoalGrid}>
-        {sides.left ? <TwoGoalSideTable side={sides.left} /> : null}
-        {sides.right ? <TwoGoalSideTable side={sides.right} /> : null}
+        {sides.left ? <TwoGoalSideTable side={sides.left} goalDiff={goalDiff} /> : null}
+        {sides.right ? <TwoGoalSideTable side={sides.right} goalDiff={goalDiff} /> : null}
       </View>
     </View>
   );
@@ -2126,22 +2144,24 @@ const styles = StyleSheet.create({
   intro: { marginBottom: spacing.sm },
   sectorTitle: {
     fontFamily: fonts.bodySemiBold,
-    fontSize: 12,
+    fontSize: 15,
     color: theme.textPrimary,
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 2,
+    letterSpacing: 0.6,
+    marginBottom: 4,
   },
   sectorTitleAsWritten: {
     textTransform: 'none',
     letterSpacing: 0,
+    fontSize: 16,
   },
   note: {
-    fontFamily: fonts.body,
-    fontSize: 11,
-    color: theme.textMuted,
-    lineHeight: 16,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 13,
+    color: theme.textPrimary,
+    lineHeight: 18,
     marginBottom: spacing.xs,
+    opacity: 0.85,
   },
   card: {
     backgroundColor: theme.surface,
@@ -2151,9 +2171,9 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
     marginBottom: spacing.sm,
   },
-  sideLabel: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: theme.textPrimary },
-  meta: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted, marginTop: 2, marginBottom: 4 },
-  line: { fontFamily: fonts.body, fontSize: 12, color: theme.textPrimary, lineHeight: 17, marginTop: 2 },
+  sideLabel: { fontFamily: fonts.bodySemiBold, fontSize: 15, color: theme.textPrimary },
+  meta: { fontFamily: fonts.bodyMedium, fontSize: 12, color: theme.textPrimary, marginTop: 2, marginBottom: 4, opacity: 0.75 },
+  line: { fontFamily: fonts.bodyMedium, fontSize: 13, color: theme.textPrimary, lineHeight: 18, marginTop: 3 },
   answerWord: { fontFamily: fonts.bodySemiBold },
   yesMark: {
     fontFamily: fonts.bodySemiBold,
@@ -2213,22 +2233,24 @@ const styles = StyleSheet.create({
   },
   peakEyebrow: {
     fontFamily: fonts.bodySemiBold,
-    fontSize: 10,
+    fontSize: 11,
     color: theme.accentBlue,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   peakTitle: {
     fontFamily: fonts.bodySemiBold,
-    fontSize: 15,
+    fontSize: 17,
     color: theme.textPrimary,
-    marginTop: 2,
+    marginTop: 4,
+    lineHeight: 22,
   },
   peakSub: {
-    fontFamily: fonts.body,
-    fontSize: 11,
-    color: theme.textMuted,
-    marginTop: 2,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 13,
+    color: theme.textPrimary,
+    marginTop: 4,
+    opacity: 0.8,
   },
   twoGoalGrid: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xs },
   twoGoalCol: {
@@ -2244,10 +2266,10 @@ const styles = StyleSheet.create({
     borderTopColor: theme.border,
     paddingVertical: spacing.xs,
   },
-  twoGoalScore: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: theme.textPrimary },
-  twoGoalOpp: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted },
-  twoGoalPair: { fontFamily: fonts.body, fontSize: 10, color: theme.textFaint, marginTop: 1 },
-  twoGoalGrade: { fontFamily: fonts.bodySemiBold, fontSize: 12, marginTop: 1 },
+  twoGoalScore: { fontFamily: fonts.bodySemiBold, fontSize: 14, color: theme.textPrimary },
+  twoGoalOpp: { fontFamily: fonts.bodyMedium, fontSize: 12, color: theme.textPrimary, opacity: 0.8 },
+  twoGoalPair: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: theme.textPrimary, marginTop: 2 },
+  twoGoalGrade: { fontFamily: fonts.bodySemiBold, fontSize: 14, marginTop: 2 },
   venueTable: { minWidth: 150 + 52 + 64 * 5 + 110 * 2 },
   venueNum: { width: 64, textAlign: 'center' },
   initialSeqHead: { width: 360 },
@@ -2258,15 +2280,15 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingVertical: 4,
   },
-  initialSeqTag: { fontFamily: fonts.bodySemiBold, fontSize: 12 },
+  initialSeqTag: { fontFamily: fonts.bodySemiBold, fontSize: 13 },
   callout: {
     borderWidth: layout.borderWidth,
     borderRadius: layout.borderRadius,
-    padding: spacing.sm,
+    padding: spacing.md,
     marginBottom: spacing.sm,
     backgroundColor: theme.surface,
   },
-  calloutText: { fontFamily: fonts.bodySemiBold, fontSize: 12, lineHeight: 17 },
+  calloutText: { fontFamily: fonts.bodySemiBold, fontSize: 14, lineHeight: 20 },
   gradeLink: { fontFamily: fonts.bodySemiBold, textDecorationLine: 'underline' },
   gapRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.xs },
   gapScoreBox: {
@@ -2467,15 +2489,16 @@ const styles = StyleSheet.create({
   formRowMid: { backgroundColor: 'rgba(217, 119, 6, 0.05)' },
   formTh: {
     fontFamily: fonts.bodySemiBold,
-    fontSize: 10,
-    color: theme.textMuted,
+    fontSize: 11,
+    color: theme.textPrimary,
     textTransform: 'uppercase',
     letterSpacing: 0.4,
+    opacity: 0.7,
   },
-  formTd: { fontFamily: fonts.body, fontSize: 12, color: theme.textPrimary },
+  formTd: { fontFamily: fonts.bodyMedium, fontSize: 13, color: theme.textPrimary },
   formPos: { width: 28, textAlign: 'center', fontFamily: fonts.bodySemiBold },
   formTeam: { width: 150, paddingRight: spacing.xs },
-  formTeamName: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: theme.textPrimary },
+  formTeamName: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: theme.textPrimary },
   formVenue: {
     fontFamily: fonts.bodySemiBold,
     fontSize: 9,
@@ -2490,6 +2513,6 @@ const styles = StyleSheet.create({
   formNum: { width: 36, textAlign: 'center' },
   formWdl: { width: 52, textAlign: 'center' },
   formType: { width: 36, textAlign: 'center', fontFamily: fonts.bodySemiBold },
-  formRead: { width: 110, paddingHorizontal: 4, fontFamily: fonts.bodySemiBold, fontSize: 11 },
+  formRead: { width: 120, paddingHorizontal: 4, fontFamily: fonts.bodySemiBold, fontSize: 13 },
   formTrend: { width: 52, textAlign: 'center', fontFamily: fonts.bodySemiBold },
 });
