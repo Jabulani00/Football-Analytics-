@@ -24,7 +24,8 @@ export type StatFamily = 'ordinary' | 'ppg' | 'series' | 'ft_only' | 'league_avg
 export type StatMetric = {
   key: string;
   label: string;
-  value: number;
+  /** Null when the stat was not counted. The table shows a blank, not 0. */
+  value: number | null;
   compliance: ComplianceLevel;
   /** Raw count/average (e.g. PPG, streak length) — rendered without a % suffix. */
   raw?: boolean;
@@ -44,6 +45,8 @@ export type StatsTableMeta = {
 export type TeamStatsRow = {
   team: string;
   metrics: StatMetric[];
+  /** Games that entered this row. Under five, the team is listed after the leaders. */
+  played?: number;
   games?: import('@/utils/countedGames').CountedGame[];
 };
 

@@ -100,7 +100,12 @@ export const HALF_COLUMNS: BoardColumn[] = [
 /** Full-time results that do not need a half-time score. */
 const FT_ALL_MATCH_KEYS = new Set(['btts_over25', 'win_to_nil', 'lost_to_nil']);
 
-export function sampleKeyFor(stat: string, family: 'ordinary' | 'ft'): 'sample_size' | 'ht_sample' {
+export function sampleKeyFor(
+  stat: string,
+  family: 'ordinary' | 'ft',
+): 'sample_size' | 'ht_sample' | 'rescued_n' | 'blown_n' {
+  if (stat === 'rescued_points') return 'rescued_n';
+  if (stat === 'blown_points') return 'blown_n';
   if (family === 'ordinary' || FT_ALL_MATCH_KEYS.has(stat)) return 'sample_size';
   return 'ht_sample';
 }
@@ -114,7 +119,7 @@ export function rankRows(
   rows: TeamStatRow[],
   stat: string,
   minimum: number,
-  sampleKey: 'sample_size' | 'ht_sample',
+  sampleKey: 'sample_size' | 'ht_sample' | 'rescued_n' | 'blown_n',
 ): TeamStatRow[] {
   const eligible = rows.filter((row) => {
     const sample = finiteNumber(row[sampleKey]) ?? 0;
@@ -127,6 +132,9 @@ export function rankRows(
     if (av == null) return 1;
     if (bv == null) return -1;
     if (bv !== av) return bv - av;
+    const asamp = finiteNumber(a[sampleKey]) ?? 0;
+    const bsamp = finiteNumber(b[sampleKey]) ?? 0;
+    if (bsamp !== asamp) return bsamp - asamp;
     return a.team_name.localeCompare(b.team_name);
   });
   return eligible.slice(0, BOARD_LIMIT);
@@ -137,7 +145,7 @@ export function formatStat(row: TeamStatRow, column: BoardColumn): string {
   if (value == null) return '—';
   const body =
     column.kind === 'percent'
-      ? `${Math.round(value)}%`
+      ? `${value.toFixed(1)}%`
       : column.kind === 'points'
         ? value.toFixed(2)
         : value.toFixed(1);
@@ -218,8 +226,8 @@ export function statMeaning(key: string, period: string): string {
     won_both_halves: 'How often this team was winning at half-time and won the second half as well.',
     win_to_nil: 'How often this team won the match without conceding. Uses the full-time score.',
     lost_to_nil: 'How often this team lost the match without scoring. Uses the full-time score.',
-    rescued_points: 'Average points taken after trailing at half-time. A later draw counts 1, a later win counts 3, and a game they were not trailing counts 0. This is a raw average, not a percentage.',
-    blown_points: 'Average points dropped after leading at half-time. A later draw counts 2, a later loss counts 3, and a game they were not leading counts 0. This is a raw average, not a percentage.',
+    rescued_points: 'Average points taken only in the games where this team was trailing at half-time. A later draw counts 1 and a later win counts 3. Games they were not trailing are left out, and the cell stays blank when they never trailed. This is a raw average, not a percentage.',
+    blown_points: 'Average points dropped only in the games where this team was leading at half-time. A later draw counts 2 and a later loss counts 3. Games they were not leading are left out, and the cell stays blank when they never led. This is a raw average, not a percentage.',
     led_ht: 'How often this team was ahead at half-time.',
     half_nil: `How often the ${half} finished 0–0.`,
     half_under05: `How often the ${half} had fewer than 0.5 goals, which is a 0–0 half. The number in brackets is this team's average goals in that half.`,

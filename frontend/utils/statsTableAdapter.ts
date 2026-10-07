@@ -144,28 +144,47 @@ export function sampleRowsForFamily(family?: StatFamily, salt = 0): TeamStatsRow
   }));
 }
 
+const LEAD_FLOOR = 5;
+
 export function liveRowsToDisplay(rows: TeamStatRow[], family?: StatFamily): TeamStatsRow[] {
   const cols = columnsForFamily(family);
-  return rows.map((row) => ({
-    team: String(row.team_name),
-    games: rowGames(row),
-    metrics: cols.map(({ key, label, raw }) => {
-      const cell = row[key];
-      const num = typeof cell === 'number' && Number.isFinite(cell) ? cell : 0;
-      const value = raw ? Math.round(num * 100) / 100 : Math.round(num);
-      const signal = row[`${key}_signal`];
-      const compliance: ComplianceLevel =
-        signal === 'green' || signal === 'yellow' || signal === 'red'
-          ? signal
-          : raw
-            ? rawCompliance(key, num)
-            : complianceFromPercent(value);
-      return { key, label, value, compliance, raw };
-    }),
-  }));
+  return rows.map((row) => {
+    const played = typeof row.sample_size === 'number' && Number.isFinite(row.sample_size) ? row.sample_size : undefined;
+    return {
+      team: String(row.team_name),
+      played,
+      games: rowGames(row),
+      metrics: cols.map(({ key, label, raw }) => {
+        const cell = row[key];
+        const finite = typeof cell === 'number' && Number.isFinite(cell);
+        const value = finite ? (raw ? Math.round(cell * 100) / 100 : Math.round(cell * 10) / 10) : null;
+        const signal = row[`${key}_signal`];
+        const compliance: ComplianceLevel =
+          !finite
+            ? 'red'
+            : signal === 'green' || signal === 'yellow' || signal === 'red'
+              ? signal
+              : raw
+                ? rawCompliance(key, cell)
+                : complianceFromPercent(value as number);
+        return { key, label, value, compliance, raw };
+      }),
+    };
+  });
 }
 
-/** Sort teams by their first (primary) metric desc — win% / PPG / win-streak etc. */
+/** Leaders need five games. Thinner samples stay on the table, after the leaders, and a blank never sorts as zero. */
 export function sortByPrimary(rows: TeamStatsRow[]): TeamStatsRow[] {
-  return [...rows].sort((a, b) => (b.metrics[0]?.value ?? 0) - (a.metrics[0]?.value ?? 0));
+  return [...rows].sort((a, b) => {
+    const av = a.metrics[0]?.value;
+    const bv = b.metrics[0]?.value;
+    if (av == null && bv == null) return (b.played ?? 0) - (a.played ?? 0) || a.team.localeCompare(b.team);
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    const aLead = (a.played ?? LEAD_FLOOR) >= LEAD_FLOOR;
+    const bLead = (b.played ?? LEAD_FLOOR) >= LEAD_FLOOR;
+    if (aLead !== bLead) return aLead ? -1 : 1;
+    if (bv !== av) return bv - av;
+    return (b.played ?? 0) - (a.played ?? 0) || a.team.localeCompare(b.team);
+  });
 }

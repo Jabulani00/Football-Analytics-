@@ -17,6 +17,7 @@ const fixtures = [
   fx({ id: 2, unix: 200, home_name: 'B', away_name: 'A', home_id: 2, away_id: 1, home_goals: 0, away_goals: 0, ht_score: '0-0' }),
   fx({ id: 3, unix: 100, home_name: 'A', away_name: 'C', home_id: 1, away_id: 3, home_goals: 3, away_goals: 3, ht_score: '2-1' }),
   fx({ id: 4, unix: 50, status: 'NS', home_name: 'A', away_name: 'B', home_goals: null, away_goals: null }), // ignored
+  fx({ id: 5, unix: 400, status: 'AET', home_name: 'A', away_name: 'B', home_goals: 5, away_goals: 0, ht_score: '0-0' }), // extra time is not a 90-minute score
 ];
 
 let pass = 0, fail = 0;
@@ -38,27 +39,28 @@ eq('has league_avg_ft_overall', !!exp.tables['league_avg_ft_overall'], true);
 
 const A = exp.tables['ordinary_ft_overall'].find((r) => r.team_name === 'A')!;
 // FT overall for A over its 3 matches: (gf,ga) = (2,1),(0,0),(3,3)
-eq('A sc_pct', A.sc_pct, 67);      // scored in 2/3
-eq('A cs_pct', A.cs_pct, 33);      // clean sheet 1/3
-eq('A fts_pct', A.fts_pct, 33);    // failed to score 1/3
-eq('A w_pct', A.w_pct, 33);        // 1 win
-eq('A d_pct', A.d_pct, 67);        // 2 draws
+eq('A sc_pct', A.sc_pct, 66.7);    // scored in 2/3
+eq('A cs_pct', A.cs_pct, 33.3);    // clean sheet 1/3
+eq('A fts_pct', A.fts_pct, 33.3);  // failed to score 1/3
+eq('A w_pct', A.w_pct, 33.3);      // 1 win
+eq('A d_pct', A.d_pct, 66.7);      // 2 draws
 eq('A l_pct', A.l_pct, 0);
-eq('A btts_yes', A.btts_yes, 67);
+eq('A btts_yes', A.btts_yes, 66.7);
+eq('A btts_no', A.btts_no, 33.3);  // the one game that was not BTTS, not 100 minus a rounded over
 eq('A sc_avg', A.sc_avg, 1.7);     // (2+0+3)/3
 eq('A conc_avg', A.conc_avg, 1.3); // (1+0+3)/3
 eq('A avg_goals', A.avg_goals, 3); // (3+0+6)/3
-eq('A over25', A.over25, 67);      // totals 3,0,6 -> 2 over 2.5
-eq('A under25', A.under25, 33);
-eq('A sc_pct signal', A.sc_pct_signal, 'green'); // 67 >= 65
-eq('A w_pct signal', A.w_pct_signal, 'red');     // 33 < 45
+eq('A over25', A.over25, 66.7);    // totals 3,0,6 -> 2 over 2.5
+eq('A under25', A.under25, 33.3);
+eq('A sc_pct signal', A.sc_pct_signal, 'green'); // 66.7 >= 65
+eq('A w_pct signal', A.w_pct_signal, 'red');     // 33.3 < 45
 eq('A sc_avg signal', A.sc_avg_signal, '');      // averages have no signal
 eq('A scored_first is not-derivable', Number.isNaN(A.scored_first as number), true);
 
 // HT period for A: HT (gf,ga) = (1,0),(0,0),(2,1)
 const Aht = exp.tables['ordinary_ht_overall'].find((r) => r.team_name === 'A')!;
 eq('A HT sc_avg', Aht.sc_avg, 1);  // (1+0+2)/3
-eq('A HT cs_pct', Aht.cs_pct, 67); // conceded in HT only once
+eq('A HT cs_pct', Aht.cs_pct, 66.7); // conceded in HT only once
 
 // 2H period for A: 2H = FT-HT = (1,1),(0,0),(1,2)
 const A2h = exp.tables['ordinary_2h_overall'].find((r) => r.team_name === 'A')!;
@@ -93,30 +95,32 @@ eq('A HT ppg', AppgHt.ppg, 2.33);
 const Aft = exp.tables['ft_only_ft_overall'].find((r) => r.team_name === 'A')!;
 eq('A won both halves', Aft.won_both_halves, 0);
 eq('A win to nil', Aft.win_to_nil, 0);
-eq('A scored both halves', Aft.scored_both_halves, 67);
-eq('A conceded both halves', Aft.conceded_both_halves, 33);
-eq('A led HT', Aft.led_ht, 67);
-eq('A btts both halves', Aft.btts_both_halves, 33);
-eq('A btts and over 2.5', Aft.btts_over25, 67);
+eq('A scored both halves', Aft.scored_both_halves, 66.7);
+eq('A conceded both halves', Aft.conceded_both_halves, 33.3);
+eq('A led HT', Aft.led_ht, 66.7);
+eq('A btts both halves', Aft.btts_both_halves, 33.3);
+eq('A btts and over 2.5', Aft.btts_over25, 66.7);
 eq('A lost to nil', Aft.lost_to_nil, 0);
-eq('A rescued points', Aft.rescued_points, 0);
-eq('A blown points', Aft.blown_points, 0.67);
-eq('A HT/FT win-win', Aft.htft_ww, 33);
-eq('A HT/FT win-draw', Aft.htft_wd, 33);
-eq('A HT/FT draw-draw', Aft.htft_dd, 33);
+eq('A rescued points stay blank when never trailing', Number.isNaN(Aft.rescued_points as number), true);
+eq('A rescued count is the trailing games', (Aft as any).rescued_n, 0);
+eq('A blown points', Aft.blown_points, 1); // led twice: a win drops 0, a draw drops 2
+eq('A blown count is the leading games', (Aft as any).blown_n, 2);
+eq('A HT/FT win-win', Aft.htft_ww, 33.3);
+eq('A HT/FT win-draw', Aft.htft_wd, 33.3);
+eq('A HT/FT draw-draw', Aft.htft_dd, 33.3);
 eq('A HT/FT lose-lose', Aft.htft_ll, 0);
 eq('A blown points has no percent signal', Aft.blown_points_signal, '');
 const AftHt = exp.tables['ft_only_ht_overall'].find((r) => r.team_name === 'A')!;
 eq('FT-only pattern ignores period', AftHt.won_both_halves, Aft.won_both_halves);
 eq('FT-only CS follows the period', AftHt.cs_pct === Aft.cs_pct, false);
-eq('A 1H 0-0', AftHt.half_nil, 33);
-eq('A 1H under 0.5', AftHt.half_under05, 33);
-eq('A 1H over 1.5', AftHt.half_over15, 33);
+eq('A 1H 0-0', AftHt.half_nil, 33.3);
+eq('A 1H under 0.5', AftHt.half_under05, 33.3);
+eq('A 1H over 1.5', AftHt.half_over15, 33.3);
 eq('A 1H avg', AftHt.half_avg, 1.3);
 eq('full-time row has no half avg', Number.isNaN(Aft.half_avg as number), true);
 const Aft2h = exp.tables['ft_only_2h_overall'].find((r) => r.team_name === 'A')!;
-eq('A 2H 0-0', Aft2h.half_nil, 33);
-eq('A 2H over 1.5', Aft2h.half_over15, 67);
+eq('A 2H 0-0', Aft2h.half_nil, 33.3);
+eq('A 2H over 1.5', Aft2h.half_over15, 66.7);
 eq('A 2H avg', Aft2h.half_avg, 1.7);
 eq('A ht sample', (Aft as any).ht_sample, 3);
 
@@ -133,10 +137,33 @@ eq('missing HT stays out of won both halves', D.won_both_halves, 100);
 eq('missing HT sample', (D as any).ht_sample, 1);
 const Dht = missingHt.tables['ft_only_ht_overall'].find((r) => r.team_name === 'D')!;
 eq('missing HT stays out of 1H 0-0', Dht.half_nil, 0);
+const Dhalf = missingHt.tables['ordinary_ht_overall'].find((r) => r.team_name === 'D')!;
+eq('missing HT stays out of the half sample', (Dhalf as any).sample_size, 1);
+eq('missing HT stays out of the half game list', rowGames(Dhalf).length, 1);
+
+const impossible = buildStatsTables({
+  fixtures: [fx({ id: 20, unix: 20, home_name: 'F', away_name: 'G', home_goals: 1, away_goals: 0, ht_score: '3-0' })],
+  season: '2025/2026',
+});
+const F = impossible.tables['ordinary_ft_overall'].find((r) => r.team_name === 'F')!;
+const Fht = impossible.tables['ordinary_ht_overall'].find((r) => r.team_name === 'F')!;
+eq('a negative second half still counts at full time', (F as any).sample_size, 1);
+eq('a negative second half stays out of both half tables', (Fht as any).sample_size, 0);
+eq('a negative second half stays out of the second-half table', (impossible.tables['ordinary_2h_overall'].find((r) => r.team_name === 'F') as any).sample_size, 0);
 
 const ranked = rankRows(exp.tables['ordinary_ft_overall'], 'sc_pct', 2, 'sample_size');
 eq('rank drops a one-game team', ranked.some((row) => row.team_name === 'C'), false);
 eq('rank keeps A', ranked[0]?.team_name, 'A');
+const tied = rankRows(
+  [
+    { team_name: 'Small', sc_pct: 50, sample_size: 6 },
+    { team_name: 'Large', sc_pct: 50, sample_size: 20 },
+  ] as never,
+  'sc_pct',
+  5,
+  'sample_size',
+);
+eq('the same rate ranks the larger sample first', tied[0]?.team_name, 'Large');
 eq('SC% explains scoring', statMeaning('sc_pct', 'ht').includes('first half'), true);
 eq('rescued points are an average', statMeaning('rescued_points', 'ft').includes('raw average'), true);
 const notes = explainBoard({
@@ -161,6 +188,8 @@ eq('home scope is described', notes[2].detail.includes('at home'), true);
 // Family: league_avg is a single "League" row
 eq('league_avg single row', exp.tables['league_avg_ft_overall'].length, 1);
 eq('league_avg named League', exp.tables['league_avg_ft_overall'][0].team_name, 'League');
+eq('league rate is pooled by games', exp.tables['league_avg_ft_overall'][0].sc_pct, 66.7);
+eq('league sample is the pooled team-games', (exp.tables['league_avg_ft_overall'][0] as any).sample_size, 6);
 
 console.log(`\n${pass}/${pass + fail} checks passed`);
 if (fail === 0) {

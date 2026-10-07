@@ -78,7 +78,7 @@ export default function StatBoardScreen({
   const [scope, setScope] = useState('overall');
   const [period, setPeriod] = useState('ft');
   const [group, setGroup] = useState('ft');
-  const [minimum, setMinimum] = useState('0');
+  const [minimum, setMinimum] = useState('5');
   const [query, setQuery] = useState('');
   const [openTeam, setOpenTeam] = useState<string | null>(null);
   const board = useCatalogueTables(competitionId);
@@ -271,7 +271,12 @@ export default function StatBoardScreen({
         {openRow ? (
           <IncludedGamesList
             title={`${openRow.team_name} · games in this filter`}
-            games={rowGames(openRow).filter((game) => countedKey === 'sample_size' || game.htKnown)}
+            games={rowGames(openRow).filter((game) => {
+              if (rankedStat === 'rescued_points') return game.trailed === true;
+              if (rankedStat === 'blown_points') return game.led === true;
+              if (countedKey === 'sample_size') return true;
+              return game.halfValid ?? game.htKnown;
+            })}
           />
         ) : null}
 

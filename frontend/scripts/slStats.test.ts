@@ -188,7 +188,7 @@ console.log('\nSL-STATS');
   const teams = rankOrdinaryTeams(played, 'w_pct');
   check('ordinary W ranks the team that won all five', teams[0]?.name === 'Alpha' && teams[0].pct === 100);
   const leagues = rankLeagueAverages(played, 'cs_pct');
-  check('league average comes from the stats builder', leagues[0]?.name === 'Premier' && leagues[0].pct === 16.7);
+  check('league average comes from the stats builder', leagues[0]?.name === 'Premier' && leagues[0].pct === 50);
   const next = ordinaryMatches(
     played,
     [

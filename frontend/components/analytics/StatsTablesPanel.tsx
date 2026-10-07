@@ -197,7 +197,7 @@ export default function StatsTablesPanel({ variant = 'all' }: { variant?: 'all' 
                   style={[styles.tableRow, i % 2 === 1 && styles.tableRowAlt, openTeam === row.team && styles.tableRowOn]}>
                   <Text style={[styles.cell, styles.cellRank, styles.rankText]}>{i + 1}</Text>
                   <Text style={[styles.cell, styles.cellTeam, styles.teamName]} numberOfLines={1}>
-                    {row.team}
+                    {row.played != null && row.played < 5 ? `${row.team} · ${row.played}` : row.team}
                   </Text>
                   {row.metrics.map((m, j) => (
                     <View key={m.key} style={styles.cell}>
@@ -205,10 +205,10 @@ export default function StatsTablesPanel({ variant = 'all' }: { variant?: 'all' 
                         style={[
                           styles.cellValue,
                           j === 0 && styles.cellValuePrimary,
-                          { color: complianceColor(m.compliance) },
+                          { color: m.value == null ? theme.textFaint : complianceColor(m.compliance) },
                         ]}>
-                        {m.value}
-                        {m.raw ? '' : '%'}
+                        {m.value == null ? '—' : m.value}
+                        {m.value == null || m.raw ? '' : '%'}
                       </Text>
                     </View>
                   ))}
@@ -226,7 +226,9 @@ export default function StatsTablesPanel({ variant = 'all' }: { variant?: 'all' 
           <Text style={styles.footHint}>
             Colour = how often the stat lands, not whether it is good:{' '}
             {COMPLIANCE_RULE_TEXT}. Streaks are counted in matches (🟢 3+) and PPG
-            on its 0–3 scale (🟢 1.80+).
+            on its 0–3 scale (🟢 1.80+). A blank cell was not counted. Teams with
+            fewer than five games stay on the list after the leaders, with the
+            game count next to the name.
             {variant === 'additional'
               ? ' These are the extra families: points per game, series, full-time patterns, and league averages. Tap a team to see the games in this table.'
               : ' Tap a team to see the games in this table, or change the table, period, or scope above.'}

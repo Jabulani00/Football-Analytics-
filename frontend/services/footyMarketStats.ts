@@ -53,6 +53,8 @@ export type FootyFixture = {
   awayGoals: number | null;
   htHome: number | null;
   htAway: number | null;
+  /** False when the result is extra time, penalties, or an award rather than 90 minutes. */
+  regulation?: boolean;
 };
 
 export type FootyQuery = {
@@ -139,6 +141,7 @@ type Game = {
   ga: number;
   htGf: number | null;
   htGa: number | null;
+  regulation?: boolean;
 };
 
 type TeamBucket = {
@@ -196,6 +199,7 @@ function scoped(team: TeamBucket, scope: Scope): Game[] {
 }
 
 function halfOf(g: Game, half: HalfSide): { gf: number; ga: number } | null {
+  if (g.regulation === false) return null;
   if (g.htGf == null || g.htGa == null) return null;
   if (half === 'first') return { gf: g.htGf, ga: g.htGa };
   const gf = g.gf - g.htGf;
@@ -260,6 +264,7 @@ export function buildFootyIndex(
       ga: fx.awayGoals as number,
       htGf: fx.htHome,
       htGa: fx.htAway,
+      regulation: fx.regulation,
     });
     away.games.push({
       id: fx.id,
@@ -271,6 +276,7 @@ export function buildFootyIndex(
       ga: fx.homeGoals as number,
       htGf: fx.htAway,
       htGa: fx.htHome,
+      regulation: fx.regulation,
     });
   }
 
@@ -372,7 +378,7 @@ export function rankGoalLineTeams(
   const rows: TeamRank[] = [];
   for (const team of index.teams) {
     if (!seasonOpen(team.progress, true)) continue;
-    const games = scoped(team, scope);
+    const games = scoped(team, scope).filter((game) => game.regulation !== false);
     if (games.length < MIN_RATE_MATCHES) continue;
     const hits = games.filter((g) => lineHit(g.gf + g.ga, line, side)).length;
     pushRank(rows, team, hits, games.length);
@@ -381,7 +387,7 @@ export function rankGoalLineTeams(
 }
 
 export function goalLineSummary(index: FootyIndex, line: GoalLine, side: GoalSide): RateSummary {
-  const open = index.finished.filter((fx) => seasonOpen(fx.progress, true));
+  const open = index.finished.filter((fx) => seasonOpen(fx.progress, true) && fx.regulation !== false);
   if (open.length === 0) return { pct: 0, matches: 0 };
   const hits = open.filter((fx) =>
     lineHit((fx.homeGoals as number) + (fx.awayGoals as number), line, side),
@@ -421,6 +427,7 @@ export function rankLeagues(
   const groups = new Map<number, LeagueRank & { known: number }>();
   for (const fx of index.finished) {
     if (!leagueUnderway(fx.progress, dropComplete)) continue;
+    if ((metric.kind === 'line' || metric.kind === 'half') && fx.regulation === false) continue;
     const hit = fixtureMetric(fx, metric);
     let row = groups.get(fx.competitionId);
     if (!row) {

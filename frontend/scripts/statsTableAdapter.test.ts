@@ -88,7 +88,7 @@ const patterns = liveRowsToDisplay(
   [{ team_name: 'Visit', won_both_halves: Number.NaN, win_to_nil: 50, cs_pct: 80 } as TeamStatRow],
   'ft_only',
 );
-check('missing pattern becomes zero', patterns[0]?.metrics[0]?.value === 0);
+check('missing pattern stays blank', patterns[0]?.metrics[0]?.value == null);
 check('present pattern is kept', patterns[0]?.metrics[1]?.value === 50);
 
 const streaks = liveRowsToDisplay(
@@ -129,8 +129,16 @@ const built = buildStatsTables({
 });
 const shown = liveRowsToDisplay(built.tables['ft_only_ft_overall'] ?? [], 'ft_only');
 const teamA = shown.find((row) => row.team === 'A');
-check('live full-time-only scored both halves is 67', teamA?.metrics.find((metric) => metric.key === 'scored_both_halves')?.value === 67);
-check('live full-time-only led at half-time is 67', teamA?.metrics.find((metric) => metric.key === 'led_ht')?.value === 67);
+check('live full-time-only scored both halves is 66.7', teamA?.metrics.find((metric) => metric.key === 'scored_both_halves')?.value === 66.7);
+check('live full-time-only led at half-time is 66.7', teamA?.metrics.find((metric) => metric.key === 'led_ht')?.value === 66.7);
+const ordered = sortByPrimary([
+  { team: 'Thin', played: 1, metrics: [{ key: 'w_pct', label: 'Win %', value: 100, compliance: 'green' }] },
+  { team: 'Solid', played: 8, metrics: [{ key: 'w_pct', label: 'Win %', value: 50, compliance: 'yellow' }] },
+  { team: 'Blank', played: 10, metrics: [{ key: 'w_pct', label: 'Win %', value: null, compliance: 'red' }] },
+]);
+check('a one-game 100% does not lead', ordered[0]?.team === 'Solid');
+check('a thinner sample stays after the leaders', ordered[1]?.team === 'Thin');
+check('a blank cell sorts last', ordered[2]?.team === 'Blank');
 const ppgShown = liveRowsToDisplay(built.tables['ppg_ft_overall'] ?? [], 'ppg');
 check('live points per game for A is 1.67 and raw', ppgShown.find((row) => row.team === 'A')?.metrics[0]?.value === 1.67 && ppgShown.find((row) => row.team === 'A')?.metrics[0]?.raw === true);
 

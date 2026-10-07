@@ -8,6 +8,12 @@ export type CountedGame = {
   score: string;
   detail: string;
   htKnown: boolean;
+  /** Half-time score is present and the second half is not negative. */
+  halfValid?: boolean;
+  /** This team was behind at half-time. */
+  trailed?: boolean;
+  /** This team was ahead at half-time. */
+  led?: boolean;
 };
 
 const GAMES = Symbol.for('scoreline.countedGames');
