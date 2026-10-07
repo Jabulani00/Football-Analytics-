@@ -14,10 +14,12 @@ import {
 import AppNavMenu from '@/components/layout/AppNavMenu';
 import AppShell from '@/components/shared/AppShell';
 import FilterDropdown from '@/components/shared/FilterDropdown';
+import IncludedGamesList from '@/components/shared/IncludedGamesList';
 import StickyBack from '@/components/shared/StickyBack';
 import { useCatalogueTables } from '@/hooks/useCatalogueTables';
 import { fonts, spacing, theme } from '@/styles/theme';
 import type { TeamStatRow } from '@/types/data';
+import { rowGames } from '@/utils/countedGames';
 import { complianceColor } from '@/utils/compliance';
 import {
   BOARD_LIMIT,
@@ -78,6 +80,7 @@ export default function StatBoardScreen({
   const [group, setGroup] = useState('ft');
   const [minimum, setMinimum] = useState('0');
   const [query, setQuery] = useState('');
+  const [openTeam, setOpenTeam] = useState<string | null>(null);
   const board = useCatalogueTables(competitionId);
 
   const activePeriod = mode === 'ordinary' ? period : group;
@@ -87,19 +90,22 @@ export default function StatBoardScreen({
   const tableName = `${mode === 'ordinary' ? 'ordinary' : 'ft_only'}_${activePeriod}_${scope}`;
   const showTiming = mode === 'ordinary' && activePeriod === 'ft' && competitionId != null;
   const showLeague = competitionId == null;
+  const countedKey = sampleKeyFor(rankedStat, mode);
 
   const rows = useMemo(() => {
     const source = board.tables?.[tableName] ?? [];
-    const ranked = rankRows(source, rankedStat, Number(minimum), sampleKeyFor(rankedStat, mode));
+    const ranked = rankRows(source, rankedStat, Number(minimum), countedKey);
     const needle = query.trim().toLowerCase();
     if (!needle) return ranked;
     return ranked.filter((row) => row.team_name.toLowerCase().includes(needle));
-  }, [board.tables, tableName, rankedStat, minimum, mode, query]);
+  }, [board.tables, tableName, rankedStat, countedKey, minimum, mode, query]);
 
   const leagueName = useMemo(() => {
     const names = new Map(board.catalog.map((comp) => [String(comp.id), comp.name]));
     return (id: string) => names.get(id) ?? id;
   }, [board.catalog]);
+
+  const openRow = rows.find((row) => `${row.league_id}::${row.team_name}` === openTeam) ?? null;
 
   const competitionOptions = [
     { value: '', label: 'All loaded leagues' },
@@ -239,26 +245,38 @@ export default function StatBoardScreen({
                   </>
                 ) : null}
               </View>
-              {rows.map((row, index) => (
-                <BoardRow
-                  key={`${row.league_id}-${row.team_name}`}
-                  row={row}
-                  index={index}
-                  columns={columns}
-                  rankedStat={rankedStat}
-                  league={showLeague ? leagueName(String(row.league_id)) : null}
-                  timing={showTiming ? board.timing?.get(row.team_name) : undefined}
-                  showTiming={showTiming}
-                  sampleKey={sampleKeyFor(rankedStat, mode)}
-                  ordinary={mode === 'ordinary'}
-                />
-              ))}
+              {rows.map((row, index) => {
+                const key = `${row.league_id}::${row.team_name}`;
+                return (
+                  <BoardRow
+                    key={key}
+                    row={row}
+                    index={index}
+                    selected={openTeam === key}
+                    onPress={() => setOpenTeam((current) => (current === key ? null : key))}
+                    columns={columns}
+                    rankedStat={rankedStat}
+                    league={showLeague ? leagueName(String(row.league_id)) : null}
+                    timing={showTiming ? board.timing?.get(row.team_name) : undefined}
+                    showTiming={showTiming}
+                    sampleKey={countedKey}
+                    ordinary={mode === 'ordinary'}
+                  />
+                );
+              })}
             </View>
           </ScrollView>
         ) : null}
 
+        {openRow ? (
+          <IncludedGamesList
+            title={`${openRow.team_name} · games in this filter`}
+            games={rowGames(openRow).filter((game) => countedKey === 'sample_size' || game.htKnown)}
+          />
+        ) : null}
+
         <Text style={styles.foot}>
-          Top {BOARD_LIMIT}, highest first.
+          Tap a team to see the games in this filter, then open a match. Top {BOARD_LIMIT}, highest first.
           {mode === 'ft'
             ? ' Rescued and blown points are averages, not percentages. Matches with no half-time score stay out of both-halves and HT/FT rates.'
             : ' Timing shows only minutes the season feed already records, and only for a full-time view of one competition.'}
@@ -271,6 +289,8 @@ export default function StatBoardScreen({
 function BoardRow({
   row,
   index,
+  selected,
+  onPress,
   columns,
   rankedStat,
   league,
@@ -281,6 +301,8 @@ function BoardRow({
 }: {
   row: TeamStatRow;
   index: number;
+  selected: boolean;
+  onPress: () => void;
   columns: BoardColumn[];
   rankedStat: string;
   league: string | null;
@@ -291,7 +313,7 @@ function BoardRow({
 }) {
   const games = row[sampleKey];
   return (
-    <View style={[styles.headRow, index % 2 === 1 && styles.zebra]}>
+    <Pressable onPress={onPress} style={[styles.headRow, index % 2 === 1 && styles.zebra, selected && styles.selectedRow]}>
       <Text style={[styles.cell, styles.rank]}>{index + 1}</Text>
       <Text style={[styles.cell, styles.team]} numberOfLines={1}>{row.team_name}</Text>
       {league != null ? <Text style={[styles.cell, styles.league]} numberOfLines={1}>{league}</Text> : null}
@@ -318,7 +340,7 @@ function BoardRow({
           ))}
         </>
       ) : null}
-    </View>
+    </Pressable>
   );
 }
 
@@ -519,6 +541,9 @@ const styles = StyleSheet.create({
   },
   zebra: {
     backgroundColor: theme.surfaceHover,
+  },
+  selectedRow: {
+    backgroundColor: '#DBEAFE',
   },
   cell: {
     fontFamily: fonts.body,

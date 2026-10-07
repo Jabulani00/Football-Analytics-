@@ -130,7 +130,11 @@ export type RateSummary = {
 };
 
 type Game = {
+  id: number;
+  unix: number;
   venue: 'home' | 'away';
+  match: string;
+  score: string;
   gf: number;
   ga: number;
   htGf: number | null;
@@ -166,6 +170,24 @@ export function asPercentProgress(value: number | null | undefined): number | nu
 function ratePct(hits: number, played: number): number {
   if (played <= 0) return 0;
   return round1((100 * hits) / played);
+}
+
+export function listedGamesForTeam(
+  index: FootyIndex,
+  team: string,
+  league: string,
+  scope: Scope,
+): { id: number; unix: number; match: string; score: string; detail: string; htKnown: boolean }[] {
+  const bucket = index.teams.find((item) => item.team === team && item.league === league);
+  if (!bucket) return [];
+  return scoped(bucket, scope).map((game) => ({
+    id: game.id,
+    unix: game.unix,
+    match: game.match,
+    score: game.score,
+    detail: game.venue === 'home' ? 'Home' : 'Away',
+    htKnown: game.htGf != null && game.htGa != null,
+  }));
 }
 
 function scoped(team: TeamBucket, scope: Scope): Game[] {
@@ -226,15 +248,25 @@ export function buildFootyIndex(
   for (const fx of finished) {
     const home = ensure(fx.competitionId, fx.homeName, fx);
     const away = ensure(fx.competitionId, fx.awayName, fx);
+    const score = `${fx.homeGoals}-${fx.awayGoals}`;
+    const match = `${fx.homeName} ${score} ${fx.awayName}`;
     home.games.push({
+      id: fx.id,
+      unix: fx.unix,
       venue: 'home',
+      match,
+      score,
       gf: fx.homeGoals as number,
       ga: fx.awayGoals as number,
       htGf: fx.htHome,
       htGa: fx.htAway,
     });
     away.games.push({
+      id: fx.id,
+      unix: fx.unix,
       venue: 'away',
+      match,
+      score,
       gf: fx.awayGoals as number,
       ga: fx.homeGoals as number,
       htGf: fx.htAway,

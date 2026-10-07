@@ -44,6 +44,7 @@ export type StatsTableMeta = {
 export type TeamStatsRow = {
   team: string;
   metrics: StatMetric[];
+  games?: import('@/utils/countedGames').CountedGame[];
 };
 
 export type StreamSignal = {

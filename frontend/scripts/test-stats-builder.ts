@@ -3,6 +3,7 @@
  * Run:  npx tsx scripts/test-stats-builder.ts
  */
 import { buildStatsTables } from '../services/statsBuilder';
+import { rowGames } from '../utils/countedGames';
 import { explainBoard, rankRows, statMeaning } from '../utils/statBoard';
 
 // Minimal RawFixture-shaped results (only the fields the builder reads).
@@ -66,6 +67,9 @@ eq('A 2H sc_avg', A2h.sc_avg, 0.7); // (1+0+1)/3
 // Home scope: A was home in matches 1 and 3 only.
 const Ahome = exp.tables['ordinary_ft_home'].find((r) => r.team_name === 'A')!;
 eq('A home sample', (Ahome as any).sample_size, 2);
+eq('A overall games', rowGames(A).length, 3);
+eq('A home games', rowGames(Ahome).length, 2);
+eq('A game keeps the fixture id', rowGames(A).some((game) => game.id === 1 && game.match.includes('A 2-1 B')), true);
 eq('A home w_pct', Ahome.w_pct, 50); // won 1 of 2 home (2-1 win, 3-3 draw)
 
 // Away scope: A away in match 2 only (0-0).

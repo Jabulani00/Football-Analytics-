@@ -17,6 +17,7 @@
 
 import type { ComplianceLevel } from '@/types/analytics';
 import type { TeamStatRow, TeamStatsExport } from '@/types/data';
+import { setRowGames, type CountedGame } from '@/utils/countedGames';
 import { complianceFromPercent } from '@/utils/compliance';
 // Type-only (stripped at runtime) — keeps this module free of RN imports.
 import type { RawFixture } from '@/services/oddAlerts';
@@ -66,6 +67,10 @@ type TeamMatch = {
   gfHt: number; gaHt: number; // first-half
   /** False when the feed had no half-time score. Those matches stay out of half rates. */
   htKnown: boolean;
+  id: number;
+  match: string;
+  score: string;
+  competition: string;
 };
 
 /** Goals for/against this team in the requested period. */
@@ -319,6 +324,17 @@ function makeRow(
   return row;
 }
 
+function countedFrom(matches: TeamMatch[]): CountedGame[] {
+  return matches.map((match) => ({
+    id: match.id,
+    unix: match.unix,
+    match: match.match,
+    score: match.score,
+    detail: `${match.competition}${match.isHome ? ' · Home' : ' · Away'}`,
+    htKnown: match.htKnown,
+  }));
+}
+
 /**
  * Build the full 72-table `TeamStatsExport` live from finished fixtures:
  * 5 base families (ordinary/ppg/series/ft_only/league_avg) × period × scope (45)
@@ -345,8 +361,17 @@ export function buildStatsTables(opts: BuildOptions): TeamStatsExport {
     const ht = parseHtScore(fx.ht_score);
     const htKnown = ht != null;
     const [hHt, aHt] = ht ?? [0, 0]; // HT unknown → treat as 0-0 (2H then carries all goals)
-    add(fx.home_name, league, { isHome: true, unix: fx.unix, gfFt: hg, gaFt: ag, gfHt: hHt, gaHt: aHt, htKnown });
-    add(fx.away_name, league, { isHome: false, unix: fx.unix, gfFt: ag, gaFt: hg, gfHt: aHt, gaHt: hHt, htKnown });
+    const score = `${hg}-${ag}`;
+    const match = `${fx.home_name} ${score} ${fx.away_name}`;
+    const competition = fx.competition_name || league;
+    add(fx.home_name, league, {
+      isHome: true, unix: fx.unix, gfFt: hg, gaFt: ag, gfHt: hHt, gaHt: aHt, htKnown,
+      id: fx.id, match, score, competition,
+    });
+    add(fx.away_name, league, {
+      isHome: false, unix: fx.unix, gfFt: ag, gaFt: hg, gfHt: aHt, gaHt: hHt, htKnown,
+      id: fx.id, match, score, competition,
+    });
   }
 
   const tables: Record<string, TeamStatRow[]> = {};
@@ -367,16 +392,21 @@ export function buildStatsTables(opts: BuildOptions): TeamStatsExport {
       for (const period of PERIODS) {
         const ord = ordinaryValues(scoped, period);
         const sample = scoped.length;
+        const seasonGames = countedFrom(scoped);
+        const withGames = (row: TeamStatRow, games: CountedGame[]) => {
+          setRowGames(row, games);
+          return row;
+        };
         // ordinary
-        ensure(`ordinary_${period}_${scope}`).push(makeRow(name, league, season, ord, sample));
+        ensure(`ordinary_${period}_${scope}`).push(withGames(makeRow(name, league, season, ord, sample), seasonGames));
         // ppg = ordinary + points-per-game
         const ppg = computePpg(scoped, period);
         ensure(`ppg_${period}_${scope}`).push(
-          makeRow(name, league, season, { ppg, avg_pts: ppg, ...ord }, sample),
+          withGames(makeRow(name, league, season, { ppg, avg_pts: ppg, ...ord }, sample), seasonGames),
         );
         // series = streaks
         ensure(`series_${period}_${scope}`).push(
-          makeRow(name, league, season, computeSeries(scoped, period), sample),
+          withGames(makeRow(name, league, season, computeSeries(scoped, period), sample), seasonGames),
         );
         // ft_only = ordinary + full-time patterns + the half lines for this period
         const half =
@@ -385,13 +415,13 @@ export function buildStatsTables(opts: BuildOptions): TeamStatsExport {
             : computeHalfOnly(scoped, period);
         const ftRow = makeRow(name, league, season, { ...computeFtOnly(scoped), ...half, ...ord }, sample);
         (ftRow as Record<string, unknown>).ht_sample = scoped.filter((m) => m.htKnown).length;
-        ensure(`ft_only_${period}_${scope}`).push(ftRow);
+        ensure(`ft_only_${period}_${scope}`).push(withGames(ftRow, seasonGames));
         // last-N ordinary windows
         for (const [winPrefix, winSize] of Object.entries(WINDOWS)) {
           if (winPrefix === 'ordinary') continue; // season already emitted above
           const windowed = scoped.slice(0, winSize);
           ensure(`${winPrefix}_${period}_${scope}`).push(
-            makeRow(name, league, season, ordinaryValues(windowed, period), windowed.length),
+            withGames(makeRow(name, league, season, ordinaryValues(windowed, period), windowed.length), countedFrom(windowed)),
           );
         }
       }

@@ -1,4 +1,4 @@
-import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
@@ -8,9 +8,11 @@ type Props = {
   columns: FootyColumn[];
   rows: { id: string; cells: Record<string, string> }[];
   empty: string;
+  onPress?: (id: string) => void;
+  selectedId?: string | null;
 };
 
-export default function FootyTable({ columns, rows, empty }: Props) {
+export default function FootyTable({ columns, rows, empty, onPress, selectedId }: Props) {
   if (rows.length === 0) {
     return <Text style={styles.empty}>{empty}</Text>;
   }
@@ -25,13 +27,13 @@ export default function FootyTable({ columns, rows, empty }: Props) {
           ))}
         </View>
         {rows.map((row, index) => (
-          <View key={row.id} style={[styles.row, index % 2 === 1 && styles.alt]}>
+          <Pressable key={row.id} onPress={onPress ? () => onPress(row.id) : undefined} style={[styles.row, index % 2 === 1 && styles.alt, selectedId === row.id && styles.selected]}>
             {columns.map((col) => (
               <Text key={col.key} style={[styles.cell, { flex: col.flex ?? 1 }]} numberOfLines={1}>
                 {row.cells[col.key] ?? ''}
               </Text>
             ))}
-          </View>
+          </Pressable>
         ))}
       </View>
     </ScrollView>
@@ -60,6 +62,9 @@ const styles = StyleSheet.create({
   },
   alt: {
     backgroundColor: '#F8FAFC',
+  },
+  selected: {
+    backgroundColor: '#DBEAFE',
   },
   cell: {
     fontFamily: fonts.body,

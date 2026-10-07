@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import LeagueStatsPanel from '@/components/league/LeagueStatsPanel';
 import CompetitionPicker from '@/components/shared/CompetitionPicker';
 import FilterDropdown from '@/components/shared/FilterDropdown';
+import IncludedGamesList from '@/components/shared/IncludedGamesList';
 import { useLiveCompetitionFeed } from '@/hooks/useLiveCompetitions';
 import { useLiveStatsTables } from '@/hooks/useLiveStatsTables';
 import type { StatFamily } from '@/types/analytics';
 import { complianceColor, COMPLIANCE_RULE_TEXT } from '@/utils/compliance';
+import { rowGames } from '@/utils/countedGames';
 import { liveRowsToDisplay, sampleRowsForFamily, sortByPrimary } from '@/utils/statsTableAdapter';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
@@ -52,6 +54,7 @@ export default function StatsTablesPanel({ variant = 'all' }: { variant?: 'all' 
   const feed = useLiveCompetitionFeed(3);
   const competitions = feed.competitions;
   const [competitionId, setCompetitionId] = useState<number | null>(null);
+  const [openTeam, setOpenTeam] = useState<string | null>(null);
   useEffect(() => {
     if (competitionId == null && competitions.length > 0) setCompetitionId(competitions[0].id);
   }, [competitions, competitionId]);
@@ -154,13 +157,22 @@ export default function StatsTablesPanel({ variant = 'all' }: { variant?: 'all' 
 
       {/* Table */}
       {isLeagueStats ? (
-        <LeagueStatsPanel
-          teamRows={leagueTeamRows}
-          leagueRow={liveTable?.[0]}
-          loading={waiting}
-          error={feedError}
-          contextLabel={`${PERIODS.find((p) => p.key === activePeriod)?.label} ${scope}`}
-        />
+        <>
+          <LeagueStatsPanel
+            teamRows={leagueTeamRows}
+            leagueRow={liveTable?.[0]}
+            loading={waiting}
+            error={feedError}
+            onTeamPress={(team) => setOpenTeam((current) => (current === team ? null : team))}
+            contextLabel={`${PERIODS.find((p) => p.key === activePeriod)?.label} ${scope}`}
+          />
+          {openTeam ? (
+            <IncludedGamesList
+              title={`${openTeam} · games in this table`}
+              games={rowGames(leagueTeamRows?.find((row) => row.team_name === openTeam))}
+            />
+          ) : null}
+        </>
       ) : teams.length === 0 ? null : (
         <>
           <ScrollView
@@ -179,7 +191,10 @@ export default function StatsTablesPanel({ variant = 'all' }: { variant?: 'all' 
                 ))}
               </View>
               {teams.map((row, i) => (
-                <View key={row.team} style={[styles.tableRow, i % 2 === 1 && styles.tableRowAlt]}>
+                <Pressable
+                  key={row.team}
+                  onPress={() => setOpenTeam((current) => (current === row.team ? null : row.team))}
+                  style={[styles.tableRow, i % 2 === 1 && styles.tableRowAlt, openTeam === row.team && styles.tableRowOn]}>
                   <Text style={[styles.cell, styles.cellRank, styles.rankText]}>{i + 1}</Text>
                   <Text style={[styles.cell, styles.cellTeam, styles.teamName]} numberOfLines={1}>
                     {row.team}
@@ -197,18 +212,24 @@ export default function StatsTablesPanel({ variant = 'all' }: { variant?: 'all' 
                       </Text>
                     </View>
                   ))}
-                </View>
+                </Pressable>
               ))}
             </View>
           </ScrollView>
+          {openTeam ? (
+            <IncludedGamesList
+              title={`${openTeam} · games in this table`}
+              games={teams.find((row) => row.team === openTeam)?.games ?? []}
+            />
+          ) : null}
 
           <Text style={styles.footHint}>
             Colour = how often the stat lands, not whether it is good:{' '}
             {COMPLIANCE_RULE_TEXT}. Streaks are counted in matches (🟢 3+) and PPG
             on its 0–3 scale (🟢 1.80+).
             {variant === 'additional'
-              ? ' These are the extra families: points per game, series, full-time patterns, and league averages.'
-              : ' Tap a table, period or scope above to explore all 72 views.'}
+              ? ' These are the extra families: points per game, series, full-time patterns, and league averages. Tap a team to see the games in this table.'
+              : ' Tap a team to see the games in this table, or change the table, period, or scope above.'}
           </Text>
         </>
       )}
@@ -276,6 +297,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   tableRowAlt: { backgroundColor: 'rgba(127,127,127,0.04)' },
+  tableRowOn: { backgroundColor: '#DBEAFE' },
   cell: { width: 64, alignItems: 'center', justifyContent: 'center' },
   cellRank: { width: 28, alignItems: 'flex-start' },
   cellTeam: { width: 128, alignItems: 'flex-start' },

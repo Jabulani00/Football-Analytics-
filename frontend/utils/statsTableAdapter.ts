@@ -8,6 +8,7 @@
  */
 import type { ComplianceLevel, StatFamily, StatsTableMeta, TeamStatsRow } from '@/types/analytics';
 import type { TeamStatRow } from '@/types/data';
+import { rowGames } from '@/utils/countedGames';
 import { complianceFromPercent, complianceFromPpg } from '@/utils/compliance';
 
 type Col = { key: string; label: string; raw?: boolean };
@@ -147,6 +148,7 @@ export function liveRowsToDisplay(rows: TeamStatRow[], family?: StatFamily): Tea
   const cols = columnsForFamily(family);
   return rows.map((row) => ({
     team: String(row.team_name),
+    games: rowGames(row),
     metrics: cols.map(({ key, label, raw }) => {
       const cell = row[key];
       const num = typeof cell === 'number' && Number.isFinite(cell) ? cell : 0;
