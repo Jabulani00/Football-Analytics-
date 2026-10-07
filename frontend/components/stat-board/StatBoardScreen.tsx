@@ -323,16 +323,22 @@ function BoardRow({
 }
 
 function FilterStory({ notes }: { notes: { label: string; choice: string; detail: string }[] }) {
+  const [selected, setSelected] = useState(notes[0]?.label ?? '');
+  const current = notes.find((note) => note.label === selected) ?? notes[0];
+  if (!current) return null;
   return (
     <View style={styles.story}>
-      <Text style={styles.storyTitle}>What this filter is doing</Text>
-      {notes.map((note) => (
-        <View key={note.label} style={styles.storyRow}>
-          <Text style={styles.storyLabel}>{note.label}</Text>
-          <Text style={styles.storyChoice}>{note.choice}</Text>
-          <Text style={styles.storyDetail}>{note.detail}</Text>
-        </View>
-      ))}
+      <FilterDropdown
+        label="What this filter is doing"
+        value={current.label}
+        options={notes.map((note) => ({
+          value: note.label,
+          label: `${note.label}: ${note.choice}`,
+        }))}
+        onChange={setSelected}
+        style={styles.storyDrop}
+      />
+      <Text style={styles.storyDetail}>{current.detail}</Text>
     </View>
   );
 }
@@ -472,33 +478,13 @@ const styles = StyleSheet.create({
     color: theme.surface,
   },
   story: {
-    backgroundColor: theme.surface,
-    borderWidth: 1,
-    borderColor: theme.border,
-    borderRadius: 12,
-    padding: spacing.md,
-    gap: spacing.sm,
     marginBottom: spacing.md,
+    gap: spacing.sm,
+    maxWidth: 720,
   },
-  storyTitle: {
-    fontFamily: fonts.bodySemiBold,
-    fontSize: 13,
-    color: theme.textPrimary,
-  },
-  storyRow: {
-    gap: 2,
-  },
-  storyLabel: {
-    fontFamily: fonts.bodyMedium,
-    fontSize: 11,
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-    color: theme.textMuted,
-  },
-  storyChoice: {
-    fontFamily: fonts.bodySemiBold,
-    fontSize: 14,
-    color: theme.textPrimary,
+  storyDrop: {
+    width: '100%',
+    maxWidth: 720,
   },
   storyDetail: {
     fontFamily: fonts.body,
