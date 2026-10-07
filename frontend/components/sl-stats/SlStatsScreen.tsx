@@ -2,13 +2,12 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import FootyTable, { type FootyColumn } from '@/components/analytics/FootyTable';
-import AppNavMenu from '@/components/layout/AppNavMenu';
+import AppNavBar from '@/components/layout/AppNavBar';
 import AppShell from '@/components/shared/AppShell';
 import DragScroll from '@/components/shared/DragScroll';
 import IncludedGamesList from '@/components/shared/IncludedGamesList';
 import PageControls from '@/components/shared/PageControls';
 import FilterDropdown from '@/components/shared/FilterDropdown';
-import StickyBack from '@/components/shared/StickyBack';
 import { useSlStats } from '@/hooks/useSlStats';
 import type { CountedGame } from '@/utils/countedGames';
 import {
@@ -233,7 +232,7 @@ function BestBetLine({ bet }: { bet: BestBet | null }) {
   );
 }
 
-export default function SlStatsScreen({ onBack }: { onBack: () => void }) {
+export default function SlStatsScreen({ onBack: _onBack }: { onBack: () => void }) {
   const narrow = useNarrow();
   const [analysis, setAnalysis] = useState<AnalysisId>('corners');
   const [country, setCountry] = useState('');
@@ -344,8 +343,8 @@ export default function SlStatsScreen({ onBack }: { onBack: () => void }) {
 
   return (
     <AppShell>
+      <AppNavBar />
       <DragScroll scrollRef={scrollRef} contentContainerStyle={[styles.scroll, narrow && styles.scrollNarrow]}>
-        <StickyBack label="← HOME" onPress={onBack} trailing={<AppNavMenu />} />
         <View style={[styles.hero, narrow && styles.heroNarrow]}>
           <View style={styles.heroCopy}>
             <Text style={styles.heroKicker}>Query</Text>

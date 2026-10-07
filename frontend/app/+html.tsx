@@ -12,7 +12,7 @@ export default function Root({ children }: PropsWithChildren) {
           content="width=device-width, initial-scale=1, shrink-to-fit=no"
         />
         <meta name="theme-color" content="#059669" />
-        <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml" sizes="any" />
         <title>Scoreline — Football Analytics & Betting Intelligence</title>
         <meta
           name="description"

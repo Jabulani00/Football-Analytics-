@@ -9,13 +9,12 @@ import {
   useWindowDimensions,
 } from 'react-native';
 
-import AppNavMenu from '@/components/layout/AppNavMenu';
+import AppNavBar from '@/components/layout/AppNavBar';
 import AppShell from '@/components/shared/AppShell';
 import DragScroll from '@/components/shared/DragScroll';
 import FilterDropdown from '@/components/shared/FilterDropdown';
 import IncludedGamesList from '@/components/shared/IncludedGamesList';
 import PageControls, { PAGE_SIZE } from '@/components/shared/PageControls';
-import StickyBack from '@/components/shared/StickyBack';
 import { useCatalogueTables } from '@/hooks/useCatalogueTables';
 import { fonts, spacing, theme } from '@/styles/theme';
 import type { TeamStatRow } from '@/types/data';
@@ -65,7 +64,7 @@ export default function StatBoardScreen({
   title,
   kicker,
   blurb,
-  onBack,
+  onBack: _onBack,
 }: {
   mode: Mode;
   title: string;
@@ -124,8 +123,8 @@ export default function StatBoardScreen({
 
   return (
     <AppShell>
+      <AppNavBar />
       <DragScroll contentContainerStyle={[styles.scroll, narrow && styles.scrollNarrow]}>
-        <StickyBack label="← HOME" onPress={onBack} trailing={<AppNavMenu />} />
         <View style={styles.hero}>
           <Text style={styles.kicker}>{kicker}</Text>
           <Text style={[styles.title, narrow && styles.titleNarrow]}>{title}</Text>
