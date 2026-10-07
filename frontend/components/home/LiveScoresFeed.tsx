@@ -266,7 +266,11 @@ export default function LiveScoresFeed() {
 
       {statusFilter === 'ns' ? (
         <>
-          <View style={styles.windowRow}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.windowScroll}
+            contentContainerStyle={styles.windowRow}>
             {UPCOMING_WINDOWS.map((w) => {
               const active = w.id === upcomingWindow && selectedDayKey == null;
               return (
@@ -287,12 +291,13 @@ export default function LiveScoresFeed() {
                 </Pressable>
               );
             })}
-          </View>
+          </ScrollView>
 
           <Text style={styles.dayStripLabel}>Pick a day</Text>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
+            style={styles.dayScroll}
             contentContainerStyle={styles.dayStrip}>
             <Pressable
               onPress={() => setSelectedDayKey(null)}
@@ -327,7 +332,11 @@ export default function LiveScoresFeed() {
       ) : null}
 
       {statusFilter === 'ft' ? (
-        <View style={styles.windowRow}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.windowScroll}
+          contentContainerStyle={styles.windowRow}>
           {RESULT_WINDOWS.map((w) => {
             const active = w.days === resultsDays;
             return (
@@ -343,7 +352,7 @@ export default function LiveScoresFeed() {
               </Pressable>
             );
           })}
-        </View>
+        </ScrollView>
       ) : null}
 
       {showRecommendations && !loading && !error && groups.length > 0 ? (
@@ -513,16 +522,21 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: theme.accentGreen,
   },
+  windowScroll: {
+    flexGrow: 0,
+    flexShrink: 0,
+    marginBottom: spacing.sm,
+  },
   windowRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.xs,
-    marginBottom: spacing.sm,
-    flexWrap: 'wrap',
   },
   windowPill: {
+    minHeight: 40,
     paddingHorizontal: spacing.md,
-    paddingVertical: 6,
-    borderRadius: layout.borderRadius,
+    justifyContent: 'center',
+    borderRadius: 999,
     borderWidth: layout.borderWidth,
     borderColor: theme.border,
     backgroundColor: theme.surface,
@@ -552,17 +566,25 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     marginBottom: spacing.xs,
   },
+  dayScroll: {
+    flexGrow: 0,
+    flexShrink: 0,
+    maxHeight: 56,
+    marginBottom: spacing.md,
+  },
   dayStrip: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.xs,
-    paddingBottom: spacing.md,
   },
   dayChip: {
     flexDirection: 'row',
     alignItems: 'center',
+    alignSelf: 'flex-start',
+    flexGrow: 0,
     gap: 6,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 6,
+    minHeight: 40,
+    paddingHorizontal: spacing.md,
     borderRadius: layout.borderRadius,
     borderWidth: layout.borderWidth,
     borderColor: theme.border,

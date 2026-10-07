@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import FootyTable, { type FootyColumn } from '@/components/analytics/FootyTable';
+import AppNavMenu from '@/components/layout/AppNavMenu';
 import AppShell from '@/components/shared/AppShell';
 import FilterDropdown from '@/components/shared/FilterDropdown';
 import StickyBack from '@/components/shared/StickyBack';
@@ -337,7 +338,7 @@ export default function SlStatsScreen({ onBack }: { onBack: () => void }) {
   return (
     <AppShell>
       <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, narrow && styles.scrollNarrow]} showsVerticalScrollIndicator={Platform.OS === 'web'}>
-        <StickyBack label="← HOME" onPress={onBack} />
+        <StickyBack label="← HOME" onPress={onBack} trailing={<AppNavMenu />} />
         <View style={[styles.hero, narrow && styles.heroNarrow]}>
           <View style={styles.heroCopy}>
             <Text style={styles.heroKicker}>Query</Text>

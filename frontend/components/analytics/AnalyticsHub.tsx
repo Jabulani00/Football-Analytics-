@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Platform, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import AdditionalStatsPanel from '@/components/analytics/AdditionalStatsPanel';
+import AppNavMenu from '@/components/layout/AppNavMenu';
 import AnalyticsNav from '@/components/analytics/AnalyticsNav';
 import BetSlipPanel from '@/components/analytics/BetSlipPanel';
 import HollywoodOddsPanel from '@/components/analytics/HollywoodOddsPanel';
@@ -77,10 +78,13 @@ export default function AnalyticsHub({ onBack }: AnalyticsHubProps) {
             <View style={styles.logoDot} />
             <Text style={styles.logo}>SCORELINE</Text>
           </View>
-          <Text style={styles.dateLabel}>{formatTopBarDate()}</Text>
+          <View style={styles.topActions}>
+            {narrow ? null : <Text style={styles.dateLabel}>{formatTopBarDate()}</Text>}
+            {narrow ? <AppNavMenu /> : null}
+          </View>
         </View>
 
-        <StickyBack label="← HOME" onPress={onBack} />
+        <StickyBack label="← HOME" onPress={onBack} trailing={narrow ? undefined : <AppNavMenu />} />
 
         <View style={styles.hero}>
           <Text style={[styles.pageTitle, narrow && styles.pageTitleNarrow]}>BETTING INTELLIGENCE</Text>
@@ -136,6 +140,12 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body,
     fontSize: 13,
     color: theme.textMuted,
+  },
+  topActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flexShrink: 1,
   },
   hero: {
     alignItems: 'center',

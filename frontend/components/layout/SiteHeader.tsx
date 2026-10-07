@@ -1,5 +1,7 @@
-import { Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
+
+import AppNavMenu from '@/components/layout/AppNavMenu';
 
 import {
   useScoresFilter,
@@ -62,28 +64,40 @@ export default function SiteHeader({ showFilters = true }: SiteHeaderProps) {
 
   return (
     <View style={styles.wrap}>
-      <View style={[styles.row, narrow && styles.rowNarrow]}>
+      <View style={styles.row}>
         <Pressable onPress={() => router.push('/')} style={styles.logoWrap}>
           <View style={styles.logoDot} />
           <Text style={styles.logo}>SCORELINE</Text>
         </Pressable>
-        <Text style={styles.date}>{formatTopBarDate(new Date())}</Text>
-        <View style={[styles.nav, narrow && styles.navNarrow]}>
-          <Pressable onPress={() => router.push('/analytics')} style={styles.analyticsLink}>
-            <Text style={styles.analyticsText}>Analytics</Text>
-          </Pressable>
-          <Pressable onPress={() => router.push('/sl-stats' as Href)} style={styles.analyticsLink}>
-            <Text style={styles.analyticsText}>SL-STATS</Text>
-          </Pressable>
-          <Pressable onPress={() => router.push('/additional-stats' as Href)} style={styles.analyticsLink}>
-            <Text style={styles.analyticsText}>Additional</Text>
-          </Pressable>
-        </View>
+        <Text style={[styles.date, narrow && styles.dateNarrow]} numberOfLines={1}>
+          {formatTopBarDate(new Date())}
+        </Text>
+        {narrow ? (
+          <View style={styles.menuSlot}>
+            <AppNavMenu />
+          </View>
+        ) : (
+          <View style={styles.nav}>
+            <Pressable onPress={() => router.push('/analytics')} style={styles.analyticsLink}>
+              <Text style={styles.analyticsText}>Analytics</Text>
+            </Pressable>
+            <Pressable onPress={() => router.push('/sl-stats' as Href)} style={styles.analyticsLink}>
+              <Text style={styles.analyticsText}>SL-STATS</Text>
+            </Pressable>
+            <Pressable onPress={() => router.push('/additional-stats' as Href)} style={styles.analyticsLink}>
+              <Text style={styles.analyticsText}>Additional</Text>
+            </Pressable>
+          </View>
+        )}
       </View>
 
       {showFilters ? (
         <>
-          <View style={styles.filters}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.filterScroll}
+            contentContainerStyle={styles.filters}>
             {FILTERS.map((f) => {
               const active = isFilterActive(f);
               return (
@@ -106,10 +120,10 @@ export default function SiteHeader({ showFilters = true }: SiteHeaderProps) {
                 </Pressable>
               );
             })}
-          </View>
+          </ScrollView>
 
-          <View style={styles.segments}>
-            <View style={styles.segment}>
+          <View style={[styles.segments, narrow && styles.segmentsNarrow]}>
+            <View style={[styles.segment, narrow && styles.segmentGrow]}>
               {KINDS.map((k) => {
                 const active = kind === k.id;
                 return (
@@ -120,13 +134,13 @@ export default function SiteHeader({ showFilters = true }: SiteHeaderProps) {
                       setCompetitionId(null);
                       setPanelMode('scores');
                     }}
-                    style={[styles.segBtn, active && styles.segBtnActive]}>
+                    style={[styles.segBtn, narrow && styles.segBtnGrow, active && styles.segBtnActive]}>
                     <Text style={[styles.segText, active && styles.segTextActive]}>{k.label}</Text>
                   </Pressable>
                 );
               })}
             </View>
-            <View style={styles.segment}>
+            <View style={[styles.segment, narrow && styles.segmentGrow]}>
               {GENDERS.map((g) => {
                 const active = gender === g.id;
                 return (
@@ -137,7 +151,7 @@ export default function SiteHeader({ showFilters = true }: SiteHeaderProps) {
                       setCompetitionId(null);
                       setPanelMode('scores');
                     }}
-                    style={[styles.segBtn, active && styles.segBtnActive]}>
+                    style={[styles.segBtn, narrow && styles.segBtnGrow, active && styles.segBtnActive]}>
                     <Text style={[styles.segText, active && styles.segTextActive]}>{g.label}</Text>
                   </Pressable>
                 );
@@ -161,26 +175,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: spacing.md,
-    height: layout.headerHeight,
-    gap: spacing.md,
-  },
-  rowNarrow: {
-    height: undefined,
     minHeight: layout.headerHeight,
-    flexWrap: 'wrap',
-    paddingVertical: spacing.sm,
+    gap: spacing.sm,
+  },
+  menuSlot: {
+    flexShrink: 0,
   },
   nav: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  navNarrow: {
-    flexBasis: '100%',
-    marginLeft: -spacing.sm,
-  },
   logoWrap: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexShrink: 0,
     gap: spacing.sm,
     ...(Platform.OS === 'web' ? ({ cursor: 'pointer' } as object) : {}),
   },
@@ -202,6 +210,11 @@ const styles = StyleSheet.create({
     color: theme.textMuted,
     marginLeft: 'auto',
   },
+  dateNarrow: {
+    flexShrink: 1,
+    fontSize: 11,
+    marginRight: spacing.sm,
+  },
   analyticsLink: {
     paddingHorizontal: spacing.sm,
     paddingVertical: 4,
@@ -211,17 +224,21 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: theme.textFaint,
   },
+  filterScroll: {
+    flexGrow: 0,
+  },
   filters: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.xs,
     paddingHorizontal: spacing.md,
     paddingBottom: spacing.sm,
-    flexWrap: 'wrap',
   },
   filterChip: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    borderRadius: 4,
+    minHeight: 40,
+    paddingHorizontal: spacing.md,
+    justifyContent: 'center',
+    borderRadius: 999,
   },
   filterActive: {
     backgroundColor: theme.surfaceMuted,
@@ -245,6 +262,9 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.sm,
     flexWrap: 'wrap',
   },
+  segmentsNarrow: {
+    flexWrap: 'nowrap',
+  },
   segment: {
     flexDirection: 'row',
     borderWidth: layout.borderWidth,
@@ -252,11 +272,20 @@ const styles = StyleSheet.create({
     borderRadius: layout.borderRadius,
     overflow: 'hidden',
   },
+  segmentGrow: {
+    flex: 1,
+  },
   segBtn: {
+    minHeight: 40,
     paddingHorizontal: spacing.md,
-    paddingVertical: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: theme.surface,
     ...(Platform.OS === 'web' ? ({ cursor: 'pointer' } as object) : {}),
+  },
+  segBtnGrow: {
+    flex: 1,
+    paddingHorizontal: spacing.sm,
   },
   segBtnActive: {
     backgroundColor: theme.accentGreen,
@@ -265,6 +294,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodyMedium,
     fontSize: 12,
     color: theme.textMuted,
+    textAlign: 'center',
   },
   segTextActive: {
     color: theme.surface,

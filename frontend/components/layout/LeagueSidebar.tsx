@@ -85,7 +85,7 @@ function CountryBrowser() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [query, setQuery] = useState('');
-  const [mobileOpen, setMobileOpen] = useState(true);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -576,8 +576,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    minHeight: 48,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
+    gap: spacing.sm,
   },
   mobileToggleText: {
     flex: 1,
@@ -628,6 +630,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+    minHeight: 44,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
@@ -647,8 +650,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   starBtn: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 6,
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   starOn: {
     fontSize: 14,
@@ -675,8 +680,10 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   compItem: {
+    minHeight: 44,
+    justifyContent: 'center',
     paddingHorizontal: spacing.lg,
-    paddingVertical: 6,
+    paddingVertical: 10,
     borderLeftWidth: 3,
     borderLeftColor: 'transparent',
   },

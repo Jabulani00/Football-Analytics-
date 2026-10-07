@@ -20,8 +20,9 @@ export default function BackButton({ label, onPress }: BackButtonProps) {
 const styles = StyleSheet.create({
   btn: {
     alignSelf: 'flex-start',
+    minHeight: 44,
+    justifyContent: 'center',
     paddingVertical: spacing.sm,
-    marginBottom: spacing.md,
   },
   text: {
     fontFamily: fonts.bodyMedium,

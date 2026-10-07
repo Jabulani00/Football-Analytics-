@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions, type StyleProp, type ViewStyle } from 'react-native';
 
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
@@ -16,6 +16,7 @@ type Props = {
 };
 
 export default function FilterDropdown({ label, value, options, onChange, style, emptyLabel = 'All' }: Props) {
+  const narrow = useWindowDimensions().width < 720;
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const selected = options.find((opt) => opt.value === value);
@@ -28,7 +29,7 @@ export default function FilterDropdown({ label, value, options, onChange, style,
   }, [options, query]);
 
   return (
-    <View style={[styles.field, style]}>
+    <View style={[styles.field, style, narrow && styles.fieldNarrow]}>
       <Text style={styles.label}>{label}</Text>
       <Pressable
         onPress={() => {
@@ -37,6 +38,7 @@ export default function FilterDropdown({ label, value, options, onChange, style,
         }}
         style={({ pressed, hovered }) => [
           styles.control,
+          narrow && styles.controlNarrow,
           (pressed || (Platform.OS === 'web' && hovered)) && styles.controlHover,
         ]}>
         <Text style={styles.value} numberOfLines={1}>
@@ -45,9 +47,10 @@ export default function FilterDropdown({ label, value, options, onChange, style,
         <Text style={styles.chevron}>▾</Text>
       </Pressable>
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
-        <View style={styles.modal}>
+        <View style={[styles.modal, narrow && styles.modalNarrow]}>
           <Pressable style={styles.backdrop} onPress={() => setOpen(false)} />
-          <View style={styles.sheet}>
+          <View style={[styles.sheet, narrow && styles.sheetNarrow]}>
+            {narrow ? <View style={styles.handle} /> : null}
             <Text style={styles.sheetTitle}>{label}</Text>
             {searchable ? (
               <TextInput
@@ -55,12 +58,12 @@ export default function FilterDropdown({ label, value, options, onChange, style,
                 onChangeText={setQuery}
                 placeholder="Search…"
                 placeholderTextColor={theme.textMuted}
-                style={styles.search}
+                style={[styles.search, narrow && styles.searchNarrow]}
                 autoCorrect={false}
                 autoCapitalize="none"
               />
             ) : null}
-            <ScrollView style={styles.list} keyboardShouldPersistTaps="handled">
+            <ScrollView style={[styles.list, narrow && styles.listNarrow]} keyboardShouldPersistTaps="handled">
               {shown.length === 0 ? (
                 <Text style={styles.empty}>No matches</Text>
               ) : (
@@ -75,6 +78,7 @@ export default function FilterDropdown({ label, value, options, onChange, style,
                       }}
                       style={({ pressed }) => [
                         styles.option,
+                        narrow && styles.optionNarrow,
                         active && styles.optionActive,
                         pressed && styles.optionPressed,
                       ]}>
@@ -107,6 +111,13 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     marginBottom: spacing.xs,
   },
+  fieldNarrow: {
+    width: '100%',
+    minWidth: 0,
+    maxWidth: '100%',
+    flexBasis: 'auto',
+    flexGrow: 0,
+  },
   control: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -119,6 +130,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: 10,
     ...(Platform.OS === 'web' ? ({ cursor: 'pointer' } as object) : {}),
+  },
+  controlNarrow: {
+    minHeight: 48,
   },
   controlHover: {
     borderColor: theme.accentGreen,
@@ -140,6 +154,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: spacing.lg,
   },
+  modalNarrow: {
+    justifyContent: 'flex-end',
+    padding: 0,
+  },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(15, 23, 42, 0.35)',
@@ -154,6 +172,23 @@ const styles = StyleSheet.create({
     borderColor: theme.border,
     padding: spacing.md,
     zIndex: 1,
+  },
+  sheetNarrow: {
+    maxWidth: '100%',
+    maxHeight: '85%',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    paddingBottom: spacing.xl,
+  },
+  handle: {
+    alignSelf: 'center',
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: theme.borderStrong,
+    marginBottom: spacing.sm,
   },
   sheetTitle: {
     fontFamily: fonts.displaySemi,
@@ -172,14 +207,25 @@ const styles = StyleSheet.create({
     color: theme.textPrimary,
     marginBottom: spacing.sm,
   },
+  searchNarrow: {
+    minHeight: 48,
+    fontSize: 16,
+  },
   list: {
     flexGrow: 0,
     maxHeight: 320,
+  },
+  listNarrow: {
+    maxHeight: 520,
   },
   option: {
     paddingVertical: 10,
     paddingHorizontal: spacing.sm,
     borderRadius: layout.borderRadius,
+  },
+  optionNarrow: {
+    minHeight: 48,
+    justifyContent: 'center',
   },
   optionActive: {
     backgroundColor: '#ECFDF5',
