@@ -29,6 +29,7 @@ import {
   PERIODS,
   SCOPES,
   formatStat,
+  explainBoard,
   formatTiming,
   rankRows,
   sampleKeyFor,
@@ -186,6 +187,24 @@ export default function StatBoardScreen({
           </View>
         ) : null}
 
+        <FilterStory
+          notes={explainBoard({
+            mode,
+            statKey: rankedStat,
+            statLabel: columns.find((column) => column.key === rankedStat)?.label ?? rankedStat,
+            period: activePeriod,
+            scope,
+            competitionName: competitionId == null ? null : leagueName(String(competitionId)),
+            minimum: Number(minimum),
+            query,
+            loading: board.loading && rows.length === 0,
+            error: board.error,
+            shown: rows.length,
+            capped: competitionId == null && board.capped,
+            loadedLeagues: board.loadedLeagues,
+          })}
+        />
+
         <Status
           loading={board.loading && rows.length === 0}
           error={board.error}
@@ -303,6 +322,21 @@ function BoardRow({
   );
 }
 
+function FilterStory({ notes }: { notes: { label: string; choice: string; detail: string }[] }) {
+  return (
+    <View style={styles.story}>
+      <Text style={styles.storyTitle}>What this filter is doing</Text>
+      {notes.map((note) => (
+        <View key={note.label} style={styles.storyRow}>
+          <Text style={styles.storyLabel}>{note.label}</Text>
+          <Text style={styles.storyChoice}>{note.choice}</Text>
+          <Text style={styles.storyDetail}>{note.detail}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function Status({
   loading,
   error,
@@ -324,13 +358,7 @@ function Status({
       </View>
     );
   }
-  if (error) {
-    return (
-      <View style={styles.status}>
-        <Text style={styles.statusText}>{error}</Text>
-      </View>
-    );
-  }
+  if (error) return null;
   if (empty) {
     return (
       <View style={styles.status}>
@@ -442,6 +470,41 @@ const styles = StyleSheet.create({
   },
   groupTextOn: {
     color: theme.surface,
+  },
+  story: {
+    backgroundColor: theme.surface,
+    borderWidth: 1,
+    borderColor: theme.border,
+    borderRadius: 12,
+    padding: spacing.md,
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  storyTitle: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 13,
+    color: theme.textPrimary,
+  },
+  storyRow: {
+    gap: 2,
+  },
+  storyLabel: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 11,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    color: theme.textMuted,
+  },
+  storyChoice: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 14,
+    color: theme.textPrimary,
+  },
+  storyDetail: {
+    fontFamily: fonts.body,
+    fontSize: 14,
+    lineHeight: 20,
+    color: theme.textMuted,
   },
   status: {
     flexDirection: 'row',

@@ -3,7 +3,7 @@
  * Run:  npx tsx scripts/test-stats-builder.ts
  */
 import { buildStatsTables } from '../services/statsBuilder';
-import { rankRows } from '../utils/statBoard';
+import { explainBoard, rankRows, statMeaning } from '../utils/statBoard';
 
 // Minimal RawFixture-shaped results (only the fields the builder reads).
 const fx = (o: Partial<any>): any => ({
@@ -133,6 +133,27 @@ eq('missing HT stays out of 1H 0-0', Dht.half_nil, 0);
 const ranked = rankRows(exp.tables['ordinary_ft_overall'], 'sc_pct', 2, 'sample_size');
 eq('rank drops a one-game team', ranked.some((row) => row.team_name === 'C'), false);
 eq('rank keeps A', ranked[0]?.team_name, 'A');
+eq('SC% explains scoring', statMeaning('sc_pct', 'ht').includes('first half'), true);
+eq('rescued points are an average', statMeaning('rescued_points', 'ft').includes('raw average'), true);
+const notes = explainBoard({
+  mode: 'ordinary',
+  statKey: 'over25',
+  statLabel: 'O2.5',
+  period: 'ft',
+  scope: 'home',
+  competitionName: 'Premier League',
+  minimum: 8,
+  query: 'ars',
+  loading: false,
+  error: null,
+  shown: 3,
+  capped: false,
+  loadedLeagues: 0,
+});
+eq('filter story names the stat', notes[0].choice, 'O2.5');
+eq('filter story says what over 2.5 counts', notes[0].detail.includes('more than 2.5'), true);
+eq('filter story names the competition fetch', notes[1].detail.includes('Premier League'), true);
+eq('home scope is described', notes[2].detail.includes('at home'), true);
 // Family: league_avg is a single "League" row
 eq('league_avg single row', exp.tables['league_avg_ft_overall'].length, 1);
 eq('league_avg named League', exp.tables['league_avg_ft_overall'][0].team_name, 'League');

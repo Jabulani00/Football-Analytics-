@@ -161,3 +161,176 @@ export function formatTiming(
   }
   return '—';
 }
+
+export type BoardNote = {
+  label: string;
+  choice: string;
+  detail: string;
+};
+
+const RESULT_WORD: Record<string, string> = {
+  w: 'winning',
+  d: 'drawing',
+  l: 'losing',
+};
+
+function whenPhrase(period: string): string {
+  if (period === 'ht') return 'in the first half';
+  if (period === '2h') return 'in the second half';
+  return 'in the finished match';
+}
+
+/** Plain meaning of the stat currently used to sort the board. */
+export function statMeaning(key: string, period: string): string {
+  const when = whenPhrase(period);
+  const half = period === '2h' ? 'second half' : 'first half';
+  if (key.startsWith('over') || key.startsWith('under')) {
+    const mark = `${key.replace(/\D/g, '')[0]}.5`;
+    const direction = key.startsWith('over') ? 'more than' : 'fewer than';
+    return `How often the match had ${direction} ${mark} goals ${when}. Sorted as a percentage of this team's games.`;
+  }
+  if (key.startsWith('scoring_') || key.startsWith('conceding_')) {
+    const mark = `${key.slice(-2, -1)}.5`;
+    const who = key.startsWith('scoring_') ? 'scored' : 'conceded';
+    return `How often this team ${who} more than ${mark} goals ${when}. Sorted as a percentage of their games.`;
+  }
+  const htft = /^htft_([wdl])([wdl])$/.exec(key);
+  if (htft) {
+    return `How often this team was ${RESULT_WORD[htft[1]]} at half-time and ${RESULT_WORD[htft[2]]} at full time. Counted only in matches that have a half-time score.`;
+  }
+  const meanings: Record<string, string> = {
+    sc_pct: `How often this team scored at least one goal ${when}.`,
+    conc_pct: `How often this team conceded at least one goal ${when}.`,
+    sc_avg: `Average goals this team scored ${when}. A raw average, shown to one decimal.`,
+    conc_avg: `Average goals this team conceded ${when}. A raw average, shown to one decimal.`,
+    btts_yes: `How often both teams scored ${when}.`,
+    btts_no: `How often at least one team failed to score ${when}.`,
+    cs_pct: `How often this team kept a clean sheet ${when}.`,
+    avg_goals: `Average total goals ${when}, both teams together.`,
+    fts_pct: `How often this team failed to score ${when}.`,
+    w_pct: `How often this team won ${when}.`,
+    d_pct: `How often this team drew ${when}.`,
+    l_pct: `How often this team lost ${when}.`,
+    btts_both_halves: 'How often both teams scored in the first half and both scored again in the second half.',
+    scored_both_halves: 'How often this team scored at least once in each half.',
+    btts_over25: 'How often both teams scored and the match had more than 2.5 goals. Uses the full-time score.',
+    conceded_both_halves: 'How often this team conceded in the first half and conceded again in the second half.',
+    won_both_halves: 'How often this team was winning at half-time and won the second half as well.',
+    win_to_nil: 'How often this team won the match without conceding. Uses the full-time score.',
+    lost_to_nil: 'How often this team lost the match without scoring. Uses the full-time score.',
+    rescued_points: 'Average points taken after trailing at half-time. A later draw counts 1, a later win counts 3, and a game they were not trailing counts 0. This is a raw average, not a percentage.',
+    blown_points: 'Average points dropped after leading at half-time. A later draw counts 2, a later loss counts 3, and a game they were not leading counts 0. This is a raw average, not a percentage.',
+    led_ht: 'How often this team was ahead at half-time.',
+    half_nil: `How often the ${half} finished 0–0.`,
+    half_under05: `How often the ${half} had fewer than 0.5 goals, which is a 0–0 half. The number in brackets is this team's average goals in that half.`,
+    half_over15: `How often the ${half} had more than 1.5 goals. The number in brackets is this team's average goals in that half.`,
+  };
+  return meanings[key] ?? 'This figure is counted from finished scores and the board sorts it from highest to lowest.';
+}
+
+export function explainBoard(input: {
+  mode: 'ordinary' | 'ft';
+  statKey: string;
+  statLabel: string;
+  period: string;
+  scope: string;
+  competitionName: string | null;
+  minimum: number;
+  query: string;
+  loading: boolean;
+  error: string | null;
+  shown: number;
+  capped: boolean;
+  loadedLeagues: number;
+}): BoardNote[] {
+  const sample = sampleKeyFor(input.statKey, input.mode);
+  const games =
+    sample === 'ht_sample'
+      ? 'The games column counts matches that included a half-time score.'
+      : 'The games column counts every finished match in this scope.';
+  const scopeDetail =
+    input.scope === 'home'
+      ? 'Only matches this team played at home are counted.'
+      : input.scope === 'away'
+        ? 'Only matches this team played away are counted.'
+        : 'Home and away matches are both counted.';
+  const periodDetail =
+    input.mode === 'ft'
+      ? input.period === 'ht'
+        ? 'The group uses the half-time score. Under 0.5 and over 1.5 also show the average first-half goals in brackets.'
+        : input.period === '2h'
+          ? 'The group uses full time minus half time. Both-halves rates use matches that have a half-time score.'
+          : 'Both-halves patterns and the nine HT/FT results use matches that have a half-time score. Win to nil, lost to nil, and BTTS & over 2.5 use the full-time score.'
+      : input.period === 'ht'
+        ? 'Goals and the result are taken from the half-time score.'
+        : input.period === '2h'
+          ? 'Goals and the result are the full-time score minus the half-time score.'
+          : 'Goals and the result are taken from the full-time score.';
+  const competitionDetail = input.competitionName
+    ? `Finished results for ${input.competitionName} are loaded the same way as Additional stats: that competition's season scores. The board counts those scores here.`
+    : input.capped
+      ? `No single league is selected. Finished domestic games come from the ${input.loadedLeagues} busiest leagues already loaded for SL-STATS, then teams are ranked across them.`
+      : 'No single league is selected. Finished domestic games come from the leagues already loaded for SL-STATS, then teams are ranked across them.';
+  const timingDetail =
+    input.mode !== 'ordinary'
+      ? ''
+      : input.period === 'ft' && input.competitionName
+        ? ' With one competition on full time, the timing columns also read that season’s recorded first-goal minute, goals in the first 15 minutes, and goals after 70, for and against. Scored first, handicap, and the 20, 35, 60, and 75 minute lines stay blank because that feed does not measure them.'
+        : ' Timing columns stay blank on this view. Those minutes are recorded for a full-time look at one competition.';
+  const minimumDetail =
+    input.minimum <= 0
+      ? `Every team with a counted game can be ranked, including a one-game 100%. ${games}`
+      : `Teams with fewer than ${input.minimum} counted games are left off before the sort. ${games}`;
+  const teamDetail = input.query.trim()
+    ? `After the top ${BOARD_LIMIT} are ranked, only names containing “${input.query.trim()}” stay on screen.`
+    : `No name is typed, so the list is the top ${BOARD_LIMIT} after the sort.`;
+  const fetchDetail = input.loading
+    ? 'Fetching the finished scores for this choice.'
+    : input.error
+      ? input.error
+      : `Showing ${input.shown} team${input.shown === 1 ? '' : 's'}, highest ${input.statLabel} first.`;
+
+  const notes: BoardNote[] = [
+    {
+      label: 'Stat',
+      choice: input.statLabel,
+      detail: `${statMeaning(input.statKey, input.period)} The board sorts this from highest to lowest.`,
+    },
+    {
+      label: 'Competition',
+      choice: input.competitionName ?? 'All loaded leagues',
+      detail: competitionDetail + timingDetail,
+    },
+    {
+      label: 'Scope',
+      choice: input.scope === 'home' ? 'Home' : input.scope === 'away' ? 'Away' : 'Overall',
+      detail: scopeDetail,
+    },
+  ];
+  notes.push({
+    label: input.mode === 'ft' ? 'Group' : 'Period',
+    choice:
+      input.mode === 'ft'
+        ? input.period === 'ht'
+          ? '1st half only'
+          : input.period === '2h'
+            ? '2nd half only'
+            : 'Full-time only'
+        : input.period === 'ht'
+          ? '1st half'
+          : input.period === '2h'
+            ? '2nd half'
+            : 'Full-time',
+    detail: periodDetail,
+  });
+  notes.push(
+    {
+      label: 'Minimum games',
+      choice: input.minimum <= 0 ? 'Any games' : `${input.minimum}+ games`,
+      detail: minimumDetail,
+    },
+    { label: 'Team', choice: input.query.trim() || 'All names in the top 200', detail: teamDetail },
+    { label: 'Result', choice: input.loading ? 'Loading' : input.error ? 'Feed error' : `${input.shown} shown`, detail: fetchDetail },
+  );
+  return notes;
+}
