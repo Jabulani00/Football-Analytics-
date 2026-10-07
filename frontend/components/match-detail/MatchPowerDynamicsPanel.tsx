@@ -503,9 +503,11 @@ export default function MatchPowerDynamicsPanel({
             <TwoGoalBandCards
               pd={pd}
               standings={like}
-              matches={seasonFx.matches}
-              loading={seasonFx.loading}
-              error={seasonFx.error}
+              t1Results={pd.t1.venue === 'home' ? form.homeResults : form.awayResults}
+              t2Results={pd.t2.venue === 'home' ? form.homeResults : form.awayResults}
+              excludeFixtureId={fixtureId}
+              loading={form.loading}
+              error={form.error}
             />
           </View>,
         );

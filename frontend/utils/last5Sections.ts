@@ -11,11 +11,16 @@ import { bandOf } from '@/utils/leagueTables';
 import type { StandingLike } from '@/utils/motivationEngine';
 import {
   last5FormLeagueTable,
-  resultsFromSeasonMatches,
   type Last6Period,
   type Last6Venue,
 } from '@/utils/last6Form';
-import { lastN, type ResultOutcome } from '@/utils/teamResults';
+import {
+  excludeFixture,
+  filterScope,
+  lastN,
+  type ResultOutcome,
+  type TeamResult,
+} from '@/utils/teamResults';
 
 export type TwoGoalGrade =
   | 'great'
@@ -362,20 +367,22 @@ function twoGoalSide(opts: {
   teamId: number;
   label: string;
   venue: 'home' | 'away' | 'overall';
-  matches: SeasonMatch[];
+  /** Same newest-first feed Section 1 uses (any venue); scoped here. */
+  results: TeamResult[];
   standings: StandingLike[];
   goalDiff: GoalDiffTab;
   outcome: OutcomeTab;
   mode: TwoGoalVenueMode;
+  excludeFixtureId?: number | null;
 }): TwoGoalSideRead {
   const byId = new Map(opts.standings.map((s) => [s.teamId, s]));
   const n = opts.standings.length;
   const teamRow = byId.get(opts.teamId);
   const teamColour = standingColour(teamRow, n);
-  const results = lastN(
-    resultsFromSeasonMatches(opts.teamId, opts.matches, opts.standings, { venue: opts.venue }),
-    5,
-  ).filter(
+  // Same sample as Section 1 INITIAL STATE: drop this fixture, venue-scope, last 5.
+  const cleaned = excludeFixture(opts.results, opts.excludeFixtureId);
+  const scoped = opts.venue === 'overall' ? cleaned : filterScope(cleaned, opts.venue);
+  const results = lastN(scoped, 5).filter(
     (r) =>
       matchesGoalDiffTab(r.goalDiff, opts.goalDiff) && matchesOutcomeTab(r.outcome, opts.outcome),
   );
@@ -413,7 +420,7 @@ function twoGoalSide(opts: {
 
 /**
  * Overall: both sides last-5 any venue, graded with the overall W/D/L sheet.
- * Venue tab A (t1_home): T1 at home + T2 away.
+ * Venue tab A (t1_home): T1 at home + T2 away — same sample as Section 1 Home/Away when T1 is home.
  * Venue tab B (t1_away): T1 away + T2 at home.
  * Goal-diff / outcome tabs keep only matching last-5 games.
  */
@@ -422,21 +429,24 @@ export function twoGoalBandSides(opts: {
   t2Id: number | null;
   t1Label: string;
   t2Label: string;
-  matches: SeasonMatch[];
+  t1Results: TeamResult[];
+  t2Results: TeamResult[];
   standings: StandingLike[];
   mode: TwoGoalVenueMode;
   goalDiff?: GoalDiffTab;
   outcome?: OutcomeTab;
+  /** Current fixture — excluded so the read matches Section 1 going into the match. */
+  excludeFixtureId?: number | null;
 }): { left: TwoGoalSideRead | null; right: TwoGoalSideRead | null } {
   const goalDiff = opts.goalDiff ?? 'all';
   const outcome = opts.outcome ?? 'all';
   if (opts.t1Id == null || opts.t2Id == null) return { left: null, right: null };
   const sideOpts = {
-    matches: opts.matches,
     standings: opts.standings,
     goalDiff,
     outcome,
     mode: opts.mode,
+    excludeFixtureId: opts.excludeFixtureId,
   };
   if (opts.mode === 'overall') {
     return {
@@ -444,12 +454,14 @@ export function twoGoalBandSides(opts: {
         teamId: opts.t1Id,
         label: opts.t1Label,
         venue: 'overall',
+        results: opts.t1Results,
         ...sideOpts,
       }),
       right: twoGoalSide({
         teamId: opts.t2Id,
         label: opts.t2Label,
         venue: 'overall',
+        results: opts.t2Results,
         ...sideOpts,
       }),
     };
@@ -460,12 +472,14 @@ export function twoGoalBandSides(opts: {
         teamId: opts.t1Id,
         label: opts.t1Label,
         venue: 'home',
+        results: opts.t1Results,
         ...sideOpts,
       }),
       right: twoGoalSide({
         teamId: opts.t2Id,
         label: opts.t2Label,
         venue: 'away',
+        results: opts.t2Results,
         ...sideOpts,
       }),
     };
@@ -475,12 +489,14 @@ export function twoGoalBandSides(opts: {
       teamId: opts.t1Id,
       label: opts.t1Label,
       venue: 'away',
+      results: opts.t1Results,
       ...sideOpts,
     }),
     right: twoGoalSide({
       teamId: opts.t2Id,
       label: opts.t2Label,
       venue: 'home',
+      results: opts.t2Results,
       ...sideOpts,
     }),
   };

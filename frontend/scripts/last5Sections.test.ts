@@ -10,7 +10,8 @@ import {
   twoGoalBandSides,
   twoGoalGrade,
 } from '../utils/last5Sections';
-import { bandFromTablePoints, trueOption, OPTION_LABEL } from '../utils/last5Analysis';
+import { bandFromTablePoints, buildInitialState, trueOption, OPTION_LABEL } from '../utils/last5Analysis';
+import { resultsFromSeasonMatches } from '../utils/last6Form';
 import type { SeasonMatch } from '../utils/bhozomaEngine';
 import type { StandingLike } from '../utils/motivationEngine';
 
@@ -112,43 +113,31 @@ console.log('\ngoal-diff tabs filter last 5');
     { homeId: 1, awayId: 2, homeGoals: 4, awayGoals: 1, unix: 30 },
     { homeId: 1, awayId: 3, homeGoals: 1, awayGoals: 0, unix: 20 },
     { homeId: 1, awayId: 2, homeGoals: 2, awayGoals: 0, unix: 10 },
+    // Away games for T1 — overall sample mixes these in.
+    { homeId: 2, awayId: 1, homeGoals: 0, awayGoals: 1, unix: 45 },
+    { homeId: 3, awayId: 1, homeGoals: 2, awayGoals: 2, unix: 5 },
   ];
-  const two = twoGoalBandSides({
+  const t1Results = resultsFromSeasonMatches(1, matches, standings);
+  const t2Results = resultsFromSeasonMatches(2, matches, standings);
+  const base = {
     t1Id: 1,
     t2Id: 2,
     t1Label: 'T1',
     t2Label: 'T2',
-    matches,
+    t1Results,
+    t2Results,
     standings,
-    mode: 't1_home',
-    goalDiff: 2,
-  });
+  };
+
+  const two = twoGoalBandSides({ ...base, mode: 't1_home', goalDiff: 2 });
   check('2-goal tab keeps only 2-goal home wins', two.left?.games.length === 2);
   check('2-goal games are labelled', two.left?.games.every((g) => g.grade != null) === true);
 
-  const one = twoGoalBandSides({
-    t1Id: 1,
-    t2Id: 2,
-    t1Label: 'T1',
-    t2Label: 'T2',
-    matches,
-    standings,
-    mode: 't1_home',
-    goalDiff: 1,
-  });
+  const one = twoGoalBandSides({ ...base, mode: 't1_home', goalDiff: 1 });
   check('1-goal tab keeps only 1-goal games', one.left?.games.length === 2);
   check('1-goal games are labelled from the 1-goal sheet', one.left?.games.every((g) => g.grade != null) === true);
 
-  const overall = twoGoalBandSides({
-    t1Id: 1,
-    t2Id: 2,
-    t1Label: 'T1',
-    t2Label: 'T2',
-    matches,
-    standings,
-    mode: 'overall',
-    goalDiff: 'all',
-  });
+  const overall = twoGoalBandSides({ ...base, mode: 'overall', goalDiff: 'all' });
   check('overall tab lists last-5 any venue', overall.left?.games.length === 5);
   check(
     'overall games use the W/D/L sheet',
@@ -156,22 +145,27 @@ console.log('\ngoal-diff tabs filter last 5');
   );
   check('overall venue is overall', overall.left?.venue === 'overall');
 
-  const wins = twoGoalBandSides({
-    t1Id: 1,
-    t2Id: 2,
-    t1Label: 'T1',
-    t2Label: 'T2',
-    matches,
-    standings,
-    mode: 'overall',
-    goalDiff: 'all',
-    outcome: 'W',
-  });
+  const wins = twoGoalBandSides({ ...base, mode: 'overall', goalDiff: 'all', outcome: 'W' });
   check('win tab keeps only wins', wins.left?.games.every((g) => g.outcome === 'W') === true);
   check('win tab has games', (wins.left?.games.length ?? 0) > 0);
   check('outcome all matches W', matchesOutcomeTab('W', 'all'));
   check('outcome W matches W', matchesOutcomeTab('W', 'W'));
   check('outcome W rejects D', matchesOutcomeTab('D', 'W') === false);
+
+  // Section 1 Home/Away sample must match Section 4 T1-as-home when T1 is the home side.
+  const initial = buildInitialState({
+    homeId: 1,
+    awayId: 2,
+    homeResults: t1Results,
+    awayResults: t2Results,
+  });
+  const t1Home = twoGoalBandSides({ ...base, mode: 't1_home', goalDiff: 'all' });
+  const s1Scores = (initial.home?.matches ?? []).map((m) => `${m.result.gf}-${m.result.ga}`);
+  const s4Scores = (t1Home.left?.games ?? []).map((g) => `${g.gf}-${g.ga}`);
+  check('Section 4 T1-home matches Section 1 home last-5', s1Scores.join('|') === s4Scores.join('|'));
+  const s1Away = (initial.away?.matches ?? []).map((m) => `${m.result.gf}-${m.result.ga}`);
+  const s4Away = (t1Home.right?.games ?? []).map((g) => `${g.gf}-${g.ga}`);
+  check('Section 4 T2-away matches Section 1 away last-5', s1Away.join('|') === s4Away.join('|'));
 }
 
 console.log('\nT1 − T2 last 5');

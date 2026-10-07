@@ -81,7 +81,7 @@ import {
   type TwoGoalGrade,
   type TwoGoalSideRead,
 } from '@/utils/last5Sections';
-import { lastN } from '@/utils/teamResults';
+import { lastN, type TeamResult } from '@/utils/teamResults';
 import type { SeasonMatch } from '@/utils/bhozomaEngine';
 import { GRADE_LABEL, STANCE_LABEL, type StandingLike } from '@/utils/motivationEngine';
 import SubTabBar from '@/components/shared/SubTabBar';
@@ -1276,13 +1276,18 @@ function TwoGoalSideTable({
 export function TwoGoalBandCards({
   pd,
   standings,
-  matches,
+  t1Results,
+  t2Results,
+  excludeFixtureId,
   loading,
   error,
 }: {
   pd: PowerDynamicsBundle;
   standings: StandingLike[];
-  matches: SeasonMatch[];
+  /** Same feeds as Section 1 INITIAL STATE (newest first, any venue). */
+  t1Results: TeamResult[];
+  t2Results: TeamResult[];
+  excludeFixtureId?: number | null;
   loading?: boolean;
   error?: string | null;
 }) {
@@ -1294,11 +1299,13 @@ export function TwoGoalBandCards({
     t2Id: pd.t2.teamId,
     t1Label: pd.t1.label,
     t2Label: pd.t2.label,
-    matches,
+    t1Results,
+    t2Results,
     standings,
     mode,
     goalDiff,
     outcome,
+    excludeFixtureId,
   });
 
   const modeNote =
@@ -1313,9 +1320,9 @@ export function TwoGoalBandCards({
       <SectorIntro
         title="Section 4: Colour-band goal differences"
         preserveCase
-        note="Filter by goal difference and by Win / Draw / Loss. Overall uses the W/D/L colour sheet; T1 as home/away uses the 1-goal and 2-goal sheets. The colour pair is this side vs the opponent (G/Y/R)."
+        note="Same last-5 sample as Section 1. Filter by goal difference and by Win / Draw / Loss. Overall uses the W/D/L colour sheet; T1 as home/away uses the 1-goal and 2-goal sheets. The colour pair is this side vs the opponent (G/Y/R)."
       />
-      {loading ? <Text style={styles.note}>Loading season results…</Text> : null}
+      {loading ? <Text style={styles.note}>Loading recent form…</Text> : null}
       {error ? <Text style={styles.note}>{error}</Text> : null}
       <SubTabBar tabs={GOAL_DIFF_TABS} active={goalDiff} onChange={setGoalDiff} />
       <SubTabBar tabs={OUTCOME_TABS} active={outcome} onChange={setOutcome} />
