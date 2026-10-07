@@ -1,5 +1,5 @@
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
-import { useRouter, type Href } from 'expo-router';
+import { usePathname, useRouter, type Href } from 'expo-router';
 
 import AppNavMenu from '@/components/layout/AppNavMenu';
 
@@ -35,12 +35,29 @@ const GENDERS: { id: Gender; label: string }[] = [
   { id: 'women', label: 'Women' },
 ];
 
+const NAV: { href: Href; label: string; match: string }[] = [
+  { href: '/', label: 'Scores', match: '/' },
+  { href: '/analytics', label: 'Analytics', match: '/analytics' },
+  { href: '/sl-stats', label: 'SL-STATS', match: '/sl-stats' },
+  { href: '/additional-stats', label: 'Additional', match: '/additional-stats' },
+  { href: '/stats-ordinary', label: 'Ordinary', match: '/stats-ordinary' },
+  { href: '/full-time-stats', label: 'FT-Only', match: '/full-time-stats' },
+];
+
+function navActive(pathname: string, match: string): boolean {
+  if (match === '/') return pathname === '/' || pathname === '' || pathname === '/index';
+  return pathname === match || pathname.startsWith(`${match}/`);
+}
+
 type SiteHeaderProps = {
   showFilters?: boolean;
 };
 
 export default function SiteHeader({ showFilters = true }: SiteHeaderProps) {
-  const narrow = useWindowDimensions().width < 720;
+  const width = useWindowDimensions().width;
+  const narrow = width < 720;
+  const stacked = !narrow && width < 1100;
+  const pathname = usePathname();
   const router = useRouter();
   const {
     statusFilter,
@@ -62,6 +79,26 @@ export default function SiteHeader({ showFilters = true }: SiteHeaderProps) {
     return statusFilter === f.status;
   };
 
+  const links = (
+    <View style={[styles.nav, stacked ? styles.navStacked : styles.navInline]}>
+      {NAV.map((item) => {
+        const active = navActive(pathname, item.match);
+        return (
+          <Pressable
+            key={item.match}
+            accessibilityRole="link"
+            accessibilityState={{ selected: active }}
+            onPress={() => router.push(item.href)}
+            style={[styles.navLink, active && styles.navLinkOn]}>
+            <Text style={[styles.navText, active && styles.navTextOn]} numberOfLines={1}>
+              {item.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+
   return (
     <View style={styles.wrap}>
       <View style={styles.row}>
@@ -69,33 +106,17 @@ export default function SiteHeader({ showFilters = true }: SiteHeaderProps) {
           <View style={styles.logoDot} />
           <Text style={styles.logo}>SCORELINE</Text>
         </Pressable>
-        <Text style={[styles.date, narrow && styles.dateNarrow]} numberOfLines={1}>
+        {narrow || stacked ? null : links}
+        <Text style={[styles.date, (narrow || stacked) && styles.dateEnd]} numberOfLines={1}>
           {formatTopBarDate(new Date())}
         </Text>
         {narrow ? (
           <View style={styles.menuSlot}>
             <AppNavMenu />
           </View>
-        ) : (
-          <View style={styles.nav}>
-            <Pressable onPress={() => router.push('/analytics')} style={styles.analyticsLink}>
-              <Text style={styles.analyticsText}>Analytics</Text>
-            </Pressable>
-            <Pressable onPress={() => router.push('/sl-stats' as Href)} style={styles.analyticsLink}>
-              <Text style={styles.analyticsText}>SL-STATS</Text>
-            </Pressable>
-            <Pressable onPress={() => router.push('/additional-stats' as Href)} style={styles.analyticsLink}>
-              <Text style={styles.analyticsText}>Additional</Text>
-            </Pressable>
-            <Pressable onPress={() => router.push('/stats-ordinary' as Href)} style={styles.analyticsLink}>
-              <Text style={styles.analyticsText}>Ordinary</Text>
-            </Pressable>
-            <Pressable onPress={() => router.push('/full-time-stats' as Href)} style={styles.analyticsLink}>
-              <Text style={styles.analyticsText}>FT-Only</Text>
-            </Pressable>
-          </View>
-        )}
+        ) : null}
       </View>
+      {!narrow && stacked ? links : null}
 
       {showFilters ? (
         <>
@@ -183,6 +204,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     minHeight: layout.headerHeight,
     gap: spacing.sm,
+    width: '100%',
   },
   menuSlot: {
     flexShrink: 0,
@@ -190,10 +212,39 @@ const styles = StyleSheet.create({
   nav: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'flex-end',
     alignItems: 'center',
-    flexShrink: 1,
-    maxWidth: 200,
+    gap: 4,
+    minWidth: 0,
+  },
+  navInline: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  navStacked: {
+    width: '100%',
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.sm,
+    justifyContent: 'flex-start',
+  },
+  navLink: {
+    minHeight: 36,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...(Platform.OS === 'web' ? ({ cursor: 'pointer' } as object) : {}),
+  },
+  navLinkOn: {
+    backgroundColor: theme.surfaceMuted,
+  },
+  navText: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 13,
+    color: theme.textMuted,
+  },
+  navTextOn: {
+    fontFamily: fonts.bodySemiBold,
+    color: theme.textPrimary,
   },
   logoWrap: {
     flexDirection: 'row',
@@ -218,21 +269,11 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body,
     fontSize: 12,
     color: theme.textMuted,
-    marginLeft: 'auto',
-  },
-  dateNarrow: {
     flexShrink: 1,
-    fontSize: 11,
-    marginRight: spacing.sm,
   },
-  analyticsLink: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-  },
-  analyticsText: {
-    fontFamily: fonts.body,
+  dateEnd: {
+    marginLeft: 'auto',
     fontSize: 11,
-    color: theme.textFaint,
   },
   filterScroll: {
     flexGrow: 0,
