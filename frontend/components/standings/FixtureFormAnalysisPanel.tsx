@@ -60,7 +60,7 @@ function Last5Block({ title, team }: { title: string; team: TeamLast5 }) {
       <Text style={styles.seq}>{team.sequence.join(' ')}</Text>
       <Text style={styles.last5Meta}>
         {CHANGE_LABEL[team.change]}
-        {team.inhlambuluko ? ' · bounce-back stretch' : ''}
+        {team.inhlambuluko ? ' · Inhlambuluko' : ''}
       </Text>
       <View style={styles.gradeRow}>
         {team.games.map((g) => (

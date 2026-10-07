@@ -17,8 +17,10 @@ import {
   IndlelaCards,
   InitialStateCards,
   Last5Cards,
+  Last5DiffCards,
   Last5LeagueCards,
   FormCards,
+  TwoGoalBandCards,
   MiddleGuysCards,
   PointsDiffCards,
   SectorIntro,
@@ -491,6 +493,20 @@ export default function MatchPowerDynamicsPanel({
                 {l.sameStrength ? ' · same strength' : ' · split'}
               </Text>
             ))}
+            <Last5DiffCards
+              pd={pd}
+              standings={like}
+              matches={seasonFx.matches}
+              loading={seasonFx.loading}
+              error={seasonFx.error}
+            />
+            <TwoGoalBandCards
+              pd={pd}
+              standings={like}
+              matches={seasonFx.matches}
+              loading={seasonFx.loading}
+              error={seasonFx.error}
+            />
           </View>,
         );
       case 'form':

@@ -43,6 +43,7 @@ import {
   OPTION_LABEL,
   bandFromTablePoints,
   statusFromOutcome,
+  trueOption,
   type FormBand,
   type InitialStateSide,
   type InitialStatus,
@@ -64,6 +65,16 @@ import {
   type Last6Period,
   type Last6Venue,
 } from '@/utils/last6Form';
+import {
+  PERIOD_WORD,
+  VENUE_WORD,
+  colourLetter,
+  last5PointsDiff,
+  peakLast5Gap,
+  twoGoalBandSides,
+  type TwoGoalGrade,
+  type TwoGoalSideRead,
+} from '@/utils/last5Sections';
 import { lastN } from '@/utils/teamResults';
 import type { SeasonMatch } from '@/utils/bhozomaEngine';
 import { GRADE_LABEL, STANCE_LABEL, type StandingLike } from '@/utils/motivationEngine';
@@ -801,8 +812,8 @@ export function InitialStateCards({
       <SubTabBar tabs={INITIAL_LENS_TABS} active={lens} onChange={setLens} />
       <Text style={styles.note}>
         {lens === 'overall'
-          ? 'Last 5 in any venue. W = Good · D = Med · L = Bad'
-          : 'Home side at home, away side away. W = Good · D = Med · L = Bad'}
+          ? 'Last 5 in any venue. Naming: 9+ pts Good · 5–8 Medium · 4 or less Bad. 3+ draws add Inhlambuluko.'
+          : 'Home side at home, away side away. Naming: 9+ pts Good · 5–8 Medium · 4 or less Bad. 3+ draws add Inhlambuluko.'}
       </Text>
       <Callout text={call} tone={callTone} />
       <ScrollView horizontal showsHorizontalScrollIndicator style={styles.initialScroll}>
@@ -810,6 +821,7 @@ export function InitialStateCards({
           <View style={[styles.formRow, styles.formHead]}>
             <Text style={[styles.formTh, styles.formPos]}>#</Text>
             <Text style={[styles.formTh, styles.formTeam]}>Team</Text>
+            <Text style={[styles.formTh, styles.formRead]}>Naming</Text>
             <Text style={[styles.formTh, styles.initialSeqHead]}>Last 5</Text>
             <Text style={[styles.formTh, styles.formNum]}>MP</Text>
             <Text style={[styles.formTh, styles.formWdl]}>W-D-L</Text>
@@ -817,55 +829,64 @@ export function InitialStateCards({
             <Text style={[styles.formTh, styles.formNum]}>PPG</Text>
             <Text style={[styles.formTh, styles.formNum]}>GD</Text>
           </View>
-          {sides.map(({ snap, tally }) => (
-            <View key={snap.side} style={[styles.formRow, styles.formRowFocus]}>
-              <FormCell style={styles.formPos}>{String(rankBySide.get(snap.side) ?? '—')}</FormCell>
-              <View style={styles.formTeam}>
-                {lens === 'home_away' ? (
-                  <Text
-                    style={[
-                      styles.formVenue,
-                      snap.venue === 'home' ? styles.formVenueHome : styles.formVenueAway,
-                    ]}
-                    numberOfLines={1}>
-                    {snap.venue === 'home' ? 'Home' : 'Away'}
-                  </Text>
-                ) : null}
-                <Text style={styles.formTeamName} numberOfLines={1}>
-                  {snap.label}
-                </Text>
-                {tally.matches.length > 0 ? (
-                  <Text style={styles.formScores} numberOfLines={1}>
-                    {tally.matches.map((m) => `${m.result.gf}-${m.result.ga}`).join(' · ')}
-                  </Text>
-                ) : null}
-              </View>
-              <View style={styles.initialSeq}>
-                {tally.matches.length > 0 ? (
-                  tally.matches.map((m, i) => (
+          {sides.map(({ snap, tally }) => {
+            const naming =
+              tally.mp > 0
+                ? OPTION_LABEL[trueOption(bandFromTablePoints(tally.points), tally.drawn >= 3)]
+                : '—';
+            return (
+              <View key={snap.side} style={[styles.formRow, styles.formRowFocus]}>
+                <FormCell style={styles.formPos}>{String(rankBySide.get(snap.side) ?? '—')}</FormCell>
+                <View style={styles.formTeam}>
+                  {lens === 'home_away' ? (
                     <Text
-                      key={`${m.result.fixtureId}-${i}`}
-                      style={[styles.initialSeqTag, { color: toneColor(statusTone(m.status)) }]}>
-                      {m.outcome} ({m.status})
+                      style={[
+                        styles.formVenue,
+                        snap.venue === 'home' ? styles.formVenueHome : styles.formVenueAway,
+                      ]}
+                      numberOfLines={1}>
+                      {snap.venue === 'home' ? 'Home' : 'Away'}
                     </Text>
-                  ))
-                ) : (
-                  <Text style={styles.formTd}>—</Text>
-                )}
+                  ) : null}
+                  <Text style={styles.formTeamName} numberOfLines={1}>
+                    {snap.label}
+                  </Text>
+                  {tally.matches.length > 0 ? (
+                    <Text style={styles.formScores} numberOfLines={1}>
+                      {tally.matches.map((m) => `${m.result.gf}-${m.result.ga}`).join(' · ')}
+                    </Text>
+                  ) : null}
+                </View>
+                <FormCell style={styles.formRead} tone={naming !== '—' ? namingTone(naming) : undefined}>
+                  {naming}
+                </FormCell>
+                <View style={styles.initialSeq}>
+                  {tally.matches.length > 0 ? (
+                    tally.matches.map((m, i) => (
+                      <Text
+                        key={`${m.result.fixtureId}-${i}`}
+                        style={[styles.initialSeqTag, { color: toneColor(statusTone(m.status)) }]}>
+                        {m.outcome} ({m.status})
+                      </Text>
+                    ))
+                  ) : (
+                    <Text style={styles.formTd}>—</Text>
+                  )}
+                </View>
+                <FormCell style={styles.formNum}>{tally.mp > 0 ? String(tally.mp) : '—'}</FormCell>
+                <FormCell style={styles.formWdl}>
+                  {tally.mp > 0 ? `${tally.won}-${tally.drawn}-${tally.lost}` : '—'}
+                </FormCell>
+                <FormCell style={styles.formNum}>{tally.mp > 0 ? String(tally.points) : '—'}</FormCell>
+                <FormCell style={styles.formNum}>
+                  {tally.ppg != null ? tally.ppg.toFixed(2) : '—'}
+                </FormCell>
+                <FormCell style={styles.formNum}>
+                  {tally.mp > 0 ? `${tally.gd >= 0 ? '+' : ''}${tally.gd}` : '—'}
+                </FormCell>
               </View>
-              <FormCell style={styles.formNum}>{tally.mp > 0 ? String(tally.mp) : '—'}</FormCell>
-              <FormCell style={styles.formWdl}>
-                {tally.mp > 0 ? `${tally.won}-${tally.drawn}-${tally.lost}` : '—'}
-              </FormCell>
-              <FormCell style={styles.formNum}>{tally.mp > 0 ? String(tally.points) : '—'}</FormCell>
-              <FormCell style={styles.formNum}>
-                {tally.ppg != null ? tally.ppg.toFixed(2) : '—'}
-              </FormCell>
-              <FormCell style={styles.formNum}>
-                {tally.mp > 0 ? `${tally.gd >= 0 ? '+' : ''}${tally.gd}` : '—'}
-              </FormCell>
-            </View>
-          ))}
+            );
+          })}
         </View>
       </ScrollView>
       {standings.length < 2 ? (
@@ -902,7 +923,7 @@ export function Last5Cards({
           <Line text={`${OPTION_LABEL[team.option]} · ${team.tablePoints} pts from last 5`} />
           <Text style={styles.seq}>{team.sequence.join(' ')}</Text>
           <Line text={CHANGE_LABEL[team.change]} />
-          {team.inhlambuluko ? <Line text="Bounce-back stretch (3+ draws)" tone="warn" /> : null}
+          {team.inhlambuluko ? <Line text="Inhlambuluko — 3+ draws in the last 5" tone="warn" /> : null}
         </>
       ) : (
         <Line text="No last-5 sample yet" />
@@ -932,16 +953,17 @@ const LAST5_VENUE_TABS: { id: Last6Venue; label: string }[] = [
   { id: 'away', label: 'Away' },
 ];
 
-function last5BandLabel(band: FormBand): string {
-  if (band === 'good') return 'Good';
-  if (band === 'bad') return 'Bad';
-  return 'Med';
+function namingTone(name: string): Tone {
+  if (name.startsWith('Good')) return 'good';
+  if (name.startsWith('Bad')) return 'bad';
+  return 'warn';
 }
 
-function last5BandTone(band: FormBand): Tone {
-  if (band === 'good') return 'good';
-  if (band === 'bad') return 'bad';
-  return 'warn';
+function twoGoalTone(grade: TwoGoalGrade | null): Tone {
+  if (grade === 'great' || grade === 'good') return 'good';
+  if (grade === 'bad') return 'bad';
+  if (grade === 'mediocre') return 'warn';
+  return 'info';
 }
 
 export function Last5LeagueCards({
@@ -977,6 +999,18 @@ export function Last5LeagueCards({
   if (pd.t2.teamId != null) {
     typeById.set(pd.t2.teamId, { letter: formPd.baselineGap.t2.letter, score: formPd.baselineGap.t2.score });
   }
+  const peak = peakLast5Gap({
+    standings,
+    matches,
+    t1Id: pd.t1.teamId,
+    t2Id: pd.t2.teamId,
+    t1Label: pd.t1.label,
+    t2Label: pd.t2.label,
+    gapFor: (t) => {
+      const g = overlayFormBaseline(pd, t);
+      return { separation: g.baselineGap.separation, grade: g.positionGap.grade };
+    },
+  });
   const htCovered = matches.filter((m) => m.homeGoalsHt != null && m.awayGoalsHt != null).length;
   const venueNote =
     venue === 'home'
@@ -984,6 +1018,7 @@ export function Last5LeagueCards({
       : venue === 'away'
         ? 'Last 5 away matches for every side.'
         : 'Last 5 matches in any venue for every side.';
+  const currentGap = formPd.baselineGap.separation;
 
   if (loading) {
     return (
@@ -1009,9 +1044,20 @@ export function Last5LeagueCards({
         preserveCase
         note="League ranking from last 5. Fixture sides are highlighted."
       />
+      {peak ? (
+        <View style={styles.peakBox}>
+          <Text style={styles.peakEyebrow}>Highest gap in this section</Text>
+          <Text style={styles.peakTitle}>{peak.call}</Text>
+          <Text style={styles.peakSub}>
+            Viewing now: {VENUE_WORD[venue]} · {PERIOD_WORD[period]}
+            {currentGap != null ? ` · gap ${currentGap.toFixed(1)}` : ''}
+            {formPd.positionGap.grade ? ` · ${formPd.positionGap.grade}` : ''}
+          </Text>
+        </View>
+      ) : null}
       <SubTabBar tabs={LAST5_VENUE_TABS} active={venue} onChange={setVenue} />
       <SubTabBar tabs={FORM_PERIOD_TABS} active={period} onChange={setPeriod} />
-      <Text style={styles.note}>{venueNote} W = Good · D = Med · L = Bad</Text>
+      <Text style={styles.note}>{venueNote} Naming uses last-5 points · 3+ draws add Inhlambuluko.</Text>
       {period !== 'ft' ? (
         <Text style={styles.note}>
           {htCovered} of {matches.length} finished games have a half-time score
@@ -1041,7 +1087,10 @@ export function Last5LeagueCards({
             {rows.map((r) => {
               const f = r.form;
               const typed = typeById.get(r.teamId);
-              const band = f ? bandFromTablePoints(f.points) : null;
+              const naming =
+                f != null
+                  ? OPTION_LABEL[trueOption(bandFromTablePoints(f.points), f.drawn >= 3)]
+                  : null;
               return (
                 <View
                   key={r.teamId}
@@ -1082,8 +1131,8 @@ export function Last5LeagueCards({
                   <FormCell style={styles.formNum}>
                     {typed?.score != null ? fmtGapScore(typed.score) : '—'}
                   </FormCell>
-                  <FormCell style={styles.formRead} tone={band ? last5BandTone(band) : undefined}>
-                    {band ? last5BandLabel(band) : 'No sample'}
+                  <FormCell style={styles.formRead} tone={naming ? namingTone(naming) : undefined}>
+                    {naming ?? 'No sample'}
                   </FormCell>
                 </View>
               );
@@ -1094,6 +1143,148 @@ export function Last5LeagueCards({
       {standings.length >= 2 && matches.length > 0 ? (
         <BaselineCards pd={formPd} hideHeading />
       ) : null}
+    </View>
+  );
+}
+
+const DIFF_VENUE_TABS: { id: Last6Venue; label: string }[] = [
+  { id: 'overall', label: 'Overall' },
+  { id: 'home', label: 'Home' },
+  { id: 'away', label: 'Away' },
+];
+
+export function Last5DiffCards({
+  pd,
+  standings,
+  matches,
+  loading,
+  error,
+}: {
+  pd: PowerDynamicsBundle;
+  standings: StandingLike[];
+  matches: SeasonMatch[];
+  loading?: boolean;
+  error?: string | null;
+}) {
+  const [venue, setVenue] = useState<Last6Venue>('overall');
+  const [period, setPeriod] = useState<Last6Period>('ft');
+  const read = last5PointsDiff({
+    standings,
+    matches,
+    t1Id: pd.t1.teamId,
+    t2Id: pd.t2.teamId,
+    t1Label: pd.t1.label,
+    t2Label: pd.t2.label,
+    venue,
+    period,
+  });
+  const tone: Tone =
+    read.diff == null ? 'info' : read.diff > 0 ? 'good' : read.diff < 0 ? 'bad' : 'warn';
+
+  return (
+    <View>
+      <SectorIntro
+        title="Section 3: T1 − T2"
+        preserveCase
+        note="Last-5 points for T1 minus last-5 points for T2. Positive means T1 is stronger. Negative means T2 is stronger."
+      />
+      {loading ? <Text style={styles.note}>Loading season results…</Text> : null}
+      {error ? <Text style={styles.note}>{error}</Text> : null}
+      <SubTabBar tabs={DIFF_VENUE_TABS} active={venue} onChange={setVenue} />
+      <SubTabBar tabs={FORM_PERIOD_TABS} active={period} onChange={setPeriod} />
+      <Callout
+        text={`${VENUE_WORD[venue]} · ${PERIOD_WORD[period]} · ${pd.t1.label} ${
+          read.t1Points ?? '—'
+        } − ${pd.t2.label} ${read.t2Points ?? '—'} = ${read.diff ?? '—'}`}
+        tone={tone}
+      />
+      <Callout text={read.call} tone={tone} />
+      <SideCard label={pd.t1.label}>
+        <Line text={`Last 5 · ${read.t1Mp} MP · ${read.t1Points ?? '—'} pts`} />
+      </SideCard>
+      <SideCard label={pd.t2.label}>
+        <Line text={`Last 5 · ${read.t2Mp} MP · ${read.t2Points ?? '—'} pts`} />
+      </SideCard>
+    </View>
+  );
+}
+
+const TWO_GOAL_TABS = [
+  { id: 't1_home', label: 'T1 as home' },
+  { id: 't1_away', label: 'T1 as away' },
+] as const;
+
+function TwoGoalSideTable({ side }: { side: TwoGoalSideRead }) {
+  return (
+    <View style={styles.twoGoalCol}>
+      <Text style={styles.sideLabel}>
+        {side.label} · {side.venue === 'home' ? 'Home' : 'Away'} · {colourLetter(side.teamColour)}
+      </Text>
+      {side.games.length === 0 ? (
+        <Text style={styles.note}>No finished {side.venue} games yet.</Text>
+      ) : (
+        side.games.map((g, i) => (
+          <View key={`${side.teamId}-${i}`} style={styles.twoGoalRow}>
+            <Text style={styles.twoGoalScore}>
+              {g.outcome} {g.gf}–{g.ga}
+            </Text>
+            <Text style={styles.twoGoalOpp} numberOfLines={1}>
+              vs {g.opponentName}
+            </Text>
+            <Text style={styles.twoGoalPair}>{g.pairLabel}</Text>
+            <Text style={[styles.twoGoalGrade, { color: toneColor(twoGoalTone(g.grade)) }]}>
+              {g.gradeLabel}
+            </Text>
+          </View>
+        ))
+      )}
+    </View>
+  );
+}
+
+export function TwoGoalBandCards({
+  pd,
+  standings,
+  matches,
+  loading,
+  error,
+}: {
+  pd: PowerDynamicsBundle;
+  standings: StandingLike[];
+  matches: SeasonMatch[];
+  loading?: boolean;
+  error?: string | null;
+}) {
+  const [mode, setMode] = useState<(typeof TWO_GOAL_TABS)[number]['id']>('t1_home');
+  const sides = twoGoalBandSides({
+    t1Id: pd.t1.teamId,
+    t2Id: pd.t2.teamId,
+    t1Label: pd.t1.label,
+    t2Label: pd.t2.label,
+    matches,
+    standings,
+    mode,
+  });
+
+  return (
+    <View>
+      <SectorIntro
+        title="Section 4: 2-goal colour bands"
+        preserveCase
+        note="Labels only fire when the goal difference is exactly 2. The pair is this side’s colour vs the opponent’s colour (G/Y/R). T1 as home uses T1 home games and T2 away games. T1 as away swaps them."
+      />
+      {loading ? <Text style={styles.note}>Loading season results…</Text> : null}
+      {error ? <Text style={styles.note}>{error}</Text> : null}
+      <SubTabBar tabs={[...TWO_GOAL_TABS]} active={mode} onChange={setMode} />
+      <Text style={styles.note}>
+        {mode === 't1_home'
+          ? `${pd.t1.label} at home · ${pd.t2.label} away`
+          : `${pd.t1.label} away · ${pd.t2.label} at home`}
+      </Text>
+      <View style={styles.twoGoalGrid}>
+        {sides.left ? <TwoGoalSideTable side={sides.left} /> : null}
+        {sides.right ? <TwoGoalSideTable side={sides.right} /> : null}
+      </View>
     </View>
   );
 }
@@ -2010,8 +2201,53 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
   },
   initialScroll: { marginBottom: spacing.sm },
-  initialTable: { minWidth: 28 + 150 + 360 + 36 + 52 + 36 + 36 + 36 },
+  initialTable: { minWidth: 28 + 150 + 110 + 360 + 36 + 52 + 36 + 36 + 36 },
   last5LeagueTable: { minWidth: 28 + 150 + 360 + 36 + 52 + 36 + 36 + 36 + 36 + 36 + 110 },
+  peakBox: {
+    borderWidth: layout.borderWidth,
+    borderColor: theme.accentBlue,
+    borderRadius: layout.borderRadius,
+    backgroundColor: '#DBEAFE',
+    padding: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  peakEyebrow: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 10,
+    color: theme.accentBlue,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  peakTitle: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 15,
+    color: theme.textPrimary,
+    marginTop: 2,
+  },
+  peakSub: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: theme.textMuted,
+    marginTop: 2,
+  },
+  twoGoalGrid: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xs },
+  twoGoalCol: {
+    flex: 1,
+    backgroundColor: theme.surface,
+    borderWidth: layout.borderWidth,
+    borderColor: theme.border,
+    borderRadius: layout.borderRadius,
+    padding: spacing.sm,
+  },
+  twoGoalRow: {
+    borderTopWidth: layout.borderWidth,
+    borderTopColor: theme.border,
+    paddingVertical: spacing.xs,
+  },
+  twoGoalScore: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: theme.textPrimary },
+  twoGoalOpp: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted },
+  twoGoalPair: { fontFamily: fonts.body, fontSize: 10, color: theme.textFaint, marginTop: 1 },
+  twoGoalGrade: { fontFamily: fonts.bodySemiBold, fontSize: 12, marginTop: 1 },
   venueTable: { minWidth: 150 + 52 + 64 * 5 + 110 * 2 },
   venueNum: { width: 64, textAlign: 'center' },
   initialSeqHead: { width: 360 },
