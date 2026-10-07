@@ -9,6 +9,8 @@ const LINKS: { href: Href; label: string; match: string }[] = [
   { href: '/analytics', label: 'Analytics', match: '/analytics' },
   { href: '/sl-stats', label: 'SL-STATS', match: '/sl-stats' },
   { href: '/additional-stats', label: 'Additional stats', match: '/additional-stats' },
+  { href: '/stats-ordinary', label: 'Ordinary', match: '/stats-ordinary' },
+  { href: '/full-time-stats', label: 'FT-Only', match: '/full-time-stats' },
 ];
 
 function isCurrent(pathname: string, match: string): boolean {

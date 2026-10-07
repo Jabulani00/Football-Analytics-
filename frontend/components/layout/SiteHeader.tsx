@@ -87,6 +87,12 @@ export default function SiteHeader({ showFilters = true }: SiteHeaderProps) {
             <Pressable onPress={() => router.push('/additional-stats' as Href)} style={styles.analyticsLink}>
               <Text style={styles.analyticsText}>Additional</Text>
             </Pressable>
+            <Pressable onPress={() => router.push('/stats-ordinary' as Href)} style={styles.analyticsLink}>
+              <Text style={styles.analyticsText}>Ordinary</Text>
+            </Pressable>
+            <Pressable onPress={() => router.push('/full-time-stats' as Href)} style={styles.analyticsLink}>
+              <Text style={styles.analyticsText}>FT-Only</Text>
+            </Pressable>
           </View>
         )}
       </View>
@@ -183,7 +189,11 @@ const styles = StyleSheet.create({
   },
   nav: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
     alignItems: 'center',
+    flexShrink: 1,
+    maxWidth: 200,
   },
   logoWrap: {
     flexDirection: 'row',

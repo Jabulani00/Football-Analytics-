@@ -64,6 +64,8 @@ type TeamMatch = {
   unix: number;
   gfFt: number; gaFt: number; // full-time goals for / against this team
   gfHt: number; gaHt: number; // first-half
+  /** False when the feed had no half-time score. Those matches stay out of half rates. */
+  htKnown: boolean;
 };
 
 /** Goals for/against this team in the requested period. */
@@ -150,15 +152,24 @@ export const SERIES_STATS = [
   'over25_streak', 'cs_streak', 'fts_streak', 'scoring_streak',
 ] as const;
 
-/** Full-time-only outcome patterns (percentages). */
+/** Full-time-only outcome patterns. Percentages, plus two raw point averages. */
 export const FT_ONLY_STATS = [
-  'won_both_halves', 'win_to_nil', 'scored_both_halves', 'conceded_both_halves', 'led_ht',
+  'btts_both_halves', 'scored_both_halves', 'btts_over25', 'conceded_both_halves',
+  'won_both_halves', 'win_to_nil', 'lost_to_nil', 'rescued_points', 'blown_points',
+  'htft_ww', 'htft_wd', 'htft_wl', 'htft_dw', 'htft_dd', 'htft_dl',
+  'htft_lw', 'htft_ld', 'htft_ll', 'led_ht',
 ] as const;
+
+/** 1st-half or 2nd-half catalogue lines for the period the row was built in. */
+export const HALF_ONLY_STATS = ['half_nil', 'half_under05', 'half_over15', 'half_avg'] as const;
 
 /** Points-per-game family adds `ppg`/`avg_pts` on top of the ordinary stats. */
 export const PPG_STATS = ['ppg', 'avg_pts'] as const;
 
-const RAW_KEYS = new Set<string>([...SERIES_STATS, ...PPG_STATS, ...AVERAGE_STATS]);
+const RAW_KEYS = new Set<string>([
+  ...SERIES_STATS, ...PPG_STATS, ...AVERAGE_STATS,
+  'rescued_points', 'blown_points', 'half_avg',
+]);
 
 /** Current consecutive run of matches (newest-first) satisfying `pred`. */
 function streak(matches: TeamMatch[], period: Period, pred: (g: { gf: number; ga: number }) => boolean): number {
@@ -194,19 +205,90 @@ function computePpg(matches: TeamMatch[], period: Period): number {
   return Math.round((pts / matches.length) * 100) / 100;
 }
 
+type HalfResult = 'w' | 'd' | 'l';
+
+function halfResult(gf: number, ga: number): HalfResult {
+  return gf > ga ? 'w' : gf === ga ? 'd' : 'l';
+}
+
+const HTFT_KEY: Record<HalfResult, Record<HalfResult, string>> = {
+  w: { w: 'htft_ww', d: 'htft_wd', l: 'htft_wl' },
+  d: { w: 'htft_dw', d: 'htft_dd', l: 'htft_dl' },
+  l: { w: 'htft_lw', d: 'htft_ld', l: 'htft_ll' },
+};
+
+function secondHalf(m: TeamMatch): { gf: number; ga: number } {
+  return { gf: m.gfFt - m.gfHt, ga: m.gaFt - m.gaHt };
+}
+
 function computeFtOnly(matches: TeamMatch[]): Record<string, number | null> {
-  const n = matches.length;
-  if (n === 0) {
-    return Object.fromEntries(FT_ONLY_STATS.map((k) => [k, null]));
+  const blank = Object.fromEntries(FT_ONLY_STATS.map((k) => [k, null])) as Record<string, number | null>;
+  if (matches.length === 0) return blank;
+  const known = matches.filter((m) => m.htKnown);
+  const pctOf = (pool: TeamMatch[], pred: (m: TeamMatch) => boolean) =>
+    pool.length === 0 ? null : Math.round((100 * pool.filter(pred).length) / pool.length);
+  const htft: Record<string, number | null> = {};
+  for (const key of ['htft_ww', 'htft_wd', 'htft_wl', 'htft_dw', 'htft_dd', 'htft_dl', 'htft_lw', 'htft_ld', 'htft_ll']) {
+    htft[key] = known.length === 0 ? null : 0;
   }
-  const secondHalf = (m: TeamMatch) => ({ gf: m.gfFt - m.gfHt, ga: m.gaFt - m.gaHt });
-  const pct = (p: (m: TeamMatch) => boolean) => Math.round((100 * matches.filter(p).length) / n);
+  if (known.length > 0) {
+    const counts = new Map<string, number>();
+    for (const m of known) {
+      const key = HTFT_KEY[halfResult(m.gfHt, m.gaHt)][halfResult(m.gfFt, m.gaFt)];
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    for (const key of Object.keys(htft)) {
+      htft[key] = Math.round((100 * (counts.get(key) ?? 0)) / known.length);
+    }
+  }
+  const avg = (pick: (m: TeamMatch) => number) =>
+    known.length === 0
+      ? null
+      : Math.round((known.reduce((sum, m) => sum + pick(m), 0) / known.length) * 100) / 100;
   return {
-    won_both_halves: pct((m) => m.gfHt > m.gaHt && secondHalf(m).gf > secondHalf(m).ga),
-    win_to_nil: pct((m) => m.gfFt > m.gaFt && m.gaFt === 0),
-    scored_both_halves: pct((m) => m.gfHt > 0 && secondHalf(m).gf > 0),
-    conceded_both_halves: pct((m) => m.gaHt > 0 && secondHalf(m).ga > 0),
-    led_ht: pct((m) => m.gfHt > m.gaHt),
+    ...blank,
+    btts_both_halves: pctOf(known, (m) => {
+      const sh = secondHalf(m);
+      return m.gfHt > 0 && m.gaHt > 0 && sh.gf > 0 && sh.ga > 0;
+    }),
+    scored_both_halves: pctOf(known, (m) => m.gfHt > 0 && secondHalf(m).gf > 0),
+    btts_over25: pctOf(matches, (m) => m.gfFt > 0 && m.gaFt > 0 && m.gfFt + m.gaFt > 2.5),
+    conceded_both_halves: pctOf(known, (m) => m.gaHt > 0 && secondHalf(m).ga > 0),
+    won_both_halves: pctOf(known, (m) => m.gfHt > m.gaHt && secondHalf(m).gf > secondHalf(m).ga),
+    win_to_nil: pctOf(matches, (m) => m.gfFt > m.gaFt && m.gaFt === 0),
+    lost_to_nil: pctOf(matches, (m) => m.gfFt < m.gaFt && m.gfFt === 0),
+    rescued_points: avg((m) => {
+      if (!(m.gfHt < m.gaHt)) return 0;
+      if (m.gfFt > m.gaFt) return 3;
+      if (m.gfFt === m.gaFt) return 1;
+      return 0;
+    }),
+    blown_points: avg((m) => {
+      if (!(m.gfHt > m.gaHt)) return 0;
+      if (m.gfFt < m.gaFt) return 3;
+      if (m.gfFt === m.gaFt) return 2;
+      return 0;
+    }),
+    ...htft,
+    led_ht: pctOf(known, (m) => m.gfHt > m.gaHt),
+  };
+}
+
+/** 0–0, under 0.5, over 1.5, and average goals for one half. */
+function computeHalfOnly(matches: TeamMatch[], period: 'ht' | '2h'): Record<string, number | null> {
+  const blank = Object.fromEntries(HALF_ONLY_STATS.map((k) => [k, null])) as Record<string, number | null>;
+  const known = matches.filter((m) => m.htKnown);
+  if (known.length === 0) return blank;
+  const totals = known.map((m) =>
+    period === 'ht' ? m.gfHt + m.gaHt : m.gfFt - m.gfHt + (m.gaFt - m.gaHt),
+  );
+  const n = totals.length;
+  const pct = (pred: (total: number) => boolean) => Math.round((100 * totals.filter(pred).length) / n);
+  return {
+    half_nil: pct((total) => total === 0),
+    half_under05: pct((total) => total < 0.5),
+    half_over15: pct((total) => total > 1.5),
+    half_avg: Math.round((totals.reduce((sum, total) => sum + total, 0) / n) * 10) / 10,
   };
 }
 
@@ -261,9 +343,10 @@ export function buildStatsTables(opts: BuildOptions): TeamStatsExport {
     const hg = fx.home_goals as number;
     const ag = fx.away_goals as number;
     const ht = parseHtScore(fx.ht_score);
+    const htKnown = ht != null;
     const [hHt, aHt] = ht ?? [0, 0]; // HT unknown → treat as 0-0 (2H then carries all goals)
-    add(fx.home_name, league, { isHome: true, unix: fx.unix, gfFt: hg, gaFt: ag, gfHt: hHt, gaHt: aHt });
-    add(fx.away_name, league, { isHome: false, unix: fx.unix, gfFt: ag, gaFt: hg, gfHt: aHt, gaHt: hHt });
+    add(fx.home_name, league, { isHome: true, unix: fx.unix, gfFt: hg, gaFt: ag, gfHt: hHt, gaHt: aHt, htKnown });
+    add(fx.away_name, league, { isHome: false, unix: fx.unix, gfFt: ag, gaFt: hg, gfHt: aHt, gaHt: hHt, htKnown });
   }
 
   const tables: Record<string, TeamStatRow[]> = {};
@@ -295,10 +378,14 @@ export function buildStatsTables(opts: BuildOptions): TeamStatsExport {
         ensure(`series_${period}_${scope}`).push(
           makeRow(name, league, season, computeSeries(scoped, period), sample),
         );
-        // ft_only = ordinary + full-time outcome patterns
-        ensure(`ft_only_${period}_${scope}`).push(
-          makeRow(name, league, season, { ...computeFtOnly(scoped), ...ord }, sample),
-        );
+        // ft_only = ordinary + full-time patterns + the half lines for this period
+        const half =
+          period === 'ft'
+            ? (Object.fromEntries(HALF_ONLY_STATS.map((k) => [k, null])) as Record<string, number | null>)
+            : computeHalfOnly(scoped, period);
+        const ftRow = makeRow(name, league, season, { ...computeFtOnly(scoped), ...half, ...ord }, sample);
+        (ftRow as Record<string, unknown>).ht_sample = scoped.filter((m) => m.htKnown).length;
+        ensure(`ft_only_${period}_${scope}`).push(ftRow);
         // last-N ordinary windows
         for (const [winPrefix, winSize] of Object.entries(WINDOWS)) {
           if (winPrefix === 'ordinary') continue; // season already emitted above

@@ -3,6 +3,7 @@
  * Run:  npx tsx scripts/test-stats-builder.ts
  */
 import { buildStatsTables } from '../services/statsBuilder';
+import { rankRows } from '../utils/statBoard';
 
 // Minimal RawFixture-shaped results (only the fields the builder reads).
 const fx = (o: Partial<any>): any => ({
@@ -91,9 +92,47 @@ eq('A win to nil', Aft.win_to_nil, 0);
 eq('A scored both halves', Aft.scored_both_halves, 67);
 eq('A conceded both halves', Aft.conceded_both_halves, 33);
 eq('A led HT', Aft.led_ht, 67);
+eq('A btts both halves', Aft.btts_both_halves, 33);
+eq('A btts and over 2.5', Aft.btts_over25, 67);
+eq('A lost to nil', Aft.lost_to_nil, 0);
+eq('A rescued points', Aft.rescued_points, 0);
+eq('A blown points', Aft.blown_points, 0.67);
+eq('A HT/FT win-win', Aft.htft_ww, 33);
+eq('A HT/FT win-draw', Aft.htft_wd, 33);
+eq('A HT/FT draw-draw', Aft.htft_dd, 33);
+eq('A HT/FT lose-lose', Aft.htft_ll, 0);
+eq('A blown points has no percent signal', Aft.blown_points_signal, '');
 const AftHt = exp.tables['ft_only_ht_overall'].find((r) => r.team_name === 'A')!;
 eq('FT-only pattern ignores period', AftHt.won_both_halves, Aft.won_both_halves);
 eq('FT-only CS follows the period', AftHt.cs_pct === Aft.cs_pct, false);
+eq('A 1H 0-0', AftHt.half_nil, 33);
+eq('A 1H under 0.5', AftHt.half_under05, 33);
+eq('A 1H over 1.5', AftHt.half_over15, 33);
+eq('A 1H avg', AftHt.half_avg, 1.3);
+eq('full-time row has no half avg', Number.isNaN(Aft.half_avg as number), true);
+const Aft2h = exp.tables['ft_only_2h_overall'].find((r) => r.team_name === 'A')!;
+eq('A 2H 0-0', Aft2h.half_nil, 33);
+eq('A 2H over 1.5', Aft2h.half_over15, 67);
+eq('A 2H avg', Aft2h.half_avg, 1.7);
+eq('A ht sample', (Aft as any).ht_sample, 3);
+
+const missingHt = buildStatsTables({
+  fixtures: [
+    fx({ id: 10, unix: 10, home_name: 'D', away_name: 'E', home_goals: 1, away_goals: 0, ht_score: null }),
+    fx({ id: 11, unix: 9, home_name: 'D', away_name: 'E', home_goals: 2, away_goals: 0, ht_score: '1-0' }),
+  ],
+  season: '2025/2026',
+});
+const D = missingHt.tables['ft_only_ft_overall'].find((r) => r.team_name === 'D')!;
+eq('missing HT stays in win to nil', D.win_to_nil, 100);
+eq('missing HT stays out of won both halves', D.won_both_halves, 100);
+eq('missing HT sample', (D as any).ht_sample, 1);
+const Dht = missingHt.tables['ft_only_ht_overall'].find((r) => r.team_name === 'D')!;
+eq('missing HT stays out of 1H 0-0', Dht.half_nil, 0);
+
+const ranked = rankRows(exp.tables['ordinary_ft_overall'], 'sc_pct', 2, 'sample_size');
+eq('rank drops a one-game team', ranked.some((row) => row.team_name === 'C'), false);
+eq('rank keeps A', ranked[0]?.team_name, 'A');
 // Family: league_avg is a single "League" row
 eq('league_avg single row', exp.tables['league_avg_ft_overall'].length, 1);
 eq('league_avg named League', exp.tables['league_avg_ft_overall'][0].team_name, 'League');

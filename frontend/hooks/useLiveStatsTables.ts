@@ -33,7 +33,11 @@ export function useLiveStatsTables(opts: {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (competitionId == null) return;
+    if (competitionId == null) {
+      setLoading(false);
+      setError(null);
+      return;
+    }
     const ctrl = new AbortController();
     setLoading(true);
     setError(null);
