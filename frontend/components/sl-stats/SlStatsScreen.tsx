@@ -2,16 +2,21 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import FootyTable, { type FootyColumn } from '@/components/analytics/FootyTable';
+import AppNavBar from '@/components/layout/AppNavBar';
 import AppShell from '@/components/shared/AppShell';
+import DragScroll from '@/components/shared/DragScroll';
+import IncludedGamesList from '@/components/shared/IncludedGamesList';
+import PageControls from '@/components/shared/PageControls';
 import FilterDropdown from '@/components/shared/FilterDropdown';
-import StickyBack from '@/components/shared/StickyBack';
 import { useSlStats } from '@/hooks/useSlStats';
+import type { CountedGame } from '@/utils/countedGames';
 import {
   CORNER_OVER_LINES,
   GOAL_LINES,
   OFFSIDE_OVER_LINES,
   buildFootyIndex,
   filterFixtures,
+  listedGamesForTeam,
   perGame,
   rankBttsSplit,
   rankBttsTeams,
@@ -33,6 +38,8 @@ import {
   type GoalSide,
   type HalfSide,
   type LeagueSort,
+  type FootyFixture,
+  type FootyIndex,
   type Scope,
 } from '@/services/footyMarketStats';
 import {
@@ -225,7 +232,7 @@ function BestBetLine({ bet }: { bet: BestBet | null }) {
   );
 }
 
-export default function SlStatsScreen({ onBack }: { onBack: () => void }) {
+export default function SlStatsScreen({ onBack: _onBack }: { onBack: () => void }) {
   const narrow = useNarrow();
   const [analysis, setAnalysis] = useState<AnalysisId>('corners');
   const [country, setCountry] = useState('');
@@ -336,8 +343,8 @@ export default function SlStatsScreen({ onBack }: { onBack: () => void }) {
 
   return (
     <AppShell>
-      <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, narrow && styles.scrollNarrow]} showsVerticalScrollIndicator={Platform.OS === 'web'}>
-        <StickyBack label="← HOME" onPress={onBack} />
+      <AppNavBar />
+      <DragScroll scrollRef={scrollRef} contentContainerStyle={[styles.scroll, narrow && styles.scrollNarrow]}>
         <View style={[styles.hero, narrow && styles.heroNarrow]}>
           <View style={styles.heroCopy}>
             <Text style={styles.heroKicker}>Query</Text>
@@ -419,6 +426,8 @@ export default function SlStatsScreen({ onBack }: { onBack: () => void }) {
               minimum={boardMinimum}
               sentence={boardSentence}
               empty={boardEmpty(boardEntity, boardMeasure, boardMeasure === 'series' ? boardSeriesLabel : statLabel, boardMinimum, kind)}
+              index={index}
+              scope={scope}
             />
             <QueryBoard
               rows={queryRows}
@@ -460,7 +469,7 @@ export default function SlStatsScreen({ onBack }: { onBack: () => void }) {
             </Block>
           </>
         ) : null}
-      </ScrollView>
+      </DragScroll>
     </AppShell>
   );
 }
@@ -637,17 +646,90 @@ function Pager({
   );
 }
 
+function lastResults(finished: FootyFixture[], competitionId: number, team: string): CountedGame[] {
+  return finished
+    .filter((fx) => fx.finished && fx.competitionId === competitionId && !fx.isFriendly && !fx.isCup && (fx.homeName === team || fx.awayName === team) && fx.homeGoals != null)
+    .sort((a, b) => b.unix - a.unix)
+    .slice(0, 10)
+    .map((fx) => ({
+      id: fx.id,
+      unix: fx.unix,
+      match: `${fx.homeName} ${fx.homeGoals}-${fx.awayGoals} ${fx.awayName}`,
+      score: `${fx.homeGoals}-${fx.awayGoals}`,
+      detail: `${fx.homeName === team ? 'Home' : 'Away'} · ${team}`,
+      htKnown: fx.htHome != null && fx.htAway != null,
+    }));
+}
+
+function fixtureGames(fx: FootyFixture, finished: FootyFixture[]): CountedGame[] {
+  return [
+    {
+      id: fx.id,
+      unix: fx.unix,
+      match: `${fx.homeName} vs ${fx.awayName}`,
+      score: fx.finished && fx.homeGoals != null ? `${fx.homeGoals}-${fx.awayGoals}` : 'Upcoming',
+      detail: fx.competitionName,
+      htKnown: true,
+    },
+    ...lastResults(finished, fx.competitionId, fx.homeName),
+    ...lastResults(finished, fx.competitionId, fx.awayName),
+  ];
+}
+
 function StatsTable({
   columns,
   rows,
   empty,
+  onGames,
 }: {
   columns: FootyColumn[];
   rows: { id: string; cells: Record<string, string> }[];
   empty: string;
+  onGames?: (row: { id: string; cells: Record<string, string> }) => CountedGame[];
 }) {
   const narrow = useNarrow();
-  if (!narrow) return <FootyTable columns={columns} rows={rows} empty={empty} />;
+  const [open, setOpen] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const size = 20;
+  const pageCount = Math.max(1, Math.ceil(rows.length / size));
+  const safe = Math.min(page, pageCount);
+  const start = (safe - 1) * size;
+  const visible = rows.slice(start, start + size);
+  const signature = `${rows.length}|${rows[0]?.id ?? ''}|${rows[rows.length - 1]?.id ?? ''}`;
+  useEffect(() => {
+    setPage(1);
+    setOpen(null);
+  }, [signature]);
+  const picked = rows.find((row) => row.id === open);
+  const games = picked && onGames ? onGames(picked) : [];
+  const toggle = (id: string) => setOpen((current) => (current === id ? null : id));
+  const list = open && onGames ? (
+    <IncludedGamesList title="Games in this row" games={games} onClose={() => setOpen(null)} />
+  ) : null;
+  const pager = (slot: string) => (
+    <PageControls
+      key={slot}
+      page={safe}
+      pages={pageCount}
+      total={rows.length}
+      from={rows.length === 0 ? 0 : start + 1}
+      to={start + visible.length}
+      onChange={(next) => {
+        setPage(next);
+        setOpen(null);
+      }}
+    />
+  );
+  if (!narrow) {
+    return (
+      <>
+        {list}
+        {pager('top')}
+        <FootyTable columns={columns} rows={visible} empty={empty} onPress={onGames ? toggle : undefined} selectedId={open} />
+        {pager('bottom')}
+      </>
+    );
+  }
   if (rows.length === 0) return <Text style={styles.note}>{empty}</Text>;
   const rankCol = columns.find((col) => col.key === 'rank');
   const named = columns.find((col) => ['name', 'team', 'league', 'score', 'match'].includes(col.key)) ?? columns.find((col) => col.key !== 'rank');
@@ -657,8 +739,9 @@ function StatsTable({
   const rest = columns.filter((col) => col !== rankCol && col !== named && col !== figureCol);
   return (
     <View style={styles.cardList}>
-      {rows.map((row) => (
-        <View key={row.id} style={styles.statCard}>
+      {pager('top')}
+      {visible.map((row) => (
+        <Pressable key={row.id} onPress={onGames ? () => toggle(row.id) : undefined} style={[styles.statCard, open === row.id && styles.statCardOn]}>
           <View style={styles.statCardTop}>
             {rankCol ? <Text style={styles.statRank}>{row.cells[rankCol.key]}</Text> : null}
             <Text style={styles.statName}>{named ? row.cells[named.key] : ''}</Text>
@@ -669,8 +752,10 @@ function StatsTable({
               {col.label}: {row.cells[col.key] || '—'}
             </Text>
           ))}
-        </View>
+          {open === row.id && onGames ? <IncludedGamesList title="Games in this row" games={onGames(row)} onClose={() => setOpen(null)} /> : null}
+        </Pressable>
       ))}
+      {pager('bottom')}
     </View>
   );
 }
@@ -682,6 +767,8 @@ function TopBoard({
   minimum,
   sentence,
   empty,
+  index,
+  scope,
 }: {
   rows: BoardRow[];
   entity: BoardEntity;
@@ -689,6 +776,8 @@ function TopBoard({
   minimum: number;
   sentence: string;
   empty: string;
+  index: FootyIndex;
+  scope: Scope;
 }) {
   const [page, setPage] = useState(1);
   const pages = Math.max(1, Math.ceil(rows.length / BOARD_PAGE));
@@ -734,10 +823,11 @@ function TopBoard({
       <StatsTable
         columns={columns}
         empty={empty}
-        rows={visible.map((row, index) => ({
+        onGames={entity === 'teams' ? (row) => listedGamesForTeam(index, row.cells.name, row.cells.context, scope) : undefined}
+        rows={visible.map((row, position) => ({
           id: row.id,
           cells: {
-            rank: String(start + index + 1),
+            rank: String(start + position + 1),
             name: row.name,
             context: row.context,
             type: row.typeLabel,
@@ -785,12 +875,65 @@ function QueryBoard({
   );
 }
 
+function PagedFixtures({
+  rows,
+}: {
+  rows: { id: number; unix: number; match: string; bet: BestBet | null; games: CountedGame[] }[];
+}) {
+  const [page, setPage] = useState(1);
+  const size = 8;
+  const pages = Math.max(1, Math.ceil(rows.length / size));
+  const safe = Math.min(page, pages);
+  const start = (safe - 1) * size;
+  const visible = rows.slice(start, start + size);
+  return (
+    <View style={styles.matchList}>
+      {visible.map((row) => (
+        <QuickMatchCard key={row.id} id={row.id} unix={row.unix} match={row.match} bet={row.bet} games={row.games} />
+      ))}
+      <PageControls
+        page={safe}
+        pages={pages}
+        total={rows.length}
+        from={rows.length === 0 ? 0 : start + 1}
+        to={start + visible.length}
+        onChange={setPage}
+      />
+    </View>
+  );
+}
+
+function QuickMatchCard({
+  id,
+  unix,
+  match,
+  bet,
+  games,
+}: {
+  id: number;
+  unix: number;
+  match: string;
+  bet: BestBet | null;
+  games: CountedGame[];
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Pressable onPress={() => setOpen((value) => !value)} style={styles.matchCard}>
+      <Text style={styles.matchKo}>{kickoff(unix)}</Text>
+      <Text style={styles.matchTitle}>{match}</Text>
+      <BestBetLine bet={bet} />
+      {open ? <IncludedGamesList title="Games in this fixture" games={games} onClose={() => setOpen(false)} /> : null}
+    </Pressable>
+  );
+}
+
 function UpcomingList({
   rows,
 }: {
-  rows: { id: number; key?: string; unix: number; match: string; league: string; detail: string; bet: BestBet | null }[];
+  rows: { id: number; key?: string; unix: number; match: string; league: string; detail: string; bet: BestBet | null; games?: CountedGame[] }[];
 }) {
   const [page, setPage] = useState(1);
+  const [open, setOpen] = useState<number | null>(null);
   const size = 8;
   const pages = Math.max(1, Math.ceil(rows.length / size));
   const safe = Math.min(page, pages);
@@ -801,12 +944,19 @@ function UpcomingList({
   return (
     <View style={styles.matchList}>
       {visible.map((row, index) => (
-        <View key={row.key ?? `${row.id}-${index}`} style={styles.matchCard}>
+        <Pressable key={row.key ?? `${row.id}-${index}`} onPress={() => setOpen((current) => (current === row.id ? null : row.id))} style={styles.matchCard}>
           <Text style={styles.matchKo}>{kickoff(row.unix)}</Text>
           <Text style={styles.matchTitle}>{row.match}</Text>
           <Text style={styles.note}>{row.league}{row.detail ? ` · ${row.detail}` : ''}</Text>
           <BestBetLine bet={row.bet} />
-        </View>
+          {open === row.id ? (
+            <IncludedGamesList
+              title="Games in this fixture"
+              onClose={() => setOpen(null)}
+              games={row.games ?? [{ id: row.id, unix: row.unix, match: row.match, score: 'Upcoming', detail: row.league, htKnown: true }]}
+            />
+          ) : null}
+        </Pressable>
       ))}
       <Pager page={safe} pages={pages} total={rows.length} onChange={setPage} />
     </View>
@@ -848,6 +998,7 @@ function AnalysisBody(props: {
       league: fx.competitionName,
       detail: detail(fx.id),
       bet: props.bets.get(fx.id) ?? bestBetForFixture(fx, props.finished),
+      games: fixtureGames(fx, props.finished),
     }));
 
   if (props.analysis === 'btts') {
@@ -865,7 +1016,7 @@ function AnalysisBody(props: {
     );
     return (
       <>
-        <RankTable title="Best teams" note="Ranked by how often the stat lands." rows={teams.map((row) => ({ id: `${row.league}-${row.team}`, name: row.team, league: row.league, played: row.played, value: pct(row.pct) }))} valueLabel="Rate" />
+        <RankTable index={props.index} scope={props.scope} title="Best teams" note="Ranked by how often the stat lands." rows={teams.map((row) => ({ id: `${row.league}-${row.team}`, name: row.team, league: row.league, played: row.played, value: pct(row.pct) }))} valueLabel="Rate" />
         <LeagueRateTable title="Best leagues" rows={leagues} sort={props.leagueSort} />
         <Block dropdown title="Upcoming matches" note="Next 48 hours. The best bet is the same pick shown on a fixture.">
           <UpcomingList rows={lines(props.upcoming, (id) => {
@@ -884,7 +1035,7 @@ function AnalysisBody(props: {
     const leagues = rankLeagues(props.index, { kind: 'line', line: props.goalLine, side: props.goalSide }, props.leagueSort, props.goalSide === 'over');
     return (
       <>
-        <RankTable title={`Best teams for ${label}`} note="Share of this team’s matches on that side of the line." rows={teams.map((row) => ({ id: `${row.league}-${row.team}`, name: row.team, league: row.league, played: row.played, value: pct(row.pct) }))} valueLabel="Rate" />
+        <RankTable index={props.index} scope={props.scope} title={`Best teams for ${label}`} note="Share of this team’s matches on that side of the line." rows={teams.map((row) => ({ id: `${row.league}-${row.team}`, name: row.team, league: row.league, played: row.played, value: pct(row.pct) }))} valueLabel="Rate" />
         <LeagueRateTable title={`Best leagues for ${label}`} rows={leagues} sort={props.leagueSort} />
         <Block dropdown title="Upcoming matches" note="Next 48 hours. The best bet is the same pick shown on a fixture.">
           <UpcomingList rows={lines(props.upcoming, (id) => {
@@ -911,7 +1062,8 @@ function AnalysisBody(props: {
             { key: 'loss', label: 'Loss', flex: 0.7 },
           ]}
           empty="No teams with enough matches."
-          rows={teams.slice(0, 40).map((row, i) => ({
+          onGames={(row) => listedGamesForTeam(props.index, row.cells.team, row.cells.league, props.scope)}
+          rows={teams.map((row, i) => ({
             id: `${row.league}-${row.team}`,
             cells: { rank: String(i + 1), team: row.team, league: row.league, played: String(row.played), win: pct(row.winPct), draw: pct(row.drawPct), loss: pct(row.lossPct) },
           }))}
@@ -928,7 +1080,7 @@ function AnalysisBody(props: {
     const teams = rankHalfGoals(props.index, props.scope, side);
     return (
       <>
-        <RankTable title={side === 'first' ? '1st half goals' : '2nd half goals'} note="Average goals by this team in that half." rows={teams.map((row) => ({ id: `${row.league}-${row.team}`, name: row.team, league: row.league, played: row.played, value: row.avg.toFixed(1) }))} valueLabel="Per game" />
+        <RankTable index={props.index} scope={props.scope} title={side === 'first' ? '1st half goals' : '2nd half goals'} note="Average goals by this team in that half." rows={teams.map((row) => ({ id: `${row.league}-${row.team}`, name: row.team, league: row.league, played: row.played, value: row.avg.toFixed(1) }))} valueLabel="Per game" />
         <Block dropdown title="Upcoming matches" note="Next 48 hours. The best bet is the same pick shown on a fixture.">
           <UpcomingList rows={lines(props.upcoming, () => '')} />
         </Block>
@@ -961,6 +1113,10 @@ function AnalysisBody(props: {
               { key: 'xg', label: 'Expected goals', flex: 1.1 },
             ]}
             empty="No upcoming match has both teams conceding in at least 8 of their last 10."
+            onGames={(row) => {
+              const fx = props.upcoming.find((item) => String(item.id) === row.id);
+              return fx ? fixtureGames(fx, props.finished) : [];
+            }}
             rows={rows.map((row, index) => ({
               id: String(row.id),
               cells: {
@@ -977,15 +1133,18 @@ function AnalysisBody(props: {
               },
             }))}
           />
-          <View style={styles.matchList}>
-            {rows.map((row) => (
-              <View key={row.id} style={styles.matchCard}>
-                <Text style={styles.matchKo}>{kickoff(row.unix)}</Text>
-                <Text style={styles.matchTitle}>{row.match}</Text>
-                <BestBetLine bet={betFor(row.id)} />
-              </View>
-            ))}
-          </View>
+          <PagedFixtures
+            rows={rows.map((row) => {
+              const fx = props.upcoming.find((item) => item.id === row.id);
+              return {
+                id: row.id,
+                unix: row.unix,
+                match: row.match,
+                bet: betFor(row.id),
+                games: fx ? fixtureGames(fx, props.finished) : [],
+              };
+            })}
+          />
         </>
       );
     }
@@ -1012,6 +1171,10 @@ function AnalysisBody(props: {
             { key: 'midweek', label: 'Midweek', flex: 0.7 },
           ]}
           empty={empty}
+          onGames={(row) => {
+            const fx = props.upcoming.find((item) => String(item.id) === row.id);
+            return fx ? fixtureGames(fx, props.finished) : [];
+          }}
           rows={rows.map((row, index) => ({
             id: String(row.id),
             cells: {
@@ -1030,15 +1193,18 @@ function AnalysisBody(props: {
             },
           }))}
         />
-        <View style={styles.matchList}>
-          {rows.map((row) => (
-            <View key={row.id} style={styles.matchCard}>
-              <Text style={styles.matchKo}>{kickoff(row.unix)}</Text>
-              <Text style={styles.matchTitle}>{row.match}</Text>
-              <BestBetLine bet={betFor(row.id)} />
-            </View>
-          ))}
-        </View>
+        <PagedFixtures
+          rows={rows.map((row) => {
+            const fx = props.upcoming.find((item) => item.id === row.id);
+            return {
+              id: row.id,
+              unix: row.unix,
+              match: row.match,
+              bet: betFor(row.id),
+              games: fx ? fixtureGames(fx, props.finished) : [],
+            };
+          })}
+        />
       </>
     );
   }
@@ -1047,7 +1213,7 @@ function AnalysisBody(props: {
     const teams = rankBothHalves(props.index, props.scope, props.bothMode);
     return (
       <>
-        <RankTable title="Best teams" note="Share of matches that fit this both-halves stat." rows={teams.map((row) => ({ id: `${row.league}-${row.team}`, name: row.team, league: row.league, played: row.played, value: pct(row.pct) }))} valueLabel="Rate" />
+        <RankTable index={props.index} scope={props.scope} title="Best teams" note="Share of matches that fit this both-halves stat." rows={teams.map((row) => ({ id: `${row.league}-${row.team}`, name: row.team, league: row.league, played: row.played, value: pct(row.pct) }))} valueLabel="Rate" />
         <Block dropdown title="Upcoming matches" note="Next 48 hours. The best bet is the same pick shown on a fixture.">
           <UpcomingList rows={lines(props.upcoming, () => '')} />
         </Block>
@@ -1059,7 +1225,7 @@ function AnalysisBody(props: {
     const teams = rankCleanSheets(props.index, props.scope, props.cleanDir);
     return (
       <>
-        <RankTable title={props.cleanDir === 'most' ? 'Most clean sheets' : 'Least clean sheets'} note="A team needs at least 7 matches." rows={teams.map((row) => ({ id: `${row.league}-${row.team}`, name: row.team, league: row.league, played: row.played, value: `${row.hits} · ${pct(row.pct)}` }))} valueLabel="Clean sheets" />
+        <RankTable index={props.index} scope={props.scope} title={props.cleanDir === 'most' ? 'Most clean sheets' : 'Least clean sheets'} note="A team needs at least 7 matches." rows={teams.map((row) => ({ id: `${row.league}-${row.team}`, name: row.team, league: row.league, played: row.played, value: `${row.hits} · ${pct(row.pct)}` }))} valueLabel="Clean sheets" />
         <Block dropdown title="Upcoming matches" note="Next 48 hours. The best bet is the same pick shown on a fixture.">
           <UpcomingList rows={lines(props.upcoming, () => '')} />
         </Block>
@@ -1079,7 +1245,7 @@ function AnalysisBody(props: {
             { key: 'pct', label: 'Share', flex: 0.7 },
           ]}
           empty="No finished scores in this filter."
-          rows={rows.slice(0, 20).map((row, i) => ({ id: row.score, cells: { rank: String(i + 1), score: row.score, count: String(row.count), pct: pct(row.pct) } }))}
+          rows={rows.map((row, i) => ({ id: row.score, cells: { rank: String(i + 1), score: row.score, count: String(row.count), pct: pct(row.pct) } }))}
         />
         <Block dropdown title="Upcoming matches" note="Next 48 hours. The best bet is the same pick shown on a fixture.">
           <UpcomingList rows={lines(props.upcoming, () => '')} />
@@ -1116,7 +1282,7 @@ function AnalysisBody(props: {
                   props.upcoming.filter((fx) => !matches.some((row) => row.id === fx.id)),
                   () => '',
                 ),
-              ].slice(0, 40)}
+              ]}
             />
           </Block>
         </>
@@ -1147,10 +1313,10 @@ function AnalysisBody(props: {
       .sort((a, b) => b.sort - a.sort);
     return (
       <>
-        <RankTable
+        <RankTable index={props.index} scope={props.scope}
           title={props.analysis === 'cards' ? `${cardLabel} per game` : `Offsides per game · Over ${props.offsideLine}`}
           note={props.analysis === 'cards' ? `${cardLabel} of this team, counted from the sampled finished matches.` : `Offsides of this team. Over ${props.offsideLine} is the share of sampled matches above that line.`}
-          rows={teams.slice(0, 40)}
+          rows={teams}
           valueLabel={props.analysis === 'cards' ? 'Per game' : 'Per game and over'}
         />
         <Block dropdown title="Upcoming matches" note="Next 48 hours. The best bet is the same pick shown on a fixture.">
@@ -1177,6 +1343,7 @@ function AnalysisBody(props: {
             { key: 'sample', label: 'Played', flex: 0.7 },
           ]}
           empty={`No team has a live ${props.seriesLabel} series of 3 or more.`}
+          onGames={(row) => listedGamesForTeam(props.index, row.cells.team, row.cells.league, props.scope)}
           rows={teams.map((row, i) => ({ id: row.id, cells: { rank: String(i + 1), team: row.team, league: row.league, run: String(row.run), sample: String(row.sample) } }))}
         />
         <Block dropdown title="Upcoming matches" note="Each team’s next match, with the fixture best bet.">
@@ -1200,7 +1367,7 @@ function AnalysisBody(props: {
   const next = ordinaryMatches(props.finished, props.upcoming, props.statKey, props.scope);
   return (
     <>
-      <RankTable
+      <RankTable index={props.index} scope={props.scope}
         title={props.analysis === 'ordinary' ? `Best teams for ${props.statLabel}` : `Best leagues for ${props.statLabel}`}
         note={props.analysis === 'ordinary' ? 'Ordinary full-time rate. A team needs at least 5 matches.' : 'League average of that ordinary rate.'}
         rows={teams.map((row) => ({ id: row.id, name: row.name, league: props.analysis === 'ordinary' ? row.league : row.country, played: row.played, value: pct(row.pct) }))}
@@ -1241,7 +1408,7 @@ function LeagueRateTable({ title, rows, sort }: { title: string; sort: LeagueSor
           { key: 'value', label, flex: 0.8 },
         ]}
         empty="No leagues in this filter have played enough of the season."
-        rows={rows.slice(0, 40).map((row, i) => ({
+        rows={rows.map((row, i) => ({
           id: String(row.competitionId),
           cells: { rank: String(i + 1), league: row.league, country: row.country, played: String(row.played), value: valueOf(row) },
         }))}
@@ -1255,11 +1422,15 @@ function RankTable({
   note,
   rows,
   valueLabel,
+  index,
+  scope,
 }: {
   title: string;
   note: string;
   valueLabel: string;
   rows: { id: string; name: string; league: string; played: number; value: string }[];
+  index?: FootyIndex;
+  scope?: Scope;
 }) {
   const [page, setPage] = useState(1);
   const size = 12;
@@ -1278,6 +1449,7 @@ function RankTable({
           { key: 'value', label: valueLabel, flex: 0.9 },
         ]}
         empty="Nothing in this filter has enough matches."
+        onGames={index && scope ? (row) => listedGamesForTeam(index, row.cells.name, row.cells.league, scope) : undefined}
         rows={visible.map((row, i) => ({
           id: row.id,
           cells: { rank: String(start + i + 1), name: row.name, league: row.league, played: String(row.played), value: row.value },
@@ -1486,6 +1658,7 @@ const styles = StyleSheet.create({
   pageBtnText: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: '#FFFFFF' },
   pageLabel: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: theme.textPrimary, flexShrink: 1, textAlign: 'center' },
   cardList: { gap: spacing.sm },
+  statCardOn: { backgroundColor: '#DBEAFE' },
   statCard: {
     borderWidth: layout.borderWidth,
     borderColor: theme.border,

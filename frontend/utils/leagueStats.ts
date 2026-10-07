@@ -83,7 +83,7 @@ export const LEAGUE_STAT_DEFS: LeagueStatDef[] = [
 export const LEAGUE_STAT_EXCLUDED = ['sc_pct', 'conc_pct'] as const;
 
 /** Finished games a team needs before its percentage is worth reading. */
-export const MIN_LEAGUE_SAMPLE = 4;
+export const MIN_LEAGUE_SAMPLE = 5;
 
 export const DEFAULT_LEAGUE_STAT = 'btts_yes';
 
@@ -176,13 +176,13 @@ export function buildLeagueStatTable(opts: {
       if (value == null) return null;
       return {
         team: String(row.team_name),
-        value: def.avg ? round1(value) : Math.round(value),
+        value: round1(value),
         sample: numberAt(row, 'sample_size') ?? 0,
         level: levelAt(row, def, value),
       };
     })
     .filter((e): e is NonNullable<typeof e> => e != null)
-    .sort((a, b) => b.value - a.value || a.team.localeCompare(b.team));
+    .sort((a, b) => b.value - a.value || b.sample - a.sample || a.team.localeCompare(b.team));
 
   const leagueValue = opts.leagueRow ? numberAt(opts.leagueRow, def.key) : null;
   const mean = entries.length

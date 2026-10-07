@@ -60,12 +60,24 @@ function competitionsFrom(rows: RawFixture[] | undefined): LiveCompetition[] {
  * active, sourced live from the API. Sorted by activity (most upcoming fixtures
  * first) so the default selection is a competition likely to have results.
  */
-export function useLiveCompetitions(days = 3): LiveCompetition[] {
+export function useLiveCompetitionFeed(days = 3): {
+  competitions: LiveCompetition[];
+  loading: boolean;
+  error: string | null;
+} {
   const query = useQuery({
     queryKey: oddAlertsKeys.upcoming({ days }),
     queryFn: ({ signal }) => fetchUpcomingFixtures({ days }, signal),
     staleTime: clientStaleTime('fixtures/upcoming'),
   });
 
-  return useMemo(() => competitionsFrom(query.data?.data), [query.data]);
+  const competitions = useMemo(() => competitionsFrom(query.data?.data), [query.data]);
+  const error =
+    query.error instanceof Error ? query.error.message : query.error ? String(query.error) : null;
+
+  return { competitions, loading: query.isPending, error };
+}
+
+export function useLiveCompetitions(days = 3): LiveCompetition[] {
+  return useLiveCompetitionFeed(days).competitions;
 }

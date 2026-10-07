@@ -13,11 +13,12 @@ import type {
   TeamStatsRow,
   TimePeriod,
 } from '@/types/analytics';
-import { complianceFromPercent } from '@/utils/compliance';
+import { sampleRowsForFamily } from '@/utils/statsTableAdapter';
 
 export const ANALYTICS_TABS: { id: AnalyticsTab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'tables', label: 'Stats Tables' },
+  { id: 'additional', label: 'Additional stats' },
   { id: 'footy', label: 'Footy Stats' },
   { id: 'predictions', label: 'Predictions' },
   { id: 'finder', label: '🔎 Bet Finder' },
@@ -128,34 +129,6 @@ export const PROJECT_PHASES: ProjectPhase[] = [
   },
 ];
 
-const ORDINARY_STAT_LABELS = [
-  'SC%',
-  'Conc%',
-  'SC/m',
-  'Conc/m',
-  'BTTS Yes',
-  'BTTS No',
-  'CS',
-  'AVG',
-  'FTS',
-  'W',
-  'D',
-  'L',
-  'Over 1.5',
-  'Over 2.5',
-  'Over 3.5',
-  'Under 2.5',
-  'Under 3.5',
-  'Scored First',
-  'Handicap',
-  'Early Goals 1H',
-];
-
-function mockMetric(key: string, label: string, seed: number) {
-  const value = 15 + ((seed * 17) % 70);
-  return { key, label, value, compliance: complianceFromPercent(value) };
-}
-
 // All 72 stat-table variants. Base = 5 families × period × split (45);
 // last-N = 3 windows × period × split (27). Ids/family/period/split map to the
 // live builder's table names via utils/statsTableAdapter.metaToLiveTableName.
@@ -210,27 +183,8 @@ const LASTN_TABLES: StatsTableMeta[] = LASTN_WINDOWS.flatMap((w) =>
 
 export const STATS_TABLES: StatsTableMeta[] = [...BASE_TABLES, ...LASTN_TABLES];
 
-export function getTeamStatsForTable(_tableId: string): TeamStatsRow[] {
-  return [
-    {
-      team: 'Manchester City',
-      metrics: ORDINARY_STAT_LABELS.slice(0, 12).map((label, i) =>
-        mockMetric(`mci-${i}`, label, i + 1),
-      ),
-    },
-    {
-      team: 'Arsenal',
-      metrics: ORDINARY_STAT_LABELS.slice(0, 12).map((label, i) =>
-        mockMetric(`ars-${i}`, label, i + 3),
-      ),
-    },
-    {
-      team: 'Liverpool',
-      metrics: ORDINARY_STAT_LABELS.slice(0, 12).map((label, i) =>
-        mockMetric(`liv-${i}`, label, i + 5),
-      ),
-    },
-  ];
+export function getTeamStatsForTable(_tableId: string, family?: StatFamily): TeamStatsRow[] {
+  return sampleRowsForFamily(family);
 }
 
 export const STREAM_SIGNALS: StreamSignal[] = [

@@ -109,6 +109,7 @@ function toFootyFixture(raw: {
     awayGoals: raw.away_goals,
     htHome: ht ? ht[0] : null,
     htAway: ht ? ht[1] : null,
+    regulation: raw.status === 'FT',
   };
 }
 

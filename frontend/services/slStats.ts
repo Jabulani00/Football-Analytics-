@@ -328,7 +328,7 @@ function asRaw(fx: FootyFixture): RawFixture {
     competition_type: '',
     competition_predictability: null,
     season: '',
-    status: 'FT',
+    status: fx.regulation === false ? 'AET' : 'FT',
     home_goals: fx.homeGoals,
     away_goals: fx.awayGoals,
     ht_score: fx.htHome != null && fx.htAway != null ? `${fx.htHome}-${fx.htAway}` : null,

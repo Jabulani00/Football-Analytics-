@@ -53,6 +53,8 @@ export type FootyFixture = {
   awayGoals: number | null;
   htHome: number | null;
   htAway: number | null;
+  /** False when the result is extra time, penalties, or an award rather than 90 minutes. */
+  regulation?: boolean;
 };
 
 export type FootyQuery = {
@@ -130,11 +132,16 @@ export type RateSummary = {
 };
 
 type Game = {
+  id: number;
+  unix: number;
   venue: 'home' | 'away';
+  match: string;
+  score: string;
   gf: number;
   ga: number;
   htGf: number | null;
   htGa: number | null;
+  regulation?: boolean;
 };
 
 type TeamBucket = {
@@ -168,12 +175,31 @@ function ratePct(hits: number, played: number): number {
   return round1((100 * hits) / played);
 }
 
+export function listedGamesForTeam(
+  index: FootyIndex,
+  team: string,
+  league: string,
+  scope: Scope,
+): { id: number; unix: number; match: string; score: string; detail: string; htKnown: boolean }[] {
+  const bucket = index.teams.find((item) => item.team === team && item.league === league);
+  if (!bucket) return [];
+  return scoped(bucket, scope).map((game) => ({
+    id: game.id,
+    unix: game.unix,
+    match: game.match,
+    score: game.score,
+    detail: game.venue === 'home' ? 'Home' : 'Away',
+    htKnown: game.htGf != null && game.htGa != null,
+  }));
+}
+
 function scoped(team: TeamBucket, scope: Scope): Game[] {
   if (scope === 'overall') return team.games;
   return team.games.filter((g) => g.venue === scope);
 }
 
 function halfOf(g: Game, half: HalfSide): { gf: number; ga: number } | null {
+  if (g.regulation === false) return null;
   if (g.htGf == null || g.htGa == null) return null;
   if (half === 'first') return { gf: g.htGf, ga: g.htGa };
   const gf = g.gf - g.htGf;
@@ -226,19 +252,31 @@ export function buildFootyIndex(
   for (const fx of finished) {
     const home = ensure(fx.competitionId, fx.homeName, fx);
     const away = ensure(fx.competitionId, fx.awayName, fx);
+    const score = `${fx.homeGoals}-${fx.awayGoals}`;
+    const match = `${fx.homeName} ${score} ${fx.awayName}`;
     home.games.push({
+      id: fx.id,
+      unix: fx.unix,
       venue: 'home',
+      match,
+      score,
       gf: fx.homeGoals as number,
       ga: fx.awayGoals as number,
       htGf: fx.htHome,
       htGa: fx.htAway,
+      regulation: fx.regulation,
     });
     away.games.push({
+      id: fx.id,
+      unix: fx.unix,
       venue: 'away',
+      match,
+      score,
       gf: fx.awayGoals as number,
       ga: fx.homeGoals as number,
       htGf: fx.htAway,
       htGa: fx.htHome,
+      regulation: fx.regulation,
     });
   }
 
@@ -340,7 +378,7 @@ export function rankGoalLineTeams(
   const rows: TeamRank[] = [];
   for (const team of index.teams) {
     if (!seasonOpen(team.progress, true)) continue;
-    const games = scoped(team, scope);
+    const games = scoped(team, scope).filter((game) => game.regulation !== false);
     if (games.length < MIN_RATE_MATCHES) continue;
     const hits = games.filter((g) => lineHit(g.gf + g.ga, line, side)).length;
     pushRank(rows, team, hits, games.length);
@@ -349,7 +387,7 @@ export function rankGoalLineTeams(
 }
 
 export function goalLineSummary(index: FootyIndex, line: GoalLine, side: GoalSide): RateSummary {
-  const open = index.finished.filter((fx) => seasonOpen(fx.progress, true));
+  const open = index.finished.filter((fx) => seasonOpen(fx.progress, true) && fx.regulation !== false);
   if (open.length === 0) return { pct: 0, matches: 0 };
   const hits = open.filter((fx) =>
     lineHit((fx.homeGoals as number) + (fx.awayGoals as number), line, side),
@@ -389,6 +427,7 @@ export function rankLeagues(
   const groups = new Map<number, LeagueRank & { known: number }>();
   for (const fx of index.finished) {
     if (!leagueUnderway(fx.progress, dropComplete)) continue;
+    if ((metric.kind === 'line' || metric.kind === 'half') && fx.regulation === false) continue;
     const hit = fixtureMetric(fx, metric);
     let row = groups.get(fx.competitionId);
     if (!row) {
