@@ -67,14 +67,17 @@ import {
 } from '@/utils/last6Form';
 import {
   GOAL_DIFF_TABS,
+  OUTCOME_TABS,
   PERIOD_WORD,
   VENUE_WORD,
   colourLetter,
   goalDiffTabLabel,
   last5PointsDiff,
+  outcomeTabLabel,
   peakLast5Gap,
   twoGoalBandSides,
   type GoalDiffTab,
+  type OutcomeTab,
   type TwoGoalGrade,
   type TwoGoalSideRead,
 } from '@/utils/last5Sections';
@@ -1213,29 +1216,43 @@ export function Last5DiffCards({
 }
 
 const TWO_GOAL_TABS = [
+  { id: 'overall', label: 'Overall' },
   { id: 't1_home', label: 'T1 as home' },
   { id: 't1_away', label: 'T1 as away' },
 ] as const;
 
+function venueWord(venue: TwoGoalSideRead['venue']): string {
+  if (venue === 'home') return 'Home';
+  if (venue === 'away') return 'Away';
+  return 'Overall';
+}
+
 function TwoGoalSideTable({
   side,
   goalDiff,
+  outcome,
 }: {
   side: TwoGoalSideRead;
   goalDiff: GoalDiffTab;
+  outcome: OutcomeTab;
 }) {
   const margin = goalDiffTabLabel(goalDiff);
+  const venue = venueWord(side.venue).toLowerCase();
+  const filters = [
+    outcome !== 'all' ? outcomeTabLabel(outcome).toLowerCase() : null,
+    goalDiff !== 'all' ? margin : null,
+  ].filter(Boolean);
+  const empty =
+    filters.length === 0
+      ? `No finished ${venue} games yet.`
+      : `No ${filters.join(' ')} games in the last 5 ${venue} matches.`;
   return (
     <View style={styles.twoGoalCol}>
       <Text style={styles.sideLabel}>
-        {side.label} · {side.venue === 'home' ? 'Home' : 'Away'} · {colourLetter(side.teamColour)}
+        {side.label} · {venueWord(side.venue)} · {colourLetter(side.teamColour)}
       </Text>
       {side.games.length === 0 ? (
-        <Text style={styles.note}>
-          {goalDiff === 'all'
-            ? `No finished ${side.venue} games yet.`
-            : `No ${margin} games in the last 5 ${side.venue} matches.`}
-        </Text>
+        <Text style={styles.note}>{empty}</Text>
       ) : (
         side.games.map((g, i) => (
           <View key={`${side.teamId}-${i}`} style={styles.twoGoalRow}>
@@ -1269,8 +1286,9 @@ export function TwoGoalBandCards({
   loading?: boolean;
   error?: string | null;
 }) {
-  const [mode, setMode] = useState<(typeof TWO_GOAL_TABS)[number]['id']>('t1_home');
+  const [mode, setMode] = useState<(typeof TWO_GOAL_TABS)[number]['id']>('overall');
   const [goalDiff, setGoalDiff] = useState<GoalDiffTab>('all');
+  const [outcome, setOutcome] = useState<OutcomeTab>('all');
   const sides = twoGoalBandSides({
     t1Id: pd.t1.teamId,
     t2Id: pd.t2.teamId,
@@ -1280,28 +1298,38 @@ export function TwoGoalBandCards({
     standings,
     mode,
     goalDiff,
+    outcome,
   });
+
+  const modeNote =
+    mode === 'overall'
+      ? `${pd.t1.label} + ${pd.t2.label} overall · W/D/L sheet`
+      : mode === 't1_home'
+        ? `${pd.t1.label} at home · ${pd.t2.label} away`
+        : `${pd.t1.label} away · ${pd.t2.label} at home`;
 
   return (
     <View>
       <SectorIntro
         title="Section 4: Colour-band goal differences"
         preserveCase
-        note="All shows every last-5 game in that venue. The other tabs keep only that goal difference. Then pick T1 as home or away. The colour pair is this side vs the opponent (G/Y/R). Sheet labels are live for 1-goal and 2-goal games."
+        note="Filter by goal difference and by Win / Draw / Loss. Overall uses the W/D/L colour sheet; T1 as home/away uses the 1-goal and 2-goal sheets. The colour pair is this side vs the opponent (G/Y/R)."
       />
       {loading ? <Text style={styles.note}>Loading season results…</Text> : null}
       {error ? <Text style={styles.note}>{error}</Text> : null}
       <SubTabBar tabs={GOAL_DIFF_TABS} active={goalDiff} onChange={setGoalDiff} />
+      <SubTabBar tabs={OUTCOME_TABS} active={outcome} onChange={setOutcome} />
       <SubTabBar tabs={[...TWO_GOAL_TABS]} active={mode} onChange={setMode} />
       <Text style={styles.note}>
-        {goalDiffTabLabel(goalDiff)} ·{' '}
-        {mode === 't1_home'
-          ? `${pd.t1.label} at home · ${pd.t2.label} away`
-          : `${pd.t1.label} away · ${pd.t2.label} at home`}
+        {goalDiffTabLabel(goalDiff)} · {outcomeTabLabel(outcome)} · {modeNote}
       </Text>
       <View style={styles.twoGoalGrid}>
-        {sides.left ? <TwoGoalSideTable side={sides.left} goalDiff={goalDiff} /> : null}
-        {sides.right ? <TwoGoalSideTable side={sides.right} goalDiff={goalDiff} /> : null}
+        {sides.left ? (
+          <TwoGoalSideTable side={sides.left} goalDiff={goalDiff} outcome={outcome} />
+        ) : null}
+        {sides.right ? (
+          <TwoGoalSideTable side={sides.right} goalDiff={goalDiff} outcome={outcome} />
+        ) : null}
       </View>
     </View>
   );

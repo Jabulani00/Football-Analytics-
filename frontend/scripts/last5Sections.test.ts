@@ -6,6 +6,7 @@ import {
   colourPairId,
   last5PointsDiff,
   matchesGoalDiffTab,
+  matchesOutcomeTab,
   twoGoalBandSides,
   twoGoalGrade,
 } from '../utils/last5Sections';
@@ -73,6 +74,31 @@ console.log('\n2-goal colour labels');
   check('all matches every margin', matchesGoalDiffTab(0, 'all') && matchesGoalDiffTab(9, 'all'));
 }
 
+console.log('\noverall W/D/L colour labels');
+{
+  const ov = { mode: 'overall' as const };
+  check('overall W G vs G is good', twoGoalGrade('green', 'green', 'W', 1, 'all', ov) === 'good');
+  check('overall W G vs Y is mediocre', twoGoalGrade('green', 'yellow', 'W', 2, 'all', ov) === 'mediocre');
+  check('overall W Y vs G is great', twoGoalGrade('yellow', 'green', 'W', 3, 'all', ov) === 'great');
+  check('overall W R vs Y is great', twoGoalGrade('red', 'yellow', 'W', 1, 'all', ov) === 'great');
+  check('overall D Y vs G is good', twoGoalGrade('yellow', 'green', 'D', 0, 'all', ov) === 'good');
+  check('overall D R vs G is great', twoGoalGrade('red', 'green', 'D', 0, 'all', ov) === 'great');
+  check(
+    'overall D G vs G above is good',
+    twoGoalGrade('green', 'green', 'D', 0, 'all', { ...ov, teamRank: 2, oppRank: 8 }) === 'good',
+  );
+  check(
+    'overall D G vs G below is bad',
+    twoGoalGrade('green', 'green', 'D', 0, 'all', { ...ov, teamRank: 8, oppRank: 2 }) === 'bad',
+  );
+  check('overall L Y vs G is mediocre', twoGoalGrade('yellow', 'green', 'L', -2, 'all', ov) === 'mediocre');
+  check('overall L G vs G is bad', twoGoalGrade('green', 'green', 'L', -1, 'all', ov) === 'bad');
+  check(
+    'home/away draw still uses draw sheet',
+    twoGoalGrade('yellow', 'yellow', 'D', 0, 'all', { mode: 't1_home' }) === 'mediocre',
+  );
+}
+
 console.log('\ngoal-diff tabs filter last 5');
 {
   const standings: StandingLike[] = [
@@ -112,6 +138,40 @@ console.log('\ngoal-diff tabs filter last 5');
   });
   check('1-goal tab keeps only 1-goal games', one.left?.games.length === 2);
   check('1-goal games are labelled from the 1-goal sheet', one.left?.games.every((g) => g.grade != null) === true);
+
+  const overall = twoGoalBandSides({
+    t1Id: 1,
+    t2Id: 2,
+    t1Label: 'T1',
+    t2Label: 'T2',
+    matches,
+    standings,
+    mode: 'overall',
+    goalDiff: 'all',
+  });
+  check('overall tab lists last-5 any venue', overall.left?.games.length === 5);
+  check(
+    'overall games use the W/D/L sheet',
+    overall.left?.games.every((g) => g.grade != null) === true,
+  );
+  check('overall venue is overall', overall.left?.venue === 'overall');
+
+  const wins = twoGoalBandSides({
+    t1Id: 1,
+    t2Id: 2,
+    t1Label: 'T1',
+    t2Label: 'T2',
+    matches,
+    standings,
+    mode: 'overall',
+    goalDiff: 'all',
+    outcome: 'W',
+  });
+  check('win tab keeps only wins', wins.left?.games.every((g) => g.outcome === 'W') === true);
+  check('win tab has games', (wins.left?.games.length ?? 0) > 0);
+  check('outcome all matches W', matchesOutcomeTab('W', 'all'));
+  check('outcome W matches W', matchesOutcomeTab('W', 'W'));
+  check('outcome W rejects D', matchesOutcomeTab('D', 'W') === false);
 }
 
 console.log('\nT1 − T2 last 5');
