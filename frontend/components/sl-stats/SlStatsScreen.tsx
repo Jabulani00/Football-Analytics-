@@ -5,6 +5,7 @@ import FootyTable, { type FootyColumn } from '@/components/analytics/FootyTable'
 import AppNavMenu from '@/components/layout/AppNavMenu';
 import AppShell from '@/components/shared/AppShell';
 import IncludedGamesList from '@/components/shared/IncludedGamesList';
+import PageControls from '@/components/shared/PageControls';
 import FilterDropdown from '@/components/shared/FilterDropdown';
 import StickyBack from '@/components/shared/StickyBack';
 import { useSlStats } from '@/hooks/useSlStats';
@@ -688,17 +689,44 @@ function StatsTable({
 }) {
   const narrow = useNarrow();
   const [open, setOpen] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const size = 20;
+  const pageCount = Math.max(1, Math.ceil(rows.length / size));
+  const safe = Math.min(page, pageCount);
+  const start = (safe - 1) * size;
+  const visible = rows.slice(start, start + size);
+  const signature = `${rows.length}|${rows[0]?.id ?? ''}|${rows[rows.length - 1]?.id ?? ''}`;
+  useEffect(() => {
+    setPage(1);
+    setOpen(null);
+  }, [signature]);
   const picked = rows.find((row) => row.id === open);
   const games = picked && onGames ? onGames(picked) : [];
   const toggle = (id: string) => setOpen((current) => (current === id ? null : id));
   const list = open && onGames ? (
-    <IncludedGamesList title="Games in this row" games={games} />
+    <IncludedGamesList title="Games in this row" games={games} onClose={() => setOpen(null)} />
   ) : null;
+  const pager = (slot: string) => (
+    <PageControls
+      key={slot}
+      page={safe}
+      pages={pageCount}
+      total={rows.length}
+      from={rows.length === 0 ? 0 : start + 1}
+      to={start + visible.length}
+      onChange={(next) => {
+        setPage(next);
+        setOpen(null);
+      }}
+    />
+  );
   if (!narrow) {
     return (
       <>
-        <FootyTable columns={columns} rows={rows} empty={empty} onPress={onGames ? toggle : undefined} selectedId={open} />
         {list}
+        {pager('top')}
+        <FootyTable columns={columns} rows={visible} empty={empty} onPress={onGames ? toggle : undefined} selectedId={open} />
+        {pager('bottom')}
       </>
     );
   }
@@ -711,7 +739,8 @@ function StatsTable({
   const rest = columns.filter((col) => col !== rankCol && col !== named && col !== figureCol);
   return (
     <View style={styles.cardList}>
-      {rows.map((row) => (
+      {pager('top')}
+      {visible.map((row) => (
         <Pressable key={row.id} onPress={onGames ? () => toggle(row.id) : undefined} style={[styles.statCard, open === row.id && styles.statCardOn]}>
           <View style={styles.statCardTop}>
             {rankCol ? <Text style={styles.statRank}>{row.cells[rankCol.key]}</Text> : null}
@@ -723,9 +752,10 @@ function StatsTable({
               {col.label}: {row.cells[col.key] || '—'}
             </Text>
           ))}
-          {open === row.id && onGames ? <IncludedGamesList title="Games in this row" games={onGames(row)} /> : null}
+          {open === row.id && onGames ? <IncludedGamesList title="Games in this row" games={onGames(row)} onClose={() => setOpen(null)} /> : null}
         </Pressable>
       ))}
+      {pager('bottom')}
     </View>
   );
 }
@@ -845,6 +875,34 @@ function QueryBoard({
   );
 }
 
+function PagedFixtures({
+  rows,
+}: {
+  rows: { id: number; unix: number; match: string; bet: BestBet | null; games: CountedGame[] }[];
+}) {
+  const [page, setPage] = useState(1);
+  const size = 8;
+  const pages = Math.max(1, Math.ceil(rows.length / size));
+  const safe = Math.min(page, pages);
+  const start = (safe - 1) * size;
+  const visible = rows.slice(start, start + size);
+  return (
+    <View style={styles.matchList}>
+      {visible.map((row) => (
+        <QuickMatchCard key={row.id} id={row.id} unix={row.unix} match={row.match} bet={row.bet} games={row.games} />
+      ))}
+      <PageControls
+        page={safe}
+        pages={pages}
+        total={rows.length}
+        from={rows.length === 0 ? 0 : start + 1}
+        to={start + visible.length}
+        onChange={setPage}
+      />
+    </View>
+  );
+}
+
 function QuickMatchCard({
   id,
   unix,
@@ -864,7 +922,7 @@ function QuickMatchCard({
       <Text style={styles.matchKo}>{kickoff(unix)}</Text>
       <Text style={styles.matchTitle}>{match}</Text>
       <BestBetLine bet={bet} />
-      {open ? <IncludedGamesList title="Games in this fixture" games={games} /> : null}
+      {open ? <IncludedGamesList title="Games in this fixture" games={games} onClose={() => setOpen(false)} /> : null}
     </Pressable>
   );
 }
@@ -894,6 +952,7 @@ function UpcomingList({
           {open === row.id ? (
             <IncludedGamesList
               title="Games in this fixture"
+              onClose={() => setOpen(null)}
               games={row.games ?? [{ id: row.id, unix: row.unix, match: row.match, score: 'Upcoming', detail: row.league, htKnown: true }]}
             />
           ) : null}
@@ -1004,7 +1063,7 @@ function AnalysisBody(props: {
           ]}
           empty="No teams with enough matches."
           onGames={(row) => listedGamesForTeam(props.index, row.cells.team, row.cells.league, props.scope)}
-          rows={teams.slice(0, 40).map((row, i) => ({
+          rows={teams.map((row, i) => ({
             id: `${row.league}-${row.team}`,
             cells: { rank: String(i + 1), team: row.team, league: row.league, played: String(row.played), win: pct(row.winPct), draw: pct(row.drawPct), loss: pct(row.lossPct) },
           }))}
@@ -1074,21 +1133,18 @@ function AnalysisBody(props: {
               },
             }))}
           />
-          <View style={styles.matchList}>
-            {rows.map((row) => {
+          <PagedFixtures
+            rows={rows.map((row) => {
               const fx = props.upcoming.find((item) => item.id === row.id);
-              return (
-                <QuickMatchCard
-                  key={row.id}
-                  id={row.id}
-                  unix={row.unix}
-                  match={row.match}
-                  bet={betFor(row.id)}
-                  games={fx ? fixtureGames(fx, props.finished) : []}
-                />
-              );
+              return {
+                id: row.id,
+                unix: row.unix,
+                match: row.match,
+                bet: betFor(row.id),
+                games: fx ? fixtureGames(fx, props.finished) : [],
+              };
             })}
-          </View>
+          />
         </>
       );
     }
@@ -1137,21 +1193,18 @@ function AnalysisBody(props: {
             },
           }))}
         />
-        <View style={styles.matchList}>
-          {rows.map((row) => {
+        <PagedFixtures
+          rows={rows.map((row) => {
             const fx = props.upcoming.find((item) => item.id === row.id);
-            return (
-              <QuickMatchCard
-                key={row.id}
-                id={row.id}
-                unix={row.unix}
-                match={row.match}
-                bet={betFor(row.id)}
-                games={fx ? fixtureGames(fx, props.finished) : []}
-              />
-            );
+            return {
+              id: row.id,
+              unix: row.unix,
+              match: row.match,
+              bet: betFor(row.id),
+              games: fx ? fixtureGames(fx, props.finished) : [],
+            };
           })}
-        </View>
+        />
       </>
     );
   }
@@ -1192,7 +1245,7 @@ function AnalysisBody(props: {
             { key: 'pct', label: 'Share', flex: 0.7 },
           ]}
           empty="No finished scores in this filter."
-          rows={rows.slice(0, 20).map((row, i) => ({ id: row.score, cells: { rank: String(i + 1), score: row.score, count: String(row.count), pct: pct(row.pct) } }))}
+          rows={rows.map((row, i) => ({ id: row.score, cells: { rank: String(i + 1), score: row.score, count: String(row.count), pct: pct(row.pct) } }))}
         />
         <Block dropdown title="Upcoming matches" note="Next 48 hours. The best bet is the same pick shown on a fixture.">
           <UpcomingList rows={lines(props.upcoming, () => '')} />
@@ -1229,7 +1282,7 @@ function AnalysisBody(props: {
                   props.upcoming.filter((fx) => !matches.some((row) => row.id === fx.id)),
                   () => '',
                 ),
-              ].slice(0, 40)}
+              ]}
             />
           </Block>
         </>
@@ -1263,7 +1316,7 @@ function AnalysisBody(props: {
         <RankTable index={props.index} scope={props.scope}
           title={props.analysis === 'cards' ? `${cardLabel} per game` : `Offsides per game · Over ${props.offsideLine}`}
           note={props.analysis === 'cards' ? `${cardLabel} of this team, counted from the sampled finished matches.` : `Offsides of this team. Over ${props.offsideLine} is the share of sampled matches above that line.`}
-          rows={teams.slice(0, 40)}
+          rows={teams}
           valueLabel={props.analysis === 'cards' ? 'Per game' : 'Per game and over'}
         />
         <Block dropdown title="Upcoming matches" note="Next 48 hours. The best bet is the same pick shown on a fixture.">
@@ -1355,7 +1408,7 @@ function LeagueRateTable({ title, rows, sort }: { title: string; sort: LeagueSor
           { key: 'value', label, flex: 0.8 },
         ]}
         empty="No leagues in this filter have played enough of the season."
-        rows={rows.slice(0, 40).map((row, i) => ({
+        rows={rows.map((row, i) => ({
           id: String(row.competitionId),
           cells: { rank: String(i + 1), league: row.league, country: row.country, played: String(row.played), value: valueOf(row) },
         }))}

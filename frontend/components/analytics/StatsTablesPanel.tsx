@@ -5,6 +5,7 @@ import LeagueStatsPanel from '@/components/league/LeagueStatsPanel';
 import CompetitionPicker from '@/components/shared/CompetitionPicker';
 import FilterDropdown from '@/components/shared/FilterDropdown';
 import IncludedGamesList from '@/components/shared/IncludedGamesList';
+import PageControls, { PAGE_SIZE } from '@/components/shared/PageControls';
 import { useLiveCompetitionFeed } from '@/hooks/useLiveCompetitions';
 import { useLiveStatsTables } from '@/hooks/useLiveStatsTables';
 import type { StatFamily } from '@/types/analytics';
@@ -55,6 +56,7 @@ export default function StatsTablesPanel({ variant = 'all' }: { variant?: 'all' 
   const competitions = feed.competitions;
   const [competitionId, setCompetitionId] = useState<number | null>(null);
   const [openTeam, setOpenTeam] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
   useEffect(() => {
     if (competitionId == null && competitions.length > 0) setCompetitionId(competitions[0].id);
   }, [competitions, competitionId]);
@@ -91,6 +93,15 @@ export default function StatsTablesPanel({ variant = 'all' }: { variant?: 'all' 
       SCOPES.findIndex((item) => item.key === scope);
     return sortByPrimary(sampleRowsForFamily(family.family, salt));
   }, [isLeagueStats, waiting, isLive, liveTable, family.family, activePeriod, scope]);
+  const pages = Math.max(1, Math.ceil(teams.length / PAGE_SIZE));
+  const safePage = Math.min(page, pages);
+  const pageStart = (safePage - 1) * PAGE_SIZE;
+  const visibleTeams = teams.slice(pageStart, pageStart + PAGE_SIZE);
+
+  useEffect(() => {
+    setPage(1);
+    setOpenTeam(null);
+  }, [familyKey, activePeriod, scope, competitionId, tableName]);
 
   return (
     <View style={styles.container}>
@@ -169,12 +180,28 @@ export default function StatsTablesPanel({ variant = 'all' }: { variant?: 'all' 
           {openTeam ? (
             <IncludedGamesList
               title={`${openTeam} · games in this table`}
+              onClose={() => setOpenTeam(null)}
               games={rowGames(leagueTeamRows?.find((row) => row.team_name === openTeam))}
             />
           ) : null}
         </>
       ) : teams.length === 0 ? null : (
         <>
+          {openTeam ? (
+            <IncludedGamesList
+              title={`${openTeam} · games in this table`}
+              onClose={() => setOpenTeam(null)}
+              games={teams.find((row) => row.team === openTeam)?.games ?? []}
+            />
+          ) : null}
+          <PageControls
+            page={safePage}
+            pages={pages}
+            total={teams.length}
+            from={pageStart + 1}
+            to={pageStart + visibleTeams.length}
+            onChange={setPage}
+          />
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={Platform.OS === 'web'}
@@ -190,12 +217,12 @@ export default function StatsTablesPanel({ variant = 'all' }: { variant?: 'all' 
                   </Text>
                 ))}
               </View>
-              {teams.map((row, i) => (
+              {visibleTeams.map((row, i) => (
                 <Pressable
                   key={row.team}
                   onPress={() => setOpenTeam((current) => (current === row.team ? null : row.team))}
-                  style={[styles.tableRow, i % 2 === 1 && styles.tableRowAlt, openTeam === row.team && styles.tableRowOn]}>
-                  <Text style={[styles.cell, styles.cellRank, styles.rankText]}>{i + 1}</Text>
+                  style={[styles.tableRow, (pageStart + i) % 2 === 1 && styles.tableRowAlt, openTeam === row.team && styles.tableRowOn]}>
+                  <Text style={[styles.cell, styles.cellRank, styles.rankText]}>{pageStart + i + 1}</Text>
                   <Text style={[styles.cell, styles.cellTeam, styles.teamName]} numberOfLines={1}>
                     {row.played != null && row.played < 5 ? `${row.team} · ${row.played}` : row.team}
                   </Text>
@@ -216,12 +243,14 @@ export default function StatsTablesPanel({ variant = 'all' }: { variant?: 'all' 
               ))}
             </View>
           </ScrollView>
-          {openTeam ? (
-            <IncludedGamesList
-              title={`${openTeam} · games in this table`}
-              games={teams.find((row) => row.team === openTeam)?.games ?? []}
-            />
-          ) : null}
+          <PageControls
+            page={safePage}
+            pages={pages}
+            total={teams.length}
+            from={pageStart + 1}
+            to={pageStart + visibleTeams.length}
+            onChange={setPage}
+          />
 
           <Text style={styles.footHint}>
             Colour = how often the stat lands, not whether it is good:{' '}

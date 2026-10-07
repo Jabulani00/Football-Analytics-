@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import PageControls, { PAGE_SIZE } from '@/components/shared/PageControls';
 import SubTabBar from '@/components/shared/SubTabBar';
 import type { TeamStatRow } from '@/types/data';
 import { complianceColor, COMPLIANCE_RULE_TEXT } from '@/utils/compliance';
@@ -103,6 +104,7 @@ export default function LeagueStatsPanel({
   contextLabel,
 }: Props) {
   const [statKey, setStatKey] = useState(DEFAULT_LEAGUE_STAT);
+  const [page, setPage] = useState(1);
   const group = leagueStatDef(statKey)?.group ?? LEAGUE_STAT_GROUPS[0].id;
 
   const table = useMemo(
@@ -117,6 +119,15 @@ export default function LeagueStatsPanel({
   };
 
   const marked = new Set(highlightTeams ?? []);
+  const rowCount = table?.rows.length ?? 0;
+  const pages = Math.max(1, Math.ceil(rowCount / PAGE_SIZE));
+  const safePage = Math.min(page, pages);
+  const pageStart = (safePage - 1) * PAGE_SIZE;
+  const visibleRows = table?.rows.slice(pageStart, pageStart + PAGE_SIZE) ?? [];
+
+  useEffect(() => {
+    setPage(1);
+  }, [statKey, rowCount]);
   const avg = table?.stat.avg;
   // Percentages share a 0–100 track; averages scale to the leader.
   const scale = avg ? Math.max(1, table?.rows[0]?.value ?? 1) : 100;
@@ -147,18 +158,29 @@ export default function LeagueStatsPanel({
             </Text>
           )}
 
+          <PageControls
+            page={safePage}
+            pages={pages}
+            total={table.rows.length}
+            from={pageStart + 1}
+            to={pageStart + visibleRows.length}
+            onChange={setPage}
+          />
           <View style={styles.table}>
-            {table.rows.map((row, i) => (
-              <StatRow
-                key={row.team}
-                row={row}
-                avg={avg}
-                scale={scale}
-                marked={marked.has(row.team)}
-                lastAbove={i + 1 === table.divideAfter && i + 1 < table.rows.length}
-                onPress={onTeamPress ? () => onTeamPress(row.team) : undefined}
-              />
-            ))}
+            {visibleRows.map((row, i) => {
+              const index = pageStart + i;
+              return (
+                <StatRow
+                  key={row.team}
+                  row={row}
+                  avg={avg}
+                  scale={scale}
+                  marked={marked.has(row.team)}
+                  lastAbove={index + 1 === table.divideAfter && index + 1 < table.rows.length}
+                  onPress={onTeamPress ? () => onTeamPress(row.team) : undefined}
+                />
+              );
+            })}
 
             {average ? (
               <View style={styles.averageRow}>
@@ -176,6 +198,14 @@ export default function LeagueStatsPanel({
               </View>
             ) : null}
           </View>
+          <PageControls
+            page={safePage}
+            pages={pages}
+            total={table.rows.length}
+            from={pageStart + 1}
+            to={pageStart + visibleRows.length}
+            onChange={setPage}
+          />
 
           <Text style={styles.foot}>
             {average ? `Average of all ${average.teams} teams · smallest sample n=${average.minSample} · ` : ''}

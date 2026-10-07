@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -15,6 +15,7 @@ import AppNavMenu from '@/components/layout/AppNavMenu';
 import AppShell from '@/components/shared/AppShell';
 import FilterDropdown from '@/components/shared/FilterDropdown';
 import IncludedGamesList from '@/components/shared/IncludedGamesList';
+import PageControls, { PAGE_SIZE } from '@/components/shared/PageControls';
 import StickyBack from '@/components/shared/StickyBack';
 import { useCatalogueTables } from '@/hooks/useCatalogueTables';
 import { fonts, spacing, theme } from '@/styles/theme';
@@ -81,6 +82,7 @@ export default function StatBoardScreen({
   const [minimum, setMinimum] = useState('5');
   const [query, setQuery] = useState('');
   const [openTeam, setOpenTeam] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
   const board = useCatalogueTables(competitionId);
 
   const activePeriod = mode === 'ordinary' ? period : group;
@@ -105,7 +107,16 @@ export default function StatBoardScreen({
     return (id: string) => names.get(id) ?? id;
   }, [board.catalog]);
 
+  const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const safePage = Math.min(page, pages);
+  const pageStart = (safePage - 1) * PAGE_SIZE;
+  const visibleRows = rows.slice(pageStart, pageStart + PAGE_SIZE);
   const openRow = rows.find((row) => `${row.league_id}::${row.team_name}` === openTeam) ?? null;
+
+  useEffect(() => {
+    setPage(1);
+    setOpenTeam(null);
+  }, [tableName, rankedStat, minimum, query, scope, competitionId, activePeriod]);
 
   const competitionOptions = [
     { value: '', label: 'All loaded leagues' },
@@ -219,58 +230,10 @@ export default function StatBoardScreen({
           loadedLeagues={board.loadedLeagues}
         />
 
-        {rows.length > 0 ? (
-          <ScrollView horizontal showsHorizontalScrollIndicator>
-            <View>
-              <View style={styles.headRow}>
-                <Text style={[styles.cell, styles.rank]}>#</Text>
-                <Text style={[styles.cell, styles.team, styles.head]}>Team</Text>
-                {showLeague ? <Text style={[styles.cell, styles.league, styles.head]}>League</Text> : null}
-                <Text style={[styles.cell, styles.games, styles.head]}>G</Text>
-                {columns.map((column) => (
-                  <Text
-                    key={column.key}
-                    style={[styles.cell, styles.stat, styles.head, column.key === rankedStat && styles.rankedHead]}>
-                    {column.label}
-                  </Text>
-                ))}
-                {mode === 'ordinary' ? (
-                  <>
-                    {MEASURED_TIMING.map((column) => (
-                      <Text key={column.key} style={[styles.cell, styles.stat, styles.head]}>{column.label}</Text>
-                    ))}
-                    {BLANK_TIMING.map((label) => (
-                      <Text key={label} style={[styles.cell, styles.stat, styles.head]}>{label}</Text>
-                    ))}
-                  </>
-                ) : null}
-              </View>
-              {rows.map((row, index) => {
-                const key = `${row.league_id}::${row.team_name}`;
-                return (
-                  <BoardRow
-                    key={key}
-                    row={row}
-                    index={index}
-                    selected={openTeam === key}
-                    onPress={() => setOpenTeam((current) => (current === key ? null : key))}
-                    columns={columns}
-                    rankedStat={rankedStat}
-                    league={showLeague ? leagueName(String(row.league_id)) : null}
-                    timing={showTiming ? board.timing?.get(row.team_name) : undefined}
-                    showTiming={showTiming}
-                    sampleKey={countedKey}
-                    ordinary={mode === 'ordinary'}
-                  />
-                );
-              })}
-            </View>
-          </ScrollView>
-        ) : null}
-
         {openRow ? (
           <IncludedGamesList
             title={`${openRow.team_name} · games in this filter`}
+            onClose={() => setOpenTeam(null)}
             games={rowGames(openRow).filter((game) => {
               if (rankedStat === 'rescued_points') return game.trailed === true;
               if (rankedStat === 'blown_points') return game.led === true;
@@ -278,6 +241,73 @@ export default function StatBoardScreen({
               return game.halfValid ?? game.htKnown;
             })}
           />
+        ) : null}
+
+        {rows.length > 0 ? (
+          <>
+            <PageControls
+              page={safePage}
+              pages={pages}
+              total={rows.length}
+              from={pageStart + 1}
+              to={pageStart + visibleRows.length}
+              onChange={setPage}
+            />
+            <ScrollView horizontal showsHorizontalScrollIndicator>
+              <View>
+                <View style={styles.headRow}>
+                  <Text style={[styles.cell, styles.rank]}>#</Text>
+                  <Text style={[styles.cell, styles.team, styles.head]}>Team</Text>
+                  {showLeague ? <Text style={[styles.cell, styles.league, styles.head]}>League</Text> : null}
+                  <Text style={[styles.cell, styles.games, styles.head]}>G</Text>
+                  {columns.map((column) => (
+                    <Text
+                      key={column.key}
+                      style={[styles.cell, styles.stat, styles.head, column.key === rankedStat && styles.rankedHead]}>
+                      {column.label}
+                    </Text>
+                  ))}
+                  {mode === 'ordinary' ? (
+                    <>
+                      {MEASURED_TIMING.map((column) => (
+                        <Text key={column.key} style={[styles.cell, styles.stat, styles.head]}>{column.label}</Text>
+                      ))}
+                      {BLANK_TIMING.map((label) => (
+                        <Text key={label} style={[styles.cell, styles.stat, styles.head]}>{label}</Text>
+                      ))}
+                    </>
+                  ) : null}
+                </View>
+                {visibleRows.map((row, index) => {
+                  const key = `${row.league_id}::${row.team_name}`;
+                  return (
+                    <BoardRow
+                      key={key}
+                      row={row}
+                      index={pageStart + index}
+                      selected={openTeam === key}
+                      onPress={() => setOpenTeam((current) => (current === key ? null : key))}
+                      columns={columns}
+                      rankedStat={rankedStat}
+                      league={showLeague ? leagueName(String(row.league_id)) : null}
+                      timing={showTiming ? board.timing?.get(row.team_name) : undefined}
+                      showTiming={showTiming}
+                      sampleKey={countedKey}
+                      ordinary={mode === 'ordinary'}
+                    />
+                  );
+                })}
+              </View>
+            </ScrollView>
+            <PageControls
+              page={safePage}
+              pages={pages}
+              total={rows.length}
+              from={pageStart + 1}
+              to={pageStart + visibleRows.length}
+              onChange={setPage}
+            />
+          </>
         ) : null}
 
         <Text style={styles.foot}>
@@ -313,7 +343,7 @@ function BoardRow({
   league: string | null;
   timing: TeamTiming | undefined;
   showTiming: boolean;
-  sampleKey: 'sample_size' | 'ht_sample';
+  sampleKey: 'sample_size' | 'ht_sample' | 'rescued_n' | 'blown_n';
   ordinary: boolean;
 }) {
   const games = row[sampleKey];
