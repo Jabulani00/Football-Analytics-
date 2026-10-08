@@ -1320,7 +1320,7 @@ export function TwoGoalBandCards({
       <SectorIntro
         title="Section 4: Colour-band goal differences"
         preserveCase
-        note="Same last-5 sample as Section 1. Filter by goal difference and by Win / Draw / Loss. Overall uses the W/D/L colour sheet; T1 as home/away uses the 1-goal and 2-goal sheets. The colour pair is this side vs the opponent (G/Y/R)."
+        note="Same last-5 sample as Section 1. Filter by goal difference and by Win / Draw / Loss. A home loss is always Bad. Overall uses the W/D/L colour sheet; T1 as home/away uses the 1-goal and 2-goal sheets."
       />
       {loading ? <Text style={styles.note}>Loading recent form…</Text> : null}
       {error ? <Text style={styles.note}>{error}</Text> : null}

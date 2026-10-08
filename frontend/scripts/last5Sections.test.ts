@@ -100,6 +100,26 @@ console.log('\noverall W/D/L colour labels');
   );
 }
 
+console.log('\nhome loss always bad');
+{
+  check(
+    'home loss overrides 1GD well-fought label',
+    twoGoalGrade('red', 'green', 'L', -1, 1, { isHome: true }) === 'bad',
+  );
+  check(
+    'home loss overrides overall mediocre loss',
+    twoGoalGrade('yellow', 'green', 'L', -2, 'all', { mode: 'overall', isHome: true }) === 'bad',
+  );
+  check(
+    'away loss still uses sheet label',
+    twoGoalGrade('red', 'green', 'L', -1, 1, { isHome: false }) === 'mediocre_positive',
+  );
+  check(
+    'home loss is bad even without colours',
+    twoGoalGrade(null, null, 'L', -1, 'all', { isHome: true }) === 'bad',
+  );
+}
+
 console.log('\ngoal-diff tabs filter last 5');
 {
   const standings: StandingLike[] = [
@@ -166,6 +186,37 @@ console.log('\ngoal-diff tabs filter last 5');
   const s1Away = (initial.away?.matches ?? []).map((m) => `${m.result.gf}-${m.result.ga}`);
   const s4Away = (t1Home.right?.games ?? []).map((g) => `${g.gf}-${g.ga}`);
   check('Section 4 T2-away matches Section 1 away last-5', s1Away.join('|') === s4Away.join('|'));
+
+  // Force a home loss into T1's feed and confirm the Home column grades it Bad.
+  const homeLossFeed = [
+    {
+      fixtureId: 9001,
+      unix: 99,
+      teamId: 1,
+      opponentId: 2,
+      opponentName: 'Beta',
+      isHome: true,
+      gf: 0,
+      ga: 1,
+      outcome: 'L' as const,
+      opponentRank: 10,
+      teamRank: 1,
+      opponentAbove: false,
+      goalDiff: -1,
+    },
+    ...t1Results,
+  ];
+  const homeLossSide = twoGoalBandSides({
+    ...base,
+    t1Results: homeLossFeed,
+    mode: 't1_home',
+    goalDiff: 'all',
+    outcome: 'L',
+  });
+  check(
+    'T1-home column marks home loss as Bad',
+    homeLossSide.left?.games[0]?.grade === 'bad' && homeLossSide.left?.games[0]?.gradeLabel === 'Bad',
+  );
 }
 
 console.log('\nT1 − T2 last 5');
