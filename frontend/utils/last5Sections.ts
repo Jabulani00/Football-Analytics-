@@ -218,6 +218,7 @@ export type TwoGoalVenueMode = 'overall' | 't1_home' | 't1_away';
  * Overall uses the W/D/L sheet (any margin on All; filtered margins still use that sheet).
  * Home/away modes use the 1-goal and 2-goal sheets for W/L; draws use the overall draw sheet.
  * On All (home/away), each W/L uses the sheet that matches its own margin.
+ * Hard rule: a home loss is always Bad, regardless of colour pair.
  */
 export function twoGoalGrade(
   team: TableColour | null,
@@ -229,12 +230,19 @@ export function twoGoalGrade(
     mode?: TwoGoalVenueMode;
     teamRank?: number | null;
     oppRank?: number | null;
+    /** True when this result was played at home (or the side column is Home). */
+    isHome?: boolean;
   },
 ): TwoGoalGrade | null {
   if (!matchesGoalDiffTab(goalDiff, tab)) return null;
+
+  // Hard rule first — home loss is always Bad, even before colour pair is known.
+  if (outcome === 'L' && opts?.isHome === true) return 'bad';
+
   const abs = Math.abs(goalDiff);
   const pair = colourPairId(team, opp);
   if (pair == null) return null;
+
   const mode = opts?.mode ?? 't1_home';
 
   if (mode === 'overall') {
@@ -390,14 +398,20 @@ function twoGoalSide(opts: {
     const opp = r.opponentId != null ? byId.get(r.opponentId) : undefined;
     const oppColour = standingColour(opp, n);
     const pairId = colourPairId(teamColour, oppColour);
-    const grade = twoGoalGrade(teamColour, oppColour, r.outcome, r.goalDiff, opts.goalDiff, {
+    // Home column → always home; away column → always away; overall → each game's venue.
+    const isHome =
+      opts.venue === 'home' ? true : opts.venue === 'away' ? false : r.isHome;
+    let grade = twoGoalGrade(teamColour, oppColour, r.outcome, r.goalDiff, opts.goalDiff, {
       mode: opts.mode,
       teamRank: r.teamRank,
       oppRank: r.opponentRank,
+      isHome,
     });
+    // Belt-and-suspenders: never leave a home loss on a non-bad sheet label.
+    if (r.outcome === 'L' && isHome) grade = 'bad';
     return {
       opponentName: r.opponentName,
-      isHome: r.isHome,
+      isHome,
       gf: r.gf,
       ga: r.ga,
       outcome: r.outcome,
