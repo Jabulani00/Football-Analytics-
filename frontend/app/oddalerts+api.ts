@@ -8,6 +8,9 @@
 // calls share one OddAlerts request. Set CACHE_ENABLED=false to pass through.
 
 import { fetchThroughCache } from '../services/oddAlertsServerCache';
+import { startOddAlertsWarmer } from '../services/oddAlertsWarmer';
+
+startOddAlertsWarmer();
 
 const UPSTREAM = 'https://data.oddalerts.com/api';
 
