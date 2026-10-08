@@ -14,12 +14,18 @@ import FootyStatsPanel from '@/components/analytics/FootyStatsPanel';
 import StatsTablesPanel from '@/components/analytics/StatsTablesPanel';
 import StrategiesPanel from '@/components/analytics/StrategiesPanel';
 import StreamsPanel from '@/components/analytics/StreamsPanel';
-import UpcomingMatchesPanel from '@/components/scores/UpcomingMatchesPanel';
+import UpcomingMatchesPanel, { type PredictFocus } from '@/components/scores/UpcomingMatchesPanel';
 import AppShell from '@/components/shared/AppShell';
 import { useAnalyticsBetSlip } from '@/hooks/useAnalyticsBetSlip';
 import { useHollywoodPopularOdds } from '@/hooks/useHollywoodPopularOdds';
 import type { AnalyticsTab } from '@/types/analytics';
 import { fonts, spacing, theme } from '@/styles/theme';
+
+function focusForTab(tab: AnalyticsTab): PredictFocus {
+  if (tab === 'footy' || tab === 'odds') return 'goals';
+  if (tab === 'tables' || tab === 'additional' || tab === 'streams' || tab === 'strategies' || tab === 'hollywood') return 'result';
+  return 'all';
+}
 
 type AnalyticsHubProps = {
   onBack: () => void;
@@ -81,7 +87,7 @@ export default function AnalyticsHub({ onBack: _onBack }: AnalyticsHubProps) {
           </Text>
         </View>
 
-        <UpcomingMatchesPanel />
+        <UpcomingMatchesPanel focus={focusForTab(activeTab)} />
 
         <AnalyticsNav active={activeTab} onChange={setActiveTab} />
 

@@ -3,7 +3,7 @@ import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, V
 
 import FootyTable, { type FootyColumn } from '@/components/analytics/FootyTable';
 import AppNavBar from '@/components/layout/AppNavBar';
-import UpcomingMatchesPanel from '@/components/scores/UpcomingMatchesPanel';
+import UpcomingMatchesPanel, { type PredictFocus } from '@/components/scores/UpcomingMatchesPanel';
 import AppShell from '@/components/shared/AppShell';
 import DragScroll from '@/components/shared/DragScroll';
 import IncludedGamesList from '@/components/shared/IncludedGamesList';
@@ -100,6 +100,13 @@ const ANALYSES: { value: AnalysisId; label: string; blurb: string }[] = [
   { value: 'ordinary', label: 'Ordinary stats', blurb: 'Season rates such as scoring percentage, clean sheet, and over 2.5 goals.' },
   { value: 'league', label: 'League average', blurb: 'The league average of an ordinary stat, from the same calculator as the stats tables.' },
 ];
+
+function focusForAnalysis(id: AnalysisId): PredictFocus {
+  if (id === 'btts') return 'btts';
+  if (id === 'goals' || id === 'halves' || id === 'both') return 'goals';
+  if (id === 'corners' || id === 'cards' || id === 'offsides' || id === 'filters') return 'all';
+  return 'result';
+}
 
 const KINDS: { value: CompetitionKind; label: string }[] = [
   { value: 'domestic', label: 'Domestic leagues' },
@@ -364,7 +371,7 @@ export default function SlStatsScreen({ onBack: _onBack }: { onBack: () => void 
           {index.matches} finished matches in this filter.
         </Text>
 
-        <UpcomingMatchesPanel />
+        <UpcomingMatchesPanel focus={focusForAnalysis(analysis)} />
 
         <View style={[styles.filters, narrow && styles.filtersNarrow]}>
           <FilterDropdown style={narrow ? styles.filterFull : undefined} label="Analysis" value={analysis} options={ANALYSES.map((item) => ({ value: item.value, label: item.label }))} onChange={(value) => setAnalysis(value as AnalysisId)} />

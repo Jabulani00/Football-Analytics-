@@ -20,7 +20,7 @@ export default function AdditionalStatsScreen(_props: { onBack: () => void }) {
             Points per game, series, full-time patterns, and league averages. Ordinary tables stay on Stats Tables.
           </Text>
         </View>
-        <UpcomingMatchesPanel />
+        <UpcomingMatchesPanel focus="result" />
         <AdditionalStatsPanel />
       </DragScroll>
     </AppShell>

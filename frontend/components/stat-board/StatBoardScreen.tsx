@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 
 import AppNavBar from '@/components/layout/AppNavBar';
-import UpcomingMatchesPanel from '@/components/scores/UpcomingMatchesPanel';
+import UpcomingMatchesPanel, { focusForStatKey } from '@/components/scores/UpcomingMatchesPanel';
 import AppShell from '@/components/shared/AppShell';
 import DragScroll from '@/components/shared/DragScroll';
 import FilterDropdown from '@/components/shared/FilterDropdown';
@@ -132,7 +132,7 @@ export default function StatBoardScreen({
           <Text style={styles.blurb}>{blurb}</Text>
         </View>
 
-        <UpcomingMatchesPanel />
+        <UpcomingMatchesPanel focus={focusForStatKey(rankedStat)} />
 
         <View style={styles.filters}>
           <FilterDropdown
