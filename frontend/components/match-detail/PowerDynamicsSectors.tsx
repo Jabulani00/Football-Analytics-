@@ -72,6 +72,9 @@ import {
   VENUE_WORD,
   colourLetter,
   CHANGE_GUIDE,
+  CHANGE_SCALE,
+  CHANGE_SCALE_SIZE,
+  changeScaleGap,
   goalDiffTabLabel,
   LABEL_CHANGE_TEXT,
   last5LabelChanges,
@@ -80,6 +83,7 @@ import {
   peakLast5Gap,
   twoGoalBandSides,
   type ChangeKind,
+  type ChangeScaleGap,
   type GoalDiffTab,
   type LabelChange,
   type LabelChangeSide,
@@ -1540,6 +1544,153 @@ function LabelChangeColumn({ side }: { side: LabelChangeSide }) {
   );
 }
 
+function ChangeScaleBoard({
+  pd,
+  left,
+  right,
+}: {
+  pd: PowerDynamicsBundle;
+  left: LabelChangeSide;
+  right: LabelChangeSide;
+}) {
+  const [open, setOpen] = useState(false);
+  const gap = changeScaleGap(left.hierarchy, right.hierarchy);
+  const tone: Tone = gap.separation != null && gap.separation >= 6 ? 'warn' : gap.stronger === 'level' ? 'info' : 'good';
+  const sideCard = (snap: PowerDynamicsBundle['t1'], side: LabelChangeSide, score: ChangeScaleGapSide) => (
+    <SideCard
+      key={snap.side}
+      label={snap.label}
+      meta={
+        snap.rank != null
+          ? `${snap.venue === 'home' ? 'Home' : 'Away'} · #${snap.rank} · ${snap.points ?? '—'} pts · ${colourWord(snap.colour)} · Place ${side === left ? gap.t1Place : gap.t2Place}`
+          : `${snap.venue === 'home' ? 'Home' : 'Away'} · Place ${side === left ? gap.t1Place : gap.t2Place}`
+      }>
+      <Line text={`${side.hierarchy.title} · ${side.hierarchy.code} · Grade ${side.hierarchy.grade}`} />
+      <GapScoreRow
+        s={snap}
+        g={{
+          letter: score.letter,
+          meaning: 'Need both sides on the change scale.',
+          received: score.score,
+          score: score.score,
+        }}
+      />
+    </SideCard>
+  );
+  return (
+    <View>
+      <Text style={styles.note}>Change scale 1–14. Places 1–7 are positive. Places 8–14 are negative.</Text>
+      <Pressable
+        onPress={() => setOpen(true)}
+        accessibilityRole="button"
+        accessibilityLabel={`Open change gap ${gap.grade ?? ''}`}
+        style={[styles.callout, styles.changeCodePress, { borderColor: toneColor(tone) }]}>
+        <Text style={[styles.calloutText, { color: toneColor(tone) }]}>{gap.call}</Text>
+      </Pressable>
+      <ChangeScaleModal
+        visible={open}
+        onClose={() => setOpen(false)}
+        gap={gap}
+        t1Label={pd.t1.label}
+        t2Label={pd.t2.label}
+      />
+      {sideCard(pd.t1, left, gap.t1)}
+      {sideCard(pd.t2, right, gap.t2)}
+    </View>
+  );
+}
+
+type ChangeScaleGapSide = ReturnType<typeof changeScaleGap>['t1'];
+
+function changePlaceRole(place: number, t1Place: number, t2Place: number): 't1' | 't2' | 'span' | 'idle' {
+  if (place === t1Place) return 't1';
+  if (place === t2Place) return 't2';
+  const from = Math.min(t1Place, t2Place);
+  const to = Math.max(t1Place, t2Place);
+  if (place >= from && place <= to) return 'span';
+  return 'idle';
+}
+
+function ChangeScaleModal({
+  visible,
+  onClose,
+  gap,
+  t1Label,
+  t2Label,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  gap: ChangeScaleGap;
+  t1Label: string;
+  t2Label: string;
+}) {
+  const scale = positionGapScale(CHANGE_SCALE_SIZE);
+  const cols = 7;
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalRoot}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <View style={styles.modalSheet}>
+          <View style={styles.modalHead}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.modalTitle}>{gap.grade ? `Gap analysis · ${gap.grade}` : 'Gap analysis'}</Text>
+              <Text style={styles.modalSub}>
+                14 places · {t1Label} #{gap.t1Place} · {t2Label} #{gap.t2Place}
+              </Text>
+            </View>
+            <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Close">
+              <Text style={styles.modalClose}>Close</Text>
+            </Pressable>
+          </View>
+          <ScrollView style={styles.modalList}>
+            <Text style={styles.modalLead}>
+              {gap.grade && gap.from != null && gap.to != null
+                ? `${gap.grade} covers places ${gap.from}–${gap.to}. G1 is the largest gap. Each next grade is one place closer. Places 1–7 are positive. Places 8–14 are negative.`
+                : 'G1 is the largest gap. Each next grade is one place closer.'}
+            </Text>
+            <View style={styles.posGrid}>
+              {CHANGE_SCALE.map((slot) => {
+                const role = changePlaceRole(slot.place, gap.t1Place, gap.t2Place);
+                return (
+                  <View key={slot.place} style={[styles.posSlot, { width: `${100 / cols}%` }]}>
+                    <View
+                      style={[
+                        styles.posCell,
+                        role === 't1' && styles.posCellT1,
+                        role === 't2' && styles.posCellT2,
+                        role === 'span' && styles.posCellSpan,
+                      ]}>
+                      <Text style={[styles.posNum, (role === 't1' || role === 't2') && styles.posNumOn]}>
+                        {slot.place}
+                      </Text>
+                      {role === 't1' || role === 't2' ? (
+                        <Text style={styles.posTag}>{role === 't1' ? 'T1' : 'T2'}</Text>
+                      ) : null}
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+            <View style={styles.modalRowHead}>
+              <Text style={styles.modalHeadCol}>Grade</Text>
+              <Text style={styles.modalHeadCol}>Gap</Text>
+            </View>
+            {scale.map((row) => {
+              const current = row.grade === gap.grade;
+              return (
+                <View key={row.grade} style={[styles.modalRow, current && styles.modalRowCurrent]}>
+                  <Text style={[styles.modalGrade, current && styles.modalGradeCurrent]}>{row.grade}</Text>
+                  <Text style={[styles.modalGap, current && styles.modalGradeCurrent]}>{row.span}</Text>
+                </View>
+              );
+            })}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 export function LabelChangeCards({
   pd,
   standings,
@@ -1575,7 +1726,7 @@ export function LabelChangeCards({
       <SectorIntro
         title="Section 5: Hierarchy of changes"
         preserveCase
-        note="Each of the last 5 is Section 1 (Good / Med / Bad) against the Section 4 label. A higher Section 4 label is a positive change. A lower one is a negative change. The same label is no change. Five positives is A1. The mirror count of negatives is also A1, on the weakness side."
+        note="Each of the last 5 is Section 1 against Section 4. The two sides then sit on a 1–14 scale: places 1–7 are positive changes, places 8–14 are negative changes. The gap between those places uses the same G-grade as the baseline board."
       />
       <SubTabBar tabs={[...CHANGE_LENS_TABS]} active={lens} onChange={setLens} />
       <Text style={styles.note}>
@@ -1587,6 +1738,9 @@ export function LabelChangeCards({
         {sides.left ? <LabelChangeColumn side={sides.left} /> : null}
         {sides.right ? <LabelChangeColumn side={sides.right} /> : null}
       </View>
+      {sides.left && sides.right ? (
+        <ChangeScaleBoard pd={pd} left={sides.left} right={sides.right} />
+      ) : null}
     </View>
   );
 }

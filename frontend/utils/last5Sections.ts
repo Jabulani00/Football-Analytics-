@@ -5,6 +5,11 @@
 import type { SeasonMatch } from '@/utils/bhozomaEngine';
 import {
   colourFromZone,
+  evaluatePositionGap,
+  fmtGapScore,
+  gapValueFromPositionGrade,
+  letterFromGapValue,
+  type BaselineLetter,
   type TableColour,
 } from '@/utils/powerDynamicsEngine';
 import { bandOf } from '@/utils/leagueTables';
@@ -679,6 +684,100 @@ export const CHANGE_GUIDE: ChangeGuideRow[] = [
   { grade: 7, code: 'F1', kind: 'cancel', detail: '2 positives and 2 negatives cancel' },
   { grade: 7, code: 'F2', kind: 'cancel', detail: '1 positive and 1 negative cancel' },
 ];
+
+/** 14 places. 1–7 are the positive hierarchy. 8–14 are the negative hierarchy. */
+export const CHANGE_SCALE_SIZE = 14;
+
+export type ChangeScaleSlot = {
+  place: number;
+  grade: ChangeGrade;
+  side: 'positive' | 'negative';
+  label: string;
+};
+
+export const CHANGE_SCALE: ChangeScaleSlot[] = [
+  { place: 1, grade: 1, side: 'positive', label: 'A1 · Grade 1' },
+  { place: 2, grade: 2, side: 'positive', label: 'Grade 2 · B1, B2' },
+  { place: 3, grade: 3, side: 'positive', label: 'Grade 3 · C1, C2' },
+  { place: 4, grade: 4, side: 'positive', label: 'Grade 4 · D1, D2, D3' },
+  { place: 5, grade: 5, side: 'positive', label: 'E1 · Grade 5' },
+  { place: 6, grade: 6, side: 'positive', label: 'G1 · No change' },
+  { place: 7, grade: 7, side: 'positive', label: 'F1, F2 · Cancel' },
+  { place: 8, grade: 7, side: 'negative', label: 'Grade 7' },
+  { place: 9, grade: 6, side: 'negative', label: 'Grade 6' },
+  { place: 10, grade: 5, side: 'negative', label: 'E1 · Grade 5' },
+  { place: 11, grade: 4, side: 'negative', label: 'Grade 4 · D1, D2, D3' },
+  { place: 12, grade: 3, side: 'negative', label: 'Grade 3 · C1, C2' },
+  { place: 13, grade: 2, side: 'negative', label: 'Grade 2 · B1, B2' },
+  { place: 14, grade: 1, side: 'negative', label: 'A1 · Grade 1' },
+];
+
+/** Positive grades sit on places 1–7. Negative grades sit on 8–14, grade 7 at 8 through grade 1 at 14. */
+export function changeScalePlace(hierarchy: ChangeHierarchy): number {
+  if (hierarchy.kind === 'weakness') return 15 - hierarchy.grade;
+  return hierarchy.grade;
+}
+
+export type ChangeScaleGap = {
+  t1Place: number;
+  t2Place: number;
+  grade: string | null;
+  gradeIndex: number | null;
+  from: number | null;
+  to: number | null;
+  denom: number;
+  separation: number | null;
+  stronger: 't1' | 't2' | 'level' | null;
+  call: string;
+  t1: { letter: BaselineLetter | null; score: number | null };
+  t2: { letter: BaselineLetter | null; score: number | null };
+};
+
+export function changeScaleGap(t1: ChangeHierarchy, t2: ChangeHierarchy): ChangeScaleGap {
+  const t1Place = changeScalePlace(t1);
+  const t2Place = changeScalePlace(t2);
+  const position = evaluatePositionGap({
+    tableSize: CHANGE_SCALE_SIZE,
+    t1Rank: t1Place,
+    t2Rank: t2Place,
+    t1Label: 'T1',
+    t2Label: 'T2',
+  });
+  const denom = CHANGE_SCALE_SIZE - 1;
+  const separation =
+    position.gradeIndex != null ? gapValueFromPositionGrade(position.gradeIndex, CHANGE_SCALE_SIZE) : null;
+  const letter = separation != null ? letterFromGapValue(separation) : null;
+  const stronger = separation == null || separation <= 0 ? 'level' : position.higher;
+  const weak: BaselineLetter = 'F';
+  const t1Side =
+    stronger === 't1'
+      ? { letter, score: separation }
+      : { letter: separation == null ? null : weak, score: separation == null ? null : 0 };
+  const t2Side =
+    stronger === 't2'
+      ? { letter, score: separation }
+      : { letter: separation == null ? null : weak, score: separation == null ? null : 0 };
+  const g = position.gradeIndex ?? denom;
+  const call =
+    position.grade == null || separation == null
+      ? 'Need both sides on the change scale.'
+      : `${position.grade} · ${g}/${denom} · gap ${fmtGapScore(separation)} · type ${stronger === 'level' ? weak : letter}`;
+
+  return {
+    t1Place,
+    t2Place,
+    grade: position.grade,
+    gradeIndex: position.gradeIndex,
+    from: position.from,
+    to: position.to,
+    denom,
+    separation,
+    stronger,
+    call,
+    t1: t1Side,
+    t2: t2Side,
+  };
+}
 
 export type LabelChangeGame = {
   opponentName: string;

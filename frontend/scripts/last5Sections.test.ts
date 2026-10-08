@@ -4,6 +4,8 @@
  */
 import {
   changeHierarchy,
+  changeScaleGap,
+  changeScalePlace,
   colourPairId,
   labelChange,
   last5LabelChanges,
@@ -296,6 +298,14 @@ console.log('\nhierarchy of changes');
   check('no changes is G1 grade 6', changeHierarchy(0, 0).code === 'G1' && changeHierarchy(0, 0).grade === 6);
   check('2 and 2 cancel as F1 grade 7', changeHierarchy(2, 2).code === 'F1' && changeHierarchy(2, 2).grade === 7);
   check('1 and 1 cancel as F2 grade 7', changeHierarchy(1, 1).code === 'F2' && changeHierarchy(1, 1).grade === 7);
+  check('A1 strength is place 1', changeScalePlace(changeHierarchy(5, 0)) === 1);
+  check('no change is place 6', changeScalePlace(changeHierarchy(0, 0)) === 6);
+  check('cancel is place 7', changeScalePlace(changeHierarchy(2, 2)) === 7);
+  check('E1 weakness is place 10', changeScalePlace(changeHierarchy(0, 1)) === 10);
+  check('A1 weakness is place 14', changeScalePlace(changeHierarchy(0, 5)) === 14);
+  const ends = changeScaleGap(changeHierarchy(5, 0), changeHierarchy(0, 5));
+  check('A1 versus A1 weakness is the widest gap', ends.grade === 'G1' && ends.t1Place === 1 && ends.t2Place === 14);
+  check('positive side keeps the gap type', ends.stronger === 't1' && (ends.t1.score ?? 0) > 0 && ends.t2.score === 0);
 
   const standings: StandingLike[] = [
     { teamId: 1, name: 'Alpha', rank: 1, points: 20, played: 10, zone: 'top' },
