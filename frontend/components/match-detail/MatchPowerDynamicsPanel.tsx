@@ -16,6 +16,7 @@ import {
   GapAnalysisCards,
   IndlelaCards,
   InitialStateCards,
+  LabelChangeCards,
   Last5Cards,
   Last5DiffCards,
   Last5LeagueCards,
@@ -508,6 +509,13 @@ export default function MatchPowerDynamicsPanel({
               excludeFixtureId={fixtureId}
               loading={form.loading}
               error={form.error}
+            />
+            <LabelChangeCards
+              pd={pd}
+              standings={like}
+              t1Results={pd.t1.venue === 'home' ? form.homeResults : form.awayResults}
+              t2Results={pd.t2.venue === 'home' ? form.homeResults : form.awayResults}
+              excludeFixtureId={fixtureId}
             />
           </View>,
         );

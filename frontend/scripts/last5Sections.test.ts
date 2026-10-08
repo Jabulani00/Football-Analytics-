@@ -3,10 +3,14 @@
  * Run: npx tsx scripts/last5Sections.test.ts
  */
 import {
+  changeHierarchy,
   colourPairId,
+  labelChange,
+  last5LabelChanges,
   last5PointsDiff,
   matchesGoalDiffTab,
   matchesOutcomeTab,
+  section4Simple,
   twoGoalBandSides,
   twoGoalGrade,
 } from '../utils/last5Sections';
@@ -100,23 +104,23 @@ console.log('\noverall W/D/L colour labels');
   );
 }
 
-console.log('\nhome loss always bad');
+console.log('\nhome loss mediocre becomes bad');
 {
   check(
-    'home loss overrides 1GD well-fought label',
+    'home loss upgrades 1GD well-fought label to bad',
     twoGoalGrade('red', 'green', 'L', -1, 1, { isHome: true }) === 'bad',
   );
   check(
-    'home loss overrides overall mediocre loss',
+    'home loss upgrades overall mediocre loss to bad',
     twoGoalGrade('yellow', 'green', 'L', -2, 'all', { mode: 'overall', isHome: true }) === 'bad',
+  );
+  check(
+    'home loss that the sheet calls bad stays bad',
+    twoGoalGrade('green', 'green', 'L', -1, 1, { isHome: true }) === 'bad',
   );
   check(
     'away loss still uses sheet label',
     twoGoalGrade('red', 'green', 'L', -1, 1, { isHome: false }) === 'mediocre_positive',
-  );
-  check(
-    'home loss is bad even without colours',
-    twoGoalGrade(null, null, 'L', -1, 'all', { isHome: true }) === 'bad',
   );
 }
 
@@ -187,7 +191,11 @@ console.log('\ngoal-diff tabs filter last 5');
   const s4Away = (t1Home.right?.games ?? []).map((g) => `${g.gf}-${g.ga}`);
   check('Section 4 T2-away matches Section 1 away last-5', s1Away.join('|') === s4Away.join('|'));
 
-  // Force a home loss into T1's feed and confirm the Home column grades it Bad.
+  // Y vs G 1-goal home loss is Mediocre on the sheet → Good on the Home column.
+  const midStandings: StandingLike[] = [
+    { teamId: 1, name: 'Alpha', rank: 10, points: 10, played: 10, zone: 'mid' },
+    { teamId: 2, name: 'Beta', rank: 1, points: 20, played: 10, zone: 'top' },
+  ];
   const homeLossFeed = [
     {
       fixtureId: 9001,
@@ -199,23 +207,43 @@ console.log('\ngoal-diff tabs filter last 5');
       gf: 0,
       ga: 1,
       outcome: 'L' as const,
-      opponentRank: 10,
-      teamRank: 1,
-      opponentAbove: false,
+      opponentRank: 1,
+      teamRank: 10,
+      opponentAbove: true,
       goalDiff: -1,
     },
-    ...t1Results,
   ];
   const homeLossSide = twoGoalBandSides({
     ...base,
+    standings: midStandings,
     t1Results: homeLossFeed,
     mode: 't1_home',
     goalDiff: 'all',
     outcome: 'L',
   });
   check(
-    'T1-home column marks home loss as Bad',
+    'T1-home column marks a mediocre home loss as Bad',
     homeLossSide.left?.games[0]?.grade === 'bad' && homeLossSide.left?.games[0]?.gradeLabel === 'Bad',
+  );
+
+  const awayLossByHomeSide = twoGoalBandSides({
+    ...base,
+    standings: midStandings,
+    t1Results: [
+      {
+        ...homeLossFeed[0],
+        isHome: false,
+        fixtureId: 9002,
+      },
+    ],
+    mode: 'overall',
+    goalDiff: 'all',
+    outcome: 'L',
+    fixtureHomeId: 1,
+  });
+  check(
+    'fixture home side away loss marks Mediocre as Bad',
+    awayLossByHomeSide.left?.games[0]?.grade === 'bad',
   );
 }
 
@@ -245,6 +273,62 @@ console.log('\nT1 − T2 last 5');
   check('T1 has more last-5 points', (read.t1Points ?? 0) > (read.t2Points ?? 0));
   check('diff is positive for T1', (read.diff ?? 0) > 0);
   check('call names T1 stronger', read.call.includes('T1 (Alpha) stronger'));
+}
+
+console.log('\nhierarchy of changes');
+{
+  check('bad to good is positive', labelChange('bad', 'good') === 'positive');
+  check('med to good is positive', labelChange('med', 'good') === 'positive');
+  check('good to good is no change', labelChange('good', 'good') === 'no_change');
+  check('good to bad is negative', labelChange('good', 'bad') === 'negative');
+  check('med to bad is negative', labelChange('med', 'bad') === 'negative');
+  check('great counts as good', section4Simple('great') === 'good');
+  check('5 positives is A1 grade 1', changeHierarchy(5, 0).code === 'A1' && changeHierarchy(5, 0).grade === 1);
+  check('5 negatives is weakness A1', changeHierarchy(0, 5).code === 'A1' && changeHierarchy(0, 5).kind === 'weakness');
+  check('4-0 is B1 grade 2', changeHierarchy(4, 0).code === 'B1' && changeHierarchy(4, 0).grade === 2);
+  check('4-1 is B2 grade 2', changeHierarchy(4, 1).code === 'B2');
+  check('3-0 is C1', changeHierarchy(3, 0).code === 'C1' && changeHierarchy(3, 0).grade === 3);
+  check('3-1 is C2', changeHierarchy(3, 1).code === 'C2');
+  check('2-0 is D1', changeHierarchy(2, 0).code === 'D1' && changeHierarchy(2, 0).grade === 4);
+  check('3-2 is D2', changeHierarchy(3, 2).code === 'D2');
+  check('2-1 is D3', changeHierarchy(2, 1).code === 'D3');
+  check('1-0 is E1 grade 5', changeHierarchy(1, 0).code === 'E1' && changeHierarchy(1, 0).grade === 5);
+  check('no changes is G1 grade 6', changeHierarchy(0, 0).code === 'G1' && changeHierarchy(0, 0).grade === 6);
+  check('2 and 2 cancel as F1 grade 7', changeHierarchy(2, 2).code === 'F1' && changeHierarchy(2, 2).grade === 7);
+  check('1 and 1 cancel as F2 grade 7', changeHierarchy(1, 1).code === 'F2' && changeHierarchy(1, 1).grade === 7);
+
+  const standings: StandingLike[] = [
+    { teamId: 1, name: 'Alpha', rank: 1, points: 20, played: 10, zone: 'top' },
+    { teamId: 2, name: 'Beta', rank: 10, points: 10, played: 10, zone: 'mid' },
+  ];
+  const t1Results = resultsFromSeasonMatches(
+    1,
+    [
+      { homeId: 1, awayId: 2, homeGoals: 1, awayGoals: 0, unix: 50 },
+      { homeId: 1, awayId: 2, homeGoals: 1, awayGoals: 1, unix: 40 },
+      { homeId: 2, awayId: 1, homeGoals: 0, awayGoals: 1, unix: 30 },
+      { homeId: 1, awayId: 2, homeGoals: 2, awayGoals: 0, unix: 20 },
+      { homeId: 1, awayId: 2, homeGoals: 0, awayGoals: 1, unix: 10 },
+    ],
+    standings,
+  );
+  const read = last5LabelChanges({
+    t1Id: 1,
+    t2Id: 2,
+    t1Label: 'T1',
+    t2Label: 'T2',
+    t1Results,
+    t2Results: [],
+    standings,
+    mode: 'overall',
+    fixtureHomeId: 1,
+  });
+  check('section 5 lists the last 5', read.left?.games.length === 5);
+  check(
+    'each game has a section 1 and section 4 label',
+    read.left?.games.every((g) => g.section1 != null && g.section4Label !== '—') === true,
+  );
+  check('counts add up to the sample', (read.left?.positives ?? 0) + (read.left?.negatives ?? 0) + (read.left?.unchanged ?? 0) === 5);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

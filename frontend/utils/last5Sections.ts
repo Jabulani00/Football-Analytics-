@@ -8,6 +8,7 @@ import {
   type TableColour,
 } from '@/utils/powerDynamicsEngine';
 import { bandOf } from '@/utils/leagueTables';
+import { statusFromOutcome, type InitialStatus } from '@/utils/last5Analysis';
 import type { StandingLike } from '@/utils/motivationEngine';
 import {
   last5FormLeagueTable,
@@ -218,7 +219,7 @@ export type TwoGoalVenueMode = 'overall' | 't1_home' | 't1_away';
  * Overall uses the W/D/L sheet (any margin on All; filtered margins still use that sheet).
  * Home/away modes use the 1-goal and 2-goal sheets for W/L; draws use the overall draw sheet.
  * On All (home/away), each W/L uses the sheet that matches its own margin.
- * Hard rule: a home loss is always Bad, regardless of colour pair.
+ * A home-side loss the sheet calls Mediocre is shown as Bad.
  */
 export function twoGoalGrade(
   team: TableColour | null,
@@ -236,33 +237,37 @@ export function twoGoalGrade(
 ): TwoGoalGrade | null {
   if (!matchesGoalDiffTab(goalDiff, tab)) return null;
 
-  // Hard rule first — home loss is always Bad, even before colour pair is known.
-  if (outcome === 'L' && opts?.isHome === true) return 'bad';
-
   const abs = Math.abs(goalDiff);
   const pair = colourPairId(team, opp);
   if (pair == null) return null;
 
   const mode = opts?.mode ?? 't1_home';
+  let grade: TwoGoalGrade | null = null;
 
   if (mode === 'overall') {
-    if (outcome === 'W') return WIN_OVERALL[pair];
-    if (outcome === 'L') return LOSS_OVERALL[pair];
-    if (outcome === 'D') return drawOverallGrade(pair, opts?.teamRank ?? null, opts?.oppRank ?? null);
-    return null;
+    if (outcome === 'W') grade = WIN_OVERALL[pair];
+    else if (outcome === 'L') grade = LOSS_OVERALL[pair];
+    else if (outcome === 'D') grade = drawOverallGrade(pair, opts?.teamRank ?? null, opts?.oppRank ?? null);
+  } else if (outcome === 'D') {
+    grade = drawOverallGrade(pair, opts?.teamRank ?? null, opts?.oppRank ?? null);
+  } else {
+    let table: Record<ColourPairId, TwoGoalGrade> | null = null;
+    if (abs === 1 && (tab === 1 || tab === 'all')) {
+      table = outcome === 'W' ? WIN_1GD : outcome === 'L' ? LOSS_1GD : null;
+    } else if (abs === 2 && (tab === 2 || tab === 'all')) {
+      table = outcome === 'W' ? WIN_2GD : outcome === 'L' ? LOSS_2GD : null;
+    }
+    grade = table?.[pair] ?? null;
   }
 
-  if (outcome === 'D') {
-    return drawOverallGrade(pair, opts?.teamRank ?? null, opts?.oppRank ?? null);
+  if (
+    outcome === 'L' &&
+    opts?.isHome === true &&
+    (grade === 'mediocre' || grade === 'mediocre_positive')
+  ) {
+    return 'bad';
   }
-
-  let table: Record<ColourPairId, TwoGoalGrade> | null = null;
-  if (abs === 1 && (tab === 1 || tab === 'all')) {
-    table = outcome === 'W' ? WIN_1GD : outcome === 'L' ? LOSS_1GD : null;
-  } else if (abs === 2 && (tab === 2 || tab === 'all')) {
-    table = outcome === 'W' ? WIN_2GD : outcome === 'L' ? LOSS_2GD : null;
-  }
-  return table?.[pair] ?? null;
+  return grade;
 }
 
 /** G vs G draw: who sits above on the table decides good vs bad. */
@@ -382,6 +387,8 @@ function twoGoalSide(opts: {
   outcome: OutcomeTab;
   mode: TwoGoalVenueMode;
   excludeFixtureId?: number | null;
+  /** Fixture home side. Their Mediocre losses are shown as Bad in every venue. */
+  fixtureHomeId?: number | null;
 }): TwoGoalSideRead {
   const byId = new Map(opts.standings.map((s) => [s.teamId, s]));
   const n = opts.standings.length;
@@ -401,14 +408,19 @@ function twoGoalSide(opts: {
     // Home column → always home; away column → always away; overall → each game's venue.
     const isHome =
       opts.venue === 'home' ? true : opts.venue === 'away' ? false : r.isHome;
-    let grade = twoGoalGrade(teamColour, oppColour, r.outcome, r.goalDiff, opts.goalDiff, {
-      mode: opts.mode,
-      teamRank: r.teamRank,
-      oppRank: r.opponentRank,
+    const grade = finalizeSection4Grade(
+      twoGoalGrade(teamColour, oppColour, r.outcome, r.goalDiff, opts.goalDiff, {
+        mode: opts.mode,
+        teamRank: r.teamRank,
+        oppRank: r.opponentRank,
+        isHome,
+      }),
+      r.outcome,
       isHome,
-    });
-    // Belt-and-suspenders: never leave a home loss on a non-bad sheet label.
-    if (r.outcome === 'L' && isHome) grade = 'bad';
+      opts.venue,
+      opts.teamId,
+      opts.fixtureHomeId,
+    );
     return {
       opponentName: r.opponentName,
       isHome,
@@ -451,6 +463,7 @@ export function twoGoalBandSides(opts: {
   outcome?: OutcomeTab;
   /** Current fixture — excluded so the read matches Section 1 going into the match. */
   excludeFixtureId?: number | null;
+  fixtureHomeId?: number | null;
 }): { left: TwoGoalSideRead | null; right: TwoGoalSideRead | null } {
   const goalDiff = opts.goalDiff ?? 'all';
   const outcome = opts.outcome ?? 'all';
@@ -461,6 +474,7 @@ export function twoGoalBandSides(opts: {
     outcome,
     mode: opts.mode,
     excludeFixtureId: opts.excludeFixtureId,
+    fixtureHomeId: opts.fixtureHomeId,
   };
   if (opts.mode === 'overall') {
     return {
@@ -513,6 +527,230 @@ export function twoGoalBandSides(opts: {
       results: opts.t2Results,
       ...sideOpts,
     }),
+  };
+}
+
+/** Fixture home side, or a match played at home: a Mediocre loss is shown as Bad. */
+export function finalizeSection4Grade(
+  grade: TwoGoalGrade | null,
+  outcome: ResultOutcome,
+  isHome: boolean,
+  venue: 'home' | 'away' | 'overall',
+  teamId: number,
+  fixtureHomeId?: number | null,
+): TwoGoalGrade | null {
+  const homeSideLoss =
+    outcome === 'L' &&
+    (isHome || venue === 'home' || (fixtureHomeId != null && teamId === fixtureHomeId));
+  if (homeSideLoss && (grade === 'mediocre' || grade === 'mediocre_positive')) return 'bad';
+  return grade;
+}
+
+export type SimpleLabel = 'good' | 'med' | 'bad';
+
+export type LabelChange = 'positive' | 'negative' | 'no_change';
+
+export type ChangeCode =
+  | 'A1'
+  | 'B1'
+  | 'B2'
+  | 'C1'
+  | 'C2'
+  | 'D1'
+  | 'D2'
+  | 'D3'
+  | 'E1'
+  | 'F1'
+  | 'F2'
+  | 'G1';
+
+export type ChangeGrade = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+
+export type ChangeKind = 'strength' | 'weakness' | 'no_change' | 'cancel';
+
+export type ChangeHierarchy = {
+  code: ChangeCode;
+  grade: ChangeGrade;
+  kind: ChangeKind;
+  title: string;
+};
+
+const CHANGE_RANK: Record<SimpleLabel, number> = { bad: 0, med: 1, good: 2 };
+
+/** Section 4 Great/Good count as good. Mediocre counts as med. Bad stays bad. */
+export function section4Simple(grade: TwoGoalGrade | null): SimpleLabel | null {
+  if (grade === 'great' || grade === 'good') return 'good';
+  if (grade === 'mediocre' || grade === 'mediocre_positive') return 'med';
+  if (grade === 'bad') return 'bad';
+  return null;
+}
+
+export function section1Simple(status: InitialStatus): SimpleLabel {
+  if (status === 'Good') return 'good';
+  if (status === 'Bad') return 'bad';
+  return 'med';
+}
+
+/** Section 4 higher than Section 1 is positive. Lower is negative. Same is no change. */
+export function labelChange(section1: SimpleLabel, section4: SimpleLabel): LabelChange {
+  const delta = CHANGE_RANK[section4] - CHANGE_RANK[section1];
+  if (delta > 0) return 'positive';
+  if (delta < 0) return 'negative';
+  return 'no_change';
+}
+
+export const LABEL_CHANGE_TEXT: Record<LabelChange, string> = {
+  positive: 'Positive change',
+  negative: 'Negative change',
+  no_change: 'No change',
+};
+
+/** Dominant count first: 5-0 is A1, 4-1 is B2, 3-2 is D2. */
+const CHANGE_PATTERN: Record<string, { code: ChangeCode; grade: ChangeGrade }> = {
+  '5-0': { code: 'A1', grade: 1 },
+  '4-0': { code: 'B1', grade: 2 },
+  '4-1': { code: 'B2', grade: 2 },
+  '3-0': { code: 'C1', grade: 3 },
+  '3-1': { code: 'C2', grade: 3 },
+  '2-0': { code: 'D1', grade: 4 },
+  '3-2': { code: 'D2', grade: 4 },
+  '2-1': { code: 'D3', grade: 4 },
+  '1-0': { code: 'E1', grade: 5 },
+};
+
+export function changeHierarchy(positives: number, negatives: number): ChangeHierarchy {
+  if (positives === 0 && negatives === 0) {
+    return { code: 'G1', grade: 6, kind: 'no_change', title: 'No change' };
+  }
+  if (positives === negatives) {
+    return {
+      code: positives >= 2 ? 'F1' : 'F2',
+      grade: 7,
+      kind: 'cancel',
+      title: 'Cancel',
+    };
+  }
+  if (positives > negatives) {
+    const hit = CHANGE_PATTERN[`${positives}-${negatives}`];
+    return {
+      code: hit?.code ?? 'E1',
+      grade: hit?.grade ?? 5,
+      kind: 'strength',
+      title: 'Hidden strength',
+    };
+  }
+  const hit = CHANGE_PATTERN[`${negatives}-${positives}`];
+  return {
+    code: hit?.code ?? 'E1',
+    grade: hit?.grade ?? 5,
+    kind: 'weakness',
+    title: 'Hidden weakness',
+  };
+}
+
+export type ChangeGuideRow = {
+  grade: ChangeGrade;
+  code: ChangeCode;
+  kind: ChangeKind;
+  detail: string;
+};
+
+/** How each code is assigned. Strength and weakness share the same codes. */
+export const CHANGE_GUIDE: ChangeGuideRow[] = [
+  { grade: 1, code: 'A1', kind: 'strength', detail: '5 positives, 0 negatives' },
+  { grade: 2, code: 'B1', kind: 'strength', detail: '4 positives, 0 negatives' },
+  { grade: 2, code: 'B2', kind: 'strength', detail: '4 positives, 1 negative' },
+  { grade: 3, code: 'C1', kind: 'strength', detail: '3 positives, 0 negatives' },
+  { grade: 3, code: 'C2', kind: 'strength', detail: '3 positives, 1 negative' },
+  { grade: 4, code: 'D1', kind: 'strength', detail: '2 positives, 0 negatives' },
+  { grade: 4, code: 'D2', kind: 'strength', detail: '3 positives, 2 negatives' },
+  { grade: 4, code: 'D3', kind: 'strength', detail: '2 positives, 1 negative' },
+  { grade: 5, code: 'E1', kind: 'strength', detail: '1 positive, 0 negatives' },
+  { grade: 1, code: 'A1', kind: 'weakness', detail: '5 negatives, 0 positives' },
+  { grade: 2, code: 'B1', kind: 'weakness', detail: '4 negatives, 0 positives' },
+  { grade: 2, code: 'B2', kind: 'weakness', detail: '4 negatives, 1 positive' },
+  { grade: 3, code: 'C1', kind: 'weakness', detail: '3 negatives, 0 positives' },
+  { grade: 3, code: 'C2', kind: 'weakness', detail: '3 negatives, 1 positive' },
+  { grade: 4, code: 'D1', kind: 'weakness', detail: '2 negatives, 0 positives' },
+  { grade: 4, code: 'D2', kind: 'weakness', detail: '3 negatives, 2 positives' },
+  { grade: 4, code: 'D3', kind: 'weakness', detail: '2 negatives, 1 positive' },
+  { grade: 5, code: 'E1', kind: 'weakness', detail: '1 negative, 0 positives' },
+  { grade: 6, code: 'G1', kind: 'no_change', detail: 'No positive or negative changes' },
+  { grade: 7, code: 'F1', kind: 'cancel', detail: '2 positives and 2 negatives cancel' },
+  { grade: 7, code: 'F2', kind: 'cancel', detail: '1 positive and 1 negative cancel' },
+];
+
+export type LabelChangeGame = {
+  opponentName: string;
+  outcome: ResultOutcome;
+  gf: number;
+  ga: number;
+  section1: InitialStatus;
+  section4Label: string;
+  change: LabelChange | null;
+};
+
+export type LabelChangeSide = {
+  teamId: number;
+  label: string;
+  venue: 'home' | 'away' | 'overall';
+  games: LabelChangeGame[];
+  positives: number;
+  negatives: number;
+  unchanged: number;
+  hierarchy: ChangeHierarchy;
+};
+
+function labelChangeSide(side: TwoGoalSideRead): LabelChangeSide {
+  let positives = 0;
+  let negatives = 0;
+  let unchanged = 0;
+  const games: LabelChangeGame[] = side.games.map((g) => {
+    const section1 = statusFromOutcome(g.outcome);
+    const simple4 = section4Simple(g.grade);
+    const change = simple4 == null ? null : labelChange(section1Simple(section1), simple4);
+    if (change === 'positive') positives += 1;
+    else if (change === 'negative') negatives += 1;
+    else if (change === 'no_change') unchanged += 1;
+    return {
+      opponentName: g.opponentName,
+      outcome: g.outcome,
+      gf: g.gf,
+      ga: g.ga,
+      section1,
+      section4Label: g.gradeLabel,
+      change,
+    };
+  });
+  return {
+    teamId: side.teamId,
+    label: side.label,
+    venue: side.venue,
+    games,
+    positives,
+    negatives,
+    unchanged,
+    hierarchy: changeHierarchy(positives, negatives),
+  };
+}
+
+/** Same last-5 sample as Sections 1 and 4, with a change read on every game. */
+export function last5LabelChanges(opts: {
+  t1Id: number | null;
+  t2Id: number | null;
+  t1Label: string;
+  t2Label: string;
+  t1Results: TeamResult[];
+  t2Results: TeamResult[];
+  standings: StandingLike[];
+  mode: TwoGoalVenueMode;
+  excludeFixtureId?: number | null;
+  fixtureHomeId?: number | null;
+}): { left: LabelChangeSide | null; right: LabelChangeSide | null } {
+  const sides = twoGoalBandSides({ ...opts, goalDiff: 'all', outcome: 'all' });
+  return {
+    left: sides.left ? labelChangeSide(sides.left) : null,
+    right: sides.right ? labelChangeSide(sides.right) : null,
   };
 }
 

@@ -71,15 +71,22 @@ import {
   PERIOD_WORD,
   VENUE_WORD,
   colourLetter,
+  CHANGE_GUIDE,
   goalDiffTabLabel,
+  LABEL_CHANGE_TEXT,
+  last5LabelChanges,
   last5PointsDiff,
   outcomeTabLabel,
   peakLast5Gap,
   twoGoalBandSides,
+  type ChangeKind,
   type GoalDiffTab,
+  type LabelChange,
+  type LabelChangeSide,
   type OutcomeTab,
   type TwoGoalGrade,
   type TwoGoalSideRead,
+  type TwoGoalVenueMode,
 } from '@/utils/last5Sections';
 import { lastN, type TeamResult } from '@/utils/teamResults';
 import type { SeasonMatch } from '@/utils/bhozomaEngine';
@@ -972,6 +979,30 @@ function twoGoalTone(grade: TwoGoalGrade | null): Tone {
   return 'info';
 }
 
+/** Home-side loss the sheet called Mediocre is shown as Bad. */
+function homeLossGrade(opts: {
+  grade: TwoGoalGrade | null;
+  gradeLabel: string;
+  outcome: string;
+  isHome: boolean;
+  columnVenue: TwoGoalSideRead['venue'];
+  teamId: number;
+  fixtureHomeId: number | null;
+}): { grade: TwoGoalGrade | null; label: string } {
+  const homeSide =
+    opts.isHome ||
+    opts.columnVenue === 'home' ||
+    (opts.fixtureHomeId != null && opts.teamId === opts.fixtureHomeId);
+  const mediocre =
+    opts.grade === 'mediocre' ||
+    opts.grade === 'mediocre_positive' ||
+    opts.gradeLabel.toLowerCase().includes('mediocre');
+  if (opts.outcome === 'L' && homeSide && mediocre) {
+    return { grade: 'bad', label: 'Bad' };
+  }
+  return { grade: opts.grade, label: opts.gradeLabel };
+}
+
 export function Last5LeagueCards({
   pd,
   standings,
@@ -1231,10 +1262,12 @@ function TwoGoalSideTable({
   side,
   goalDiff,
   outcome,
+  fixtureHomeId,
 }: {
   side: TwoGoalSideRead;
   goalDiff: GoalDiffTab;
   outcome: OutcomeTab;
+  fixtureHomeId: number | null;
 }) {
   const margin = goalDiffTabLabel(goalDiff);
   const venue = venueWord(side.venue).toLowerCase();
@@ -1254,20 +1287,31 @@ function TwoGoalSideTable({
       {side.games.length === 0 ? (
         <Text style={styles.note}>{empty}</Text>
       ) : (
-        side.games.map((g, i) => (
-          <View key={`${side.teamId}-${i}`} style={styles.twoGoalRow}>
-            <Text style={styles.twoGoalScore}>
-              {g.outcome} {g.gf}–{g.ga}
-            </Text>
-            <Text style={styles.twoGoalOpp} numberOfLines={1}>
-              vs {g.opponentName}
-            </Text>
-            <Text style={styles.twoGoalPair}>{g.pairLabel}</Text>
-            <Text style={[styles.twoGoalGrade, { color: toneColor(twoGoalTone(g.grade)) }]}>
-              {g.gradeLabel}
-            </Text>
-          </View>
-        ))
+        side.games.map((g, i) => {
+          const shown = homeLossGrade({
+            grade: g.grade,
+            gradeLabel: g.gradeLabel,
+            outcome: g.outcome,
+            isHome: g.isHome,
+            columnVenue: side.venue,
+            teamId: side.teamId,
+            fixtureHomeId,
+          });
+          return (
+            <View key={`${side.teamId}-${i}`} style={styles.twoGoalRow}>
+              <Text style={styles.twoGoalScore}>
+                {g.outcome} {g.gf}–{g.ga}
+              </Text>
+              <Text style={styles.twoGoalOpp} numberOfLines={1}>
+                vs {g.opponentName}
+              </Text>
+              <Text style={styles.twoGoalPair}>{g.pairLabel}</Text>
+              <Text style={[styles.twoGoalGrade, { color: toneColor(twoGoalTone(shown.grade)) }]}>
+                {shown.label}
+              </Text>
+            </View>
+          );
+        })
       )}
     </View>
   );
@@ -1294,6 +1338,7 @@ export function TwoGoalBandCards({
   const [mode, setMode] = useState<(typeof TWO_GOAL_TABS)[number]['id']>('overall');
   const [goalDiff, setGoalDiff] = useState<GoalDiffTab>('all');
   const [outcome, setOutcome] = useState<OutcomeTab>('all');
+  const fixtureHomeId = pd.t1.venue === 'home' ? pd.t1.teamId : pd.t2.teamId;
   const sides = twoGoalBandSides({
     t1Id: pd.t1.teamId,
     t2Id: pd.t2.teamId,
@@ -1306,6 +1351,7 @@ export function TwoGoalBandCards({
     goalDiff,
     outcome,
     excludeFixtureId,
+    fixtureHomeId,
   });
 
   const modeNote =
@@ -1320,7 +1366,7 @@ export function TwoGoalBandCards({
       <SectorIntro
         title="Section 4: Colour-band goal differences"
         preserveCase
-        note="Same last-5 sample as Section 1. Filter by goal difference and by Win / Draw / Loss. A home loss is always Bad. Overall uses the W/D/L colour sheet; T1 as home/away uses the 1-goal and 2-goal sheets."
+        note="Same last-5 sample as Section 1. Filter by goal difference and by Win / Draw / Loss. A loss by the home side that the sheet calls Mediocre is shown as Bad. Overall uses the W/D/L colour sheet; T1 as home/away uses the 1-goal and 2-goal sheets."
       />
       {loading ? <Text style={styles.note}>Loading recent form…</Text> : null}
       {error ? <Text style={styles.note}>{error}</Text> : null}
@@ -1332,11 +1378,214 @@ export function TwoGoalBandCards({
       </Text>
       <View style={styles.twoGoalGrid}>
         {sides.left ? (
-          <TwoGoalSideTable side={sides.left} goalDiff={goalDiff} outcome={outcome} />
+          <TwoGoalSideTable
+            side={sides.left}
+            goalDiff={goalDiff}
+            outcome={outcome}
+            fixtureHomeId={fixtureHomeId}
+          />
         ) : null}
         {sides.right ? (
-          <TwoGoalSideTable side={sides.right} goalDiff={goalDiff} outcome={outcome} />
+          <TwoGoalSideTable
+            side={sides.right}
+            goalDiff={goalDiff}
+            outcome={outcome}
+            fixtureHomeId={fixtureHomeId}
+          />
         ) : null}
+      </View>
+    </View>
+  );
+}
+
+const CHANGE_LENS_TABS = [
+  { id: 'overall', label: 'Overall' },
+  { id: 'home_away', label: 'Home/Away' },
+] as const;
+
+function changeTone(change: LabelChange | null): Tone {
+  if (change === 'positive') return 'good';
+  if (change === 'negative') return 'bad';
+  if (change === 'no_change') return 'info';
+  return 'warn';
+}
+
+function hierarchyTone(kind: ChangeKind): Tone {
+  if (kind === 'strength') return 'good';
+  if (kind === 'weakness') return 'bad';
+  if (kind === 'cancel') return 'warn';
+  return 'info';
+}
+
+const CHANGE_GUIDE_GROUPS: { kind: ChangeKind; title: string }[] = [
+  { kind: 'strength', title: 'Hidden strength' },
+  { kind: 'weakness', title: 'Hidden weakness' },
+  { kind: 'no_change', title: 'No change' },
+  { kind: 'cancel', title: 'Cancel' },
+];
+
+function ChangeCodeModal({
+  side,
+  visible,
+  onClose,
+}: {
+  side: LabelChangeSide;
+  visible: boolean;
+  onClose: () => void;
+}) {
+  const h = side.hierarchy;
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalRoot}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <View style={styles.modalSheet}>
+          <View style={styles.modalHead}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.modalTitle}>
+                {h.title} · {h.code} · Grade {h.grade}
+              </Text>
+              <Text style={styles.modalSub}>
+                {side.label} · {side.positives} positive · {side.negatives} negative · {side.unchanged} no change
+              </Text>
+            </View>
+            <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Close">
+              <Text style={styles.modalClose}>Close</Text>
+            </Pressable>
+          </View>
+          <ScrollView style={styles.modalList}>
+            <Text style={styles.modalLead}>
+              Section 1 Bad or Med moving to Section 4 Good is a positive change. Section 1 Good or Med moving to Section 4 Bad is a negative change. The same label is no change. Section 4 Great counts as Good. Mediocre counts as Med. More positives than negatives is hidden strength. More negatives is hidden weakness. The same code is used on both sides.
+            </Text>
+            {CHANGE_GUIDE_GROUPS.map((group) => {
+              const rows = CHANGE_GUIDE.filter((row) => row.kind === group.kind);
+              return (
+                <View key={group.kind} style={styles.changeGuideGroup}>
+                  <Text style={styles.modalHeadCol}>{group.title}</Text>
+                  <View style={styles.modalRowHead}>
+                    <Text style={[styles.modalHeadCol, styles.changeGuideGrade]}>Grade</Text>
+                    <Text style={[styles.modalHeadCol, styles.changeGuideCode]}>Code</Text>
+                    <Text style={[styles.modalHeadCol, styles.changeGuideDetail]}>How it is assigned</Text>
+                  </View>
+                  {rows.map((row) => {
+                    const current = row.code === h.code && row.kind === h.kind;
+                    return (
+                      <View
+                        key={`${row.kind}-${row.code}`}
+                        style={[styles.modalRow, current && styles.modalRowCurrent]}>
+                        <Text style={[styles.modalGrade, styles.changeGuideGrade, current && styles.modalGradeCurrent]}>
+                          {row.grade}
+                        </Text>
+                        <Text style={[styles.modalGrade, styles.changeGuideCode, current && styles.modalGradeCurrent]}>
+                          {row.code}
+                        </Text>
+                        <Text style={[styles.modalGap, styles.changeGuideDetail, current && styles.modalGradeCurrent]}>
+                          {row.detail}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              );
+            })}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function LabelChangeColumn({ side }: { side: LabelChangeSide }) {
+  const [open, setOpen] = useState(false);
+  const h = side.hierarchy;
+  const tone = hierarchyTone(h.kind);
+  return (
+    <View style={styles.twoGoalCol}>
+      <Text style={styles.sideLabel}>
+        {side.label} · {venueWord(side.venue)}
+      </Text>
+      <Pressable
+        onPress={() => setOpen(true)}
+        accessibilityRole="button"
+        accessibilityLabel={`${h.title} ${h.code}, grade ${h.grade}. Open how the codes work.`}
+        style={[styles.callout, styles.changeCodePress, { borderColor: toneColor(tone) }]}>
+        <Text style={[styles.calloutText, { color: toneColor(tone) }]}>
+          {h.title} · {h.code} · Grade {h.grade}
+        </Text>
+      </Pressable>
+      <ChangeCodeModal side={side} visible={open} onClose={() => setOpen(false)} />
+      <Text style={styles.note}>
+        {side.positives} positive · {side.negatives} negative · {side.unchanged} no change
+      </Text>
+      {side.games.length === 0 ? (
+        <Text style={styles.note}>No finished games in this sample.</Text>
+      ) : (
+        side.games.map((g, i) => (
+          <View key={`${side.teamId}-${i}`} style={styles.twoGoalRow}>
+            <Text style={styles.twoGoalScore}>
+              {g.outcome} {g.gf}–{g.ga}
+            </Text>
+            <Text style={styles.twoGoalOpp} numberOfLines={1}>
+              vs {g.opponentName}
+            </Text>
+            <Text style={styles.twoGoalPair}>
+              S1 {g.section1} · S4 {g.section4Label}
+            </Text>
+            <Text style={[styles.twoGoalGrade, { color: toneColor(changeTone(g.change)) }]}>
+              {g.change ? LABEL_CHANGE_TEXT[g.change] : 'No Section 4 label'}
+            </Text>
+          </View>
+        ))
+      )}
+    </View>
+  );
+}
+
+export function LabelChangeCards({
+  pd,
+  standings,
+  t1Results,
+  t2Results,
+  excludeFixtureId,
+}: {
+  pd: PowerDynamicsBundle;
+  standings: StandingLike[];
+  t1Results: TeamResult[];
+  t2Results: TeamResult[];
+  excludeFixtureId?: number | null;
+}) {
+  const [lens, setLens] = useState<(typeof CHANGE_LENS_TABS)[number]['id']>('overall');
+  const fixtureHomeId = pd.t1.venue === 'home' ? pd.t1.teamId : pd.t2.teamId;
+  const mode: TwoGoalVenueMode =
+    lens === 'overall' ? 'overall' : pd.t1.venue === 'home' ? 't1_home' : 't1_away';
+  const sides = last5LabelChanges({
+    t1Id: pd.t1.teamId,
+    t2Id: pd.t2.teamId,
+    t1Label: pd.t1.label,
+    t2Label: pd.t2.label,
+    t1Results,
+    t2Results,
+    standings,
+    mode,
+    excludeFixtureId,
+    fixtureHomeId,
+  });
+
+  return (
+    <View>
+      <SectorIntro
+        title="Section 5: Hierarchy of changes"
+        preserveCase
+        note="Each of the last 5 is Section 1 (Good / Med / Bad) against the Section 4 label. A higher Section 4 label is a positive change. A lower one is a negative change. The same label is no change. Five positives is A1. The mirror count of negatives is also A1, on the weakness side."
+      />
+      <SubTabBar tabs={[...CHANGE_LENS_TABS]} active={lens} onChange={setLens} />
+      <Text style={styles.note}>
+        {lens === 'overall'
+          ? 'Same overall last 5 as Section 1 and Section 4.'
+          : 'Home side at home, away side away — the same sample as Section 1 Home/Away.'}
+      </Text>
+      <View style={styles.twoGoalGrid}>
+        {sides.left ? <LabelChangeColumn side={sides.left} /> : null}
+        {sides.right ? <LabelChangeColumn side={sides.right} /> : null}
       </View>
     </View>
   );
@@ -2324,6 +2573,11 @@ const styles = StyleSheet.create({
     backgroundColor: theme.surface,
   },
   calloutText: { fontFamily: fonts.bodySemiBold, fontSize: 14, lineHeight: 20 },
+  changeCodePress: { cursor: 'pointer' } as object,
+  changeGuideGroup: { marginBottom: spacing.md },
+  changeGuideGrade: { width: 52 },
+  changeGuideCode: { width: 44 },
+  changeGuideDetail: { flex: 1, textAlign: 'right' },
   gradeLink: { fontFamily: fonts.bodySemiBold, textDecorationLine: 'underline' },
   gapRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.xs },
   gapScoreBox: {
