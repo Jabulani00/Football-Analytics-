@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import AdditionalStatsPanel from '@/components/analytics/AdditionalStatsPanel';
+import UpcomingMatchesPanel from '@/components/scores/UpcomingMatchesPanel';
 import AppNavBar from '@/components/layout/AppNavBar';
 import DragScroll from '@/components/shared/DragScroll';
 import AppShell from '@/components/shared/AppShell';
@@ -19,6 +20,7 @@ export default function AdditionalStatsScreen(_props: { onBack: () => void }) {
             Points per game, series, full-time patterns, and league averages. Ordinary tables stay on Stats Tables.
           </Text>
         </View>
+        <UpcomingMatchesPanel />
         <AdditionalStatsPanel />
       </DragScroll>
     </AppShell>

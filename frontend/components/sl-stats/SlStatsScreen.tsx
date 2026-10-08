@@ -3,6 +3,7 @@ import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, V
 
 import FootyTable, { type FootyColumn } from '@/components/analytics/FootyTable';
 import AppNavBar from '@/components/layout/AppNavBar';
+import UpcomingMatchesPanel from '@/components/scores/UpcomingMatchesPanel';
 import AppShell from '@/components/shared/AppShell';
 import DragScroll from '@/components/shared/DragScroll';
 import IncludedGamesList from '@/components/shared/IncludedGamesList';
@@ -362,6 +363,8 @@ export default function SlStatsScreen({ onBack: _onBack }: { onBack: () => void 
           {live.capped ? `Showing the ${live.loadedLeagues} most active leagues. ` : `${live.loadedLeagues} leagues loaded. `}
           {index.matches} finished matches in this filter.
         </Text>
+
+        <UpcomingMatchesPanel />
 
         <View style={[styles.filters, narrow && styles.filtersNarrow]}>
           <FilterDropdown style={narrow ? styles.filterFull : undefined} label="Analysis" value={analysis} options={ANALYSES.map((item) => ({ value: item.value, label: item.label }))} onChange={(value) => setAnalysis(value as AnalysisId)} />

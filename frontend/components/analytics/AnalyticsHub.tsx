@@ -14,6 +14,7 @@ import FootyStatsPanel from '@/components/analytics/FootyStatsPanel';
 import StatsTablesPanel from '@/components/analytics/StatsTablesPanel';
 import StrategiesPanel from '@/components/analytics/StrategiesPanel';
 import StreamsPanel from '@/components/analytics/StreamsPanel';
+import UpcomingMatchesPanel from '@/components/scores/UpcomingMatchesPanel';
 import AppShell from '@/components/shared/AppShell';
 import { useAnalyticsBetSlip } from '@/hooks/useAnalyticsBetSlip';
 import { useHollywoodPopularOdds } from '@/hooks/useHollywoodPopularOdds';
@@ -79,6 +80,8 @@ export default function AnalyticsHub({ onBack: _onBack }: AnalyticsHubProps) {
             Football Analytics Platform — 72 tables · 100+ metrics · 5 phases
           </Text>
         </View>
+
+        <UpcomingMatchesPanel />
 
         <AnalyticsNav active={activeTab} onChange={setActiveTab} />
 
