@@ -60,6 +60,7 @@ type ApplyResult = {
   events: number;
   added: number;
   removed: number;
+  expired: number;
   changes: number;
   pending_removals: number;
   removal_confirmation: number;
@@ -192,7 +193,7 @@ function createStore(url: string, key: string) {
       driftPp: number;
       confirmRemovalAfter: number;
     }) =>
-      rpc<ApplyResult>('apply_hollywood_tournament_crawl', {
+      rpc<ApplyResult>('apply_hollywood_tournament_crawl_classified', {
         p_crawl_key: args.crawlKey,
         p_category_id: args.categoryId,
         p_tournament_id: args.tournament.id,
@@ -236,6 +237,8 @@ async function publicSnapshot(url: string, key: string) {
   const removedQuery = new URLSearchParams({
     select: '*',
     removed_at: 'not.is.null',
+    lifecycle_state: 'eq.removed_pre_kickoff',
+    start_time: `gt.${new Date().toISOString()}`,
     order: 'removed_at.desc',
     limit: '100',
   });
@@ -245,7 +248,7 @@ async function publicSnapshot(url: string, key: string) {
     read(`/hw_event?${currentQuery}`),
     read(`/hw_event?${removedQuery}`),
   ]);
-  return { changes, crawlState, currentEvents, removedEvents };
+  return { bookmaker: 'Hollywoodbets', changes, crawlState, currentEvents, removedEvents };
 }
 
 function crawlRow(event: HbEvent, category: Category): CrawlEvent {
@@ -342,6 +345,7 @@ Deno.serve(async (request) => {
       changes: 0,
       added: 0,
       removed: 0,
+      expired: 0,
       pendingRemovals: 0,
       skipped: 0,
       deferred: 0,
@@ -409,6 +413,7 @@ Deno.serve(async (request) => {
           summary.changes += applied.changes;
           summary.added += applied.added;
           summary.removed += applied.removed;
+          summary.expired += applied.expired;
           summary.pendingRemovals += applied.pending_removals;
         } catch (error) {
           summary.skipped += 1;

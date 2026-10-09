@@ -310,16 +310,28 @@ export default function HollywoodOddsPanel({ onAddLeg }: { onAddLeg?: (leg: BetS
 
       {hunt.removedEvents.length > 0 ? (
         <View style={styles.huntDetail}>
-          <Text style={styles.huntDetailTitle}>REMOVED / COOLED LISTINGS</Text>
+          <Text style={styles.huntDetailTitle}>REMOVED BEFORE KICKOFF</Text>
           {hunt.removedEvents.slice(0, 8).map((event) => (
             <View key={event.event_id} style={styles.removedRow}>
               <View style={styles.removedBody}>
-                <Text style={styles.removedName}>{event.name}</Text>
+                <Text style={styles.removedName}>Hollywoodbets · {event.name}</Text>
                 <Text style={styles.removedMeta}>
-                  {event.tournament ?? event.country ?? 'Hollywoodbets'} · removed {event.removed_at ? new Date(event.removed_at).toLocaleString() : 'time unknown'}
+                  {event.tournament ?? event.country ?? 'Competition'} · Kickoff {new Date(event.start_time).toLocaleString()}
+                </Text>
+                <Text style={styles.removedMeta}>
+                  Last seen {new Date(event.last_seen).toLocaleString()} · confirmed removed {event.removed_at ? new Date(event.removed_at).toLocaleString() : 'time unknown'}
+                </Text>
+                <Text style={styles.removedOdds}>
+                  Last 1X2 odds · H {event.odds_home?.toFixed(2) ?? '—'} · X {event.odds_draw?.toFixed(2) ?? '—'} · A {event.odds_away?.toFixed(2) ?? '—'}
+                </Text>
+                <Text style={styles.removedMeta}>
+                  {event.removed_at && Date.parse(event.start_time) > Date.parse(event.removed_at)
+                    ? `Removed ${formatTimeBeforeKickoff(Date.parse(event.start_time) - Date.parse(event.removed_at))} before kickoff`
+                    : 'Confirmed pre-kickoff removal'}
+                  {event.missing_count ? ` · ${event.missing_count} complete crawl confirmations` : ''}
                 </Text>
               </View>
-              <Text style={styles.removedTag}>REMOVED</Text>
+              <Text style={styles.removedTag}>CONFIRMED</Text>
             </View>
           ))}
         </View>
@@ -455,6 +467,18 @@ function HuntMetric({ label, value, alert }: { label: string; value: string; ale
   );
 }
 
+function formatTimeBeforeKickoff(milliseconds: number): string {
+  const minutes = Math.max(0, Math.floor(milliseconds / 60_000));
+  const days = Math.floor(minutes / 1_440);
+  const hours = Math.floor((minutes % 1_440) / 60);
+  const remainder = minutes % 60;
+  return [
+    days > 0 ? `${days}d` : null,
+    hours > 0 ? `${hours}h` : null,
+    `${remainder}m`,
+  ].filter((part): part is string => part != null).join(' ');
+}
+
 const styles = StyleSheet.create({
   container: { width: '100%' },
   filters: { width: '100%', flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.sm },
@@ -492,6 +516,7 @@ const styles = StyleSheet.create({
   removedBody: { flex: 1 },
   removedName: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: theme.textPrimary },
   removedMeta: { fontFamily: fonts.body, fontSize: 10, color: theme.textMuted, marginTop: 2 },
+  removedOdds: { fontFamily: fonts.bodySemiBold, fontSize: 11, color: theme.accentGreen, marginTop: 3 },
   removedTag: { fontFamily: fonts.bodySemiBold, fontSize: 8, color: theme.loss, backgroundColor: 'rgba(255, 92, 92, 0.12)', paddingHorizontal: spacing.xs, paddingVertical: 2, borderRadius: layout.borderRadius },
   label: { alignSelf: 'flex-start', marginTop: spacing.md, marginBottom: spacing.sm },
   search: {

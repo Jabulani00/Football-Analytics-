@@ -17,7 +17,7 @@
  * environment, so a caller cannot accidentally hand the client a writer.
  */
 
-import type { HwChangeRow, HwEventRow } from '@/services/hollywoodHunt';
+import { isUpcomingPreKickoffRemoval, type HwChangeRow, type HwEventRow } from '@/services/hollywoodHunt';
 
 export type HuntStoreConfig = {
   /** Project URL, e.g. https://<ref>.supabase.co — no trailing slash needed. */
@@ -162,13 +162,17 @@ export function createHuntStore(config: HuntStoreConfig) {
 
     /** Fixtures Hollywood has stopped listing, most recent first. */
     async removedEvents(limit = 100): Promise<HwEventRow[]> {
+      const now = Date.now();
       const qs = new URLSearchParams({
         select: '*',
         removed_at: 'not.is.null',
+        lifecycle_state: 'eq.removed_pre_kickoff',
+        start_time: `gt.${new Date(now).toISOString()}`,
         order: 'removed_at.desc',
         limit: String(limit),
       });
-      return request<HwEventRow[]>(`/hw_event?${qs}`, { method: 'GET', headers: headers() });
+      return (await request<HwEventRow[]>(`/hw_event?${qs}`, { method: 'GET', headers: headers() }))
+        .filter((event) => isUpcomingPreKickoffRemoval(event, now));
     },
 
     /** Current listing, optionally only fixtures still live. */
@@ -233,7 +237,10 @@ export function createPublicHuntStore(endpoint: string, fetchImpl: typeof fetch 
         .slice(0, limit);
     },
     async removedEvents(limit = 100) {
-      return (await load()).removedEvents.slice(0, limit);
+      const now = Date.now();
+      return (await load()).removedEvents
+        .filter((event) => isUpcomingPreKickoffRemoval(event, now))
+        .slice(0, limit);
     },
     async currentListing(opts: { includeRemoved?: boolean; limit?: number } = {}) {
       const snapshot = await load();

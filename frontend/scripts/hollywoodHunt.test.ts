@@ -30,9 +30,11 @@ import {
   diffSnapshots,
   eventRowsFromSnapshot,
   isCrawlDue,
+  isUpcomingPreKickoffRemoval,
   pairFixturesToEvents,
   removedEventIds,
   snapshotFromEvents,
+  type HwEventRow,
   type HuntSnapshot,
   type ListedEvent,
 } from '../services/hollywoodHunt';
@@ -458,6 +460,44 @@ console.log('\nSection 10 — stats coverage (p3 item 15)');
 
 console.log('\nSection 10 — persistence rows');
 {
+  const futureRemoval: HwEventRow = {
+    event_id: 90,
+    source_id: null,
+    name: 'Alpha vs Bravo',
+    start_time: '2026-10-09T18:00:00Z',
+    country_id: 1,
+    country: 'South Africa',
+    tournament_id: 2,
+    tournament: 'Premier League',
+    home_team: 'Alpha',
+    away_team: 'Bravo',
+    odds_home: 2.2,
+    odds_draw: 3.1,
+    odds_away: 3.4,
+    market_open: false,
+    last_seen: '2026-10-09T13:42:00Z',
+    removed_at: '2026-10-09T13:45:00Z',
+    lifecycle_state: 'removed_pre_kickoff',
+    missing_count: 2,
+  };
+  const expiredRemoval: HwEventRow = {
+    ...futureRemoval,
+    start_time: '2026-10-09T10:00:00Z',
+    lifecycle_state: 'expired',
+  };
+  check(
+    'upcoming confirmed pre-kickoff removal is client-facing',
+    isUpcomingPreKickoffRemoval(futureRemoval, Date.parse('2026-10-09T14:00:00Z')),
+  );
+  check(
+    'expired fixture is excluded from removed listings',
+    !isUpcomingPreKickoffRemoval(expiredRemoval, Date.parse('2026-10-09T14:00:00Z')),
+  );
+  check(
+    'legacy row without lifecycle classification is excluded',
+    !isUpcomingPreKickoffRemoval({ ...futureRemoval, lifecycle_state: undefined }, Date.parse('2026-10-09T14:00:00Z')),
+  );
+
   const t1 = snapshotFromEvents(
     [
       event(1, 'Arsenal vs Chelsea', '2026-09-10T14:00:00Z', [2.0, 3.5, 4.0]),
@@ -792,7 +832,33 @@ async function testPublicHuntFallback(): Promise<void> {
   let requests = 0;
   const fetchMock = (async () => {
     requests += 1;
-    return Response.json({ changes: [], crawlState: [], currentEvents: [], removedEvents: [] });
+    const upcoming = {
+      event_id: 91,
+      source_id: null,
+      name: 'Alpha vs Bravo',
+      start_time: new Date(Date.now() + 60 * 60_000).toISOString(),
+      country_id: 1,
+      country: 'South Africa',
+      tournament_id: 2,
+      tournament: 'Premier League',
+      home_team: 'Alpha',
+      away_team: 'Bravo',
+      odds_home: 2.2,
+      odds_draw: 3.1,
+      odds_away: 3.4,
+      market_open: false,
+      last_seen: new Date().toISOString(),
+      removed_at: new Date().toISOString(),
+      lifecycle_state: 'removed_pre_kickoff',
+      missing_count: 2,
+    } satisfies HwEventRow;
+    const expired = {
+      ...upcoming,
+      event_id: 92,
+      start_time: new Date(Date.now() - 60 * 60_000).toISOString(),
+      lifecycle_state: 'expired',
+    } satisfies HwEventRow;
+    return Response.json({ changes: [], crawlState: [], currentEvents: [], removedEvents: [upcoming, expired] });
   }) as typeof fetch;
   const store = createPublicHuntStore('https://example.test/functions/v1/hollywood-hunt', fetchMock);
   const [changes, state, current, removed] = await Promise.all([
@@ -803,8 +869,8 @@ async function testPublicHuntFallback(): Promise<void> {
   ]);
   check('one public snapshot serves all four Hunt reads', requests === 1, `${requests}`);
   check(
-    'empty public snapshot maps to empty store collections',
-    changes.length + state.length + current.length + removed.length === 0,
+    'public snapshot excludes post-kickoff and only returns upcoming pre-kickoff removals',
+    changes.length + state.length + current.length === 0 && removed.length === 1 && removed[0].event_id === 91,
   );
 }
 

@@ -336,9 +336,23 @@ export type HwEventRow = {
   market_open: boolean;
   last_seen: string;
   removed_at: string | null;
+  lifecycle_state?:
+    | 'active'
+    | 'pending_removal'
+    | 'removed_pre_kickoff'
+    | 'suspended'
+    | 'rescheduled'
+    | 'started'
+    | 'expired'
+    | 'reopened';
   /** Consecutive complete crawls that did not contain this event. */
   missing_count?: number;
 };
+
+export function isUpcomingPreKickoffRemoval(event: HwEventRow, now = Date.now()): boolean {
+  const kickoff = Date.parse(event.start_time);
+  return event.lifecycle_state === 'removed_pre_kickoff' && Number.isFinite(kickoff) && kickoff > now;
+}
 
 /** Rebuild the pure matching shape from rows read through PostgREST. */
 export function snapshotFromEventRows(rows: HwEventRow[], takenAt = Date.now() / 1000): HuntSnapshot {
@@ -371,8 +385,11 @@ export function snapshotFromEventRows(rows: HwEventRow[], takenAt = Date.now() /
 export type HwChangeKind =
   | 'added'
   | 'removed'
+  | 'expired'
   | 'suspended'
   | 'reopened'
+  | 'rescheduled'
+  | 'started'
   | 'shortened'
   | 'drifted';
 
