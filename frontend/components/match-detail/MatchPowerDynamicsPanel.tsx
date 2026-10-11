@@ -17,6 +17,7 @@ import {
   IndlelaCards,
   InitialStateCards,
   LabelChangeCards,
+  DeathTrapCards,
   Last5Cards,
   Last5DiffCards,
   Last5LeagueCards,
@@ -513,6 +514,12 @@ export default function MatchPowerDynamicsPanel({
             <LabelChangeCards
               pd={pd}
               standings={like}
+              t1Results={pd.t1.venue === 'home' ? form.homeResults : form.awayResults}
+              t2Results={pd.t2.venue === 'home' ? form.homeResults : form.awayResults}
+              excludeFixtureId={fixtureId}
+            />
+            <DeathTrapCards
+              pd={pd}
               t1Results={pd.t1.venue === 'home' ? form.homeResults : form.awayResults}
               t2Results={pd.t2.venue === 'home' ? form.homeResults : form.awayResults}
               excludeFixtureId={fixtureId}

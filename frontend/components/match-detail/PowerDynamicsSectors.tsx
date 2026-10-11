@@ -93,6 +93,13 @@ import {
   type TwoGoalVenueMode,
 } from '@/utils/last5Sections';
 import { lastN, type TeamResult } from '@/utils/teamResults';
+import {
+  deathTrapSides,
+  type DeathTrapCall,
+  type DeathTrapPeriod,
+  type DeathTrapSide,
+  type DeathTrapVenue,
+} from '@/utils/deathTraps';
 import type { SeasonMatch } from '@/utils/bhozomaEngine';
 import { GRADE_LABEL, STANCE_LABEL, type StandingLike } from '@/utils/motivationEngine';
 import SubTabBar from '@/components/shared/SubTabBar';
@@ -1741,6 +1748,97 @@ export function LabelChangeCards({
       {sides.left && sides.right ? (
         <ChangeScaleBoard pd={pd} left={sides.left} right={sides.right} />
       ) : null}
+    </View>
+  );
+}
+
+const DEATH_TRAP_VENUE_TABS: { id: DeathTrapVenue; label: string }[] = [
+  { id: 'overall', label: 'Overall' },
+  { id: 'home', label: 'Home' },
+  { id: 'away', label: 'Away' },
+];
+
+const DEATH_TRAP_PERIOD_TABS: { id: DeathTrapPeriod; label: string }[] = [
+  { id: 'ft', label: 'Full time' },
+  { id: '1h', label: '1st half' },
+  { id: '2h', label: '2nd half' },
+];
+
+function deathTrapTone(call: DeathTrapCall, kind: 'loss' | 'win' | 'score' | 'concede'): Tone {
+  if (call.trend === 'up_down') return 'warn';
+  if (call.trend === 'none' || call.trend === 'level') return 'info';
+  if (kind === 'loss') return call.trend === 'decline' ? 'good' : 'bad';
+  if (kind === 'win') return call.trend === 'incline' ? 'good' : 'bad';
+  if (kind === 'score') return call.trend === 'incline' ? 'good' : 'bad';
+  return call.trend === 'decline' ? 'good' : 'bad';
+}
+
+function DeathTrapLine({ call, kind }: { call: DeathTrapCall; kind: 'loss' | 'win' | 'score' | 'concede' }) {
+  const seq = call.sequence.length > 0 ? call.sequence.join(' → ') : '—';
+  return (
+    <View style={{ marginTop: 4 }}>
+      <Text style={[styles.twoGoalGrade, { color: toneColor(deathTrapTone(call, kind)) }]}>{call.label}</Text>
+      {call.reading ? <Text style={styles.note}>{call.reading}</Text> : null}
+      <Text style={styles.note}>{seq}</Text>
+    </View>
+  );
+}
+
+function DeathTrapColumn({ side }: { side: DeathTrapSide }) {
+  return (
+    <View style={styles.twoGoalCol}>
+      <Text style={styles.sideLabel}>{side.label}</Text>
+      <Text style={styles.note}>{side.games} games in this sample</Text>
+      <Text style={styles.subHead}>Losses</Text>
+      <DeathTrapLine call={side.losses} kind="loss" />
+      <Text style={styles.subHead}>Wins</Text>
+      <DeathTrapLine call={side.wins} kind="win" />
+      <Text style={styles.subHead}>Goal scoring</Text>
+      <DeathTrapLine call={side.scoring} kind="score" />
+      <Text style={styles.subHead}>Goal conceding</Text>
+      <DeathTrapLine call={side.conceding} kind="concede" />
+    </View>
+  );
+}
+
+export function DeathTrapCards({
+  pd,
+  t1Results,
+  t2Results,
+  excludeFixtureId,
+}: {
+  pd: PowerDynamicsBundle;
+  t1Results: TeamResult[];
+  t2Results: TeamResult[];
+  excludeFixtureId?: number | null;
+}) {
+  const [venue, setVenue] = useState<DeathTrapVenue>('overall');
+  const [period, setPeriod] = useState<DeathTrapPeriod>('ft');
+  const sides = deathTrapSides({
+    t1Id: pd.t1.teamId,
+    t2Id: pd.t2.teamId,
+    t1Label: pd.t1.label,
+    t2Label: pd.t2.label,
+    t1Results,
+    t2Results,
+    venue,
+    period,
+    excludeFixtureId,
+  });
+
+  return (
+    <View>
+      <SectorIntro
+        title="Section 6: Death traps"
+        preserveCase
+        note="Last 5 in this venue and period, oldest to newest. A call needs the same direction across 3 or more games. A shrinking loss margin is a decline and the side is getting stronger. A shrinking win margin is a decline and the side is getting weaker. Mixed movement is up down."
+      />
+      <SubTabBar tabs={DEATH_TRAP_VENUE_TABS} active={venue} onChange={setVenue} />
+      <SubTabBar tabs={DEATH_TRAP_PERIOD_TABS} active={period} onChange={setPeriod} />
+      <View style={styles.twoGoalGrid}>
+        {sides.left ? <DeathTrapColumn side={sides.left} /> : null}
+        {sides.right ? <DeathTrapColumn side={sides.right} /> : null}
+      </View>
     </View>
   );
 }
