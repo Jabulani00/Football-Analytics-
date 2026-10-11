@@ -1026,9 +1026,9 @@ async function testDirectHuntStoreCurrentListing(): Promise<void> {
   const fetchMock = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
     const url = String(input);
     requests.push({ url, init });
-    const range = new Headers(init.headers).get('Range');
-    const pageIndex = range === '0-999' ? 0 : range === '1000-1001' ? 1 : -1;
-    if (pageIndex < 0) throw new Error(`Unexpected PostgREST range: ${range}`);
+    const offset = new URL(url).searchParams.get('offset');
+    const pageIndex = offset === '0' ? 0 : offset === '1000' ? 1 : -1;
+    if (pageIndex < 0) throw new Error(`Unexpected PostgREST offset: ${offset}`);
     return Response.json(pages[pageIndex]);
   }) as typeof fetch;
   const store = createHuntStore({
@@ -1050,6 +1050,11 @@ async function testDirectHuntStoreCurrentListing(): Promise<void> {
         params.get('start_time')?.startsWith('gt.') &&
         params.get('removed_at') === 'is.null',
     ),
+  );
+  check(
+    'PostgREST pagination uses query offsets instead of range headers',
+    queryParams.map((params) => params.get('offset')).join(',') === '0,1000' &&
+      requests.every(({ init }) => !new Headers(init.headers).has('Range')),
   );
   check(
     'direct listing filters stale and removed rows returned by the server',

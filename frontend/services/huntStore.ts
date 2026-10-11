@@ -211,14 +211,12 @@ export function createHuntStore(config: HuntStoreConfig) {
           start_time: `gt.${new Date(now).toISOString()}`,
           order: 'start_time.asc,event_id.asc',
           limit: String(end - start + 1),
+          offset: String(start),
         });
         if (!opts.includeRemoved) qs.set('removed_at', 'is.null');
         const batch = await request<HwEventRow[]>(`/hw_event?${qs}`, {
           method: 'GET',
-          headers: headers({
-            'Range-Unit': 'items',
-            Range: `${start}-${end}`,
-          }),
+          headers: headers(),
         });
         rows.push(...batch);
         if (batch.length < end - start + 1) {
