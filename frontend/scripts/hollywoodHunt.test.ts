@@ -40,7 +40,7 @@ import {
   type ListedEvent,
 } from '../services/hollywoodHunt';
 import { leagueCoverage, statsCoverage } from '../utils/statsCoverage';
-import { createPublicHuntStore } from '../services/huntStore';
+import { createPublicHuntStore, summarizeCrawlState } from '../services/huntStore';
 import type { TeamResult } from '../utils/teamResults';
 import {
   canStartTournament,
@@ -920,10 +920,20 @@ console.log('\nSection 10 — hosted runner safety guards');
 
 async function testPublicHuntFallback(): Promise<void> {
   console.log('\nSection 10 — public Hunt fallback');
+  const crawlHealth = summarizeCrawlState([
+    { category_id: 1, tournament_id: 1, tournament: 'Pending league', next_kickoff: null, last_crawled: null, status: 'partial' },
+    { category_id: 1, tournament_id: 2, tournament: 'Failed league', next_kickoff: null, last_crawled: null, status: 'failed' },
+    { category_id: 1, tournament_id: 3, tournament: 'Healthy league', next_kickoff: null, last_crawled: null, status: 'success' },
+    { category_id: 1, tournament_id: 4, tournament: 'Stale league', next_kickoff: null, last_crawled: new Date(Date.now() - 25 * 60 * 60_000).toISOString(), status: 'success' },
+  ]);
+  check(
+    'pending confirmations, actual failures, and stale states are separate',
+    crawlHealth.pendingConfirmations === 1 && crawlHealth.failures === 1 && crawlHealth.stale === 1,
+  );
   let requests = 0;
   const fetchMock = (async () => {
     requests += 1;
-    const upcoming = {
+    const active = {
       event_id: 91,
       source_id: null,
       name: 'Alpha vs Bravo',
@@ -937,19 +947,31 @@ async function testPublicHuntFallback(): Promise<void> {
       odds_home: 2.2,
       odds_draw: 3.1,
       odds_away: 3.4,
-      market_open: false,
+      market_open: true,
       last_seen: new Date().toISOString(),
+      removed_at: null,
+      lifecycle_state: 'active',
+      missing_count: 0,
+    } satisfies HwEventRow;
+    const stale = {
+      ...active,
+      event_id: 92,
+      start_time: new Date(Date.now() - 60 * 60_000).toISOString(),
+    } satisfies HwEventRow;
+    const upcomingRemoval = {
+      ...active,
+      event_id: 93,
       removed_at: new Date().toISOString(),
       lifecycle_state: 'removed_pre_kickoff',
       missing_count: 2,
     } satisfies HwEventRow;
     const expired = {
-      ...upcoming,
-      event_id: 92,
+      ...upcomingRemoval,
+      event_id: 94,
       start_time: new Date(Date.now() - 60 * 60_000).toISOString(),
       lifecycle_state: 'expired',
     } satisfies HwEventRow;
-    return Response.json({ changes: [], crawlState: [], currentEvents: [upcoming], removedEvents: [upcoming, expired] });
+    return Response.json({ changes: [], crawlState: [], currentEvents: [active, stale], removedEvents: [upcomingRemoval, expired] });
   }) as typeof fetch;
   const store = createPublicHuntStore('https://example.test/functions/v1/hollywood-hunt', fetchMock);
   const [changes, state, current, removed] = await Promise.all([
@@ -965,8 +987,9 @@ async function testPublicHuntFallback(): Promise<void> {
       current.length === 1 &&
       current[0].event_id === 91 &&
       removed.length === 1 &&
-      removed[0].event_id === 91,
+      removed[0].event_id === 93,
   );
+  check('stale historical events are not included in current listing results', current.every((event) => Date.parse(event.start_time) > Date.now()));
 }
 
 void testPublicHuntFallback()

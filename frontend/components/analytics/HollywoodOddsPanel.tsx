@@ -7,6 +7,7 @@ import { useHollywoodExport } from '@/hooks/useHollywoodExport';
 import { useHollywoodHunt } from '@/hooks/useHollywoodHunt';
 import { useHollywoodNav } from '@/hooks/useHollywoodNav';
 import { useHollywoodOdds } from '@/hooks/useHollywoodOdds';
+import { summarizeCrawlState } from '@/services/huntStore';
 import {
   BET_TYPE,
   fetchEventDetail,
@@ -222,9 +223,7 @@ export default function HollywoodOddsPanel({ onAddLeg }: { onAddLeg?: (leg: BetS
 
   const legs = useMemo(() => Object.values(selections), [selections]);
   const combinedOdds = legs.reduce((acc, s) => acc * s.odds, 1);
-  const unhealthyCrawls = hunt.crawlState.filter(
-    (row) => row.status === 'failed' || row.status === 'partial',
-  );
+  const crawlHealth = summarizeCrawlState(hunt.crawlState);
 
   const addSelectionsToSlip = () => {
     if (!onAddLeg) return;
@@ -285,9 +284,22 @@ export default function HollywoodOddsPanel({ onAddLeg }: { onAddLeg?: (leg: BetS
             <HuntMetric label="REMOVED" value={String(hunt.removedEvents.length)} alert={hunt.removedEvents.length > 0} />
             <HuntMetric
               label="COVERAGE"
-              value={hunt.coverage ? `${hunt.coverage.coveragePct.toFixed(0)}%` : '—'}
+              value={
+                hunt.coverage && hunt.coverage.matched.length + hunt.coverage.missingFromBook.length > 0
+                  ? `${hunt.coverage.coveragePct.toFixed(0)}%`
+                  : '—'
+              }
             />
-            <HuntMetric label="CRAWL ISSUES" value={String(unhealthyCrawls.length)} alert={unhealthyCrawls.length > 0} />
+            <HuntMetric
+              label="AWAITING CONFIRMATION"
+              value={String(crawlHealth.pendingConfirmations)}
+            />
+            <HuntMetric label="NOT CRAWLED >24H" value={String(crawlHealth.stale)} />
+            <HuntMetric
+              label="CRAWL FAILURES"
+              value={String(crawlHealth.failures)}
+              alert={crawlHealth.failures > 0}
+            />
           </View>
         ) : null}
       </View>
@@ -296,7 +308,9 @@ export default function HollywoodOddsPanel({ onAddLeg }: { onAddLeg?: (leg: BetS
         <View style={styles.huntDetail}>
           <Text style={styles.huntDetailTitle}>COVERAGE RECONCILIATION</Text>
           <Text style={styles.huntDetailText}>
-            {hunt.coverage.matched.length} matched · {hunt.coverage.missingFromBook.length} in Scoreline but missing at Hollywood · {hunt.coverage.extraAtBook.length} at Hollywood but missing from Scoreline
+            {hunt.coverage.matched.length + hunt.coverage.missingFromBook.length === 0
+              ? 'No upcoming Scoreline fixtures were returned for the comparison window.'
+              : `${hunt.coverage.matched.length} of ${hunt.coverage.matched.length + hunt.coverage.missingFromBook.length} Scoreline fixtures matched · ${hunt.coverage.missingFromBook.length} missing at Hollywood · ${hunt.coverage.extraAtBook.length} at Hollywood but missing from Scoreline`}
           </Text>
           {hunt.coverage.missingFromBook.slice(0, 5).map((fixture, index) => (
             <Text key={`${fixture.homeName}-${fixture.awayName}-${index}`} style={styles.gapText}>

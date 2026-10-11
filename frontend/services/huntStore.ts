@@ -43,6 +43,22 @@ export type CrawlStateRow = {
   last_crawl_key?: string | null;
 };
 
+export function summarizeCrawlState(rows: CrawlStateRow[]): {
+  pendingConfirmations: number;
+  failures: number;
+  stale: number;
+} {
+  const staleBefore = Date.now() - 24 * 60 * 60 * 1000;
+  return {
+    pendingConfirmations: rows.filter((row) => row.status === 'partial').length,
+    failures: rows.filter((row) => row.status === 'failed').length,
+    stale: rows.filter((row) => {
+      const attemptedAt = Date.parse(row.last_attempted ?? row.last_crawled ?? '');
+      return Number.isFinite(attemptedAt) && attemptedAt < staleBefore;
+    }).length,
+  };
+}
+
 export class HuntStoreError extends Error {
   constructor(
     message: string,
@@ -244,9 +260,13 @@ export function createPublicHuntStore(endpoint: string, fetchImpl: typeof fetch 
     },
     async currentListing(opts: { includeRemoved?: boolean; limit?: number } = {}) {
       const snapshot = await load();
+      const now = Date.now();
+      const upcoming = snapshot.currentEvents.filter(
+        (event) => event.removed_at == null && Date.parse(event.start_time) > now,
+      );
       const rows = opts.includeRemoved
-        ? [...snapshot.currentEvents, ...snapshot.removedEvents]
-        : snapshot.currentEvents;
+        ? [...upcoming, ...snapshot.removedEvents]
+        : upcoming;
       return rows.slice(0, opts.limit ?? 500);
     },
     async crawlState() {

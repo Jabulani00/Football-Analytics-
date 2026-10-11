@@ -57,14 +57,15 @@ export function useHollywoodHunt(): HuntState & {
         const [changes, crawlState, currentEvents, removedEvents] = await Promise.all([
           store.recentChanges(since),
           store.crawlState(),
-          store.currentListing({ limit: 1000 }),
+          store.currentListing({ limit: 20_000 }),
           store.removedEvents(100),
         ]);
 
         let coverage: CoverageReport | null = null;
         let coverageError: string | null = null;
         try {
-          const fixtures = await fetchAllUpcomingFixtures({ days: 3, maxPages: 5 });
+          const fixtures = (await fetchAllUpcomingFixtures({ days: 3, maxPages: 5 }))
+            .filter((fixture) => fixture.unix * 1000 > Date.now());
           coverage = coverageReport(
             fixtures.map((fixture) => ({
               homeName: fixture.home_name,
