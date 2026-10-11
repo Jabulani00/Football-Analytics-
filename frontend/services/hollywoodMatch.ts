@@ -26,6 +26,7 @@ const SYNONYMS: Record<string, string> = {
   afc: '',
   cf: '',
   sc: '',
+  nwu: 'north west university',
   city: 'city',
   intl: 'international',
   amp: 'and',

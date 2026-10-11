@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import {
   coverageReport,
+  excludeCurrentlyListedRemovals,
   snapshotFromEventRows,
   type CoverageReport,
   type HwChangeKind,
@@ -87,7 +88,7 @@ export function useHollywoodHunt(): HuntState & {
             changes,
             crawlState,
             currentEvents,
-            removedEvents,
+            removedEvents: excludeCurrentlyListedRemovals(removedEvents, currentEvents),
             coverage,
             coverageError,
           });

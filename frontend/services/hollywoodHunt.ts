@@ -23,6 +23,7 @@ import { decimal1x2, type HbEvent } from '@/services/hollywoodTypes';
 import { devig1x2 } from '@/services/oddsMath';
 import {
   matchFixtureToEvent,
+  splitEventName,
   type FixtureKey,
   type MatchableEvent,
 } from '@/services/hollywoodMatch';
@@ -352,6 +353,67 @@ export type HwEventRow = {
 export function isUpcomingPreKickoffRemoval(event: HwEventRow, now = Date.now()): boolean {
   const kickoff = Date.parse(event.start_time);
   return event.lifecycle_state === 'removed_pre_kickoff' && Number.isFinite(kickoff) && kickoff > now;
+}
+
+function sameEarlyBettingCompetition(a: string | null, b: string | null): boolean {
+  if (!a || !b) return false;
+  const earlyBetting = /\s*\(early betting\)\s*$/i;
+  const aIsEarly = earlyBetting.test(a);
+  const bIsEarly = earlyBetting.test(b);
+  if (aIsEarly === bIsEarly) return false;
+  return a.replace(earlyBetting, '').trim().toLowerCase() ===
+    b.replace(earlyBetting, '').trim().toLowerCase();
+}
+
+/** Hide a removed record when the book currently lists the same fixture again. */
+export function excludeCurrentlyListedRemovals(
+  removedEvents: HwEventRow[],
+  currentEvents: HwEventRow[],
+): HwEventRow[] {
+  const current = currentEvents.filter((event) => event.removed_at == null);
+  const matchableEvents: MatchableEvent[] = current.map((event) => ({
+    name: event.name,
+    startTime: event.start_time,
+    country: event.country ?? undefined,
+    tournament: event.tournament ?? undefined,
+  }));
+  return removedEvents.filter((removed) => {
+    if (
+      removed.source_id != null &&
+      current.some((event) => event.source_id === removed.source_id)
+    ) {
+      return false;
+    }
+
+    const teams = splitEventName(removed.name);
+    const homeName = removed.home_team ?? teams?.home;
+    const awayName = removed.away_team ?? teams?.away;
+    const kickoffUnix = Date.parse(removed.start_time) / 1000;
+    if (!homeName || !awayName || !Number.isFinite(kickoffUnix)) return true;
+
+    const fixture: FixtureKey = {
+      homeName,
+      awayName,
+      kickoffUnix,
+      country: removed.country ?? undefined,
+      league: removed.tournament ?? undefined,
+    };
+    if (matchFixtureToEvent(fixture, matchableEvents)) return false;
+
+    return !current.some((event) => {
+      const kickoffDelta = Math.abs(Date.parse(event.start_time) / 1000 - kickoffUnix);
+      if (
+        kickoffDelta > 36 * 60 * 60 ||
+        !sameEarlyBettingCompetition(removed.tournament, event.tournament)
+      ) {
+        return false;
+      }
+      return matchFixtureToEvent(
+        { ...fixture, kickoffUnix: undefined },
+        matchableEvents.filter((candidate) => candidate.name === event.name),
+      ) != null;
+    });
+  });
 }
 
 /** Rebuild the pure matching shape from rows read through PostgREST. */

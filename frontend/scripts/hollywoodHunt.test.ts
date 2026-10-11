@@ -28,6 +28,7 @@ import {
   coverageReport,
   crawlIntervalSeconds,
   diffSnapshots,
+  excludeCurrentlyListedRemovals,
   eventRowsFromSnapshot,
   isCrawlDue,
   isUpcomingPreKickoffRemoval,
@@ -497,6 +498,96 @@ console.log('\nSection 10 — persistence rows');
     'legacy row without lifecycle classification is excluded',
     !isUpcomingPreKickoffRemoval({ ...futureRemoval, lifecycle_state: undefined }, Date.parse('2026-10-09T14:00:00Z')),
   );
+  check(
+    'relisted fixture with a new event id is removed from the removed list',
+    excludeCurrentlyListedRemovals(
+      [futureRemoval],
+      [{
+        ...futureRemoval,
+        event_id: 93,
+        removed_at: null,
+        lifecycle_state: 'active',
+        last_seen: '2026-10-09T14:10:00Z',
+      }],
+    ).length === 0,
+  );
+  check(
+    'same source id suppresses a relisted fixture after a kickoff move',
+    excludeCurrentlyListedRemovals(
+      [{ ...futureRemoval, source_id: 'sr:match:123' }],
+      [{
+        ...futureRemoval,
+        event_id: 94,
+        source_id: 'sr:match:123',
+        start_time: '2026-10-10T18:00:00Z',
+        removed_at: null,
+        lifecycle_state: 'active',
+      }],
+    ).length === 0,
+  );
+  check(
+    'early-betting listing is reconciled with main competition after a 24-hour move',
+    excludeCurrentlyListedRemovals(
+      [{
+        ...futureRemoval,
+        name: 'Magesi vs NWU FC',
+        home_team: 'Magesi',
+        away_team: 'NWU FC',
+        start_time: '2026-10-10T13:30:00Z',
+        tournament: 'SA MFC (Early Betting)',
+      }],
+      [{
+        ...futureRemoval,
+        event_id: 96,
+        name: 'MAGESI FC vs NORTH WEST UNIVERSITY',
+        home_team: 'MAGESI FC',
+        away_team: 'NORTH WEST UNIVERSITY',
+        start_time: '2026-10-09T13:30:00Z',
+        tournament: 'SA MFC',
+        removed_at: null,
+        lifecycle_state: 'active',
+      }],
+    ).length === 0,
+  );
+  check(
+    'same teams two days apart are not reconciled across early betting',
+    excludeCurrentlyListedRemovals(
+      [{
+        ...futureRemoval,
+        name: 'Magesi vs NWU FC',
+        home_team: 'Magesi',
+        away_team: 'NWU FC',
+        start_time: '2026-10-11T13:30:00Z',
+        tournament: 'SA MFC (Early Betting)',
+      }],
+      [{
+        ...futureRemoval,
+        event_id: 97,
+        name: 'MAGESI FC vs NORTH WEST UNIVERSITY',
+        home_team: 'MAGESI FC',
+        away_team: 'NORTH WEST UNIVERSITY',
+        start_time: '2026-10-09T13:30:00Z',
+        tournament: 'SA MFC',
+        removed_at: null,
+        lifecycle_state: 'active',
+      }],
+    ).length === 1,
+  );
+  check(
+    'unrelated active fixture does not suppress a removal',
+    excludeCurrentlyListedRemovals(
+      [futureRemoval],
+      [{
+        ...futureRemoval,
+        event_id: 95,
+        name: 'Charlie vs Delta',
+        home_team: 'Charlie',
+        away_team: 'Delta',
+        removed_at: null,
+        lifecycle_state: 'active',
+      }],
+    ).length === 1,
+  );
 
   const t1 = snapshotFromEvents(
     [
@@ -858,7 +949,7 @@ async function testPublicHuntFallback(): Promise<void> {
       start_time: new Date(Date.now() - 60 * 60_000).toISOString(),
       lifecycle_state: 'expired',
     } satisfies HwEventRow;
-    return Response.json({ changes: [], crawlState: [], currentEvents: [], removedEvents: [upcoming, expired] });
+    return Response.json({ changes: [], crawlState: [], currentEvents: [upcoming], removedEvents: [upcoming, expired] });
   }) as typeof fetch;
   const store = createPublicHuntStore('https://example.test/functions/v1/hollywood-hunt', fetchMock);
   const [changes, state, current, removed] = await Promise.all([
@@ -870,7 +961,11 @@ async function testPublicHuntFallback(): Promise<void> {
   check('one public snapshot serves all four Hunt reads', requests === 1, `${requests}`);
   check(
     'public snapshot excludes post-kickoff and only returns upcoming pre-kickoff removals',
-    changes.length + state.length + current.length === 0 && removed.length === 1 && removed[0].event_id === 91,
+    changes.length + state.length === 0 &&
+      current.length === 1 &&
+      current[0].event_id === 91 &&
+      removed.length === 1 &&
+      removed[0].event_id === 91,
   );
 }
 
