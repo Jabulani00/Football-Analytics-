@@ -40,7 +40,7 @@ import {
   type ListedEvent,
 } from '../services/hollywoodHunt';
 import { leagueCoverage, statsCoverage } from '../utils/statsCoverage';
-import { createPublicHuntStore, summarizeCrawlState } from '../services/huntStore';
+import { createHuntStore, createPublicHuntStore, summarizeCrawlState } from '../services/huntStore';
 import type { TeamResult } from '../utils/teamResults';
 import {
   canStartTournament,
@@ -992,7 +992,76 @@ async function testPublicHuntFallback(): Promise<void> {
   check('stale historical events are not included in current listing results', current.every((event) => Date.parse(event.start_time) > Date.now()));
 }
 
+async function testDirectHuntStoreCurrentListing(): Promise<void> {
+  console.log('\nSection 11 — direct Hunt store current listing');
+  const now = Date.now();
+  const makeEvent = (eventId: number, kickoff: number, removedAt: string | null = null): HwEventRow => ({
+    event_id: eventId,
+    source_id: null,
+    name: `Home ${eventId} vs Away ${eventId}`,
+    start_time: new Date(kickoff).toISOString(),
+    country_id: 1,
+    country: 'South Africa',
+    tournament_id: 2,
+    tournament: 'Premier League',
+    home_team: `Home ${eventId}`,
+    away_team: `Away ${eventId}`,
+    odds_home: 2.2,
+    odds_draw: 3.1,
+    odds_away: 3.4,
+    market_open: true,
+    last_seen: new Date(now).toISOString(),
+    removed_at: removedAt,
+    lifecycle_state: removedAt ? 'removed_pre_kickoff' : 'active',
+    missing_count: removedAt ? 2 : 0,
+  });
+  const pages = [
+    Array.from({ length: 1000 }, (_, index) => makeEvent(index + 1, now + (index + 1) * 60_000)),
+    [
+      makeEvent(1001, now - 60_000),
+      makeEvent(1002, now + 1002 * 60_000, new Date(now).toISOString()),
+    ],
+  ];
+  const requests: Array<{ url: string; init: RequestInit }> = [];
+  const fetchMock = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
+    const url = String(input);
+    requests.push({ url, init });
+    const range = new Headers(init.headers).get('Range');
+    const pageIndex = range === '0-999' ? 0 : range === '1000-1001' ? 1 : -1;
+    if (pageIndex < 0) throw new Error(`Unexpected PostgREST range: ${range}`);
+    return Response.json(pages[pageIndex]);
+  }) as typeof fetch;
+  const store = createHuntStore({
+    url: 'https://example.test',
+    key: 'public-key',
+    fetchImpl: fetchMock,
+  });
+
+  const current = await store.currentListing({ limit: 1002 });
+  const queryParams = requests.map(({ url }) => new URL(url).searchParams);
+  check(
+    'direct PostgREST listing paginates a listing larger than one response page',
+    requests.length === 2,
+  );
+  check(
+    'each direct request asks PostgREST for upcoming, non-removed fixtures',
+    queryParams.every(
+      (params) =>
+        params.get('start_time')?.startsWith('gt.') &&
+        params.get('removed_at') === 'is.null',
+    ),
+  );
+  check(
+    'direct listing filters stale and removed rows returned by the server',
+    current.length === 1000 &&
+      current.every(
+        (event) => Date.parse(event.start_time) > Date.now() && event.removed_at === null,
+      ),
+  );
+}
+
 void testPublicHuntFallback()
+  .then(testDirectHuntStoreCurrentListing)
   .then(() => {
     console.log(`\n${passed} passed, ${failed} failed`);
     if (failed > 0) process.exit(1);
