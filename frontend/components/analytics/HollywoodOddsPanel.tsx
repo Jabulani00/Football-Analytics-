@@ -273,7 +273,7 @@ export default function HollywoodOddsPanel({ onAddLeg }: { onAddLeg?: (leg: BetS
             : hunt.loading
               ? 'Reading crawler status…'
               : hunt.error
-                ? 'Crawler store configured, but currently unavailable.'
+                ? `Crawler store unavailable: ${hunt.error}`
                 : hunt.crawlState.length === 0
                   ? 'Database connected, but no crawler run has been recorded yet.'
                   : `${hunt.changes.length} change signal${hunt.changes.length === 1 ? '' : 's'} in the last hour${hunt.lastCrawled ? ` · last successful crawl ${new Date(hunt.lastCrawled).toLocaleString()}` : ''}`}
