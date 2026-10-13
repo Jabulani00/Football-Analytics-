@@ -43,6 +43,22 @@ export type CrawlStateRow = {
   last_crawl_key?: string | null;
 };
 
+export function summarizeCrawlState(rows: CrawlStateRow[]): {
+  pendingConfirmations: number;
+  failures: number;
+  stale: number;
+} {
+  const staleBefore = Date.now() - 24 * 60 * 60 * 1000;
+  return {
+    pendingConfirmations: rows.filter((row) => row.status === 'partial').length,
+    failures: rows.filter((row) => row.status === 'failed').length,
+    stale: rows.filter((row) => {
+      const attemptedAt = Date.parse(row.last_attempted ?? row.last_crawled ?? '');
+      return Number.isFinite(attemptedAt) && attemptedAt < staleBefore;
+    }).length,
+  };
+}
+
 export class HuntStoreError extends Error {
   constructor(
     message: string,
@@ -56,6 +72,8 @@ export class HuntStoreError extends Error {
 
 /** PostgREST requests in batches; one oversized body is a 413, not a retry. */
 const CHUNK = 500;
+const CURRENT_LIST_PAGE_SIZE = 1000;
+const MAX_CURRENT_LISTING = 20_000;
 
 function chunk<T>(rows: T[], size = CHUNK): T[][] {
   const out: T[][] = [];
@@ -175,15 +193,59 @@ export function createHuntStore(config: HuntStoreConfig) {
         .filter((event) => isUpcomingPreKickoffRemoval(event, now));
     },
 
-    /** Current listing, optionally only fixtures still live. */
+    /** Upcoming listing; includeRemoved also returns pre-kickoff tombstones. */
     async currentListing(opts: { includeRemoved?: boolean; limit?: number } = {}): Promise<HwEventRow[]> {
-      const qs = new URLSearchParams({
-        select: '*',
-        order: 'start_time.asc',
-        limit: String(opts.limit ?? 500),
+      const limit = opts.limit ?? 500;
+      if (!Number.isInteger(limit) || limit < 0 || limit > MAX_CURRENT_LISTING) {
+        throw new RangeError(`currentListing limit must be between 0 and ${MAX_CURRENT_LISTING}`);
+      }
+      if (limit === 0) return [];
+
+      const now = Date.now();
+      const pageSize = Math.min(limit, CURRENT_LIST_PAGE_SIZE);
+      const rows: HwEventRow[] = [];
+      for (let start = 0; start < limit; start += pageSize) {
+        const end = Math.min(start + pageSize, limit) - 1;
+        const qs = new URLSearchParams({
+          select: '*',
+          start_time: `gt.${new Date(now).toISOString()}`,
+          order: 'start_time.asc,event_id.asc',
+          limit: String(end - start + 1),
+          offset: String(start),
+        });
+        if (!opts.includeRemoved) qs.set('removed_at', 'is.null');
+        const batch = await request<HwEventRow[]>(`/hw_event?${qs}`, {
+          method: 'GET',
+          headers: headers(),
+        });
+        rows.push(...batch);
+        if (batch.length < end - start + 1) {
+          return rows.filter((event) => {
+            const kickoff = Date.parse(event.start_time);
+            return (
+              Number.isFinite(kickoff) &&
+              kickoff > now &&
+              (opts.includeRemoved || event.removed_at == null)
+            );
+          });
+        }
+      }
+
+      if (limit === MAX_CURRENT_LISTING) {
+        throw new HuntStoreError(
+          `Current Hollywood listing reached the ${MAX_CURRENT_LISTING}-event safety cap`,
+          413,
+          '',
+        );
+      }
+      return rows.filter((event) => {
+        const kickoff = Date.parse(event.start_time);
+        return (
+          Number.isFinite(kickoff) &&
+          kickoff > now &&
+          (opts.includeRemoved || event.removed_at == null)
+        );
       });
-      if (!opts.includeRemoved) qs.set('removed_at', 'is.null');
-      return request<HwEventRow[]>(`/hw_event?${qs}`, { method: 'GET', headers: headers() });
     },
 
     async crawlState(): Promise<CrawlStateRow[]> {
@@ -244,9 +306,13 @@ export function createPublicHuntStore(endpoint: string, fetchImpl: typeof fetch 
     },
     async currentListing(opts: { includeRemoved?: boolean; limit?: number } = {}) {
       const snapshot = await load();
+      const now = Date.now();
+      const upcoming = snapshot.currentEvents.filter(
+        (event) => event.removed_at == null && Date.parse(event.start_time) > now,
+      );
       const rows = opts.includeRemoved
-        ? [...snapshot.currentEvents, ...snapshot.removedEvents]
-        : snapshot.currentEvents;
+        ? [...upcoming, ...snapshot.removedEvents]
+        : upcoming;
       return rows.slice(0, opts.limit ?? 500);
     },
     async crawlState() {

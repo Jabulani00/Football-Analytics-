@@ -229,10 +229,10 @@ async function publicSnapshot(url: string, key: string) {
   });
   const stateQuery = new URLSearchParams({ select: '*' });
   const currentQuery = new URLSearchParams({
-    select: '*',
+    select: 'event_id,source_id,name,start_time,country_id,country,tournament_id,tournament,home_team,away_team,odds_home,odds_draw,odds_away,market_open,last_seen,removed_at,lifecycle_state,missing_count',
     removed_at: 'is.null',
+    start_time: `gt.${new Date().toISOString()}`,
     order: 'start_time.asc',
-    limit: '1000',
   });
   const removedQuery = new URLSearchParams({
     select: '*',
@@ -242,10 +242,34 @@ async function publicSnapshot(url: string, key: string) {
     order: 'removed_at.desc',
     limit: '100',
   });
+  const readUpcomingEvents = async (): Promise<Record<string, unknown>[]> => {
+    const pageSize = 1000;
+    const maxPages = 20;
+    const rows: Record<string, unknown>[] = [];
+    for (let page = 0; page < maxPages; page += 1) {
+      const start = page * pageSize;
+      const response = await fetch(`${base}/hw_event?${currentQuery}`, {
+        headers: {
+          ...headers,
+          'Range-Unit': 'items',
+          Range: `${start}-${start + pageSize - 1}`,
+        },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!response.ok) {
+        throw new Error(`Public hunt read /hw_event current listing: HTTP ${response.status}`);
+      }
+      const batch = (await response.json()) as Record<string, unknown>[];
+      rows.push(...batch);
+      if (batch.length < pageSize) return rows;
+    }
+    throw new Error(`Public hunt current listing exceeded ${maxPages * pageSize} upcoming events`);
+  };
+
   const [changes, crawlState, currentEvents, removedEvents] = await Promise.all([
     read(`/hw_change?${changesQuery}`),
     read(`/hw_crawl_state?${stateQuery}`),
-    read(`/hw_event?${currentQuery}`),
+    readUpcomingEvents(),
     read(`/hw_event?${removedQuery}`),
   ]);
   return { bookmaker: 'Hollywoodbets', changes, crawlState, currentEvents, removedEvents };

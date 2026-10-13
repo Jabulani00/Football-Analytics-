@@ -28,6 +28,7 @@ import {
   coverageReport,
   crawlIntervalSeconds,
   diffSnapshots,
+  excludeCurrentlyListedRemovals,
   eventRowsFromSnapshot,
   isCrawlDue,
   isUpcomingPreKickoffRemoval,
@@ -39,7 +40,7 @@ import {
   type ListedEvent,
 } from '../services/hollywoodHunt';
 import { leagueCoverage, statsCoverage } from '../utils/statsCoverage';
-import { createPublicHuntStore } from '../services/huntStore';
+import { createHuntStore, createPublicHuntStore, summarizeCrawlState } from '../services/huntStore';
 import type { TeamResult } from '../utils/teamResults';
 import {
   canStartTournament,
@@ -497,6 +498,96 @@ console.log('\nSection 10 — persistence rows');
     'legacy row without lifecycle classification is excluded',
     !isUpcomingPreKickoffRemoval({ ...futureRemoval, lifecycle_state: undefined }, Date.parse('2026-10-09T14:00:00Z')),
   );
+  check(
+    'relisted fixture with a new event id is removed from the removed list',
+    excludeCurrentlyListedRemovals(
+      [futureRemoval],
+      [{
+        ...futureRemoval,
+        event_id: 93,
+        removed_at: null,
+        lifecycle_state: 'active',
+        last_seen: '2026-10-09T14:10:00Z',
+      }],
+    ).length === 0,
+  );
+  check(
+    'same source id suppresses a relisted fixture after a kickoff move',
+    excludeCurrentlyListedRemovals(
+      [{ ...futureRemoval, source_id: 'sr:match:123' }],
+      [{
+        ...futureRemoval,
+        event_id: 94,
+        source_id: 'sr:match:123',
+        start_time: '2026-10-10T18:00:00Z',
+        removed_at: null,
+        lifecycle_state: 'active',
+      }],
+    ).length === 0,
+  );
+  check(
+    'early-betting listing is reconciled with main competition after a 24-hour move',
+    excludeCurrentlyListedRemovals(
+      [{
+        ...futureRemoval,
+        name: 'Magesi vs NWU FC',
+        home_team: 'Magesi',
+        away_team: 'NWU FC',
+        start_time: '2026-10-10T13:30:00Z',
+        tournament: 'SA MFC (Early Betting)',
+      }],
+      [{
+        ...futureRemoval,
+        event_id: 96,
+        name: 'MAGESI FC vs NORTH WEST UNIVERSITY',
+        home_team: 'MAGESI FC',
+        away_team: 'NORTH WEST UNIVERSITY',
+        start_time: '2026-10-09T13:30:00Z',
+        tournament: 'SA MFC',
+        removed_at: null,
+        lifecycle_state: 'active',
+      }],
+    ).length === 0,
+  );
+  check(
+    'same teams two days apart are not reconciled across early betting',
+    excludeCurrentlyListedRemovals(
+      [{
+        ...futureRemoval,
+        name: 'Magesi vs NWU FC',
+        home_team: 'Magesi',
+        away_team: 'NWU FC',
+        start_time: '2026-10-11T13:30:00Z',
+        tournament: 'SA MFC (Early Betting)',
+      }],
+      [{
+        ...futureRemoval,
+        event_id: 97,
+        name: 'MAGESI FC vs NORTH WEST UNIVERSITY',
+        home_team: 'MAGESI FC',
+        away_team: 'NORTH WEST UNIVERSITY',
+        start_time: '2026-10-09T13:30:00Z',
+        tournament: 'SA MFC',
+        removed_at: null,
+        lifecycle_state: 'active',
+      }],
+    ).length === 1,
+  );
+  check(
+    'unrelated active fixture does not suppress a removal',
+    excludeCurrentlyListedRemovals(
+      [futureRemoval],
+      [{
+        ...futureRemoval,
+        event_id: 95,
+        name: 'Charlie vs Delta',
+        home_team: 'Charlie',
+        away_team: 'Delta',
+        removed_at: null,
+        lifecycle_state: 'active',
+      }],
+    ).length === 1,
+  );
 
   const t1 = snapshotFromEvents(
     [
@@ -829,10 +920,20 @@ console.log('\nSection 10 — hosted runner safety guards');
 
 async function testPublicHuntFallback(): Promise<void> {
   console.log('\nSection 10 — public Hunt fallback');
+  const crawlHealth = summarizeCrawlState([
+    { category_id: 1, tournament_id: 1, tournament: 'Pending league', next_kickoff: null, last_crawled: null, status: 'partial' },
+    { category_id: 1, tournament_id: 2, tournament: 'Failed league', next_kickoff: null, last_crawled: null, status: 'failed' },
+    { category_id: 1, tournament_id: 3, tournament: 'Healthy league', next_kickoff: null, last_crawled: null, status: 'success' },
+    { category_id: 1, tournament_id: 4, tournament: 'Stale league', next_kickoff: null, last_crawled: new Date(Date.now() - 25 * 60 * 60_000).toISOString(), status: 'success' },
+  ]);
+  check(
+    'pending confirmations, actual failures, and stale states are separate',
+    crawlHealth.pendingConfirmations === 1 && crawlHealth.failures === 1 && crawlHealth.stale === 1,
+  );
   let requests = 0;
   const fetchMock = (async () => {
     requests += 1;
-    const upcoming = {
+    const active = {
       event_id: 91,
       source_id: null,
       name: 'Alpha vs Bravo',
@@ -846,19 +947,31 @@ async function testPublicHuntFallback(): Promise<void> {
       odds_home: 2.2,
       odds_draw: 3.1,
       odds_away: 3.4,
-      market_open: false,
+      market_open: true,
       last_seen: new Date().toISOString(),
+      removed_at: null,
+      lifecycle_state: 'active',
+      missing_count: 0,
+    } satisfies HwEventRow;
+    const stale = {
+      ...active,
+      event_id: 92,
+      start_time: new Date(Date.now() - 60 * 60_000).toISOString(),
+    } satisfies HwEventRow;
+    const upcomingRemoval = {
+      ...active,
+      event_id: 93,
       removed_at: new Date().toISOString(),
       lifecycle_state: 'removed_pre_kickoff',
       missing_count: 2,
     } satisfies HwEventRow;
     const expired = {
-      ...upcoming,
-      event_id: 92,
+      ...upcomingRemoval,
+      event_id: 94,
       start_time: new Date(Date.now() - 60 * 60_000).toISOString(),
       lifecycle_state: 'expired',
     } satisfies HwEventRow;
-    return Response.json({ changes: [], crawlState: [], currentEvents: [], removedEvents: [upcoming, expired] });
+    return Response.json({ changes: [], crawlState: [], currentEvents: [active, stale], removedEvents: [upcomingRemoval, expired] });
   }) as typeof fetch;
   const store = createPublicHuntStore('https://example.test/functions/v1/hollywood-hunt', fetchMock);
   const [changes, state, current, removed] = await Promise.all([
@@ -870,11 +983,90 @@ async function testPublicHuntFallback(): Promise<void> {
   check('one public snapshot serves all four Hunt reads', requests === 1, `${requests}`);
   check(
     'public snapshot excludes post-kickoff and only returns upcoming pre-kickoff removals',
-    changes.length + state.length + current.length === 0 && removed.length === 1 && removed[0].event_id === 91,
+    changes.length + state.length === 0 &&
+      current.length === 1 &&
+      current[0].event_id === 91 &&
+      removed.length === 1 &&
+      removed[0].event_id === 93,
+  );
+  check('stale historical events are not included in current listing results', current.every((event) => Date.parse(event.start_time) > Date.now()));
+}
+
+async function testDirectHuntStoreCurrentListing(): Promise<void> {
+  console.log('\nSection 11 — direct Hunt store current listing');
+  const now = Date.now();
+  const makeEvent = (eventId: number, kickoff: number, removedAt: string | null = null): HwEventRow => ({
+    event_id: eventId,
+    source_id: null,
+    name: `Home ${eventId} vs Away ${eventId}`,
+    start_time: new Date(kickoff).toISOString(),
+    country_id: 1,
+    country: 'South Africa',
+    tournament_id: 2,
+    tournament: 'Premier League',
+    home_team: `Home ${eventId}`,
+    away_team: `Away ${eventId}`,
+    odds_home: 2.2,
+    odds_draw: 3.1,
+    odds_away: 3.4,
+    market_open: true,
+    last_seen: new Date(now).toISOString(),
+    removed_at: removedAt,
+    lifecycle_state: removedAt ? 'removed_pre_kickoff' : 'active',
+    missing_count: removedAt ? 2 : 0,
+  });
+  const pages = [
+    Array.from({ length: 1000 }, (_, index) => makeEvent(index + 1, now + (index + 1) * 60_000)),
+    [
+      makeEvent(1001, now - 60_000),
+      makeEvent(1002, now + 1002 * 60_000, new Date(now).toISOString()),
+    ],
+  ];
+  const requests: Array<{ url: string; init: RequestInit }> = [];
+  const fetchMock = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
+    const url = String(input);
+    requests.push({ url, init });
+    const offset = new URL(url).searchParams.get('offset');
+    const pageIndex = offset === '0' ? 0 : offset === '1000' ? 1 : -1;
+    if (pageIndex < 0) throw new Error(`Unexpected PostgREST offset: ${offset}`);
+    return Response.json(pages[pageIndex]);
+  }) as typeof fetch;
+  const store = createHuntStore({
+    url: 'https://example.test',
+    key: 'public-key',
+    fetchImpl: fetchMock,
+  });
+
+  const current = await store.currentListing({ limit: 1002 });
+  const queryParams = requests.map(({ url }) => new URL(url).searchParams);
+  check(
+    'direct PostgREST listing paginates a listing larger than one response page',
+    requests.length === 2,
+  );
+  check(
+    'each direct request asks PostgREST for upcoming, non-removed fixtures',
+    queryParams.every(
+      (params) =>
+        params.get('start_time')?.startsWith('gt.') &&
+        params.get('removed_at') === 'is.null',
+    ),
+  );
+  check(
+    'PostgREST pagination uses query offsets instead of range headers',
+    queryParams.map((params) => params.get('offset')).join(',') === '0,1000' &&
+      requests.every(({ init }) => !new Headers(init.headers).has('Range')),
+  );
+  check(
+    'direct listing filters stale and removed rows returned by the server',
+    current.length === 1000 &&
+      current.every(
+        (event) => Date.parse(event.start_time) > Date.now() && event.removed_at === null,
+      ),
   );
 }
 
 void testPublicHuntFallback()
+  .then(testDirectHuntStoreCurrentListing)
   .then(() => {
     console.log(`\n${passed} passed, ${failed} failed`);
     if (failed > 0) process.exit(1);
