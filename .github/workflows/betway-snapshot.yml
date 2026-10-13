@@ -1,0 +1,52 @@
+name: Betway upcoming snapshot
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: betway-upcoming-snapshot
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check Betway persistence and verifier credentials
+        id: credentials
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          BETWAY_STATUS_PROXY_URL: ${{ vars.BETWAY_STATUS_PROXY_URL }}
+          BETWAY_STATUS_PROXY_TOKEN: ${{ secrets.BETWAY_STATUS_PROXY_TOKEN }}
+        run: |
+          if [ -n "$SUPABASE_URL" ] && [ -n "$SUPABASE_SERVICE_ROLE_KEY" ] && \
+             [ -n "$BETWAY_STATUS_PROXY_URL" ] && [ -n "$BETWAY_STATUS_PROXY_TOKEN" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Add SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY repository secrets, BETWAY_STATUS_PROXY_URL repository variable, and BETWAY_STATUS_PROXY_TOKEN repository secret to enable Betway persistence and status verification."
+          fi
+      - name: Install worker
+        if: steps.credentials.outputs.available == 'true'
+        run: python -m pip install ./workers/betway
+      - name: Test worker
+        if: steps.credentials.outputs.available == 'true'
+        run: python -m unittest discover -s workers/betway -p 'test_*.py'
+      - name: Capture and persist complete snapshot
+        if: steps.credentials.outputs.available == 'true'
+        run: betway-snapshot --persist
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          BETWAY_STATUS_PROXY_URL: ${{ vars.BETWAY_STATUS_PROXY_URL }}
+          BETWAY_STATUS_PROXY_TOKEN: ${{ secrets.BETWAY_STATUS_PROXY_TOKEN }}
