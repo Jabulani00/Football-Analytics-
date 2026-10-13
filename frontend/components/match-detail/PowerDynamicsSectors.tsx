@@ -1766,7 +1766,7 @@ const DEATH_TRAP_PERIOD_TABS: { id: DeathTrapPeriod; label: string }[] = [
 
 function deathTrapTone(call: DeathTrapCall, kind: 'loss' | 'win' | 'score' | 'concede'): Tone {
   if (call.trend === 'up_down') return 'warn';
-  if (call.trend === 'none' || call.trend === 'level') return 'info';
+  if (call.trend === 'none' || call.trend === 'constant') return 'info';
   if (kind === 'loss') return call.trend === 'decline' ? 'good' : 'bad';
   if (kind === 'win') return call.trend === 'incline' ? 'good' : 'bad';
   if (kind === 'score') return call.trend === 'incline' ? 'good' : 'bad';
@@ -1831,7 +1831,7 @@ export function DeathTrapCards({
       <SectorIntro
         title="Section 6: Death traps"
         preserveCase
-        note="Last 5 in this venue and period, oldest to newest. A call needs the same direction across 3 or more games. A shrinking loss margin is a decline and the side is getting stronger. A shrinking win margin is a decline and the side is getting weaker. Mixed movement is up down."
+        note="Last 5 in this venue and period, oldest to newest. A call needs 3 or more games where the goals keep going up or keep going down. Two games in a row may repeat the same number. Three or more equal games in a row is Constant. A shrinking loss margin is a decline and the side is getting stronger. A shrinking win margin is a decline and the side is getting weaker. Mixed movement is up down."
       />
       <SubTabBar tabs={DEATH_TRAP_VENUE_TABS} active={venue} onChange={setVenue} />
       <SubTabBar tabs={DEATH_TRAP_PERIOD_TABS} active={period} onChange={setPeriod} />

@@ -39,7 +39,11 @@ console.log('\ntrend');
   check('growing is incline', deathTrapTrend([1, 2, 4]) === 'incline');
   check('mixed is up down', deathTrapTrend([2, 5, 1]) === 'up_down');
   check('two games is no pattern', deathTrapTrend([5, 1]) === 'none');
-  check('flat is level', deathTrapTrend([2, 2, 2]) === 'level');
+  check('three equal is constant', deathTrapTrend([2, 2, 2]) === 'constant');
+  check('one repeat then a drop is still decline', deathTrapTrend([3, 3, 1]) === 'decline');
+  check('one repeat then a rise is still incline', deathTrapTrend([1, 2, 2, 4]) === 'incline');
+  check('three equal inside a run is constant', deathTrapTrend([5, 3, 3, 3, 1]) === 'constant');
+  check('two values never make a call', deathTrapTrend([1, 1]) === 'none');
 }
 
 console.log('\nloss and win margins');
