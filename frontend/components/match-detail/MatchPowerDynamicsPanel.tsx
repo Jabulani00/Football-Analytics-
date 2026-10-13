@@ -18,6 +18,7 @@ import {
   InitialStateCards,
   LabelChangeCards,
   DeathTrapCards,
+  ReverseEngineeringCards,
   Last5Cards,
   Last5DiffCards,
   Last5LeagueCards,
@@ -523,6 +524,13 @@ export default function MatchPowerDynamicsPanel({
               t1Results={pd.t1.venue === 'home' ? form.homeResults : form.awayResults}
               t2Results={pd.t2.venue === 'home' ? form.homeResults : form.awayResults}
               excludeFixtureId={fixtureId}
+            />
+            <ReverseEngineeringCards
+              pd={pd}
+              standings={like}
+              matches={seasonFx.matches}
+              loading={seasonFx.loading}
+              error={seasonFx.error}
             />
           </View>,
         );

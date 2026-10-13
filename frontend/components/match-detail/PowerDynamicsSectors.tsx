@@ -2,7 +2,7 @@
  * Presentational T1 vs T2 blocks used by Power dynamics tabs.
  */
 
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import {
@@ -100,6 +100,14 @@ import {
   type DeathTrapSide,
   type DeathTrapVenue,
 } from '@/utils/deathTraps';
+import {
+  describePrediction,
+  reverseEngineer,
+  type PredictionStory,
+  type RateRead,
+  type ReverseRow,
+  type ReverseSide,
+} from '@/utils/reverseEngineering';
 import type { SeasonMatch } from '@/utils/bhozomaEngine';
 import { GRADE_LABEL, STANCE_LABEL, type StandingLike } from '@/utils/motivationEngine';
 import SubTabBar from '@/components/shared/SubTabBar';
@@ -1843,6 +1851,218 @@ export function DeathTrapCards({
   );
 }
 
+function pct(rate: number | null): string {
+  if (rate == null) return '—';
+  return `${Math.round(rate * 100)}%`;
+}
+
+function callTone(hit: boolean | null): Tone {
+  if (hit == null) return 'info';
+  return hit ? 'good' : 'bad';
+}
+
+function rateTone(rate: RateRead): Tone {
+  if (rate.accuracy == null) return 'info';
+  return rate.accuracy >= 0.5 ? 'good' : 'warn';
+}
+
+function ordinal(n: number): string {
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
+  const mod10 = n % 10;
+  if (mod10 === 1) return `${n}st`;
+  if (mod10 === 2) return `${n}nd`;
+  if (mod10 === 3) return `${n}rd`;
+  return `${n}th`;
+}
+
+function lookedAt(gameNumber: number, priorCount: number): string {
+  if (gameNumber === 6) return 'Looked at the first 5';
+  return `Looked at the ${priorCount} before it`;
+}
+
+function pillFill(tone: Tone): string {
+  if (tone === 'good') return '#ECFDF5';
+  if (tone === 'bad') return '#FEF2F2';
+  if (tone === 'warn') return '#FEF9C3';
+  return theme.surfaceMuted;
+}
+
+function resultTone(row: ReverseRow): Tone {
+  if (row.gf > row.ga) return 'good';
+  if (row.gf < row.ga) return 'bad';
+  return 'info';
+}
+
+type ReverseRung = {
+  gameNumber: number;
+  priorCount: number;
+  sides: { label: string; row: ReverseRow }[];
+};
+
+function reverseRungs(t1: ReverseSide | null, t2: ReverseSide | null): ReverseRung[] {
+  const map = new Map<number, ReverseRung>();
+  for (const side of [t1, t2]) {
+    if (!side) continue;
+    for (const row of side.rows) {
+      const rung = map.get(row.gameNumber) ?? {
+        gameNumber: row.gameNumber,
+        priorCount: row.priorCount,
+        sides: [],
+      };
+      rung.sides.push({ label: side.label, row });
+      map.set(row.gameNumber, rung);
+    }
+  }
+  return [...map.values()].sort((a, b) => a.gameNumber - b.gameNumber);
+}
+
+function RateTile({ title, rate }: { title: string; rate: RateRead }) {
+  const tone = rateTone(rate);
+  return (
+    <View style={[styles.revTile, { borderColor: toneColor(tone) }]}>
+      <Text style={styles.revTileLabel}>{title}</Text>
+      <Text style={[styles.revTilePct, { color: toneColor(tone) }]}>{pct(rate.accuracy)}</Text>
+      <Text style={styles.revTileCap}>
+        accuracy{rate.scored > 0 ? ` · ${rate.hits} of ${rate.scored}` : ''}
+      </Text>
+      <Text style={styles.revTileSuccess}>
+        {rate.success == null
+          ? 'No named winner yet'
+          : `${pct(rate.success)} success · ${rate.winnerHits} of ${rate.winnerCalls}`}
+      </Text>
+    </View>
+  );
+}
+
+function PredictionBlock({ title, story }: { title: string; story: PredictionStory }) {
+  const tone = callTone(story.hit);
+  return (
+    <View style={[styles.revPredict, { borderColor: toneColor(tone), backgroundColor: pillFill(tone) }]}>
+      <Text style={styles.revPredictKicker}>{title} predicted</Text>
+      <Text style={[styles.revPredictCall, { color: toneColor(tone) }]}>{story.called}</Text>
+      <Text style={styles.revPredictSample}>{story.teamSample}</Text>
+      <Text style={styles.revPredictSample}>{story.oppSample}</Text>
+      {story.lean ? <Text style={styles.revPredictLean}>{story.lean}</Text> : null}
+      <Text style={[styles.revPredictVerdict, { color: toneColor(tone) }]}>{story.verdict}</Text>
+    </View>
+  );
+}
+
+function ReverseMatchCard({ label, row }: { label: string; row: ReverseRow }) {
+  const missed = row.priorHit === true && row.last5Hit === false;
+  const scoreTone = resultTone(row);
+  const shared = { team: label, opponent: row.opponentName, gf: row.gf, ga: row.ga, actual: row.actual };
+  return (
+    <View style={[styles.revMatch, missed ? styles.revMatchMissed : null]}>
+      <Text style={styles.revTeam} numberOfLines={1}>
+        {label}
+      </Text>
+      <Text style={styles.revOpp} numberOfLines={2}>
+        vs {row.opponentName} · {row.isHome ? 'Home' : 'Away'}
+      </Text>
+      <Text style={styles.revResultLabel}>Result</Text>
+      <Text style={[styles.revScore, { color: toneColor(scoreTone) }]}>
+        {row.gf}–{row.ga}
+      </Text>
+      <PredictionBlock title="Last 5" story={describePrediction({ ...shared, read: row.last5 })} />
+      <PredictionBlock title="Full record" story={describePrediction({ ...shared, read: row.prior })} />
+      {missed ? <Text style={styles.revMissFlag}>Full record saw this. Last 5 did not.</Text> : null}
+    </View>
+  );
+}
+
+function ReverseRungCard({ rung, isLast }: { rung: ReverseRung; isLast: boolean }) {
+  const missed = rung.sides.some(({ row }) => row.priorHit === true && row.last5Hit === false);
+  return (
+    <View style={styles.revRung}>
+      <View style={styles.revRail}>
+        <View style={[styles.revBadge, missed ? styles.revBadgeMissed : null]}>
+          <Text style={styles.revBadgeNum}>{rung.gameNumber}</Text>
+        </View>
+        {isLast ? null : <View style={styles.revRailLine} />}
+      </View>
+      <View style={styles.revRungBody}>
+        <Text style={styles.revOrdinal}>{ordinal(rung.gameNumber)} match</Text>
+        <Text style={styles.revLooked}>{lookedAt(rung.gameNumber, rung.priorCount)}</Text>
+        <View style={styles.revPair}>
+          {rung.sides.map(({ label, row }) => (
+            <ReverseMatchCard key={`${label}-${row.opponentId}`} label={label} row={row} />
+          ))}
+        </View>
+      </View>
+    </View>
+  );
+}
+
+export function ReverseEngineeringCards({
+  pd,
+  standings,
+  matches,
+  loading,
+  error,
+}: {
+  pd: PowerDynamicsBundle;
+  standings: StandingLike[];
+  matches: SeasonMatch[];
+  loading?: boolean;
+  error?: string | null;
+}) {
+  const names = useMemo(() => new Map(standings.map((row) => [row.teamId, row.name])), [standings]);
+  const report = useMemo(
+    () =>
+      reverseEngineer({
+        t1Id: pd.t1.teamId,
+        t2Id: pd.t2.teamId,
+        t1Label: pd.t1.label,
+        t2Label: pd.t2.label,
+        matches,
+        names,
+      }),
+    [pd.t1.teamId, pd.t1.label, pd.t2.teamId, pd.t2.label, matches, names],
+  );
+  const rungs = reverseRungs(report.t1, report.t2);
+
+  return (
+    <View>
+      <SectorIntro
+        title="Section 7: Reverse engineering"
+        preserveCase
+        note="Each step is the next match in the season. The card says who Last 5 and the full record would have picked to win, then how many goals the result was away from that call."
+      />
+      {loading ? <Text style={styles.note}>Loading season results…</Text> : null}
+      {error ? <Text style={styles.note}>{error}</Text> : null}
+      <View style={styles.revTiles}>
+        <RateTile title="Last 5" rate={report.last5} />
+        <RateTile title="Full record" rate={report.prior} />
+      </View>
+      <View style={styles.revLegend}>
+        <View style={styles.revLegendItem}>
+          <View style={[styles.revLegendDot, { backgroundColor: theme.accentBlue }]} />
+          <Text style={styles.revLegendText}>Match number</Text>
+        </View>
+        <View style={styles.revLegendItem}>
+          <View style={[styles.revLegendDot, { backgroundColor: theme.accentOrange }]} />
+          <Text style={styles.revLegendText}>Last 5 missed it</Text>
+        </View>
+      </View>
+      {report.checked === 0 ? (
+        <Callout text="Neither side has a 6th match yet." />
+      ) : (
+        <View style={styles.revMissStrip}>
+          <Text style={styles.revMissStripText}>
+            {report.checked} matches checked. Last 5 missed {report.missedByLast5} that the full record got right.
+            Neither read matched {report.missedByBoth}.
+          </Text>
+        </View>
+      )}
+      {rungs.map((rung, index) => (
+        <ReverseRungCard key={rung.gameNumber} rung={rung} isLast={index === rungs.length - 1} />
+      ))}
+    </View>
+  );
+}
+
 function last6Tone(band: Last6FormBand): Tone {
   if (band === 'strong') return 'good';
   if (band === 'poor') return 'bad';
@@ -2789,6 +3009,96 @@ const styles = StyleSheet.create({
     opacity: 0.8,
   },
   twoGoalGrid: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xs },
+  revTiles: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
+  revTile: {
+    flex: 1,
+    minWidth: 0,
+    backgroundColor: theme.surface,
+    borderWidth: layout.borderWidth,
+    borderRadius: layout.borderRadius,
+    padding: spacing.sm,
+  },
+  revTileLabel: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 11,
+    color: theme.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  revTilePct: { fontFamily: fonts.display, fontSize: 32, lineHeight: 36, marginTop: 2 },
+  revTileCap: { fontFamily: fonts.bodyMedium, fontSize: 12, color: theme.textPrimary, marginTop: 2 },
+  revTileSuccess: { fontFamily: fonts.body, fontSize: 12, color: theme.textMuted, marginTop: 2 },
+  revMissStrip: {
+    backgroundColor: '#FFF7ED',
+    borderWidth: layout.borderWidth,
+    borderColor: theme.accentOrange,
+    borderRadius: layout.borderRadius,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.md,
+  },
+  revMissStripText: { fontFamily: fonts.bodyMedium, fontSize: 13, color: theme.textPrimary, lineHeight: 18 },
+  revRung: { flexDirection: 'row', alignItems: 'stretch' },
+  revRail: { width: 52, alignItems: 'center' },
+  revBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: theme.accentBlue,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  revBadgeMissed: { backgroundColor: theme.accentOrange },
+  revBadgeNum: { fontFamily: fonts.display, fontSize: 18, color: '#FFFFFF', lineHeight: 22 },
+  revRailLine: { width: 2, flex: 1, backgroundColor: theme.borderStrong, marginTop: 4, minHeight: 12 },
+  revRungBody: { flex: 1, minWidth: 0, paddingBottom: spacing.md },
+  revOrdinal: { fontFamily: fonts.display, fontSize: 22, color: theme.textPrimary, lineHeight: 26 },
+  revLooked: { fontFamily: fonts.bodyMedium, fontSize: 13, color: theme.textMuted, marginBottom: spacing.sm },
+  revPair: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  revMatch: {
+    flexGrow: 1,
+    flexBasis: 200,
+    minWidth: 180,
+    backgroundColor: theme.surface,
+    borderWidth: layout.borderWidth,
+    borderColor: theme.border,
+    borderRadius: layout.borderRadius,
+    padding: spacing.sm,
+  },
+  revMatchMissed: { borderColor: theme.accentOrange, backgroundColor: '#FFF7ED' },
+  revTeam: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: theme.textPrimary },
+  revOpp: { fontFamily: fonts.body, fontSize: 12, color: theme.textMuted, marginTop: 2 },
+  revResultLabel: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 10,
+    color: theme.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginTop: spacing.xs,
+  },
+  revScore: { fontFamily: fonts.display, fontSize: 28, lineHeight: 32 },
+  revPredict: {
+    marginTop: spacing.sm,
+    borderWidth: layout.borderWidth,
+    borderRadius: layout.borderRadius,
+    padding: spacing.sm,
+  },
+  revPredictKicker: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 10,
+    color: theme.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  revPredictCall: { fontFamily: fonts.display, fontSize: 18, lineHeight: 22, marginTop: 2 },
+  revPredictSample: { fontFamily: fonts.body, fontSize: 12, color: theme.textPrimary, marginTop: 2 },
+  revPredictLean: { fontFamily: fonts.bodyMedium, fontSize: 12, color: theme.textMuted, marginTop: 2 },
+  revPredictVerdict: { fontFamily: fonts.bodySemiBold, fontSize: 13, marginTop: 4 },
+  revMissFlag: { fontFamily: fonts.bodySemiBold, fontSize: 11, color: theme.accentOrange, marginTop: spacing.xs },
+  revLegend: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, marginBottom: spacing.md },
+  revLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  revLegendDot: { width: 10, height: 10, borderRadius: 5 },
+  revLegendText: { fontFamily: fonts.bodyMedium, fontSize: 12, color: theme.textMuted },
   twoGoalCol: {
     flex: 1,
     backgroundColor: theme.surface,
