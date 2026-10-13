@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scoreline-betway-worker"
+version = "0.1.0"
+description = "Complete public upcoming-soccer snapshots from Betway South Africa"
+requires-python = ">=3.10"
+dependencies = [
+  "scrapling[fetchers]==0.4.15",
+  "tzdata>=2025.1",
+]
+
+[project.scripts]
+betway-snapshot = "betway_worker:main"
+
+[tool.setuptools]
+py-modules = ["betway_worker"]
