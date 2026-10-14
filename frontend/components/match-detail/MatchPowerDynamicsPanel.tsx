@@ -3,7 +3,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 import BhozomaView from '@/components/standings/BhozomaView';
 import ImbangiView from '@/components/standings/ImbangiView';
-import FixtureMotivationPanel from '@/components/standings/FixtureMotivationPanel';
+import ImportanceOf3Panel from '@/components/match-detail/ImportanceOf3Panel';
 import H2HPanel from '@/components/match-detail/H2HPanel';
 import {
   BaselineCards,
@@ -209,6 +209,7 @@ export default function MatchPowerDynamicsPanel({
   const needSeasonFx =
     view === 'bhozoma' ||
     view === 'imbangi' ||
+    view === 'importance_3pts' ||
     view === 'competition_status' ||
     view === 'middle_guys' ||
     view === 'form' ||
@@ -432,16 +433,17 @@ export default function MatchPowerDynamicsPanel({
         );
       case 'importance_3pts':
         return (
-          <FixtureMotivationPanel
+          <ImportanceOf3Panel
             standings={like}
-            homeId={pd.t1.teamId}
-            awayId={pd.t2.teamId}
-            homeName={pd.t1.name}
-            awayName={pd.t2.name}
+            t1Id={pd.t1.teamId}
+            t2Id={pd.t2.teamId}
+            t1Label={t1Label}
+            t2Label={t2Label}
             competitionId={competitionId}
             seasonProgress={seasonProgress}
-            homeLabel={t1Label}
-            awayLabel={t2Label}
+            matches={seasonFx.matches}
+            schedule={seasonFx.schedule}
+            imbangiLoading={seasonId != null && seasonFx.loading && seasonFx.matches.length === 0}
           />
         );
       case 'last5':
