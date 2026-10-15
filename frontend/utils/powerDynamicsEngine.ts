@@ -1540,16 +1540,16 @@ function colourRead(snap: SideSnapshot): ColourSideRead {
   };
 }
 
-/** Home PPG − away PPG. At or under this is Balanced. */
+/** Home points − away points. At or under this is Balanced. */
 export const VENUE_SPLIT_BALANCED_MAX = 4;
-/** Home PPG − away PPG at or over this is Strong (playing home) or Weak (playing away). */
+/** Home points − away points at or over this is Strong (playing home) or Weak (playing away). */
 export const VENUE_SPLIT_MARKED_MIN = 4.1;
 
 export type VenueSplitLabel = 'Balanced' | 'Strong' | 'Weak';
 export type VenueLeagueRead = 'Above average' | 'Below average' | 'Level';
 
 export type VenuePpgSplit = {
-  /** Home PPG minus away PPG. */
+  /** Home points minus away points. */
   diff: number | null;
   split: VenueSplitLabel | null;
   /** Home PPG when this side is at home today, away PPG when they are away. */
@@ -1558,19 +1558,21 @@ export type VenuePpgSplit = {
 };
 
 /**
- * Split a side’s home and away PPG.
+ * Split a side’s home and away points, then compare venue PPG with the league average.
  * Diff ≤ 4 is Balanced. Diff ≥ 4.1 is Strong if they play at home here, Weak if they play away.
- * A negative diff on the away side means their away PPG is higher, so they are Strong.
- * The venue PPG is then set against the league average.
+ * A negative diff on the away side means their away points are higher, so they are Strong.
+ * League and venue stay on PPG.
  */
 export function venuePpgSplit(opts: {
+  homePoints: number | null;
+  awayPoints: number | null;
   homePpg: number | null;
   awayPpg: number | null;
   playing: 'home' | 'away';
   leaguePpg: number | null;
 }): VenuePpgSplit {
-  const { homePpg, awayPpg, playing, leaguePpg } = opts;
-  const diff = homePpg != null && awayPpg != null ? homePpg - awayPpg : null;
+  const { homePoints, awayPoints, homePpg, awayPpg, playing, leaguePpg } = opts;
+  const diff = homePoints != null && awayPoints != null ? homePoints - awayPoints : null;
   let split: VenueSplitLabel | null = null;
   if (diff != null) {
     if (playing === 'away' && diff < 0) split = 'Strong';

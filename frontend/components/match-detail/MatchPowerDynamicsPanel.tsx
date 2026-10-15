@@ -1,10 +1,9 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
-import BhozomaView from '@/components/standings/BhozomaView';
-import ImbangiView from '@/components/standings/ImbangiView';
-import ImportanceOf3Panel from '@/components/match-detail/ImportanceOf3Panel';
+import FormChildBeaterPanel from '@/components/match-detail/FormChildBeaterPanel';
 import H2HPanel from '@/components/match-detail/H2HPanel';
+import ImportanceOf3Panel from '@/components/match-detail/ImportanceOf3Panel';
 import {
   BaselineCards,
   Callout,
@@ -13,39 +12,41 @@ import {
   ColourCards,
   CompetitionCards,
   ContestedCards,
+  DeathTrapCards,
+  FormCards,
   GapAnalysisCards,
   IndlelaCards,
   InitialStateCards,
   LabelChangeCards,
-  DeathTrapCards,
-  ReverseEngineeringCards,
   Last5Cards,
   Last5DiffCards,
   Last5LeagueCards,
-  FormCards,
-  TwoGoalBandCards,
   MiddleGuysCards,
   PointsDiffCards,
+  ReverseEngineeringCards,
   SectorIntro,
   StreakCards,
   StreamlineCards,
   StruggleCards,
   SwingCards,
+  TwoGoalBandCards,
   VenueCards,
 } from '@/components/match-detail/PowerDynamicsSectors';
+import ProblemCauserView from '@/components/match-detail/ProblemCauserView';
 import SubTabBar from '@/components/shared/SubTabBar';
+import BhozomaView from '@/components/standings/BhozomaView';
+import ImbangiView from '@/components/standings/ImbangiView';
+import { useFixtureBook1x2 } from '@/hooks/useFixtureBook1x2';
 import { useFixtureFormAnalysis } from '@/hooks/useFixtureFormAnalysis';
 import { useSeasonFixtures } from '@/hooks/useSeasonFixtures';
-import { useFixtureBook1x2 } from '@/hooks/useFixtureBook1x2';
 import type { Competition, H2HMatch, OddsByMarket, Probability, StandingRow } from '@/services/oddAlerts';
-import ProblemCauserView from '@/components/match-detail/ProblemCauserView';
+import { fonts, spacing, theme } from '@/styles/theme';
+import { buildInitialState, findUkulumbana } from '@/utils/last5Analysis';
+import { resultsFromSeasonMatches } from '@/utils/last6Form';
+import type { StandingLike } from '@/utils/motivationEngine';
 import { evaluatePowerDynamics, ftOdds, indlelaLetter, indlelaPath, ppgSwing, streakSide } from '@/utils/powerDynamicsEngine';
 import { evaluateProblemCauser } from '@/utils/problemCauser';
-import { resultsFromSeasonMatches } from '@/utils/last6Form';
-import { buildInitialState, findUkulumbana } from '@/utils/last5Analysis';
 import { excludeFixture, type TeamResult } from '@/utils/teamResults';
-import type { StandingLike } from '@/utils/motivationEngine';
-import { fonts, spacing, theme } from '@/styles/theme';
 
 /** Power dynamics checklist order (SKM notes; #24 odds omitted). */
 export const POWER_DYNAMICS_TABS = [
@@ -213,6 +214,7 @@ export default function MatchPowerDynamicsPanel({
     view === 'competition_status' ||
     view === 'middle_guys' ||
     view === 'form' ||
+    view === 'form_child_beater' ||
     view === 'last5' ||
     view === 'indlela' ||
     view === 'lost_twice' ||
@@ -572,13 +574,21 @@ export default function MatchPowerDynamicsPanel({
           </View>
         );
       case 'form_child_beater':
-        return formGate(
-          <ChildBeaterCards
-            title="Form + Child beater"
-            note="In action with the opponent. Method 1 = recent thrashing of a lower side. Method 2 = regularly beating bottom-third sides."
+        return (
+          <FormChildBeaterPanel
             pd={pd}
-            method="both"
-          />,
+            standings={like}
+            matches={seasonFx.matches}
+            loading={seasonId != null && seasonFx.loading && seasonFx.matches.length === 0}
+            error={seasonFx.error}
+            competitionId={competitionId}
+            seasonLinked={seasonId != null}
+            exclude={
+              kickoffUnix != null && homeId != null && awayId != null
+                ? { unix: kickoffUnix, homeId, awayId }
+                : null
+            }
+          />
         );
       case 'home_away_strong':
         return formGate(<VenueCards pd={pd} />);

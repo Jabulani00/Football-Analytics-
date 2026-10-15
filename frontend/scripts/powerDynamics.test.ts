@@ -871,22 +871,79 @@ console.log('\nposition gap analysis (G1 = largest)');
   check('20-team G1 gap is 20', positionGapScale(20)[0].span === 20);
 }
 
-console.log('\nhome/away PPG split');
+console.log('\nhome/away points split');
 {
-  const balanced = venuePpgSplit({ homePpg: 2.1, awayPpg: 1.4, playing: 'home', leaguePpg: 1.3 });
-  check('diff of 0.7 is balanced', balanced.diff != null && balanced.diff < 4 && balanced.split === 'Balanced');
-  const atHome = venuePpgSplit({ homePpg: 6.2, awayPpg: 1.5, playing: 'home', leaguePpg: 1.4 });
-  check('4.7 at home is strong', atHome.split === 'Strong' && atHome.vsLeague === 'Above average');
-  const onRoad = venuePpgSplit({ homePpg: 6.2, awayPpg: 1.5, playing: 'away', leaguePpg: 1.4 });
-  check('4.7 away is weak', onRoad.split === 'Weak' && onRoad.venuePpg === 1.5 && onRoad.vsLeague === 'Above average');
-  const under = venuePpgSplit({ homePpg: 1.2, awayPpg: 0.8, playing: 'away', leaguePpg: 1.4 });
+  const balanced = venuePpgSplit({
+    homePoints: 18,
+    awayPoints: 17,
+    homePpg: 2.1,
+    awayPpg: 1.4,
+    playing: 'home',
+    leaguePpg: 1.3,
+  });
+  check('1 point diff is balanced', balanced.diff === 1 && balanced.split === 'Balanced');
+  check('home venue stays on PPG', balanced.venuePpg === 2.1 && balanced.vsLeague === 'Above average');
+  const atHome = venuePpgSplit({
+    homePoints: 22,
+    awayPoints: 12,
+    homePpg: 2.2,
+    awayPpg: 1.2,
+    playing: 'home',
+    leaguePpg: 1.4,
+  });
+  check('10 point diff at home is strong', atHome.diff === 10 && atHome.split === 'Strong' && atHome.vsLeague === 'Above average');
+  check('venue PPG stays the home rate', atHome.venuePpg === 2.2);
+  const onRoad = venuePpgSplit({
+    homePoints: 22,
+    awayPoints: 12,
+    homePpg: 2.2,
+    awayPpg: 1.5,
+    playing: 'away',
+    leaguePpg: 1.4,
+  });
+  check('10 point diff away is weak', onRoad.split === 'Weak' && onRoad.venuePpg === 1.5 && onRoad.vsLeague === 'Above average');
+  const under = venuePpgSplit({
+    homePoints: 10,
+    awayPoints: 8,
+    homePpg: 1.2,
+    awayPpg: 0.8,
+    playing: 'away',
+    leaguePpg: 1.4,
+  });
   check('away venue PPG under the league average', under.split === 'Balanced' && under.vsLeague === 'Below average');
-  const edge = venuePpgSplit({ homePpg: 5, awayPpg: 1, playing: 'home', leaguePpg: 1 });
+  const edge = venuePpgSplit({
+    homePoints: 20,
+    awayPoints: 16,
+    homePpg: 2,
+    awayPpg: 1.6,
+    playing: 'home',
+    leaguePpg: 1,
+  });
   check('diff of exactly 4 stays balanced', edge.diff === 4 && edge.split === 'Balanced');
-  const awayLift = venuePpgSplit({ homePpg: 1.1, awayPpg: 1.8, playing: 'away', leaguePpg: 1.4 });
-  check('negative diff on the away side is strong', awayLift.diff != null && awayLift.diff < 0 && awayLift.split === 'Strong');
-  const homeWithAwayLift = venuePpgSplit({ homePpg: 1.1, awayPpg: 1.8, playing: 'home', leaguePpg: 1.4 });
-  check('negative diff on the home side stays balanced', homeWithAwayLift.split === 'Balanced');
+  const awayLift = venuePpgSplit({
+    homePoints: 8,
+    awayPoints: 14,
+    homePpg: 1.1,
+    awayPpg: 1.8,
+    playing: 'away',
+    leaguePpg: 1.4,
+  });
+  check(
+    'negative points diff on the away side is strong',
+    awayLift.diff === -6 && awayLift.split === 'Strong' && awayLift.venuePpg === 1.8,
+  );
+  const homeWithAwayLift = venuePpgSplit({
+    homePoints: 8,
+    awayPoints: 14,
+    homePpg: 1.1,
+    awayPpg: 1.8,
+    playing: 'home',
+    leaguePpg: 1.4,
+  });
+  check(
+    'negative points diff on the home side stays balanced',
+    homeWithAwayLift.diff === -6 && homeWithAwayLift.split === 'Balanced' && homeWithAwayLift.venuePpg === 1.1,
+  );
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

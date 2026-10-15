@@ -2432,6 +2432,11 @@ function leagueTone(read: VenueLeagueRead | null): Tone | undefined {
   return undefined;
 }
 
+function fmtPts(v: number | null | undefined): string {
+  if (v == null || Number.isNaN(v)) return '—';
+  return String(v);
+}
+
 export function VenueCards({ pd }: { pd: PowerDynamicsBundle }) {
   const leaguePpg = pd.baselineGap.leagueAvgPpg;
   const sides = [pd.t1.venue === 'home' ? pd.t1 : pd.t2, pd.t1.venue === 'away' ? pd.t1 : pd.t2];
@@ -2439,15 +2444,15 @@ export function VenueCards({ pd }: { pd: PowerDynamicsBundle }) {
     <View>
       <SectorIntro
         title="Home / Away strong"
-        note="Home PPG minus away PPG. 4 or less is Balanced. 4.1 or more is Strong at home and Weak away. A negative diff on the away side means they are Strong. Venue PPG is then set against the league average."
+        note="Home points minus away points. 4 or less is Balanced. 4.1 or more is Strong at home and Weak away. A negative diff on the away side means they are Strong. Venue PPG is then set against the league average."
       />
       <ScrollView horizontal showsHorizontalScrollIndicator style={styles.initialScroll}>
         <View style={[styles.formTable, styles.venueTable]}>
           <View style={[styles.formRow, styles.formHead]}>
             <Text style={[styles.formTh, styles.formTeam]}>Team</Text>
             <Text style={[styles.formTh, styles.formWdl]}>Playing</Text>
-            <Text style={[styles.formTh, styles.venueNum]}>Home PPG</Text>
-            <Text style={[styles.formTh, styles.venueNum]}>Away PPG</Text>
+            <Text style={[styles.formTh, styles.venueNum]}>Home pts</Text>
+            <Text style={[styles.formTh, styles.venueNum]}>Away pts</Text>
             <Text style={[styles.formTh, styles.venueNum]}>Diff</Text>
             <Text style={[styles.formTh, styles.formRead]}>Label</Text>
             <Text style={[styles.formTh, styles.venueNum]}>League</Text>
@@ -2456,6 +2461,8 @@ export function VenueCards({ pd }: { pd: PowerDynamicsBundle }) {
           </View>
           {sides.map((snap) => {
             const row = venuePpgSplit({
+              homePoints: snap.home.points,
+              awayPoints: snap.away.points,
               homePpg: snap.home.ppg,
               awayPpg: snap.away.ppg,
               playing: snap.venue,
@@ -2469,9 +2476,9 @@ export function VenueCards({ pd }: { pd: PowerDynamicsBundle }) {
                   </Text>
                 </View>
                 <FormCell style={styles.formWdl}>{snap.venue === 'home' ? 'Home' : 'Away'}</FormCell>
-                <FormCell style={styles.venueNum}>{fmtPpg(snap.home.ppg)}</FormCell>
-                <FormCell style={styles.venueNum}>{fmtPpg(snap.away.ppg)}</FormCell>
-                <FormCell style={styles.venueNum}>{row.diff != null ? fmtPpg(row.diff) : '—'}</FormCell>
+                <FormCell style={styles.venueNum}>{fmtPts(snap.home.points)}</FormCell>
+                <FormCell style={styles.venueNum}>{fmtPts(snap.away.points)}</FormCell>
+                <FormCell style={styles.venueNum}>{row.diff != null ? fmtPts(row.diff) : '—'}</FormCell>
                 <FormCell style={styles.formRead} tone={splitTone(row.split)}>
                   {row.split ?? '—'}
                 </FormCell>
