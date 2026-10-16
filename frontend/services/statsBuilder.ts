@@ -19,6 +19,7 @@ import type { ComplianceLevel } from '@/types/analytics';
 import type { TeamStatRow, TeamStatsExport } from '@/types/data';
 import { setRowGames, type CountedGame } from '@/utils/countedGames';
 import { complianceFromPercent } from '@/utils/compliance';
+import { bandOf } from '@/utils/leagueTables';
 // Type-only (stripped at runtime) — keeps this module free of RN imports.
 import type { RawFixture } from '@/services/oddAlerts';
 
@@ -61,6 +62,7 @@ const NOT_DERIVABLE = new Set([
 // ---- Per-team match record --------------------------------------------------
 type TeamMatch = {
   isHome: boolean;
+  opponentId: number | null;
   unix: number;
   gfFt: number; gaFt: number; // full-time goals for / against this team
   gfHt: number; gaHt: number; // first-half
@@ -196,7 +198,7 @@ export const FT_ONLY_STATS = [
 export const HALF_ONLY_STATS = ['half_nil', 'half_under05', 'half_over15', 'half_avg'] as const;
 
 /** Points-per-game family adds `ppg`/`avg_pts` on top of the ordinary stats. */
-export const PPG_STATS = ['ppg', 'avg_pts'] as const;
+export const PPG_STATS = ['ppg', 'avg_pts', 'ppg_vs_green', 'ppg_vs_yellow', 'ppg_vs_red'] as const;
 
 const RAW_KEYS = new Set<string>([
   ...SERIES_STATS, ...PPG_STATS, ...AVERAGE_STATS,
@@ -345,6 +347,8 @@ type TeamKey = string; // `${leagueId}::${teamName}`
 export type BuildOptions = {
   fixtures: RawFixture[];
   season?: string;
+  /** Current league ranks used to classify opponents into the live table thirds. */
+  teamRanks?: { teamId: number; rank: number }[];
   /** How to label a fixture's league in the representation (default: competition_id). */
   leagueKey?: (fx: RawFixture) => string;
 };
@@ -445,6 +449,10 @@ function addToPool(pool: LeaguePool, matches: TeamMatch[], period: Period) {
 export function buildStatsTables(opts: BuildOptions): TeamStatsExport {
   const leagueKey = opts.leagueKey ?? ((fx) => String(fx.competition_id));
   const season = opts.season ?? '';
+  const teamRanks = opts.teamRanks ?? [];
+  const bandByTeam = new Map(
+    teamRanks.map((team) => [team.teamId, bandOf(team.rank, teamRanks.length)]),
+  );
 
   // 1) Collect each team's finished matches.
   const teamMatches = new Map<TeamKey, { name: string; league: string; matches: TeamMatch[] }>();
@@ -517,11 +525,11 @@ export function buildStatsTables(opts: BuildOptions): TeamStatsExport {
     const match = `${fx.home_name} ${score} ${fx.away_name}`;
     const competition = fx.competition_name || league;
     add(fx.home_name, league, {
-      isHome: true, unix: fx.unix, gfFt: hg, gaFt: ag, gfHt: hHt, gaHt: aHt, htKnown,
+      isHome: true, opponentId: fx.away_id, unix: fx.unix, gfFt: hg, gaFt: ag, gfHt: hHt, gaHt: aHt, htKnown,
       id: fx.id, match, score, competition,
     });
     add(fx.away_name, league, {
-      isHome: false, unix: fx.unix, gfFt: ag, gaFt: hg, gfHt: aHt, gaHt: hHt, htKnown,
+      isHome: false, opponentId: fx.home_id, unix: fx.unix, gfFt: ag, gaFt: hg, gfHt: aHt, gaHt: hHt, htKnown,
       id: fx.id, match, score, competition,
     });
   }
@@ -557,8 +565,19 @@ export function buildStatsTables(opts: BuildOptions): TeamStatsExport {
         };
         ensure(`ordinary_${period}_${scope}`).push(withGames(makeRow(name, league, season, ord, sample), seasonGames));
         const ppg = computePpg(counted, period);
+        const tierPpg = (band: 'green' | 'yellow' | 'red') => {
+          const againstBand = counted.filter((match) => bandByTeam.get(match.opponentId ?? -1) === band);
+          return computePpg(againstBand, period);
+        };
         ensure(`ppg_${period}_${scope}`).push(
-          withGames(makeRow(name, league, season, { ppg, avg_pts: ppg, ...ord }, sample), seasonGames),
+          withGames(makeRow(name, league, season, {
+            ppg,
+            avg_pts: ppg,
+            ppg_vs_green: tierPpg('green'),
+            ppg_vs_yellow: tierPpg('yellow'),
+            ppg_vs_red: tierPpg('red'),
+            ...ord,
+          }, sample), seasonGames),
         );
         ensure(`series_${period}_${scope}`).push(
           withGames(makeRow(name, league, season, computeSeries(scoped, period), sample), seasonGames),
@@ -641,6 +660,7 @@ export async function buildLeagueStatsLive(
     fromUnix: number;
     toUnix: number;
     season?: string;
+    teamRanks?: { teamId: number; rank: number }[];
     maxPages?: number;
   },
 ): Promise<TeamStatsExport> {
@@ -653,6 +673,7 @@ export async function buildLeagueStatsLive(
   return buildStatsTables({
     fixtures,
     season: opts.season,
+    teamRanks: opts.teamRanks,
     leagueKey: () => String(opts.competitionId),
   });
 }

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { useQuery } from '@tanstack/react-query';
 
 import LeagueStatsPanel from '@/components/league/LeagueStatsPanel';
 import CompetitionPicker from '@/components/shared/CompetitionPicker';
@@ -10,6 +11,9 @@ import PageControls, { PAGE_SIZE } from '@/components/shared/PageControls';
 import { STATS_TABLES } from '@/mock/analyticsData';
 import { useLiveCompetitionFeed } from '@/hooks/useLiveCompetitions';
 import { useLiveStatsTables } from '@/hooks/useLiveStatsTables';
+import { fetchSeasonStandings } from '@/services/oddAlerts';
+import { oddAlertsKeys } from '@/services/oddAlertsKeys';
+import { clientStaleTime } from '@/services/oddAlertsCachePolicy';
 import type { StatFamily, StatsTableMeta } from '@/types/analytics';
 import { complianceColor, COMPLIANCE_RULE_TEXT } from '@/utils/compliance';
 import { rowGames } from '@/utils/countedGames';
@@ -67,9 +71,20 @@ export default function StatsTablesPanel({
   }, [competitions, competitionId]);
 
   const activeComp = competitions.find((c) => c.id === competitionId) ?? null;
+  const standingsQuery = useQuery({
+    queryKey: oddAlertsKeys.seasonStats(activeComp?.seasonId ?? 0),
+    queryFn: ({ signal }) => fetchSeasonStandings(activeComp!.seasonId!, signal),
+    enabled: activeComp?.seasonId != null,
+    staleTime: clientStaleTime('stats/season'),
+  });
+  const teamRanks = useMemo(
+    () => standingsQuery.data?.map(({ teamId, rank }) => ({ teamId, rank })),
+    [standingsQuery.data],
+  );
   const live = useLiveStatsTables({
     competitionId: competitionId ?? undefined,
     seasonName: activeComp?.season,
+    teamRanks,
   });
 
   // Won-both-halves and the other FT-only patterns use the whole match. The
@@ -86,7 +101,7 @@ export default function StatsTablesPanel({
   const liveRows = isLeagueStats ? leagueTeamRows : liveTable;
   const isLive = !!(liveRows && liveRows.length);
 
-  const waiting = feed.loading || (!!competitionId && live.loading && !isLive);
+  const waiting = feed.loading || (family.family === 'ppg' && standingsQuery.isPending) || (!!competitionId && live.loading && !isLive);
   const feedError = feed.error ?? live.error;
   const teams = useMemo(() => {
     if (isLeagueStats || waiting) return [];
@@ -318,6 +333,13 @@ export default function StatsTablesPanel({
             onChange={setPage}
           />
 
+          {family.family === 'ppg' ? (
+            <Text style={styles.footHint}>
+              {standingsQuery.isError || !teamRanks?.length
+                ? 'Current league standings are unavailable; tier PPG values are blank.'
+                : 'PPG vs Green / Yellow / Red uses each team’s PPG against opponents in that tier of the current league table. Values need qualifying completed results; no sample values are substituted.'}
+            </Text>
+          ) : null}
           <Text style={styles.footHint}>
             Colour = how often the stat lands, not whether it is good:{' '}
             {COMPLIANCE_RULE_TEXT}. Streaks are counted in matches (🟢 3+) and PPG

@@ -31,6 +31,7 @@ const seriesCols = columnsForFamily('series').map((col) => col.key);
 const ftCols = columnsForFamily('ft_only').map((col) => col.key);
 
 check('ppg leads with points per game', ppgCols[0] === 'ppg');
+check('ppg table includes all three current-tier metrics', ['ppg_vs_green', 'ppg_vs_yellow', 'ppg_vs_red'].every((key) => ppgCols.includes(key)));
 check('series leads with the win streak', seriesCols[0] === 'win_streak');
 check('ft-only leads with won both halves', ftCols[0] === 'won_both_halves');
 check('ordinary stays on win percentage', columnsForFamily('ordinary')[0]?.key === 'w_pct');
@@ -85,6 +86,7 @@ const live = liveRowsToDisplay(
   'ppg',
 );
 check('ppg rounds to two decimals', live[0]?.metrics[0]?.value === 1.67);
+check('missing tier PPG stays blank instead of zero', live[0]?.metrics.find((metric) => metric.key === 'ppg_vs_green')?.value == null);
 check('ppg under 1.80 is yellow', live[0]?.metrics[0]?.compliance === 'yellow');
 check('a stored percent signal is kept', live[0]?.metrics.find((metric) => metric.key === 'w_pct')?.compliance === 'red');
 

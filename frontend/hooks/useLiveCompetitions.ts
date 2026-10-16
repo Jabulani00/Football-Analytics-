@@ -9,6 +9,7 @@ export type LiveCompetition = {
   id: number;
   name: string;
   season: string;
+  seasonId: number | null;
   country: string;
   /** Number of upcoming fixtures — a proxy for how active the competition is. */
   upcoming: number;
@@ -39,11 +40,13 @@ function competitionsFrom(rows: RawFixture[] | undefined): LiveCompetition[] {
     const existing = seen.get(fx.competition_id);
     if (existing) {
       existing.upcoming += 1;
+      if (existing.seasonId == null && fx.season_id != null) existing.seasonId = fx.season_id;
     } else {
       seen.set(fx.competition_id, {
         id: fx.competition_id,
         name: fx.competition_name,
         season: fx.season,
+        seasonId: fx.season_id ?? null,
         country: fx.competition_country,
         upcoming: 1,
         rank: competitionRank(fx),

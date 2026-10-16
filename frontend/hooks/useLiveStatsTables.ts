@@ -26,8 +26,9 @@ export function useLiveStatsTables(opts: {
   competitionId?: number | string | null;
   seasonName?: string;
   maxPages?: number;
+  teamRanks?: { teamId: number; rank: number }[];
 }): UseLiveStatsTables {
-  const { competitionId, seasonName, maxPages } = opts;
+  const { competitionId, seasonName, maxPages, teamRanks } = opts;
   const [data, setData] = useState<TeamStatsExport | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -43,7 +44,8 @@ export function useLiveStatsTables(opts: {
     setError(null);
 
     const { fromUnix, toUnix } = seasonWindowUnix(seasonName ?? '');
-    const key = `stats:${competitionId}:${seasonName ?? ''}:${maxPages ?? ''}`;
+    const ranksKey = teamRanks?.map((team) => `${team.teamId}-${team.rank}`).join(',') ?? 'no-ranks';
+    const key = `stats:${competitionId}:${seasonName ?? ''}:${maxPages ?? ''}:${ranksKey}`;
     // No abort signal inside the cached fetch: let it finish + cache so a shared/
     // repeat selection reuses it. We just ignore the result if this effect aborted.
     cachedFetch(key, STATS_TTL_MS, () =>
@@ -53,6 +55,7 @@ export function useLiveStatsTables(opts: {
         toUnix,
         season: seasonName,
         maxPages,
+        teamRanks,
       }),
     )
       .then((res) => {
@@ -66,7 +69,7 @@ export function useLiveStatsTables(opts: {
       });
 
     return () => ctrl.abort();
-  }, [competitionId, seasonName, maxPages]);
+  }, [competitionId, seasonName, maxPages, teamRanks]);
 
   return { data, loading, error };
 }

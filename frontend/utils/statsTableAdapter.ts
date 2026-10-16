@@ -31,6 +31,9 @@ export const DISPLAY_STATS: Col[] = [
 
 const PPG_COLS: Col[] = [
   { key: 'ppg', label: 'PPG', raw: true },
+  { key: 'ppg_vs_green', label: 'vs Green', raw: true },
+  { key: 'ppg_vs_yellow', label: 'vs Yellow', raw: true },
+  { key: 'ppg_vs_red', label: 'vs Red', raw: true },
   { key: 'w_pct', label: 'Win%' },
   { key: 'd_pct', label: 'Draw%' },
   { key: 'l_pct', label: 'Loss%' },
@@ -99,7 +102,7 @@ export function metaToLiveTableName(meta: StatsTableMeta): string {
  */
 function rawCompliance(key: string, v: number): ComplianceLevel {
   if (key.includes('streak')) return v >= 3 ? 'green' : v >= 1 ? 'yellow' : 'red';
-  if (key === 'ppg' || key === 'avg_pts') return complianceFromPpg(v);
+  if (key.startsWith('ppg') || key === 'avg_pts') return complianceFromPpg(v);
   return complianceFromPercent(v);
 }
 

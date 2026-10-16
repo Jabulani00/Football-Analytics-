@@ -41,6 +41,27 @@ eq('has series_ft_overall', !!exp.tables['series_ft_overall'], true);
 eq('has ft_only_ft_overall', !!exp.tables['ft_only_ft_overall'], true);
 eq('has league_avg_ft_overall', !!exp.tables['league_avg_ft_overall'], true);
 
+const tierPpg = buildStatsTables({
+  season: '2025/2026',
+  teamRanks: [
+    { teamId: 1, rank: 1 },
+    { teamId: 2, rank: 2 },
+    { teamId: 3, rank: 3 },
+    { teamId: 4, rank: 4 },
+    { teamId: 5, rank: 5 },
+    { teamId: 6, rank: 6 },
+  ],
+  fixtures: [
+    fx({ id: 11, unix: 300, home_name: 'A', away_name: 'B', home_id: 1, away_id: 2, home_goals: 2, away_goals: 0, ht_score: '1-0' }),
+    fx({ id: 12, unix: 200, home_name: 'C', away_name: 'A', home_id: 3, away_id: 1, home_goals: 1, away_goals: 1, ht_score: '0-1' }),
+    fx({ id: 13, unix: 100, home_name: 'A', away_name: 'E', home_id: 1, away_id: 5, home_goals: 0, away_goals: 1, ht_score: '0-0' }),
+  ],
+});
+const AByTier = tierPpg.tables['ppg_ft_overall'].find((row) => row.team_name === 'A')!;
+eq('PPG vs Green uses the current top-third opponents', AByTier.ppg_vs_green, 3);
+eq('PPG vs Yellow uses the current middle-third opponents', AByTier.ppg_vs_yellow, 1);
+eq('PPG vs Red uses the current bottom-third opponents', AByTier.ppg_vs_red, 0);
+
 const sixMatchWindow = buildStatsTables({
   season: '2025/2026',
   fixtures: [
