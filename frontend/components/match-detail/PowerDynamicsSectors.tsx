@@ -42,6 +42,7 @@ import {
   CHANGE_LABEL,
   OPTION_LABEL,
   bandFromTablePoints,
+  findUkulumbana,
   statusFromOutcome,
   trueOption,
   type FormBand,
@@ -512,7 +513,9 @@ export function StreamlineCards({
       ? 'One stream per fixture. Order: Bateteme, Compliant, Zidane Law, Bookie mistake, Bookie mistake 2.'
       : batetemeKindFocus != null
         ? BATETEME_KIND_ROLE[batetemeKindFocus]
-        : focus === 'zidane_law' || focus === 'bookie' || focus === 'bookie2'
+        : focus === 'zidane_law'
+          ? `${ZIDANE_PPG_ODDS_RULE}. Also when the home side has never been beaten at home and the away side has never been beaten away. That case stays here and is not a Bookie mistake.`
+          : focus === 'bookie' || focus === 'bookie2'
           ? focus === 'bookie2'
             ? `${ZIDANE_PPG_ODDS_RULE}. No H2H games were found.`
             : ZIDANE_PPG_ODDS_RULE
@@ -531,15 +534,19 @@ export function StreamlineCards({
       : focus === 'bookie'
         ? s.h2hMeetings === 0
           ? 'No H2H meetings — that is Bookie mistake 2, not Bookie mistake.'
-          : s.t1DidBeatT2
-            ? `${pd.t1.label} did beat ${pd.t2.label} (${h2hRec}).`
-            : `${pd.t1.label} has never beaten ${pd.t2.label} (${h2hRec}). Not Bookie mistake.`
+          : s.venueShield
+            ? 'Home has never been beaten at home and away has never been beaten away. Not Bookie mistake.'
+            : s.t1DidBeatT2
+              ? `${pd.t1.label} did beat ${pd.t2.label} (${h2hRec}).`
+              : `${pd.t1.label} has never beaten ${pd.t2.label} (${h2hRec}). Not Bookie mistake.`
         : focus === 'zidane_law'
           ? s.h2hMeetings === 0
             ? 'No H2H meetings — that is Bookie mistake 2, not Zidane Law.'
             : s.t1NeverBeatenT2
               ? `${pd.t1.label} has never beaten ${pd.t2.label} (${h2hRec}).`
-              : `${pd.t1.label} did beat ${pd.t2.label} (${h2hRec}). Not Zidane Law.`
+              : s.venueShield
+                ? `${pd.t1.label} did beat ${pd.t2.label} (${h2hRec}). Home unbeaten at home and away unbeaten away keep this on Zidane Law.`
+                : `${pd.t1.label} did beat ${pd.t2.label} (${h2hRec}). Not Zidane Law.`
           : null;
 
   const oddsTone: Tone =
@@ -607,6 +614,12 @@ export function StreamlineCards({
               : 'info'
           }
         />
+      ) : null}
+      {focus === 'zidane_law' && s.homeVenueLine ? (
+        <Callout text={s.homeVenueLine} tone={s.homeNeverBeatenAtHome ? 'good' : 'info'} />
+      ) : null}
+      {focus === 'zidane_law' && s.awayVenueLine ? (
+        <Callout text={s.awayVenueLine} tone={s.awayNeverBeatenAway ? 'good' : 'info'} />
       ) : null}
       {showCall ? (
         <Callout text={s.call} tone={s.close ? 'warn' : s.t1Stream === 'bookie' || s.t1Stream === 'bookie2' ? 'bad' : 'info'} />
@@ -2166,6 +2179,95 @@ function FormDataRow({
   );
 }
 
+function formNaming(points: number, draws: number): string {
+  return OPTION_LABEL[trueOption(bandFromTablePoints(points), draws >= 3)];
+}
+
+function FormNamingSection({
+  pd,
+  t1Form,
+  t2Form,
+  sampleNote,
+}: {
+  pd: PowerDynamicsBundle;
+  t1Form: Last6LeagueRow['form'];
+  t2Form: Last6LeagueRow['form'];
+  sampleNote: string;
+}) {
+  const sides = [
+    { snap: pd.t1, form: t1Form },
+    { snap: pd.t2, form: t2Form },
+  ];
+  const t1Option =
+    t1Form && t1Form.mp > 0 ? trueOption(bandFromTablePoints(t1Form.points), t1Form.drawn >= 3) : null;
+  const t2Option =
+    t2Form && t2Form.mp > 0 ? trueOption(bandFromTablePoints(t2Form.points), t2Form.drawn >= 3) : null;
+  const pair = t1Option && t2Option ? findUkulumbana(t1Option, t2Option) : null;
+
+  return (
+    <View>
+      <SectorIntro
+        title="Naming"
+        note={`Same names as Last 5, counted on the last 6. 9+ pts Good · 5–8 Medium · 4 or less Bad. 3+ draws add Inhlambuluko. ${sampleNote}`}
+      />
+      <ScrollView horizontal showsHorizontalScrollIndicator style={styles.initialScroll}>
+        <View style={[styles.formTable, styles.initialTable]}>
+          <View style={[styles.formRow, styles.formHead]}>
+            <Text style={[styles.formTh, styles.formTeam]}>Team</Text>
+            <Text style={[styles.formTh, styles.formName]}>Naming</Text>
+            <Text style={[styles.formTh, styles.initialSeqHead]}>Last 6</Text>
+            <Text style={[styles.formTh, styles.formNum]}>MP</Text>
+            <Text style={[styles.formTh, styles.formWdl]}>W-D-L</Text>
+            <Text style={[styles.formTh, styles.formNum]}>Pts</Text>
+          </View>
+          {sides.map(({ snap, form }) => {
+            const naming = form && form.mp > 0 ? formNaming(form.points, form.drawn) : '—';
+            return (
+              <View key={snap.side} style={[styles.formRow, styles.formRowFocus]}>
+                <View style={styles.formTeam}>
+                  <Text style={styles.formTeamName} numberOfLines={1}>
+                    {snap.label}
+                  </Text>
+                  {form && form.games.length > 0 ? (
+                    <Text style={styles.formScores} numberOfLines={1}>
+                      {form.games.map((g) => `${g.gf}-${g.ga}`).join(' · ')}
+                    </Text>
+                  ) : null}
+                </View>
+                <FormCell style={styles.formName} tone={naming !== '—' ? namingTone(naming) : undefined}>
+                  {naming}
+                </FormCell>
+                <View style={styles.initialSeq}>
+                  {form && form.games.length > 0 ? (
+                    form.games.map((g, i) => {
+                      const status = statusFromOutcome(g.outcome);
+                      return (
+                        <Text
+                          key={`${snap.side}-${i}`}
+                          style={[styles.initialSeqTag, { color: toneColor(statusTone(status)) }]}>
+                          {g.outcome} ({status})
+                        </Text>
+                      );
+                    })
+                  ) : (
+                    <Text style={styles.formTd}>—</Text>
+                  )}
+                </View>
+                <FormCell style={styles.formNum}>{form && form.mp > 0 ? String(form.mp) : '—'}</FormCell>
+                <FormCell style={styles.formWdl}>
+                  {form && form.mp > 0 ? `${form.won}-${form.drawn}-${form.lost}` : '—'}
+                </FormCell>
+                <FormCell style={styles.formNum}>{form && form.mp > 0 ? String(form.points) : '—'}</FormCell>
+              </View>
+            );
+          })}
+        </View>
+      </ScrollView>
+      {pair ? <Callout text={pair.label} tone="info" /> : null}
+    </View>
+  );
+}
+
 function overlayFormBaseline(
   pd: PowerDynamicsBundle,
   table: Last6LeagueRow[],
@@ -2366,6 +2468,12 @@ export function FormCards({
           </View>
         </ScrollView>
       )}
+      <FormNamingSection
+        pd={pd}
+        t1Form={(sub === 'fixture' ? scopedRows : table).find((r) => r.teamId === pd.t1.teamId)?.form ?? null}
+        t2Form={(sub === 'fixture' ? scopedRows : table).find((r) => r.teamId === pd.t2.teamId)?.form ?? null}
+        sampleNote={sub === 'fixture' ? lensNote : 'Both sides, last 6 in any venue.'}
+      />
       <BaselineCards
         pd={formPd}
         title="Baseline — original state"
@@ -3372,5 +3480,6 @@ const styles = StyleSheet.create({
   formWdl: { width: 52, textAlign: 'center' },
   formType: { width: 36, textAlign: 'center', fontFamily: fonts.bodySemiBold },
   formRead: { width: 120, paddingHorizontal: 4, fontFamily: fonts.bodySemiBold, fontSize: 13 },
+  formName: { width: 200, paddingHorizontal: 4, fontFamily: fonts.bodySemiBold, fontSize: 13 },
   formTrend: { width: 52, textAlign: 'center', fontFamily: fonts.bodySemiBold },
 });

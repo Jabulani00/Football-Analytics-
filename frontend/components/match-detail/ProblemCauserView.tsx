@@ -1,12 +1,16 @@
+import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { SectorIntro, SideCard } from '@/components/match-detail/PowerDynamicsSectors';
+import SubTabBar from '@/components/shared/SubTabBar';
 import {
   type ProblemCauserRead,
   type ProblemCauserSide,
   type ProblemMark,
 } from '@/utils/problemCauser';
 import { fonts, spacing, theme } from '@/styles/theme';
+
+type SideId = 't1' | 't2';
 
 function Bit({ value }: { value: 0 | 1 }) {
   const hit = value === 1;
@@ -65,48 +69,61 @@ export default function ProblemCauserView({
   t2Label: string;
   read: ProblemCauserRead;
 }) {
+  const [side, setSide] = useState<SideId>('t1');
   const win = read.winRatio;
+  const selected = side === 't1' ? read.t1 : read.t2;
+  const label = side === 't1' ? t1Label : t2Label;
+  const otherLabel = side === 't1' ? t2Label : t1Label;
+  const wins = side === 't1' ? win.t1Wins : win.t2Wins;
+  const played = side === 't1' ? win.t1Played : win.t2Played;
+  const otherWins = side === 't1' ? win.t2Wins : win.t1Wins;
+  const otherPlayed = side === 't1' ? win.t2Played : win.t1Played;
+
   return (
     <View>
       <SectorIntro
         title="Problem causer"
-        note="Head-to-head only, when these two sides play each other. Each mark is 1 in green or 0 in red. The level uses every 1 minus the meetings in the sample."
+        note="Head-to-head only, when these two sides play each other. Pick T1 or T2. Each mark is 1 in green or 0 in red. The level uses every 1 minus the meetings in the sample."
+      />
+      <SubTabBar
+        tabs={[
+          { id: 't1', label: t1Label },
+          { id: 't2', label: t2Label },
+        ]}
+        active={side}
+        onChange={setSide}
       />
 
       <SideCard label="1. Win ratio">
         <Text style={styles.note}>
-          Wins in their last 5 meetings. A gap of 0 or 1 is 1. A wider gap is 0.
+          Wins in their last 5 meetings. A gap of 0 or 1 is 1. A wider gap is 0. This mark is shared by both sides.
         </Text>
         <Text style={styles.line}>
-          {t1Label} {win.t1Wins}/{win.t1Played} · {t2Label} {win.t2Wins}/{win.t2Played} · difference {win.difference}
+          {label} {wins}/{played} · {otherLabel} {otherWins}/{otherPlayed} · difference {win.difference}
         </Text>
         <Bit value={win.bit} />
       </SideCard>
 
       <SideCard label="2. BTTS and goal difference">
         <Text style={styles.note}>1 when the goal difference is 2 or less. 0 when it is more than 2.</Text>
-        <MarkRow label={t1Label} marks={read.t1.goalDiff} showBtts />
-        <MarkRow label={t2Label} marks={read.t2.goalDiff} showBtts />
+        <MarkRow label={label} marks={selected.goalDiff} showBtts />
       </SideCard>
 
       <SideCard label="3. Draws">
         <Text style={styles.note}>1 when that game was a draw. 0 when it was not.</Text>
-        <MarkRow label={t1Label} marks={read.t1.draws} />
-        <MarkRow label={t2Label} marks={read.t2.draws} />
+        <MarkRow label={label} marks={selected.draws} />
       </SideCard>
 
       <SideCard label="4. One goal difference win">
         <Text style={styles.note}>1 when they won by exactly one goal. 0 otherwise.</Text>
-        <MarkRow label={t1Label} marks={read.t1.oneGoalWins} />
-        <MarkRow label={t2Label} marks={read.t2.oneGoalWins} />
+        <MarkRow label={label} marks={selected.oneGoalWins} />
       </SideCard>
 
       <SectorIntro
         title="Level"
         note="Entry is 2 or less (3). Moderate is 2.1 to 5 (5). Major is 5.1 to 7 (7). Extreme is 7.1 to 20 (10)."
       />
-      <LevelCard label={t1Label} side={read.t1} />
-      <LevelCard label={t2Label} side={read.t2} />
+      <LevelCard label={label} side={selected} />
     </View>
   );
 }

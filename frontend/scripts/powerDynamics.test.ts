@@ -29,6 +29,7 @@ import {
   recordFromStanding,
   sideLabel,
   streamlineForMatchup,
+  streamlineReadForMatchup,
   streamsForMatchup,
   t1IsHomeSide,
   venuePpgSplit,
@@ -800,6 +801,82 @@ console.log('\nstreamline on a fixture matchup');
       awayOdds: 1.7,
       h2hMatches: [...fiveDraws, olderWin],
     }) === 'zidane_law',
+  );
+
+  const shielded = streamlineReadForMatchup({
+    table,
+    homeId: 2,
+    awayId: 3,
+    homeName: 'Leeds',
+    awayName: 'City',
+    homeOdds: 1.7,
+    awayOdds: 4.2,
+    h2hMatches: [
+      {
+        id: 1,
+        home_name: 'Leeds',
+        away_name: 'City',
+        home_goals: 1,
+        away_goals: 1,
+        ht_score: null,
+        total_goals: 2,
+        btts: true,
+        date: '2026-09-01',
+        league: 'PL',
+      },
+      {
+        id: 2,
+        home_name: 'City',
+        away_name: 'Leeds',
+        home_goals: 2,
+        away_goals: 0,
+        ht_score: null,
+        total_goals: 2,
+        btts: false,
+        date: '2026-08-01',
+        league: 'PL',
+      },
+    ],
+  });
+  check(
+    'home unbeaten at home and away unbeaten away is Zidane Law',
+    shielded?.t1Stream === 'zidane_law' && shielded.venueShield === true && shielded.inStreams.bookie === false,
+  );
+  check(
+    'venue shield names both sides',
+    shielded != null &&
+      shielded.homeNeverBeatenAtHome &&
+      shielded.awayNeverBeatenAway &&
+      shielded.call.includes('never been beaten at home') &&
+      shielded.call.includes('Not a Bookie mistake'),
+  );
+
+  const homeBeaten = streamlineReadForMatchup({
+    table,
+    homeId: 2,
+    awayId: 3,
+    homeName: 'Leeds',
+    awayName: 'City',
+    homeOdds: 1.7,
+    awayOdds: 4.2,
+    h2hMatches: [
+      {
+        id: 3,
+        home_name: 'Leeds',
+        away_name: 'City',
+        home_goals: 0,
+        away_goals: 1,
+        ht_score: null,
+        total_goals: 1,
+        btts: false,
+        date: '2026-09-01',
+        league: 'PL',
+      },
+    ],
+  });
+  check(
+    'a home loss still falls under Bookie mistake',
+    homeBeaten?.t1Stream === 'bookie' && homeBeaten.venueShield === false && homeBeaten.homeNeverBeatenAtHome === false,
   );
 }
 

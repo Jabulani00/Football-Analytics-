@@ -246,7 +246,7 @@ export const BATETEME_KIND_ROLE: Record<BatetemeKind, string> = {
 export const STREAM_ROLE: Record<StreamName, string> = {
   bateteme: 'Close — ΔP ≤ 4',
   compliant: 'T1 is stronger, so T1’s 1X2 odds should be the lower price',
-  zidane_law: `${ZIDANE_PPG_ODDS_RULE}. Supported by T1 never beating T2.`,
+  zidane_law: `${ZIDANE_PPG_ODDS_RULE}. Supported by T1 never beating T2, or by the home side never being beaten at home and the away side never being beaten away.`,
   bookie: `${ZIDANE_PPG_ODDS_RULE}. In this H2H T1 did beat T2.`,
   bookie2: `${ZIDANE_PPG_ODDS_RULE}. No H2H games were found.`,
 };
@@ -278,6 +278,14 @@ export type StreamlineRead = {
   t1NeverBeatenT2: boolean;
   t1DidBeatT2: boolean;
   t2BeatsT1: boolean;
+  /** Home side has H2H at home in the window and no loss there. */
+  homeNeverBeatenAtHome: boolean;
+  /** Away side has H2H away in the window and no loss there. */
+  awayNeverBeatenAway: boolean;
+  /** Both venue rules. Keeps the fixture on Zidane Law instead of Bookie mistake. */
+  venueShield: boolean;
+  homeVenueLine: string;
+  awayVenueLine: string;
   /** High PPG ↔ high odds, low PPG ↔ low odds. */
   ppgOddsZidane: boolean;
   /** Close-table Bateteme split from the smaller-PPG side’s odds. */
@@ -424,6 +432,53 @@ export function streamlineH2hWindow(matches: H2HMatch[]): H2HMatch[] {
   return recentH2hMeetings(matches, STREAMLINE_H2H_LIMIT);
 }
 
+export type VenueH2hRecord = {
+  meetings: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  /** Played this venue in the window and never lost. */
+  neverBeaten: boolean;
+};
+
+/** W/D/L for one side at one venue inside the Streamline H2H window. */
+export function venueH2hRecord(
+  matches: H2HMatch[],
+  teamName: string,
+  venue: 'home' | 'away',
+): VenueH2hRecord {
+  const rows = matches.filter((m) =>
+    venue === 'home' ? teamsMatch(m.home_name, teamName) : teamsMatch(m.away_name, teamName),
+  );
+  let wins = 0;
+  let draws = 0;
+  let losses = 0;
+  for (const m of rows) {
+    const outcome = h2hOutcomeForTeam(m, teamName);
+    if (outcome === 'W') wins += 1;
+    else if (outcome === 'D') draws += 1;
+    else losses += 1;
+  }
+  return {
+    meetings: rows.length,
+    wins,
+    draws,
+    losses,
+    neverBeaten: rows.length > 0 && losses === 0,
+  };
+}
+
+function venueUnbeatenLine(team: string, venue: 'home' | 'away', rec: VenueH2hRecord): string {
+  const place = venue === 'home' ? 'at home' : 'away';
+  if (!team) return '';
+  if (rec.meetings === 0) {
+    return `No ${venue} H2H in the last 5, so ${team} never beaten ${place} is not called.`;
+  }
+  const record = `${rec.meetings} ${venue} H2H, ${rec.wins}W ${rec.draws}D ${rec.losses}L`;
+  if (rec.neverBeaten) return `${team} has never been beaten ${place} (${record}).`;
+  return `${team} has been beaten ${place} (${record}).`;
+}
+
 /**
  * Bateteme 1 = smaller PPG has the larger odds.
  * Bateteme 2 = smaller PPG has the smaller odds.
@@ -567,6 +622,11 @@ export function evaluateStreamline(opts: {
   t2H2hWins?: number;
   t1H2hLosses?: number;
   t1H2hDraws?: number;
+  /** Fixture home / away, used for the venue unbeaten rules. */
+  homeName?: string | null;
+  awayName?: string | null;
+  /** Streamline H2H window (last 5). Venue rules read this list. */
+  h2hMatches?: H2HMatch[];
 }): StreamlineRead {
   const t1Points = opts.t1Points;
   const t2Points = opts.t2Points;
@@ -592,6 +652,15 @@ export function evaluateStreamline(opts: {
   const t1DidBeatT2 = h2hMeetings > 0 && t1H2hWins > 0;
   const t1NeverBeatenT2 = h2hMeetings > 0 && t1H2hWins === 0;
   const t2BeatsT1 = h2hMeetings > 0 && t2H2hWins > 0;
+  const homeName = opts.homeName?.trim() ?? '';
+  const awayName = opts.awayName?.trim() ?? '';
+  const homeVenue = venueH2hRecord(opts.h2hMatches ?? [], homeName, 'home');
+  const awayVenue = venueH2hRecord(opts.h2hMatches ?? [], awayName, 'away');
+  const homeNeverBeatenAtHome = homeName.length > 0 && homeVenue.neverBeaten;
+  const awayNeverBeatenAway = awayName.length > 0 && awayVenue.neverBeaten;
+  const venueShield = homeNeverBeatenAtHome && awayNeverBeatenAway;
+  const homeVenueLine = homeName ? venueUnbeatenLine(homeName, 'home', homeVenue) : '';
+  const awayVenueLine = awayName ? venueUnbeatenLine(awayName, 'away', awayVenue) : '';
   const ppgOddsZidane = ppgOddsZidaneAligned(t1Ppg, t2Ppg, t1Odds, t2Odds);
   const batetemeKind = close ? batetemeKindFor(t1Ppg, t2Ppg, t1Odds, t2Odds) : null;
   // T1 is already the stronger table side. High PPG and short odds are one bundle:
@@ -620,8 +689,8 @@ export function evaluateStreamline(opts: {
   const candidates: Record<StreamName, boolean> = {
     bateteme: close,
     compliant: oddsOutcome === 'compliant',
-    zidane_law: ppgOddsZidane && t1NeverBeatenT2,
-    bookie: ppgOddsZidane && t1DidBeatT2,
+    zidane_law: ppgOddsZidane && (t1NeverBeatenT2 || venueShield),
+    bookie: ppgOddsZidane && t1DidBeatT2 && !venueShield,
     bookie2: ppgOddsZidane && h2hMeetings === 0,
   };
   const primary = STREAM_ORDER.find((name) => candidates[name]) ?? null;
@@ -648,7 +717,16 @@ export function evaluateStreamline(opts: {
   } else if (primary === 'compliant') {
     call = `Compliant stream — T1’s 1X2 odds are lower than T2, as expected.`;
   } else if (primary === 'zidane_law') {
-    call = `Zidane Law — ${ZIDANE_PPG_ODDS_RULE}. ${t1Label} has never beaten ${t2Label} (${h2hLine}).`;
+    const venueLine = venueShield
+      ? `${homeName} has never been beaten at home and ${awayName} has never been beaten away.`
+      : '';
+    if (t1NeverBeatenT2 && venueLine) {
+      call = `Zidane Law — ${ZIDANE_PPG_ODDS_RULE}. ${t1Label} has never beaten ${t2Label} (${h2hLine}). ${venueLine}`;
+    } else if (venueLine) {
+      call = `Zidane Law — ${ZIDANE_PPG_ODDS_RULE}. ${venueLine} Not a Bookie mistake (${h2hLine}).`;
+    } else {
+      call = `Zidane Law — ${ZIDANE_PPG_ODDS_RULE}. ${t1Label} has never beaten ${t2Label} (${h2hLine}).`;
+    }
   } else if (primary === 'bookie') {
     call = `Bookie mistake — ${ZIDANE_PPG_ODDS_RULE}. ${t1Label} did beat ${t2Label} (${h2hLine}).`;
   } else if (primary === 'bookie2') {
@@ -682,6 +760,11 @@ export function evaluateStreamline(opts: {
     t1NeverBeatenT2,
     t1DidBeatT2,
     t2BeatsT1,
+    homeNeverBeatenAtHome,
+    awayNeverBeatenAway,
+    venueShield,
+    homeVenueLine,
+    awayVenueLine,
     ppgOddsZidane,
     batetemeKind,
     inStreams,
@@ -771,6 +854,9 @@ export function streamlineReadForMatchup(opts: StreamlineMatchupOpts): Streamlin
     t2H2hWins: countH2hWins(meetings, t2Name),
     t1H2hLosses: countH2hLosses(meetings, t1Name),
     t1H2hDraws: countH2hDraws(meetings, t1Name),
+    homeName: opts.homeName,
+    awayName: opts.awayName,
+    h2hMatches: meetings,
   });
 }
 
@@ -1943,6 +2029,9 @@ export function evaluatePowerDynamics(opts: {
         countH2hWins(meetings, t2.name),
       ),
       t1H2hDraws: countH2hDraws(meetings, t1.name),
+      homeName,
+      awayName,
+      h2hMatches: meetings,
     }),
   };
 }
