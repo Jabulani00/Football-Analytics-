@@ -35,8 +35,9 @@ check('series leads with the win streak', seriesCols[0] === 'win_streak');
 check('ft-only leads with won both halves', ftCols[0] === 'won_both_halves');
 check('ordinary stays on win percentage', columnsForFamily('ordinary')[0]?.key === 'w_pct');
 check('ft-only does not repeat the ordinary win column', !ftCols.includes('w_pct'));
-check('catalogue exposes all 72 generated table variants', STATS_TABLES.length === 72);
-check('each catalogue entry maps to a unique live table', new Set(STATS_TABLES.map(metaToLiveTableName)).size === 72);
+check('catalogue exposes all 81 generated table variants', STATS_TABLES.length === 81);
+check('each catalogue entry maps to a unique live table', new Set(STATS_TABLES.map(metaToLiveTableName)).size === 81);
+check('last 5 entry maps to a live table', STATS_TABLES.some((table) => metaToLiveTableName(table) === 'last5_ft_overall'));
 
 const samplePpg = sampleRowsForFamily('ppg');
 const sampleSeries = sampleRowsForFamily('series');

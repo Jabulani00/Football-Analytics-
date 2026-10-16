@@ -129,9 +129,9 @@ export const TABLE_CONTEXTS = [
 ] as const;
 
 export const PROJECT_META = {
-  totalTables: 72,
+  totalTables: 81,
   baseTables: 45,
-  lastNTables: 27,
+  lastNTables: 36,
   metricsPerTable: 100,
   ordinaryCount: 34,
 };

@@ -40,7 +40,7 @@ function hash(s: string) {
 
 function statValue(stat: string, team: string, league: string, table: string) {
   const base = 50 + (hash(team + league + stat) % 30) - 15;
-  const mod = table.includes('last10') ? 4 : table.includes('last8') ? 7 : table.includes('last6') ? 11 : 0;
+  const mod = table.includes('last10') ? 4 : table.includes('last8') ? 7 : table.includes('last6') ? 11 : table.includes('last5') ? 13 : 0;
   return Math.min(95, Math.max(5, base + mod));
 }
 
@@ -58,9 +58,9 @@ const ORDINARY_STATS = [
 const PERIODS = ['ft', 'ht', '2h'];
 const SPLITS = ['overall', 'home', 'away'];
 const FAMILIES = ['ordinary', 'ppg', 'series', 'ft_only', 'league_avg'];
-const LAST_N = ['last10', 'last8', 'last6'];
+const LAST_N = ['last10', 'last8', 'last6', 'last5'];
 
-/** Tables bundled with the app (keeps JSON small; full 72 export via backend db:export). */
+/** Tables bundled with the app (keeps JSON small; full 81 export via backend db:export). */
 const BUNDLE_TABLES = [
   'ordinary_ft_overall',
   'ordinary_ft_home',
@@ -112,7 +112,7 @@ function buildTeamStats() {
       tables: BUNDLE_TABLES.length,
       statsPerTable: ORDINARY_STATS.length,
       exported_at: new Date().toISOString(),
-      note: 'Bundled subset for app; run backend db:export for all 72 tables',
+      note: 'Bundled subset for app; run backend db:export for all 81 tables',
     },
     tables,
   };

@@ -91,14 +91,14 @@ export default function AnalyticsHub({ onBack: _onBack }: AnalyticsHubProps) {
           <Text style={styles.subtitle}>Football Analytics Platform · 100+ metrics · 5 phases</Text>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Open all 72 statistics tables"
+            accessibilityLabel="Open all 81 statistics tables"
             onPress={() => {
               setActiveTab('tables');
               setShowTableCatalogue(true);
               requestAnimationFrame(() => scrollRef.current?.scrollTo({ y: panelY.current, animated: true }));
             }}
             style={({ pressed }) => [styles.tableLink, pressed && styles.tableLinkPressed]}>
-            <Text style={styles.tableLinkText}>72 Tables · 45 base + 27 last-N</Text>
+            <Text style={styles.tableLinkText}>81 Tables · 45 base + 36 last-N</Text>
             <Text style={styles.tableLinkHint}>Open full table catalogue ↓</Text>
           </Pressable>
         </View>

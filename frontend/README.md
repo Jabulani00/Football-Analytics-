@@ -67,7 +67,7 @@ Phone navigation is `components/layout/AppNavMenu.tsx`. Wide screens use the tex
 | `useLiveStatsTables` | `fixtures/between`, then `buildStatsTables` | One competition on the stat pages |
 | `useSlStats` | Competitions, upcoming, and season results | SL-STATS, and the all-leagues board |
 | `useCatalogueTables` | The two paths above | Ordinary and Full-time only |
-| `services/statsBuilder.ts` | Finished scores already fetched | 72 stat tables |
+| `services/statsBuilder.ts` | Finished scores already fetched | 81 stat tables |
 | `useStats`, `useModel`, `useSimilarMatches` | `assets/data` and `assets/models` | Offline analytics and the BTTS model |
 
 Copy `.env.example` to `.env` and set `ODDALERTS_TOKEN` before expecting a live feed. Restart Expo after changing it.

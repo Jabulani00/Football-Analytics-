@@ -30,9 +30,9 @@ export const ANALYTICS_TABS: { id: AnalyticsTab; label: string }[] = [
 ];
 
 export const PROJECT_SUMMARY = {
-  tableCount: 72,
+  tableCount: 81,
   baseTables: 45,
-  lastNTables: 27,
+  lastNTables: 36,
   metricsPerTable: 100,
   dataSources: ['Flashscore', 'Footy Stats', 'Odds Alert API', 'Sofascore', 'Hollywoodbets'],
 };
@@ -92,7 +92,7 @@ export const PROJECT_PHASES: ProjectPhase[] = [
     number: 2,
     name: 'Database & Stats Engine',
     status: 'in_progress',
-    deliverables: ['72 tables (45 base + 27 last-N)', '100+ stats per table', 'Colour-coded outputs'],
+    deliverables: ['81 tables (45 base + 36 last-N)', '100+ stats per table', 'Colour-coded outputs'],
   },
   {
     number: 3,
@@ -129,8 +129,8 @@ export const PROJECT_PHASES: ProjectPhase[] = [
   },
 ];
 
-// All 72 stat-table variants. Base = 5 families × period × split (45);
-// last-N = 3 windows × period × split (27). Ids/family/period/split map to the
+// All 81 stat-table variants. Base = 5 families × period × split (45);
+// last-N = 4 windows × period × split (36). Ids/family/period/split map to the
 // live builder's table names via utils/statsTableAdapter.metaToLiveTableName.
 const TABLE_PERIODS: { p: TimePeriod; label: string }[] = [
   { p: 'fulltime', label: 'FT' },
@@ -149,6 +149,7 @@ const LASTN_WINDOWS: { r: RecencyWindow; label: string }[] = [
   { r: 'last10', label: 'Last 10' },
   { r: 'last8', label: 'Last 8' },
   { r: 'last6', label: 'Last 6' },
+  { r: 'last5', label: 'Last 5' },
 ];
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 

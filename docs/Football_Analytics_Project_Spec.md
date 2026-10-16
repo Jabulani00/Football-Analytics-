@@ -8,7 +8,7 @@
 
 > **PROJECT AT A GLANCE**
 > - **Data Sources:** Flashscore │ Footy Stats │ Odds Alert API │ Sofascore │ Hollywoodbets
-> - **Database:** 72 statistical tables (45 base + 27 last-N variations)
+> - **Database:** 81 statistical tables (45 base + 36 last-N variations, including Last 5)
 > - **Stats:** 100+ metrics │ **Scope:** Full-time, 1st Half, 2nd Half
 > - **Phases:** 5 phases from data scraping to strategy + dashboard
 
@@ -21,7 +21,7 @@ This project builds a comprehensive Football Analytics and Betting Intelligence 
 ### 1.1 High-Level Goals
 
 - Automate data collection from Flashscore, Footy Stats, Sofascore, and Hollywoodbets
-- Build a relational database of 72 statistical tables covering all key match metrics
+- Build a relational database of 81 statistical tables covering all key match metrics
 - Generate 100+ calculated statistics per team across Overall, Home, and Away splits
 - Create betting streams and strategy groupings based on statistical patterns
 - Integrate an odds engine (Odds Alert API + Hollywoodbets) to match stats to live odds
@@ -62,7 +62,7 @@ All data originates from two categories of sources: match/stats providers and bo
 
 ## 3. Database — Tables to be Created
 
-The database is organised into two groups of tables, totalling 72 tables. Each table captures a specific slice of match statistics across different time periods and game contexts.
+The database is organised into two groups of tables, totalling 81 tables. Each table captures a specific slice of match statistics across different time periods and game contexts.
 
 ### 3.1 Table Groups
 
@@ -235,7 +235,7 @@ The project is structured into 5 phases, each building on the previous. Phases 1
 | Phase | Name | Key Deliverables |
 |---|---|---|
 | Phase 1 | Data Collection & Scraping | Flashscore script, Footy Stats script, Sofascore script, Hollywoodbets script, Odds Alert API integration |
-| Phase 2 | Database & Stats Engine | 72 tables created (45 base + 27 last-N), 100+ stats generated per table, colour-coded outputs |
+| Phase 2 | Database & Stats Engine | 81 tables created (45 base + 36 last-N, including Last 5), 100+ stats generated per table, colour-coded outputs |
 | Phase 3 | Streams & Groupings Formation | Streams formation from stats, groupings formation, stats call-out framework, stats for support (Overall vs Home vs Away, fixture-based) |
 | Phase 4 | Strategy Engine | Create strategies, call out fixtures matching strategies by date & time, % compliance to strategy, odds fusion page, motives for support |
 | Phase 5 | Dashboard & Bet Slip | Bet slip generator, interactive tracking dashboard, coordination of fixture call (stats sorting list: overall/home/away + kickoff time + date) |
@@ -324,7 +324,7 @@ Summary of all 13 top-level components identified in the project summary notes:
 | # | Component | Description |
 |---|---|---|
 | 1 | Data Suppliers — Scripts | Flashscore (list of requirements), Odds Alert API, Sofascore script, Hollywoodbets script |
-| 2 | Create Tables (72 total) | 45 base tables + 27 last-N tables. 100+ stats per table |
+| 2 | Create Tables (81 total) | 45 base tables + 36 last-N tables. 100+ stats per table |
 | 3 | Streams Formation | Statistical streams created from table outputs |
 | 4 | Groupings Formation | Groupings derived from streams |
 | 5 | RA + Other Separation Tools | Imbalance detection (imbangi ect) — separation and filtering tools |

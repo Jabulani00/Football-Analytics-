@@ -1,4 +1,4 @@
-"""Populate all 72 tables with deterministic mock stats + colour signals."""
+"""Populate all 81 tables with deterministic mock stats + colour signals."""
 
 from __future__ import annotations
 

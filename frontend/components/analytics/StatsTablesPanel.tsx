@@ -27,6 +27,7 @@ const FAMILIES: FamilyOption[] = [
   { key: 'last10', label: 'Last 10', family: 'ordinary', blurb: 'Core stats over each team’s last 10 games.' },
   { key: 'last8', label: 'Last 8', family: 'ordinary', blurb: 'Core stats over each team’s last 8 games.' },
   { key: 'last6', label: 'Last 6', family: 'ordinary', blurb: 'Core stats over each team’s last 6 games.' },
+  { key: 'last5', label: 'Last 5', family: 'ordinary', blurb: 'Core stats over each team’s last 5 games.' },
 ];
 
 const ADDITIONAL_KEYS = new Set(['ppg', 'series', 'ft_only', 'league_avg']);

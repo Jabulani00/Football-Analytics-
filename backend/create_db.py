@@ -1,4 +1,4 @@
-"""Create scoreline.db with all 72 statistical tables."""
+"""Create scoreline.db with all 81 statistical tables."""
 
 from __future__ import annotations
 

@@ -14,7 +14,7 @@ export type UseLiveStatsTables = {
 const STATS_TTL_MS = 60_000; // re-selecting a competition within 60s is instant
 
 /**
- * Build the 72-style stat tables in real time from the OddAlerts API — no
+ * Build the 81 stat tables in real time from the OddAlerts API — no
  * database. Fetches a competition's finished results for the season window and
  * derives the `TeamStatsExport` representation on the client.
  *

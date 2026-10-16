@@ -2,7 +2,7 @@ export type ComplianceLevel = 'green' | 'yellow' | 'red';
 
 export type TimePeriod = 'fulltime' | 'firsthalf' | 'secondhalf';
 export type SplitType = 'overall' | 'home' | 'away';
-export type RecencyWindow = 'all' | 'last10' | 'last8' | 'last6';
+export type RecencyWindow = 'all' | 'last10' | 'last8' | 'last6' | 'last5';
 
 export type DataSource = {
   id: string;

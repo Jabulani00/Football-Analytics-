@@ -1,14 +1,14 @@
 /**
  * Real-time stats-table builder — the OddAlerts API is the database.
  *
- * Instead of precomputing 72 tables into SQLite, this derives the stat-table
+ * Instead of precomputing 81 tables into SQLite, this derives the stat-table
  * *representation* on the fly from finished fixtures (`/fixtures/between`). Feed
  * it results, get back the same `TeamStatsExport` shape the app already consumes
  * (`data/teamStatsLoader.ts`) — a drop-in, computed live, no database.
  *
- * Tables produced: the full 72 — 5 base families (ordinary/ppg/series/ft_only/
+ * Tables produced: the full 81 — 5 base families (ordinary/ppg/series/ft_only/
  * league_avg) × period (FT/HT/2H) × scope (overall/home/away) = 45, plus
- * last-10/8/6 ordinary windows × period × scope = 27. Named exactly like the
+ * last-10/8/6/5 ordinary windows × period × scope = 36. Named exactly like the
  * SQLite schema (`ordinary_ft_overall`, `series_ht_away`, `last10_2h_home`, …).
  *
  * Pure + dependency-injected: no React Native imports, so it unit-tests under
@@ -31,6 +31,7 @@ const WINDOWS: Record<string, number> = {
   last10: 10,
   last8: 8,
   last6: 6,
+  last5: 5,
 };
 
 type Period = (typeof PERIODS)[number];
@@ -437,9 +438,9 @@ function addToPool(pool: LeaguePool, matches: TeamMatch[], period: Period) {
 }
 
 /**
- * Build the full 72-table `TeamStatsExport` live from finished fixtures:
+ * Build the full 81-table `TeamStatsExport` live from finished fixtures:
  * 5 base families (ordinary/ppg/series/ft_only/league_avg) × period × scope (45)
- * + last-10/8/6 ordinary windows × period × scope (27).
+ * + last-10/8/6/5 ordinary windows × period × scope (36).
  */
 export function buildStatsTables(opts: BuildOptions): TeamStatsExport {
   const leagueKey = opts.leagueKey ?? ((fx) => String(fx.competition_id));

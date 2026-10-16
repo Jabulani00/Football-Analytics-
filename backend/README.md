@@ -9,7 +9,7 @@ Python data and ML pipeline — **no HTTP server**. SQLite is the source of trut
 ```
 backend/
 ├── paths.py              # Shared paths (DB, frontend assets)
-├── schema.py             # 72-table schema, 34 stats + signals
+├── schema.py             # 81-table schema, 34 stats + signals
 ├── create_db.py          # Create scoreline.db + seed teams
 ├── calculate_stats.py    # Populate all tables with mock stats
 ├── export_for_expo.py    # SQLite → frontend/assets/data/
@@ -70,7 +70,7 @@ python train_btts.py
 | Group | Count | Description |
 |-------|-------|-------------|
 | Base tables | 45 | 5 stat families × FT/HT/2H × Overall/Home/Away |
-| Last-N tables | 27 | last10 / last8 / last6 × period × split |
+| Last-N tables | 36 | last10 / last8 / last6 / last5 × period × split |
 
 Each table row: `team_name`, `league_id`, `season`, **34 stat columns**, **34 `_signal` columns** (green ≥65%, yellow 45–64%, red <45%).
 
@@ -99,7 +99,7 @@ cd ../frontend && npm run web
 | Phase | Backend work |
 |-------|----------------|
 | 1 | Scraping scripts, seed data, SQLite ✅ (mock) |
-| 2 | 72 tables populated, colour signals ✅ |
+| 2 | 81 tables populated, colour signals ✅ |
 | 3 | Streams & groupings (pending) |
 | 4 | Strategy engine (pending) |
 | 5 | Bet-slip data feeds (pending) |
@@ -112,4 +112,4 @@ See [docs/SCORELINE_DEV_PROMPT.md](../docs/SCORELINE_DEV_PROMPT.md) and [docs/AR
 
 1. **No external API calls** until explicitly instructed.
 2. Do not hand-edit JSON in `frontend/assets/data/` — export from SQLite.
-3. Keep the 72-table schema; flag any renames with the team.
+3. Keep the 81-table schema; flag any renames with the team.

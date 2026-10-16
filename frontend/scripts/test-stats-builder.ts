@@ -28,17 +28,30 @@ const eq = (name: string, got: unknown, want: unknown) => {
 
 const exp = buildStatsTables({ fixtures, season: '2025/2026' });
 
-// 72 tables: 5 base families × 3 periods × 3 scopes (45) + last-10/8/6 × 9 (27).
-eq('table count', exp.meta.tables, 72);
-eq('all generated table variants are present', Object.keys(exp.tables).length, 72);
+// 81 tables: 5 base families × 3 periods × 3 scopes (45) + last-10/8/6/5 × 9 (36).
+eq('table count', exp.meta.tables, 81);
+eq('all generated table variants are present', Object.keys(exp.tables).length, 81);
 eq('quality counts completed score records', exp.data_quality?.completedFixtures, 3);
 eq('genuine 0-0 scores are valid data', exp.data_quality?.usableFullTimeScores, 3);
 eq('has ordinary_ft_overall', !!exp.tables['ordinary_ft_overall'], true);
 eq('has last6_2h_away', !!exp.tables['last6_2h_away'], true);
+eq('has last5_2h_away', !!exp.tables['last5_2h_away'], true);
 eq('has ppg_ft_overall', !!exp.tables['ppg_ft_overall'], true);
 eq('has series_ft_overall', !!exp.tables['series_ft_overall'], true);
 eq('has ft_only_ft_overall', !!exp.tables['ft_only_ft_overall'], true);
 eq('has league_avg_ft_overall', !!exp.tables['league_avg_ft_overall'], true);
+
+const sixMatchWindow = buildStatsTables({
+  season: '2025/2026',
+  fixtures: [
+    ...fixtures.filter((match) => match.status === 'FT' && (match.home_name === 'A' || match.away_name === 'A')),
+    fx({ id: 6, unix: 500, home_name: 'A', away_name: 'D', home_id: 1, away_id: 4, home_goals: 1, away_goals: 0, ht_score: '1-0' }),
+    fx({ id: 7, unix: 600, home_name: 'E', away_name: 'A', home_id: 5, away_id: 1, home_goals: 0, away_goals: 2, ht_score: '0-1' }),
+    fx({ id: 8, unix: 700, home_name: 'A', away_name: 'F', home_id: 1, away_id: 6, home_goals: 3, away_goals: 0, ht_score: '2-0' }),
+  ],
+});
+const last5A = sixMatchWindow.tables['last5_ft_overall'].find((row) => row.team_name === 'A')!;
+eq('Last 5 uses five newest matches when six are available', last5A.sample_size, 5);
 
 const A = exp.tables['ordinary_ft_overall'].find((r) => r.team_name === 'A')!;
 // FT overall for A over its 3 matches: (gf,ga) = (2,1),(0,0),(3,3)

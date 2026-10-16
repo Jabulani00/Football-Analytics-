@@ -1,4 +1,4 @@
-"""Scoreline SQLite schema — 72 tables (45 base + 27 last-N)."""
+"""Scoreline SQLite schema — 81 tables (45 base + 36 last-N)."""
 
 from __future__ import annotations
 
@@ -41,9 +41,9 @@ ORDINARY_STATS = [
 
 PERIODS = ("ft", "ht", "2h")
 SPLITS = ("overall", "home", "away")
-LAST_N = ("last10", "last8", "last6")
+LAST_N = ("last10", "last8", "last6", "last5")
 
-# 45 base = 5 stat families × 9 period/split combos
+# 45 base = 5 stat families × 9 period/split combos; 36 recent = 4 windows × 9.
 STAT_FAMILIES = ("ordinary", "ppg", "series", "ft_only", "league_avg")
 
 

@@ -1,12 +1,12 @@
-# Analytics audit and 72-table inventory
+# Analytics audit and 81-table inventory
 
 Audit performed 2026-10-16 against the project source, `docs/Football_Analytics_Project_Spec.md`, the OddAlerts integration notes, frontend table builder, and backend schema generator.
 
 ## Audit findings
 
-- **Architecture:** Expo Router / React Native with TypeScript; the analytics UI builds tables client-side from OddAlerts `/fixtures/between`. Python generates the alternate SQLite export; Supabase migrations serve odds and strategy storage, not the 72 statistics tables.
-- **What “72 tables” means:** generated table variants, not 72 live Supabase relations: 5 families × 3 periods × 3 venue scopes = 45 base variants, plus 3 recent windows × 3 periods × 3 scopes = 27. The live builder creates these names, and the backend schema has the same 72-name generator.
-- **Navigation:** the shared desktop bar and compact phone menu expose Scores, Analytics, SL-STATS, Additional, Ordinary, and FT-Only routes. Analytics has its own section selector. Before this change the Stats Tables panel compressed variants into family/period/scope controls; an FT-Only period restriction made some generated variants unreachable. The fixture dashboard has a separate 14-context mock picker and is not the live 72-table panel.
+- **Architecture:** Expo Router / React Native with TypeScript; the analytics UI builds tables client-side from OddAlerts `/fixtures/between`. Python generates the alternate SQLite export; Supabase migrations serve odds and strategy storage, not the 81 statistics tables.
+- **What “81 tables” means:** generated table variants, not 81 live Supabase relations: 5 families × 3 periods × 3 venue scopes = 45 base variants, plus 4 recent windows × 3 periods × 3 scopes = 36. The live builder creates these names, and the backend schema has the same 81-name generator.
+- **Navigation:** the shared desktop bar and compact phone menu expose Scores, Analytics, SL-STATS, Additional, Ordinary, and FT-Only routes. Analytics has its own section selector. Before this change the Stats Tables panel compressed variants into family/period/scope controls; an FT-Only period restriction made some generated variants unreachable. The fixture dashboard has a separate 14-context mock picker and is not the live 81-table panel.
 - **Data path:** OddAlerts fixture results (`id`, `status`, `home_goals`, `away_goals`, `ht_score`, names, kickoff timestamp) → `buildStatsTables` → `TeamStatsExport.tables` → live table hook → `StatsTablesPanel`. The fixture-list response does not carry the match-stat fields needed for corners/cards/xG or goal event order. The integration separately models season-stat timing data, but those fields are not joined into this builder.
 - **Ordinary formulas in the live builder:** percentages are matches satisfying a predicate divided by eligible matches; complements are counted directly. Goal averages are total goals for/against or total goals divided by eligible matches. Half-time uses recorded `ht_score`; second-half goals are FT minus HT. Missing halves are excluded from half calculations. `scored_first`, handicap, and goal-timing/event-order fields remain unavailable in this builder.
 - **PPG:** 3/1/0 points per match divided by matches in the selected period. The spec additionally calls for opponent-table-third PPG; the live builder does not have opponent-zone inputs and currently emits only overall PPG/duplicate `avg_pts` plus ordinary rates. This spec/code mismatch remains unresolved.
@@ -17,7 +17,7 @@ Audit performed 2026-10-16 against the project source, `docs/Football_Analytics_
 
 ## Inventory and verification checklist
 
-Each cell lists three distinct generated tables in the order **overall / home / away**. “Stats Tables” exposes all 72; “Additional stats” exposes the 36 non-ordinary base family variants. `FT`, `1H`, and `2H` map to builder suffixes `ft`, `ht`, and `2h`.
+Each cell lists three distinct generated tables in the order **overall / home / away**. “Stats Tables” exposes all 81; “Additional stats” exposes the 36 non-ordinary base family variants. `FT`, `1H`, and `2H` map to builder suffixes `ft`, `ht`, and `2h`. Last 5 was added after the original 72-table inventory, extending recency windows to Last 10, Last 8, Last 6, and Last 5.
 
 | Section | Family/window | Period | Table keys (overall / home / away) | Verified |
 |---|---|---|---|---|
@@ -45,8 +45,11 @@ Each cell lists three distinct generated tables in the order **overall / home / 
 | Stats Tables | Last 6 | FT | `last6_ft_overall`, `last6_ft_home`, `last6_ft_away` | [x] |
 | Stats Tables | Last 6 | 1H | `last6_ht_overall`, `last6_ht_home`, `last6_ht_away` | [x] |
 | Stats Tables | Last 6 | 2H | `last6_2h_overall`, `last6_2h_home`, `last6_2h_away` | [x] |
+| Stats Tables | Last 5 | FT | `last5_ft_overall`, `last5_ft_home`, `last5_ft_away` | [x] |
+| Stats Tables | Last 5 | 1H | `last5_ht_overall`, `last5_ht_home`, `last5_ht_away` | [x] |
+| Stats Tables | Last 5 | 2H | `last5_2h_overall`, `last5_2h_home`, `last5_2h_away` | [x] |
 
-**Count:** 15 base rows × 3 = 45; 9 last-N rows × 3 = 27; total 72. The per-table mapping is generated from `STATS_TABLES` and tested for 72 unique live builder names.
+**Count:** 15 base rows × 3 = 45; 12 last-N rows × 3 = 36; total 81. The per-table mapping is generated from `STATS_TABLES` and tested for 81 unique live builder names.
 
 ## Validation behavior added
 
@@ -60,7 +63,7 @@ Each cell lists three distinct generated tables in the order **overall / home / 
 
 ## Verification
 
-- `npm test` — passed after the final calculation change; the builder covers 98 checks and the table adapter covers 32 checks, including all 72 unique mappings.
+- `npm test` — passed after the previous calculation change; the builder covers 98 checks and the table adapter covers 32 checks, including the 72 original mappings. Last 5 adds nine variants to reach 81.
 - Focused ESLint on the changed TypeScript files — passed. `npm run lint` — 0 errors, 9 warnings in other existing components.
 - `npm run build` — passed; Expo exported 20 static routes and 6 API routes.
 - `npx tsc --noEmit` — still reports unrelated diagnostics in `components/match-detail/ImportanceOf3Panel.tsx`, `MatchPowerDynamicsPanel.tsx`, `PowerDynamicsSectors.tsx`, `hooks/useCatalogueTables.ts`, `scripts/powerDynamics.test.ts`, and `utils/formChildBeater.ts`. No changed source/test file is reported after the test fixture casts were corrected.
