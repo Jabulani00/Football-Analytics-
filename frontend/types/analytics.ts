@@ -36,6 +36,8 @@ export type StatsTableMeta = {
   name: string;
   group: 'base' | 'lastN';
   family?: StatFamily;
+  /** A focused view of a subset of a family’s metrics, e.g. PPG by table tier. */
+  metricGroup?: 'tiers';
   recency?: RecencyWindow;
   split: SplitType;
   period: TimePeriod;

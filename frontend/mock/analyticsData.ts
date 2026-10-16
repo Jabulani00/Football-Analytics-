@@ -30,7 +30,7 @@ export const ANALYTICS_TABS: { id: AnalyticsTab; label: string }[] = [
 ];
 
 export const PROJECT_SUMMARY = {
-  tableCount: 81,
+  tableCount: 90,
   baseTables: 45,
   lastNTables: 36,
   metricsPerTable: 100,
@@ -92,7 +92,7 @@ export const PROJECT_PHASES: ProjectPhase[] = [
     number: 2,
     name: 'Database & Stats Engine',
     status: 'in_progress',
-    deliverables: ['81 tables (45 base + 36 last-N)', '100+ stats per table', 'Colour-coded outputs'],
+    deliverables: ['90 table views (45 base + 9 PPG tier + 36 last-N)', '100+ stats per table', 'Colour-coded outputs'],
   },
   {
     number: 3,
@@ -129,9 +129,9 @@ export const PROJECT_PHASES: ProjectPhase[] = [
   },
 ];
 
-// All 81 stat-table variants. Base = 5 families × period × split (45);
-// last-N = 4 windows × period × split (36). Ids/family/period/split map to the
-// live builder's table names via utils/statsTableAdapter.metaToLiveTableName.
+// The original 81 stat-table variants are 45 base + 36 last-N. Nine focused
+// PPG-tier views are also listed so the Green/Yellow/Red breakdown is directly
+// selectable for every period and split.
 const TABLE_PERIODS: { p: TimePeriod; label: string }[] = [
   { p: 'fulltime', label: 'FT' },
   { p: 'firsthalf', label: '1H' },
@@ -167,6 +167,19 @@ const BASE_TABLES: StatsTableMeta[] = BASE_FAMILIES.flatMap((fam) =>
   ),
 );
 
+const PPG_TIER_TABLES: StatsTableMeta[] = TABLE_PERIODS.flatMap((pr) =>
+  TABLE_SPLITS.map<StatsTableMeta>((split) => ({
+    id: `ppg-tiers-${pr.p}-${split}`,
+    name: `PPG Tiers · ${pr.label} ${cap(split)}`,
+    group: 'base',
+    family: 'ppg',
+    metricGroup: 'tiers',
+    split,
+    period: pr.p,
+    statCount: 3,
+  })),
+);
+
 const LASTN_TABLES: StatsTableMeta[] = LASTN_WINDOWS.flatMap((w) =>
   TABLE_PERIODS.flatMap((pr) =>
     TABLE_SPLITS.map<StatsTableMeta>((split) => ({
@@ -182,7 +195,7 @@ const LASTN_TABLES: StatsTableMeta[] = LASTN_WINDOWS.flatMap((w) =>
   ),
 );
 
-export const STATS_TABLES: StatsTableMeta[] = [...BASE_TABLES, ...LASTN_TABLES];
+export const STATS_TABLES: StatsTableMeta[] = [...BASE_TABLES, ...PPG_TIER_TABLES, ...LASTN_TABLES];
 
 export function getTeamStatsForTable(_tableId: string, family?: StatFamily): TeamStatsRow[] {
   return sampleRowsForFamily(family);

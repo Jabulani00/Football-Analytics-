@@ -62,7 +62,8 @@ const FT_ONLY_COLS: Col[] = [
   { key: 'cs_pct', label: 'CS%' },
 ];
 
-export function columnsForFamily(family?: StatFamily): Col[] {
+export function columnsForFamily(family?: StatFamily, metricGroup?: StatsTableMeta['metricGroup']): Col[] {
+  if (family === 'ppg' && metricGroup === 'tiers') return PPG_COLS.slice(1, 4);
   switch (family) {
     case 'ppg':
       return PPG_COLS;
@@ -149,8 +150,8 @@ export function sampleRowsForFamily(family?: StatFamily, salt = 0): TeamStatsRow
 
 const LEAD_FLOOR = 5;
 
-export function liveRowsToDisplay(rows: TeamStatRow[], family?: StatFamily): TeamStatsRow[] {
-  const cols = columnsForFamily(family);
+export function liveRowsToDisplay(rows: TeamStatRow[], family?: StatFamily, metricGroup?: StatsTableMeta['metricGroup']): TeamStatsRow[] {
+  const cols = columnsForFamily(family, metricGroup);
   return rows.map((row) => {
     const played = typeof row.sample_size === 'number' && Number.isFinite(row.sample_size) ? row.sample_size : undefined;
     return {

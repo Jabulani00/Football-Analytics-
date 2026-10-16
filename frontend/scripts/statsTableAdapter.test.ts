@@ -36,8 +36,10 @@ check('series leads with the win streak', seriesCols[0] === 'win_streak');
 check('ft-only leads with won both halves', ftCols[0] === 'won_both_halves');
 check('ordinary stays on win percentage', columnsForFamily('ordinary')[0]?.key === 'w_pct');
 check('ft-only does not repeat the ordinary win column', !ftCols.includes('w_pct'));
-check('catalogue exposes all 81 generated table variants', STATS_TABLES.length === 81);
-check('each catalogue entry maps to a unique live table', new Set(STATS_TABLES.map(metaToLiveTableName)).size === 81);
+check('catalogue exposes 81 original variants plus 9 selectable PPG tier views', STATS_TABLES.length === 90 && STATS_TABLES.filter((table) => table.metricGroup === 'tiers').length === 9);
+check('the original 81 live table names remain available', new Set(STATS_TABLES.map(metaToLiveTableName)).size === 81);
+check('PPG tier view maps to its source PPG table', metaToLiveTableName(STATS_TABLES.find((table) => table.id === 'ppg-tiers-fulltime-overall')!) === 'ppg_ft_overall');
+check('PPG tier view shows only the three tier metrics', columnsForFamily('ppg', 'tiers').map((column) => column.key).join(',') === 'ppg_vs_green,ppg_vs_yellow,ppg_vs_red');
 check('last 5 entry maps to a live table', STATS_TABLES.some((table) => metaToLiveTableName(table) === 'last5_ft_overall'));
 
 const samplePpg = sampleRowsForFamily('ppg');

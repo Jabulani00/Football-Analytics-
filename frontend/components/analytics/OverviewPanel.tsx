@@ -39,7 +39,7 @@ export default function OverviewPanel() {
   return (
     <View style={styles.container}>
       <View style={styles.summaryRow}>
-        <SummaryCard label="Tables" value={String(PROJECT_SUMMARY.tableCount)} sub="45 base + 36 last-N" />
+        <SummaryCard label="Tables" value={String(PROJECT_SUMMARY.tableCount)} sub="45 base + 9 PPG tier + 36 last-N" />
         <SummaryCard label="Metrics" value={`${PROJECT_SUMMARY.metricsPerTable}+`} sub="per table" />
         <SummaryCard label="Sources" value={String(PROJECT_SUMMARY.dataSources.length)} sub="integrated" />
         <SummaryCard label="Scope" value="FT / 1H / 2H" sub="time periods" />

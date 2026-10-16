@@ -45,7 +45,7 @@ export default function StatsTablesPanel({
   showCatalogue = false,
 }: { variant?: 'all' | 'additional'; showCatalogue?: boolean }) {
   const availableTables = variant === 'additional'
-    ? STATS_TABLES.filter((table) => table.group === 'base' && ADDITIONAL_KEYS.has(table.family ?? ''))
+    ? STATS_TABLES.filter((table) => table.group === 'base' && (ADDITIONAL_KEYS.has(table.family ?? '') || table.metricGroup === 'tiers'))
     : STATS_TABLES;
   const narrow = useWindowDimensions().width < 720;
   const [tableId, setTableId] = useState(variant === 'additional' ? 'ppg-ft-overall' : 'ordinary-ft-overall');
@@ -55,7 +55,7 @@ export default function StatsTablesPanel({
   const scope = activeTable?.split ?? 'overall';
   const family = FAMILIES.find((f) => f.key === familyKey) ?? FAMILIES[0];
   const catalogueGroups = [
-    { label: `Base tables (${availableTables.filter((table) => table.group === 'base').length})`, tables: availableTables.filter((table) => table.group === 'base') },
+    { label: `Base & PPG tier tables (${availableTables.filter((table) => table.group === 'base').length})`, tables: availableTables.filter((table) => table.group === 'base') },
     { label: `Last-N tables (${availableTables.filter((table) => table.group === 'lastN').length})`, tables: availableTables.filter((table) => table.group === 'lastN') },
   ].filter((group) => group.tables.length > 0);
 
@@ -105,9 +105,9 @@ export default function StatsTablesPanel({
   const feedError = feed.error ?? live.error;
   const teams = useMemo(() => {
     if (isLeagueStats || waiting) return [];
-    if (isLive && liveTable) return sortByPrimary(liveRowsToDisplay(liveTable, family.family));
+    if (isLive && liveTable) return sortByPrimary(liveRowsToDisplay(liveTable, family.family, activeTable?.metricGroup));
     return [];
-  }, [isLeagueStats, waiting, isLive, liveTable, family.family]);
+  }, [isLeagueStats, waiting, isLive, liveTable, family.family, activeTable?.metricGroup]);
   const pages = Math.max(1, Math.ceil(teams.length / PAGE_SIZE));
   const safePage = Math.min(page, pages);
   const pageStart = (safePage - 1) * PAGE_SIZE;
@@ -241,7 +241,11 @@ export default function StatsTablesPanel({
           style={narrow ? styles.filterFull : undefined}
         />
       </View>
-      <Text style={styles.blurb}>{family.blurb}</Text>
+      <Text style={styles.blurb}>
+        {activeTable?.metricGroup === 'tiers'
+          ? 'Team points per game against current Green, Yellow, and Red table opponents.'
+          : family.blurb}
+      </Text>
 
       {/* Table */}
       {isLeagueStats ? (
