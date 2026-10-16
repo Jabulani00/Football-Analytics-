@@ -3,6 +3,7 @@
  * Run: npx tsx scripts/statsTableAdapter.test.ts
  */
 import { buildStatsTables } from '../services/statsBuilder';
+import { STATS_TABLES } from '../mock/analyticsData';
 import type { TeamStatRow } from '../types/data';
 import {
   columnsForFamily,
@@ -34,6 +35,8 @@ check('series leads with the win streak', seriesCols[0] === 'win_streak');
 check('ft-only leads with won both halves', ftCols[0] === 'won_both_halves');
 check('ordinary stays on win percentage', columnsForFamily('ordinary')[0]?.key === 'w_pct');
 check('ft-only does not repeat the ordinary win column', !ftCols.includes('w_pct'));
+check('catalogue exposes all 72 generated table variants', STATS_TABLES.length === 72);
+check('each catalogue entry maps to a unique live table', new Set(STATS_TABLES.map(metaToLiveTableName)).size === 72);
 
 const samplePpg = sampleRowsForFamily('ppg');
 const sampleSeries = sampleRowsForFamily('series');
@@ -76,7 +79,7 @@ const live = liveRowsToDisplay(
       w_pct_signal: 'red',
       win_streak: 4,
       won_both_halves: Number.NaN,
-    } as TeamStatRow,
+    } as unknown as TeamStatRow,
   ],
   'ppg',
 );
@@ -85,14 +88,14 @@ check('ppg under 1.80 is yellow', live[0]?.metrics[0]?.compliance === 'yellow');
 check('a stored percent signal is kept', live[0]?.metrics.find((metric) => metric.key === 'w_pct')?.compliance === 'red');
 
 const patterns = liveRowsToDisplay(
-  [{ team_name: 'Visit', won_both_halves: Number.NaN, win_to_nil: 50, cs_pct: 80 } as TeamStatRow],
+  [{ team_name: 'Visit', won_both_halves: Number.NaN, win_to_nil: 50, cs_pct: 80 } as unknown as TeamStatRow],
   'ft_only',
 );
 check('missing pattern stays blank', patterns[0]?.metrics[0]?.value == null);
 check('present pattern is kept', patterns[0]?.metrics[1]?.value === 50);
 
 const streaks = liveRowsToDisplay(
-  [{ team_name: 'Visit', win_streak: 4, loss_streak: 0 } as TeamStatRow],
+  [{ team_name: 'Visit', win_streak: 4, loss_streak: 0 } as unknown as TeamStatRow],
   'series',
 );
 check('a streak of 4 is green', streaks[0]?.metrics[0]?.compliance === 'green');

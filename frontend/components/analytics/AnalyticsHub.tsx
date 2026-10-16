@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Platform, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { useRef, useState } from 'react';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import AdditionalStatsPanel from '@/components/analytics/AdditionalStatsPanel';
 import AppNavBar from '@/components/layout/AppNavBar';
@@ -35,16 +35,18 @@ function PanelForTab({
   tab,
   live,
   slip,
+  showTableCatalogue,
 }: {
   tab: AnalyticsTab;
   live: ReturnType<typeof useHollywoodPopularOdds>;
   slip: ReturnType<typeof useAnalyticsBetSlip>;
+  showTableCatalogue: boolean;
 }) {
   switch (tab) {
     case 'overview':
       return <OverviewPanel />;
     case 'tables':
-      return <StatsTablesPanel />;
+      return <StatsTablesPanel showCatalogue={showTableCatalogue} />;
     case 'additional':
       return <AdditionalStatsPanel />;
     case 'footy':
@@ -69,6 +71,9 @@ function PanelForTab({
 export default function AnalyticsHub({ onBack: _onBack }: AnalyticsHubProps) {
   const narrow = useWindowDimensions().width < 720;
   const [activeTab, setActiveTab] = useState<AnalyticsTab>('overview');
+  const [showTableCatalogue, setShowTableCatalogue] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
+  const panelY = useRef(0);
   const needsPopularOdds = activeTab === 'strategies' || activeTab === 'odds';
   const live = useHollywoodPopularOdds(needsPopularOdds);
   const slip = useAnalyticsBetSlip();
@@ -77,22 +82,33 @@ export default function AnalyticsHub({ onBack: _onBack }: AnalyticsHubProps) {
     <AppShell>
       <AppNavBar />
       <ScrollView
+        ref={scrollRef}
         style={styles.scroller}
         contentContainerStyle={[styles.scroll, narrow && styles.scrollNarrow]}
         showsVerticalScrollIndicator={Platform.OS === 'web'}>
         <View style={styles.hero}>
           <Text style={[styles.pageTitle, narrow && styles.pageTitleNarrow]}>BETTING INTELLIGENCE</Text>
-          <Text style={styles.subtitle}>
-            Football Analytics Platform — 72 tables · 100+ metrics · 5 phases
-          </Text>
+          <Text style={styles.subtitle}>Football Analytics Platform · 100+ metrics · 5 phases</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Open all 72 statistics tables"
+            onPress={() => {
+              setActiveTab('tables');
+              setShowTableCatalogue(true);
+              requestAnimationFrame(() => scrollRef.current?.scrollTo({ y: panelY.current, animated: true }));
+            }}
+            style={({ pressed }) => [styles.tableLink, pressed && styles.tableLinkPressed]}>
+            <Text style={styles.tableLinkText}>72 Tables · 45 base + 27 last-N</Text>
+            <Text style={styles.tableLinkHint}>Open full table catalogue ↓</Text>
+          </Pressable>
         </View>
 
         <UpcomingMatchesPanel focus={focusForTab(activeTab)} />
 
         <AnalyticsNav active={activeTab} onChange={setActiveTab} />
 
-        <View style={styles.panel}>
-          <PanelForTab tab={activeTab} live={live} slip={slip} />
+        <View onLayout={(event) => { panelY.current = event.nativeEvent.layout.y; }} style={styles.panel}>
+          <PanelForTab tab={activeTab} live={live} slip={slip} showTableCatalogue={showTableCatalogue} />
         </View>
       </ScrollView>
     </AppShell>
@@ -133,6 +149,19 @@ const styles = StyleSheet.create({
     width: '100%',
     lineHeight: 22,
   },
+  tableLink: {
+    marginTop: spacing.sm,
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: theme.accentGreen,
+    backgroundColor: 'rgba(0,180,120,0.08)',
+  },
+  tableLinkPressed: { opacity: 0.72 },
+  tableLinkText: { fontFamily: fonts.bodySemiBold, fontSize: 14, color: theme.accentGreen },
+  tableLinkHint: { fontFamily: fonts.body, fontSize: 10, color: theme.textMuted, marginTop: 2 },
   panel: {
     width: '100%',
     alignItems: 'stretch',

@@ -79,15 +79,24 @@ function periodGoals(m: TeamMatch, period: Period): { gf: number; ga: number } {
 }
 
 function parseHtScore(ht: string | null | undefined): [number, number] | null {
-  if (!ht) return null;
-  const parts = ht.split('-').map((s) => Number.parseInt(s.trim(), 10));
-  if (parts.length !== 2 || parts.some(Number.isNaN)) return null;
-  return [parts[0], parts[1]];
+  if (typeof ht !== 'string') return null;
+  const match = /^\s*(\d+)\s*[-–]\s*(\d+)\s*$/.exec(ht);
+  if (!match) return null;
+  const parts = [Number(match[1]), Number(match[2])];
+  return parts.every(Number.isSafeInteger) ? [parts[0], parts[1]] : null;
+}
+
+function missingHtScore(value: unknown): boolean {
+  return typeof value !== 'string' || value.trim() === '';
 }
 
 /** 90-minute results only. Extra time, penalties, and awarded scores are not the full-time total. */
 function isFinished(fx: RawFixture): boolean {
-  return fx.status === 'FT' && fx.home_goals != null && fx.away_goals != null;
+  return fx.status === 'FT' && validGoal(fx.home_goals) && validGoal(fx.away_goals);
+}
+
+function validGoal(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 
 function halfIsUsable(match: TeamMatch): boolean {
@@ -204,7 +213,13 @@ function streak(matches: TeamMatch[], period: Period, pred: (g: { gf: number; ga
 }
 
 function computeSeries(matches: TeamMatch[], period: Period): Record<string, number | null> {
-  const counted = matchesForPeriod(matches, period);
+  // For a current streak, an unknown newest half-score breaks observability:
+  // skipping that match would falsely continue a run from older matches.
+  const counted = period === 'ft'
+    ? matches
+    : matches.slice(0, matches.findIndex((match) => !halfIsUsable(match)) < 0
+      ? matches.length
+      : matches.findIndex((match) => !halfIsUsable(match)));
   if (counted.length === 0) {
     return Object.fromEntries(SERIES_STATS.map((key) => [key, null]));
   }
@@ -439,8 +454,58 @@ export function buildStatsTables(opts: BuildOptions): TeamStatsExport {
     entry.matches.push(m);
   };
 
+  const completedById = new Map<number, RawFixture>();
+  let duplicateCompletedFixtures = 0;
   for (const fx of opts.fixtures) {
+    if (fx.status !== 'FT') continue;
+    if (completedById.has(fx.id)) {
+      duplicateCompletedFixtures += 1;
+      continue;
+    }
+    completedById.set(fx.id, fx);
+  }
+  const completedFixtures = [...completedById.values()];
+  const usableFullTimeScores = completedFixtures.filter(isFinished);
+  const qualityIssues: NonNullable<TeamStatsExport['data_quality']>['issues'] = [];
+  for (const fx of completedFixtures) {
+    const match = `${fx.home_name || `Fixture ${fx.id}`} vs ${fx.away_name || 'Unknown team'}`;
+    if (!validGoal(fx.home_goals) || !validGoal(fx.away_goals)) {
+      const fields = [
+        ...(!validGoal(fx.home_goals) ? ['home_goals'] : []),
+        ...(!validGoal(fx.away_goals) ? ['away_goals'] : []),
+      ];
+      qualityIssues.push({
+        match, fields,
+        categories: ['Scores', 'SL-STATS', 'Ordinary', 'Additional', 'FT-Only', 'Last-N', 'League Stats'],
+        reason: 'missing_or_invalid_full_time_score',
+      });
+      continue;
+    }
+    if (missingHtScore(fx.ht_score)) {
+      qualityIssues.push({
+        match, fields: ['ht_score'], categories: ['SL-STATS', 'FT-Only (half-dependent metrics)'],
+        reason: 'missing_half_time_score',
+      });
+      continue;
+    }
+    const ht = parseHtScore(fx.ht_score);
+    if (ht == null || ht[0] > fx.home_goals || ht[1] > fx.away_goals) {
+      qualityIssues.push({
+        match, fields: ['ht_score'], categories: ['SL-STATS', 'FT-Only (half-dependent metrics)'],
+        reason: 'invalid_half_time_score',
+      });
+    }
+  }
+  const missingHalfTimeScores = usableFullTimeScores.filter((fx) => missingHtScore(fx.ht_score)).length;
+  const invalidHalfTimeScores = usableFullTimeScores.filter((fx) => {
+    if (missingHtScore(fx.ht_score)) return false;
+    const ht = parseHtScore(fx.ht_score);
+    return ht == null || ht[0] > (fx.home_goals as number) || ht[1] > (fx.away_goals as number);
+  }).length;
+
+  for (const fx of usableFullTimeScores) {
     if (!isFinished(fx)) continue;
+    if (typeof fx.home_name !== 'string' || !fx.home_name.trim() || typeof fx.away_name !== 'string' || !fx.away_name.trim() || !Number.isFinite(fx.unix)) continue;
     const league = leagueKey(fx);
     const hg = fx.home_goals as number;
     const ag = fx.away_goals as number;
@@ -495,7 +560,7 @@ export function buildStatsTables(opts: BuildOptions): TeamStatsExport {
           withGames(makeRow(name, league, season, { ppg, avg_pts: ppg, ...ord }, sample), seasonGames),
         );
         ensure(`series_${period}_${scope}`).push(
-          withGames(makeRow(name, league, season, computeSeries(counted, period), sample), seasonGames),
+          withGames(makeRow(name, league, season, computeSeries(scoped, period), sample), seasonGames),
         );
         const half =
           period === 'ft'
@@ -541,6 +606,16 @@ export function buildStatsTables(opts: BuildOptions): TeamStatsExport {
       tables: Object.keys(tables).length,
       statsPerTable: ORDINARY_STATS.length,
       exported_at: new Date().toISOString(),
+    },
+    data_quality: {
+      fixturesReceived: opts.fixtures.length,
+      completedFixtures: completedFixtures.length,
+      usableFullTimeScores: usableFullTimeScores.length,
+      missingOrInvalidFullTimeScores: completedFixtures.length - usableFullTimeScores.length,
+      missingHalfTimeScores,
+      invalidHalfTimeScores,
+      duplicateCompletedFixtures,
+      issues: qualityIssues,
     },
     tables,
   };

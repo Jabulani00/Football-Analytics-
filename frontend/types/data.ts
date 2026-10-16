@@ -15,6 +15,22 @@ export type TeamStatsExport = {
     statsPerTable: number;
     exported_at?: string;
   };
+  /** Source-data counts from the fetched fixture set; null stats remain unavailable, never zero-filled. */
+  data_quality?: {
+    fixturesReceived: number;
+    completedFixtures: number;
+    usableFullTimeScores: number;
+    missingOrInvalidFullTimeScores: number;
+    missingHalfTimeScores: number;
+    invalidHalfTimeScores: number;
+    duplicateCompletedFixtures: number;
+    issues: {
+      match: string;
+      fields: string[];
+      categories: string[];
+      reason: 'missing_or_invalid_full_time_score' | 'missing_half_time_score' | 'invalid_half_time_score';
+    }[];
+  };
   tables: Record<string, TeamStatRow[]>;
 };
 

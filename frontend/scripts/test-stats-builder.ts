@@ -30,6 +30,9 @@ const exp = buildStatsTables({ fixtures, season: '2025/2026' });
 
 // 72 tables: 5 base families × 3 periods × 3 scopes (45) + last-10/8/6 × 9 (27).
 eq('table count', exp.meta.tables, 72);
+eq('all generated table variants are present', Object.keys(exp.tables).length, 72);
+eq('quality counts completed score records', exp.data_quality?.completedFixtures, 3);
+eq('genuine 0-0 scores are valid data', exp.data_quality?.usableFullTimeScores, 3);
 eq('has ordinary_ft_overall', !!exp.tables['ordinary_ft_overall'], true);
 eq('has last6_2h_away', !!exp.tables['last6_2h_away'], true);
 eq('has ppg_ft_overall', !!exp.tables['ppg_ft_overall'], true);
@@ -140,6 +143,8 @@ eq('missing HT stays out of 1H 0-0', Dht.half_nil, 0);
 const Dhalf = missingHt.tables['ordinary_ht_overall'].find((r) => r.team_name === 'D')!;
 eq('missing HT stays out of the half sample', (Dhalf as any).sample_size, 1);
 eq('missing HT stays out of the half game list', rowGames(Dhalf).length, 1);
+const Dseries = missingHt.tables['series_ht_overall'].find((r) => r.team_name === 'D')!;
+eq('unknown newest half score does not continue an older half streak', Number.isNaN(Dseries.win_streak as number), true);
 
 const impossible = buildStatsTables({
   fixtures: [fx({ id: 20, unix: 20, home_name: 'F', away_name: 'G', home_goals: 1, away_goals: 0, ht_score: '3-0' })],
@@ -150,6 +155,20 @@ const Fht = impossible.tables['ordinary_ht_overall'].find((r) => r.team_name ===
 eq('a negative second half still counts at full time', (F as any).sample_size, 1);
 eq('a negative second half stays out of both half tables', (Fht as any).sample_size, 0);
 eq('a negative second half stays out of the second-half table', (impossible.tables['ordinary_2h_overall'].find((r) => r.team_name === 'F') as any).sample_size, 0);
+
+const duplicateAndMalformed = buildStatsTables({
+  fixtures: [
+    fx({ id: 30, unix: 30, home_name: 'H', away_name: 'I', home_goals: 0, away_goals: 0, ht_score: '0-0' }),
+    fx({ id: 30, unix: 30, home_name: 'H', away_name: 'I', home_goals: 0, away_goals: 0, ht_score: '0-0' }),
+    fx({ id: 31, unix: 31, home_name: 'J', away_name: 'K', home_goals: 1, away_goals: 0, ht_score: '1x-0' }),
+    fx({ id: 32, unix: 32, home_name: 'L', away_name: 'M', home_goals: -1, away_goals: 0, ht_score: '0-0' }),
+  ],
+});
+eq('duplicate fixture id is counted once', (duplicateAndMalformed.tables['ordinary_ft_overall'].find((r) => r.team_name === 'H') as any).sample_size, 1);
+eq('duplicate completed fixture is reported', duplicateAndMalformed.data_quality?.duplicateCompletedFixtures, 1);
+eq('malformed half score is separately reported', duplicateAndMalformed.data_quality?.invalidHalfTimeScores, 1);
+eq('invalid full score is excluded and flagged', duplicateAndMalformed.data_quality?.missingOrInvalidFullTimeScores, 1);
+eq('quality issue names malformed source field', duplicateAndMalformed.data_quality?.issues.some((issue) => issue.fields.includes('ht_score')), true);
 
 const ranked = rankRows(exp.tables['ordinary_ft_overall'], 'sc_pct', 2, 'sample_size');
 eq('rank drops a one-game team', ranked.some((row) => row.team_name === 'C'), false);
