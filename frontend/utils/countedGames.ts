@@ -10,6 +10,11 @@ export type CountedGame = {
   htKnown: boolean;
   /** Half-time score is present and the second half is not negative. */
   halfValid?: boolean;
+  /** Team-perspective goal counts retained for cross-period mixed statistics. */
+  ftFor?: number;
+  ftAgainst?: number;
+  htFor?: number | null;
+  htAgainst?: number | null;
   /** This team was behind at half-time. */
   trailed?: boolean;
   /** This team was ahead at half-time. */

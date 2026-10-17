@@ -115,11 +115,11 @@ function StatsTablesContent({
   const isLive = !!(liveRows && liveRows.length);
 
   const mixedSources = useMemo(() => {
-    const sourceTable = (sourceFamily: StatFamily) => {
+    const sourceTable = (sourceFamily: StatFamily, period = activePeriod) => {
       if (!activeTable) return [];
       const key = activeTable.group === 'lastN'
-        ? tableName
-        : `${sourceFamily}_${PERIOD_TO_BUILDER[activePeriod]}_${scope}`;
+        ? `${activeTable.recency}_${PERIOD_TO_BUILDER[period]}_${scope}`
+        : `${sourceFamily}_${PERIOD_TO_BUILDER[period]}_${scope}`;
       return liveRowsToDisplay(live.data?.tables[key] ?? [], sourceFamily);
     };
     const sources = {
@@ -128,9 +128,16 @@ function StatsTablesContent({
       series: sourceTable('series'),
       ft_only: activePeriod === 'fulltime' ? sourceTable('ft_only') : [],
       half_only: activePeriod !== 'fulltime' ? sourceTable('half_only') : [],
+      ordinaryByPeriod: {
+        fulltime: sourceTable('ordinary', 'fulltime'),
+        firsthalf: sourceTable('ordinary', 'firsthalf'),
+        secondhalf: sourceTable('ordinary', 'secondhalf'),
+      },
+      ftOnly: sourceTable('ft_only', 'fulltime'),
+      ppgFt: sourceTable('ppg', 'fulltime'),
     };
     return sources;
-  }, [activeTable, activePeriod, live.data?.tables, scope, tableName]);
+  }, [activeTable, activePeriod, live.data?.tables, scope]);
 
   const needsStandings = familyKey === 'ppg' || (activeTable?.group === 'base' && activeTable.band !== 'all');
   const waiting = feed.loading || (needsStandings && standingsQuery.isPending) || (!!competitionId && live.loading && !isLive);

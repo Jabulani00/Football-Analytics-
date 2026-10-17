@@ -417,6 +417,10 @@ function countedFrom(matches: TeamMatch[]): CountedGame[] {
     detail: `${match.competition}${match.isHome ? ' · Home' : ' · Away'}`,
     htKnown: match.htKnown,
     halfValid: halfIsUsable(match),
+    ftFor: match.gfFt,
+    ftAgainst: match.gaFt,
+    htFor: match.htKnown ? match.gfHt : null,
+    htAgainst: match.htKnown ? match.gaHt : null,
     trailed: halfIsUsable(match) && match.gfHt < match.gaHt,
     led: halfIsUsable(match) && match.gfHt > match.gaHt,
   }));
