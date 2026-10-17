@@ -24,6 +24,10 @@ const WINDOWS: { id: WindowSize; label: string }[] = [
   { id: 0, label: 'Season' }, { id: 5, label: 'Last 5' }, { id: 6, label: 'Last 6' },
   { id: 8, label: 'Last 8' }, { id: 10, label: 'Last 10' },
 ];
+const RATE_FILTERS = [
+  { id: 0, label: 'Any rate' }, { id: 50, label: '≥ 50%' }, { id: 60, label: '≥ 60%' },
+  { id: 70, label: '≥ 70%' }, { id: 80, label: '≥ 80%' }, { id: 90, label: '≥ 90%' },
+];
 
 function matchesMetric(fx: FootyFixture, metric: Metric): boolean | null {
   if (fx.homeGoals == null || fx.awayGoals == null) return null;
@@ -49,7 +53,7 @@ function matchesFormula(fx: FootyFixture, metrics: Metric[], method: 'all' | 'an
   return method === 'all' ? known.every(Boolean) : known.some(Boolean);
 }
 
-function rankRows(fixtures: FootyFixture[], metrics: Metric[], method: 'all' | 'any', scope: Scope, windowSize: WindowSize, teamMetrics: Metric[], teamMethod: 'all' | 'any'): Row[] {
+function rankRows(fixtures: FootyFixture[], metrics: Metric[], method: 'all' | 'any', scope: Scope, windowSize: WindowSize, teamMetrics: Metric[], teamMethod: 'all' | 'any', minTeamPct: number): Row[] {
   const completed = fixtures.filter((fx) => fx.finished && !fx.isCup && !fx.isFriendly && fx.homeGoals != null && fx.awayGoals != null);
   const byLeague = new Map<number, FootyFixture[]>();
   for (const fx of completed) {
@@ -91,7 +95,7 @@ function rankRows(fixtures: FootyFixture[], metrics: Metric[], method: 'all' | '
       }
       return { name, played, hits, pct: played ? hits * 100 / played : 0 };
     });
-    const teamRows = teams.filter((row) => row.played > 0)
+    const teamRows = teams.filter((row) => row.played > 0 && row.pct >= minTeamPct)
       .sort((a, b) => b.pct - a.pct || b.played - a.played || a.name.localeCompare(b.name));
     // League samples count fixtures once; home/away affects the club table scope.
     const scopedEval = selectedGames.map((fx) => matchesFormula(fx, metrics, method)).filter((v): v is boolean => v != null);
@@ -108,10 +112,13 @@ export default function LeagueBuilderPanel() {
   const [method, setMethod] = useState<'all' | 'any'>('all');
   const [teamMetrics, setTeamMetrics] = useState<Metric[]>(['over25']);
   const [teamMethod, setTeamMethod] = useState<'all' | 'any'>('all');
+  const [minLeaguePct, setMinLeaguePct] = useState(0);
+  const [minTeamPct, setMinTeamPct] = useState(0);
   const [scope, setScope] = useState<Scope>('overall');
   const [windowSize, setWindowSize] = useState<WindowSize>(0);
   const [expanded, setExpanded] = useState<number | null>(null);
-  const rows = useMemo(() => rankRows(data.finished, metrics, method, scope, windowSize, teamMetrics, teamMethod), [data.finished, metrics, method, scope, windowSize, teamMetrics, teamMethod]);
+  const rows = useMemo(() => rankRows(data.finished, metrics, method, scope, windowSize, teamMetrics, teamMethod, minTeamPct)
+    .filter((row) => row.pct >= minLeaguePct), [data.finished, metrics, method, scope, windowSize, teamMetrics, teamMethod, minLeaguePct, minTeamPct]);
   const toggleMetric = (id: Metric) => setMetrics((previous) => previous.includes(id)
     ? (previous.length === 1 ? previous : previous.filter((item) => item !== id))
     : [...previous, id]);
@@ -126,6 +133,8 @@ export default function LeagueBuilderPanel() {
     <View style={styles.controls}>{METRICS.map((metric) => <Choice key={metric.id} label={metric.label} active={metrics.includes(metric.id)} onPress={() => toggleMetric(metric.id)} />)}</View>
     <Text style={styles.label}>MATCH METHOD</Text>
     <View style={styles.controls}><Choice label="ALL selected stats" active={method === 'all'} onPress={() => setMethod('all')} /><Choice label="ANY selected stat" active={method === 'any'} onPress={() => setMethod('any')} /></View>
+    <Text style={styles.label}>MINIMUM LEAGUE RATE</Text>
+    <View style={styles.controls}>{RATE_FILTERS.map((rate) => <Choice key={`league-rate-${rate.id}`} label={rate.label} active={minLeaguePct === rate.id} onPress={() => setMinLeaguePct(rate.id)} />)}</View>
     <Text style={styles.label}>TEAM VENUE</Text>
     <View style={styles.controls}>{SCOPES.map((item) => <Choice key={item.id} label={item.label} active={scope === item.id} onPress={() => setScope(item.id)} />)}</View>
     <Text style={styles.label}>SAMPLE WINDOW</Text>
@@ -145,6 +154,8 @@ export default function LeagueBuilderPanel() {
             <Text style={styles.label}>TEAM FILTERS · applied inside this league</Text>
             <View style={styles.controls}>{METRICS.map((metric) => <Choice key={`team-${metric.id}`} label={metric.label} active={teamMetrics.includes(metric.id)} onPress={() => toggleTeamMetric(metric.id)} />)}</View>
             <View style={styles.controls}><Choice label="ALL team stats" active={teamMethod === 'all'} onPress={() => setTeamMethod('all')} /><Choice label="ANY team stat" active={teamMethod === 'any'} onPress={() => setTeamMethod('any')} /></View>
+            <Text style={styles.label}>MINIMUM TEAM RATE</Text>
+            <View style={styles.controls}>{RATE_FILTERS.map((rate) => <Choice key={`team-rate-${rate.id}`} label={rate.label} active={minTeamPct === rate.id} onPress={() => setMinTeamPct(rate.id)} />)}</View>
             {row.teams.map((team, teamIndex) => <View key={`${row.id}-${team.name}`} style={[styles.row, styles.teamRow, teamIndex % 2 === 0 && styles.alt]}>
               <Text style={[styles.cell, styles.name, styles.teamName]}>{teamIndex + 1}. {team.name}</Text><Text style={styles.cell}>{team.played}</Text><Text style={styles.cell}>{team.hits}</Text><Text style={[styles.cell, styles.rate]}>{team.pct.toFixed(1)}%</Text>
             </View>)}
