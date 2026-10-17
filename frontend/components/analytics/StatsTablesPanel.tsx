@@ -15,49 +15,50 @@ import { fetchSeasonStandings } from '@/services/oddAlerts';
 import { oddAlertsKeys } from '@/services/oddAlertsKeys';
 import { clientStaleTime } from '@/services/oddAlertsCachePolicy';
 import type { StatFamily, StatsTableMeta } from '@/types/analytics';
+import { bandOf } from '@/utils/leagueTables';
 import { complianceColor, COMPLIANCE_RULE_TEXT } from '@/utils/compliance';
 import { rowGames } from '@/utils/countedGames';
 import { liveRowsToDisplay, sortByPrimary } from '@/utils/statsTableAdapter';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
-// Every catalogue entry maps directly to the matching live builder table name.
-type FamilyOption = { key: string; label: string; family: StatFamily; blurb: string };
+type FamilyOption = { key: StatFamily; label: string; family: StatFamily; blurb: string };
 const FAMILIES: FamilyOption[] = [
-  { key: 'ordinary', label: 'Ordinary', family: 'ordinary', blurb: 'Core goal & result rates — win / draw / BTTS / over-under.' },
-  { key: 'ppg', label: 'PPG', family: 'ppg', blurb: 'Points per game, plus form and result rates.' },
-  { key: 'series', label: 'Series', family: 'series', blurb: 'Current streaks — consecutive wins, unbeaten, BTTS, overs…' },
-  { key: 'ft_only', label: 'FT-Only', family: 'ft_only', blurb: 'Full-time patterns — won both halves, win-to-nil, led at HT. Counted on the full match, so the period control does not apply.' },
-  { key: 'league_avg', label: 'League Stats', family: 'league_avg', blurb: 'Every team ranked on one stat, with the league average pinned underneath.' },
-  { key: 'last10', label: 'Last 10', family: 'ordinary', blurb: 'Core stats over each team’s last 10 games.' },
-  { key: 'last8', label: 'Last 8', family: 'ordinary', blurb: 'Core stats over each team’s last 8 games.' },
-  { key: 'last6', label: 'Last 6', family: 'ordinary', blurb: 'Core stats over each team’s last 6 games.' },
-  { key: 'last5', label: 'Last 5', family: 'ordinary', blurb: 'Core stats over each team’s last 5 games.' },
+  { key: 'ordinary', label: 'Ordinary', family: 'ordinary', blurb: 'Core goal and result rates.' },
+  { key: 'ppg', label: 'PPG', family: 'ppg', blurb: 'Points per game and points against current league tiers.' },
+  { key: 'series', label: 'Series', family: 'series', blurb: 'Current consecutive match patterns.' },
+  { key: 'league_avg', label: 'League Stats', family: 'league_avg', blurb: 'League average for the selected ordinary statistic.' },
+  { key: 'ft_only', label: 'FT-Only', family: 'ft_only', blurb: 'Full-match patterns such as winning both halves and leading at half-time.' },
+  { key: 'half_only', label: 'Half stats', family: 'half_only', blurb: 'Half-time or second-half only statistics.' },
 ];
-
-const ADDITIONAL_KEYS = new Set(['ppg', 'series', 'ft_only', 'league_avg']);
 
 const PERIOD_TO_BUILDER: Record<StatsTableMeta['period'], string> = { fulltime: 'ft', firsthalf: 'ht', secondhalf: '2h' };
 const tableKey = (table: StatsTableMeta) =>
-  `${table.recency && table.recency !== 'all' ? table.recency : table.family ?? 'ordinary'}_${PERIOD_TO_BUILDER[table.period]}_${table.split}`;
+  `${table.recency && table.recency !== 'all' ? table.recency : 'ordinary'}_${PERIOD_TO_BUILDER[table.period]}_${table.split}`;
 
 export default function StatsTablesPanel({
   variant = 'all',
   showCatalogue = false,
 }: { variant?: 'all' | 'additional'; showCatalogue?: boolean }) {
-  const availableTables = variant === 'additional'
-    ? STATS_TABLES.filter((table) => table.group === 'base' && (ADDITIONAL_KEYS.has(table.family ?? '') || table.metricGroup === 'tiers'))
-    : STATS_TABLES;
+  const availableTables = STATS_TABLES;
   const narrow = useWindowDimensions().width < 720;
-  const [tableId, setTableId] = useState(variant === 'additional' ? 'ppg-ft-overall' : 'ordinary-ft-overall');
+  const [tableId, setTableId] = useState('overall-fulltime-all');
   const activeTable = availableTables.find((table) => table.id === tableId) ?? availableTables[0];
-  const familyKey = activeTable?.recency && activeTable.recency !== 'all' ? activeTable.recency : activeTable?.family ?? 'ordinary';
+  const [familyKey, setFamilyKey] = useState<StatFamily>(variant === 'additional' ? 'ppg' : 'ordinary');
   const activePeriod = activeTable?.period ?? 'fulltime';
   const scope = activeTable?.split ?? 'overall';
   const family = FAMILIES.find((f) => f.key === familyKey) ?? FAMILIES[0];
+  useEffect(() => {
+    if ((familyKey === 'ft_only' && activePeriod !== 'fulltime') ||
+        (familyKey === 'half_only' && activePeriod === 'fulltime') ||
+        (familyKey === 'league_avg' && activeTable?.group !== 'base')) setFamilyKey('ordinary');
+  }, [familyKey, activePeriod, activeTable?.group]);
   const catalogueGroups = [
-    { label: `Base & PPG tier tables (${availableTables.filter((table) => table.group === 'base').length})`, tables: availableTables.filter((table) => table.group === 'base') },
-    { label: `Last-N tables (${availableTables.filter((table) => table.group === 'lastN').length})`, tables: availableTables.filter((table) => table.group === 'lastN') },
-  ].filter((group) => group.tables.length > 0);
+    { label: 'All games · All teams and current table tiers (36)', tables: availableTables.filter((table) => table.group === 'base') },
+    ...(['last5', 'last6', 'last8', 'last10'] as const).map((window) => ({
+      label: `${window.replace('last', 'Last ')} tables (9)`,
+      tables: availableTables.filter((table) => table.recency === window),
+    })),
+  ];
 
   const feed = useLiveCompetitionFeed(3);
   const competitions = feed.competitions;
@@ -89,8 +90,16 @@ export default function StatsTablesPanel({
 
   // Won-both-halves and the other FT-only patterns use the whole match. The
   // half tables repeat those columns, so this view stays on the full-time table.
-  const tableName = activeTable ? tableKey(activeTable) : '';
-  const liveTable = competitionId != null ? live.data?.tables[tableName] : undefined;
+  const tableName = activeTable
+    ? activeTable.group === 'lastN'
+      ? tableKey(activeTable)
+      : `${familyKey === 'half_only' ? 'ft_only' : familyKey}_${PERIOD_TO_BUILDER[activePeriod]}_${scope}`
+    : '';
+  const unfilteredLiveTable = competitionId != null ? live.data?.tables[tableName] : undefined;
+  const teamBand = useMemo(() => new Map((teamRanks ?? []).map(({ teamId, rank }) => [teamId, bandOf(rank, teamRanks!.length)])), [teamRanks]);
+  const liveTable = activeTable?.band && activeTable.band !== 'all'
+    ? unfilteredLiveTable?.filter((row) => typeof row.team_id === 'number' && teamBand.get(row.team_id) === activeTable.band)
+    : unfilteredLiveTable;
   // League Stats ranks the teams, so it reads the ordinary table too — the
   // league_avg table is only the single averaged row.
   const isLeagueStats = familyKey === 'league_avg';
@@ -101,13 +110,14 @@ export default function StatsTablesPanel({
   const liveRows = isLeagueStats ? leagueTeamRows : liveTable;
   const isLive = !!(liveRows && liveRows.length);
 
-  const waiting = feed.loading || (family.family === 'ppg' && standingsQuery.isPending) || (!!competitionId && live.loading && !isLive);
+  const needsStandings = familyKey === 'ppg' || (activeTable?.group === 'base' && activeTable.band !== 'all');
+  const waiting = feed.loading || (needsStandings && standingsQuery.isPending) || (!!competitionId && live.loading && !isLive);
   const feedError = feed.error ?? live.error;
   const teams = useMemo(() => {
     if (isLeagueStats || waiting) return [];
-    if (isLive && liveTable) return sortByPrimary(liveRowsToDisplay(liveTable, family.family, activeTable?.metricGroup));
+    if (isLive && liveTable) return sortByPrimary(liveRowsToDisplay(liveTable, family.family));
     return [];
-  }, [isLeagueStats, waiting, isLive, liveTable, family.family, activeTable?.metricGroup]);
+  }, [isLeagueStats, waiting, isLive, liveTable, family.family]);
   const pages = Math.max(1, Math.ceil(teams.length / PAGE_SIZE));
   const safePage = Math.min(page, pages);
   const pageStart = (safePage - 1) * PAGE_SIZE;
@@ -117,7 +127,7 @@ export default function StatsTablesPanel({
     setPage(1);
     setOpenTeam(null);
     setShowAllIssues(false);
-  }, [familyKey, activePeriod, scope, competitionId, tableName]);
+  }, [familyKey, activePeriod, scope, competitionId, tableName, activeTable?.band]);
 
   const allQualityIssues = live.data?.data_quality?.issues ?? [];
   const filteredQualityIssues = allQualityIssues.filter((issue) =>
@@ -240,11 +250,22 @@ export default function StatsTablesPanel({
           onChange={setTableId}
           style={narrow ? styles.filterFull : undefined}
         />
+        <FilterDropdown
+          label="Statistics"
+          value={familyKey}
+          options={FAMILIES.filter((option) =>
+            option.key === 'ordinary' || option.key === 'ppg' || option.key === 'series' ||
+            (option.key === 'league_avg' && activeTable?.group === 'base') ||
+            (option.key === 'ft_only' && activePeriod === 'fulltime') ||
+            (option.key === 'half_only' && activePeriod !== 'fulltime'),
+          ).map((option) => ({ value: option.key, label: option.label }))}
+          onChange={(value) => setFamilyKey(value as StatFamily)}
+          style={narrow ? styles.filterFull : undefined}
+        />
       </View>
       <Text style={styles.blurb}>
-        {activeTable?.metricGroup === 'tiers'
-          ? 'Team points per game against current Green, Yellow, and Red table opponents.'
-          : family.blurb}
+        {family.blurb}
+        {activeTable?.band && activeTable.band !== 'all' ? ` Teams currently in the ${activeTable.band} league-table third.` : ''}
       </Text>
 
       {/* Table */}
@@ -272,6 +293,8 @@ export default function StatsTablesPanel({
             ? `Live statistics are unavailable: ${feedError}`
             : waiting
               ? 'Loading statistics…'
+              : activeTable?.band !== 'all' && !teamRanks?.length
+                ? 'Current league standings are unavailable, so this Green/Yellow/Red team filter cannot be verified.'
               : 'No finished matches with usable source data for this table.'}
         </Text>
       ) : (
@@ -317,7 +340,7 @@ export default function StatsTablesPanel({
                         style={[
                           styles.cellValue,
                           j === 0 && styles.cellValuePrimary,
-                          { color: m.value == null ? theme.textFaint : complianceColor(m.compliance) },
+                          { color: m.value == null ? theme.textFaint : m.compliance == null ? theme.textPrimary : complianceColor(m.compliance) },
                         ]}>
                         {m.value == null ? '—' : m.value}
                         {m.value == null || m.raw ? '' : '%'}
@@ -346,12 +369,12 @@ export default function StatsTablesPanel({
           ) : null}
           <Text style={styles.footHint}>
             Colour = how often the stat lands, not whether it is good:{' '}
-            {COMPLIANCE_RULE_TEXT}. Streaks are counted in matches (🟢 3+) and PPG
+            {COMPLIANCE_RULE_TEXT}. Series runs start at three matches (🟢 5+) and PPG
             on its 0–3 scale (🟢 1.80+). A blank cell was not counted. Teams with
             fewer than five games stay on the list after the leaders, with the
             game count next to the name.
             {variant === 'additional'
-              ? ' These are the extra families: points per game, series, full-time patterns, and league averages. Tap a team to see the games in this table.'
+              ? ' Choose PPG, Series, League Stats, FT-Only, or the matching half stats from Statistics. Tap a team to see the games in this table.'
               : ' Tap a team to see the games in this table, or choose another table above.'}
           </Text>
         </>
@@ -375,7 +398,7 @@ const styles = StyleSheet.create({
   catalogueItem: {
     flexGrow: 1, flexBasis: 180, minWidth: 150, padding: spacing.sm,
     borderWidth: layout.borderWidth, borderColor: theme.border, borderRadius: layout.borderRadius,
-    backgroundColor: theme.background,
+    backgroundColor: theme.bg,
   },
   catalogueItemSelected: { borderColor: theme.accentGreen, backgroundColor: 'rgba(0,180,120,0.08)' },
   catalogueItemName: { fontFamily: fonts.bodyMedium, fontSize: 11, color: theme.textPrimary },

@@ -19,14 +19,15 @@ export type ProjectPhase = {
   status: 'complete' | 'in_progress' | 'planned';
 };
 
-export type StatFamily = 'ordinary' | 'ppg' | 'series' | 'ft_only' | 'league_avg';
+export type StatFamily = 'ordinary' | 'ppg' | 'series' | 'ft_only' | 'half_only' | 'league_avg';
+export type TableBand = 'all' | 'green' | 'yellow' | 'red';
 
 export type StatMetric = {
   key: string;
   label: string;
   /** Null when the stat was not counted. The table shows a blank, not 0. */
   value: number | null;
-  compliance: ComplianceLevel;
+  compliance: ComplianceLevel | null;
   /** Raw count/average (e.g. PPG, streak length) — rendered without a % suffix. */
   raw?: boolean;
 };
@@ -36,9 +37,9 @@ export type StatsTableMeta = {
   name: string;
   group: 'base' | 'lastN';
   family?: StatFamily;
-  /** A focused view of a subset of a family’s metrics, e.g. PPG by table tier. */
-  metricGroup?: 'tiers';
   recency?: RecencyWindow;
+  /** Filter teams by their current league-table third; all means no band filter. */
+  band?: TableBand;
   split: SplitType;
   period: TimePeriod;
   statCount: number;

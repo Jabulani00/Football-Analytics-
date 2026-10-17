@@ -20,6 +20,8 @@ import type { TeamStatRow, TeamStatsExport } from '@/types/data';
 import { setRowGames, type CountedGame } from '@/utils/countedGames';
 import { complianceFromPercent } from '@/utils/compliance';
 import { bandOf } from '@/utils/leagueTables';
+import { SERIES_DEFS } from '@/utils/fixtureSeries';
+import type { TeamResult } from '@/utils/teamResults';
 // Type-only (stripped at runtime) — keeps this module free of RN imports.
 import type { RawFixture } from '@/services/oddAlerts';
 
@@ -61,8 +63,10 @@ const NOT_DERIVABLE = new Set([
 
 // ---- Per-team match record --------------------------------------------------
 type TeamMatch = {
+  teamId: number | null;
   isHome: boolean;
   opponentId: number | null;
+  opponentName: string;
   unix: number;
   gfFt: number; gaFt: number; // full-time goals for / against this team
   gfHt: number; gaHt: number; // first-half
@@ -181,10 +185,13 @@ function computeStats(matches: TeamMatch[], period: Period): {
 
 // ---- Additional stat families (ppg / series / ft_only / league_avg) --------
 /** Streak keys (current consecutive run lengths — raw counts, no signal). */
-export const SERIES_STATS = [
+const LEGACY_SERIES_STATS = [
   'win_streak', 'unbeaten_streak', 'loss_streak', 'btts_streak',
   'over25_streak', 'cs_streak', 'fts_streak', 'scoring_streak',
 ] as const;
+
+/** The 29 series definitions from the project catalogue, plus legacy aliases. */
+export const SERIES_STATS = [...SERIES_DEFS.map((def) => def.key), ...LEGACY_SERIES_STATS] as const;
 
 /** Full-time-only outcome patterns. Percentages, plus two raw point averages. */
 export const FT_ONLY_STATS = [
@@ -223,20 +230,51 @@ function computeSeries(matches: TeamMatch[], period: Period): Record<string, num
     : matches.slice(0, matches.findIndex((match) => !halfIsUsable(match)) < 0
       ? matches.length
       : matches.findIndex((match) => !halfIsUsable(match)));
-  if (counted.length === 0) {
-    return Object.fromEntries(SERIES_STATS.map((key) => [key, null]));
-  }
-  const s = (p: (g: { gf: number; ga: number }) => boolean) => streak(counted, period, p);
-  return {
-    win_streak: s((g) => g.gf > g.ga),
-    unbeaten_streak: s((g) => g.gf >= g.ga),
-    loss_streak: s((g) => g.gf < g.ga),
-    btts_streak: s((g) => g.gf > 0 && g.ga > 0),
-    over25_streak: s((g) => g.gf + g.ga > 2),
-    cs_streak: s((g) => g.ga === 0),
-    fts_streak: s((g) => g.gf === 0),
-    scoring_streak: s((g) => g.gf > 0),
+  if (counted.length === 0) return Object.fromEntries(SERIES_STATS.map((key) => [key, null]));
+  const results: TeamResult[] = counted.map((match) => {
+    const goals = periodGoals(match, period);
+    const outcome = goals.gf > goals.ga ? 'W' : goals.gf < goals.ga ? 'L' : 'D';
+    return {
+      fixtureId: match.id,
+      unix: match.unix,
+      teamId: match.teamId ?? 0,
+      opponentId: match.opponentId,
+      opponentName: match.opponentName,
+      isHome: match.isHome,
+      gf: goals.gf,
+      ga: goals.ga,
+      outcome,
+      opponentRank: null,
+      teamRank: null,
+      opponentAbove: null,
+      goalDiff: goals.gf - goals.ga,
+      htGf: match.htKnown ? match.gfHt : null,
+      htGa: match.htKnown ? match.gaHt : null,
+    };
+  });
+  const values: Record<string, number | null> = {};
+  const seriesRun = (pred: (result: TeamResult) => boolean) => {
+    let length = 0;
+    for (const result of results) {
+      if (!pred(result)) break;
+      length += 1;
+    }
+    return length;
   };
+  for (const def of SERIES_DEFS) {
+    const pred = def.invert ? (result: TeamResult) => !def.hit(result) : def.hit;
+    values[def.key] = seriesRun(pred);
+  }
+  // Keep the original compact names used by older fixture and board views.
+  values.win_streak = streak(counted, period, (goals) => goals.gf > goals.ga);
+  values.unbeaten_streak = streak(counted, period, (goals) => goals.gf >= goals.ga);
+  values.loss_streak = streak(counted, period, (goals) => goals.gf < goals.ga);
+  values.btts_streak = streak(counted, period, (goals) => goals.gf > 0 && goals.ga > 0);
+  values.over25_streak = streak(counted, period, (goals) => goals.gf + goals.ga > 2);
+  values.cs_streak = streak(counted, period, (goals) => goals.ga === 0);
+  values.fts_streak = streak(counted, period, (goals) => goals.gf === 0);
+  values.scoring_streak = streak(counted, period, (goals) => goals.gf > 0);
+  return values;
 }
 
 function computePpg(matches: TeamMatch[], period: Period): number | null {
@@ -455,11 +493,12 @@ export function buildStatsTables(opts: BuildOptions): TeamStatsExport {
   );
 
   // 1) Collect each team's finished matches.
-  const teamMatches = new Map<TeamKey, { name: string; league: string; matches: TeamMatch[] }>();
-  const add = (name: string, league: string, m: TeamMatch) => {
+  const teamMatches = new Map<TeamKey, { name: string; league: string; teamId: number | null; matches: TeamMatch[] }>();
+  const add = (name: string, league: string, teamId: number | null, m: TeamMatch) => {
     const key = `${league}::${name}`;
     let entry = teamMatches.get(key);
-    if (!entry) { entry = { name, league, matches: [] }; teamMatches.set(key, entry); }
+    if (!entry) { entry = { name, league, teamId, matches: [] }; teamMatches.set(key, entry); }
+    else if (entry.teamId == null && teamId != null) entry.teamId = teamId;
     entry.matches.push(m);
   };
 
@@ -524,12 +563,14 @@ export function buildStatsTables(opts: BuildOptions): TeamStatsExport {
     const score = `${hg}-${ag}`;
     const match = `${fx.home_name} ${score} ${fx.away_name}`;
     const competition = fx.competition_name || league;
-    add(fx.home_name, league, {
-      isHome: true, opponentId: fx.away_id, unix: fx.unix, gfFt: hg, gaFt: ag, gfHt: hHt, gaHt: aHt, htKnown,
+    add(fx.home_name, league, fx.home_id, {
+      teamId: fx.home_id,
+      isHome: true, opponentId: fx.away_id, opponentName: fx.away_name, unix: fx.unix, gfFt: hg, gaFt: ag, gfHt: hHt, gaHt: aHt, htKnown,
       id: fx.id, match, score, competition,
     });
-    add(fx.away_name, league, {
-      isHome: false, opponentId: fx.home_id, unix: fx.unix, gfFt: ag, gaFt: hg, gfHt: aHt, gaHt: hHt, htKnown,
+    add(fx.away_name, league, fx.away_id, {
+      teamId: fx.away_id,
+      isHome: false, opponentId: fx.home_id, opponentName: fx.home_name, unix: fx.unix, gfFt: ag, gaFt: hg, gfHt: aHt, gaHt: hHt, htKnown,
       id: fx.id, match, score, competition,
     });
   }
@@ -544,7 +585,7 @@ export function buildStatsTables(opts: BuildOptions): TeamStatsExport {
   };
 
   // 2) Per team: base families (season window) + last-N ordinary windows.
-  for (const { name, league, matches } of teamMatches.values()) {
+  for (const { name, league, teamId, matches } of teamMatches.values()) {
     const sorted = [...matches].sort((a, b) => b.unix - a.unix); // newest first
     for (const scope of SCOPES) {
       const scoped = sorted.filter(
@@ -560,6 +601,7 @@ export function buildStatsTables(opts: BuildOptions): TeamStatsExport {
         addToPool(pool, counted, period);
         pools.set(poolKey, pool);
         const withGames = (row: TeamStatRow, games: CountedGame[]) => {
+          if (teamId != null) row.team_id = teamId;
           setRowGames(row, games);
           return row;
         };
@@ -593,9 +635,28 @@ export function buildStatsTables(opts: BuildOptions): TeamStatsExport {
         for (const [winPrefix, winSize] of Object.entries(WINDOWS)) {
           if (winPrefix === 'ordinary') continue;
           const windowed = counted.slice(0, winSize);
+          const recentPpg = computePpg(windowed, period);
+          const recentTierPpg = (band: 'green' | 'yellow' | 'red') => computePpg(
+            windowed.filter((match) => bandByTeam.get(match.opponentId ?? -1) === band),
+            period,
+          );
+          const recentHalf = period === 'ft'
+            ? Object.fromEntries(HALF_ONLY_STATS.map((key) => [key, null])) as Record<string, number | null>
+            : computeHalfOnly(windowed, period);
+          const recentFtOnly = computeFtOnly(windowed);
           ensure(`${winPrefix}_${period}_${scope}`).push(
             withGames(
-              makeRow(name, league, season, ordinaryValues(windowed, period), windowed.length),
+              makeRow(name, league, season, {
+                ...ordinaryValues(windowed, period),
+                ppg: recentPpg,
+                avg_pts: recentPpg,
+                ppg_vs_green: recentTierPpg('green'),
+                ppg_vs_yellow: recentTierPpg('yellow'),
+                ppg_vs_red: recentTierPpg('red'),
+                ...computeSeries(windowed, period),
+                ...recentFtOnly,
+                ...recentHalf,
+              }, windowed.length),
               countedFrom(windowed),
             ),
           );

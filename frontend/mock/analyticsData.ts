@@ -30,7 +30,7 @@ export const ANALYTICS_TABS: { id: AnalyticsTab; label: string }[] = [
 ];
 
 export const PROJECT_SUMMARY = {
-  tableCount: 90,
+  tableCount: 72,
   baseTables: 45,
   lastNTables: 36,
   metricsPerTable: 100,
@@ -92,7 +92,7 @@ export const PROJECT_PHASES: ProjectPhase[] = [
     number: 2,
     name: 'Database & Stats Engine',
     status: 'in_progress',
-    deliverables: ['90 table views (45 base + 9 PPG tier + 36 last-N)', '100+ stats per table', 'Colour-coded outputs'],
+    deliverables: ['72 table views (36 all-games groups + 36 Last-N)', '100+ stats per table', 'Colour-coded outputs'],
   },
   {
     number: 3,
@@ -129,37 +129,40 @@ export const PROJECT_PHASES: ProjectPhase[] = [
   },
 ];
 
-// The original 81 stat-table variants are 45 base + 36 last-N. Nine focused
-// PPG-tier views are also listed so the Green/Yellow/Red breakdown is directly
-// selectable for every period and split.
+// The Analytics catalogue is 36 all-games team-group views (3 periods × 3
+// venue scopes × all/green/yellow/red) plus 36 Last-N views (4 windows × 3 × 3).
 const TABLE_PERIODS: { p: TimePeriod; label: string }[] = [
   { p: 'fulltime', label: 'FT' },
   { p: 'firsthalf', label: '1H' },
   { p: 'secondhalf', label: '2H' },
 ];
 const TABLE_SPLITS: SplitType[] = ['overall', 'home', 'away'];
-const BASE_FAMILIES: { f: StatFamily; label: string }[] = [
-  { f: 'ordinary', label: 'Ordinary' },
-  { f: 'ppg', label: 'PPG' },
-  { f: 'series', label: 'Series' },
-  { f: 'ft_only', label: 'FT-Only' },
-  { f: 'league_avg', label: 'League Avg' },
-];
 const LASTN_WINDOWS: { r: RecencyWindow; label: string }[] = [
-  { r: 'last10', label: 'Last 10' },
-  { r: 'last8', label: 'Last 8' },
-  { r: 'last6', label: 'Last 6' },
   { r: 'last5', label: 'Last 5' },
+  { r: 'last6', label: 'Last 6' },
+  { r: 'last8', label: 'Last 8' },
+  { r: 'last10', label: 'Last 10' },
 ];
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+const PERIOD_NAME: Record<TimePeriod, string> = {
+  fulltime: 'Fulltime', firsthalf: 'Halftime', secondhalf: '2nd Half',
+};
+const SPLIT_NAME: Record<SplitType, string> = { overall: 'Overall', home: 'Home', away: 'Away' };
+const TABLE_BANDS: { value: NonNullable<StatsTableMeta['band']>; label: string }[] = [
+  { value: 'all', label: '' },
+  { value: 'green', label: 'Green' },
+  { value: 'yellow', label: 'Yellow' },
+  { value: 'red', label: 'Red' },
+];
 
-const BASE_TABLES: StatsTableMeta[] = BASE_FAMILIES.flatMap((fam) =>
-  TABLE_PERIODS.flatMap((pr) =>
-    TABLE_SPLITS.map<StatsTableMeta>((split) => ({
-      id: `${fam.f}-${pr.label.toLowerCase()}-${split}`,
-      name: `${fam.label} · ${pr.label} ${cap(split)}`,
+const BASE_TABLES: StatsTableMeta[] = TABLE_PERIODS.flatMap((pr) =>
+  TABLE_SPLITS.flatMap((split) =>
+    TABLE_BANDS.map<StatsTableMeta>((band) => ({
+      id: `${split}-${pr.p}-${band.value}`,
+      name: `${SPLIT_NAME[split]} ${PERIOD_NAME[pr.p]}${band.label ? ` ${band.label}` : ''}`,
       group: 'base',
-      family: fam.f,
+      family: 'ordinary',
+      band: band.value,
       split,
       period: pr.p,
       statCount: 34,
@@ -167,24 +170,11 @@ const BASE_TABLES: StatsTableMeta[] = BASE_FAMILIES.flatMap((fam) =>
   ),
 );
 
-const PPG_TIER_TABLES: StatsTableMeta[] = TABLE_PERIODS.flatMap((pr) =>
-  TABLE_SPLITS.map<StatsTableMeta>((split) => ({
-    id: `ppg-tiers-${pr.p}-${split}`,
-    name: `PPG Tiers · ${pr.label} ${cap(split)}`,
-    group: 'base',
-    family: 'ppg',
-    metricGroup: 'tiers',
-    split,
-    period: pr.p,
-    statCount: 3,
-  })),
-);
-
 const LASTN_TABLES: StatsTableMeta[] = LASTN_WINDOWS.flatMap((w) =>
   TABLE_PERIODS.flatMap((pr) =>
     TABLE_SPLITS.map<StatsTableMeta>((split) => ({
-      id: `${w.r}-${pr.label.toLowerCase()}-${split}`,
-      name: `${w.label} · ${pr.label} ${cap(split)}`,
+      id: `${w.r}-${pr.p}-${split}`,
+      name: `${w.label} ${SPLIT_NAME[split]} ${PERIOD_NAME[pr.p]}`,
       group: 'lastN',
       family: 'ordinary',
       recency: w.r,
@@ -195,7 +185,7 @@ const LASTN_TABLES: StatsTableMeta[] = LASTN_WINDOWS.flatMap((w) =>
   ),
 );
 
-export const STATS_TABLES: StatsTableMeta[] = [...BASE_TABLES, ...PPG_TIER_TABLES, ...LASTN_TABLES];
+export const STATS_TABLES: StatsTableMeta[] = [...BASE_TABLES, ...LASTN_TABLES];
 
 export function getTeamStatsForTable(_tableId: string, family?: StatFamily): TeamStatsRow[] {
   return sampleRowsForFamily(family);

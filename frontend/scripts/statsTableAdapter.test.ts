@@ -32,14 +32,16 @@ const ftCols = columnsForFamily('ft_only').map((col) => col.key);
 
 check('ppg leads with points per game', ppgCols[0] === 'ppg');
 check('ppg table includes all three current-tier metrics', ['ppg_vs_green', 'ppg_vs_yellow', 'ppg_vs_red'].every((key) => ppgCols.includes(key)));
-check('series leads with the win streak', seriesCols[0] === 'win_streak');
+check('series leads with the current win run', seriesCols[0] === 'w');
 check('ft-only leads with won both halves', ftCols[0] === 'won_both_halves');
-check('ordinary stays on win percentage', columnsForFamily('ordinary')[0]?.key === 'w_pct');
+check('ordinary includes the scored percentage headline', columnsForFamily('ordinary')[0]?.key === 'sc_pct');
+check('ordinary exposes all 34 requested columns', columnsForFamily('ordinary').length === 34);
 check('ft-only does not repeat the ordinary win column', !ftCols.includes('w_pct'));
-check('catalogue exposes 81 original variants plus 9 selectable PPG tier views', STATS_TABLES.length === 90 && STATS_TABLES.filter((table) => table.metricGroup === 'tiers').length === 9);
-check('the original 81 live table names remain available', new Set(STATS_TABLES.map(metaToLiveTableName)).size === 81);
-check('PPG tier view maps to its source PPG table', metaToLiveTableName(STATS_TABLES.find((table) => table.id === 'ppg-tiers-fulltime-overall')!) === 'ppg_ft_overall');
-check('PPG tier view shows only the three tier metrics', columnsForFamily('ppg', 'tiers').map((column) => column.key).join(',') === 'ppg_vs_green,ppg_vs_yellow,ppg_vs_red');
+check('catalogue exposes the requested 72 views', STATS_TABLES.length === 72);
+check('36 base views cover all teams and the three current league tiers', STATS_TABLES.filter((table) => table.group === 'base').length === 36 && ['all', 'green', 'yellow', 'red'].every((band) => STATS_TABLES.filter((table) => table.band === band).length === 9));
+check('36 Last-N views cover Last 5, 6, 8 and 10', STATS_TABLES.filter((table) => table.group === 'lastN').length === 36 && ['last5', 'last6', 'last8', 'last10'].every((window) => STATS_TABLES.filter((table) => table.recency === window).length === 9));
+check('the base full-time overall view has its requested label', STATS_TABLES.find((table) => table.id === 'overall-fulltime-all')?.name === 'Overall Fulltime');
+check('PPG view includes its three opponent tier stats', ppgCols.join(',') === 'ppg,ppg_vs_green,ppg_vs_yellow,ppg_vs_red');
 check('last 5 entry maps to a live table', STATS_TABLES.some((table) => metaToLiveTableName(table) === 'last5_ft_overall'));
 
 const samplePpg = sampleRowsForFamily('ppg');
@@ -90,7 +92,8 @@ const live = liveRowsToDisplay(
 check('ppg rounds to two decimals', live[0]?.metrics[0]?.value === 1.67);
 check('missing tier PPG stays blank instead of zero', live[0]?.metrics.find((metric) => metric.key === 'ppg_vs_green')?.value == null);
 check('ppg under 1.80 is yellow', live[0]?.metrics[0]?.compliance === 'yellow');
-check('a stored percent signal is kept', live[0]?.metrics.find((metric) => metric.key === 'w_pct')?.compliance === 'red');
+const ordinarySignal = liveRowsToDisplay([{ team_name: 'Visit', w_pct: 40, w_pct_signal: 'red' } as unknown as TeamStatRow], 'ordinary');
+check('a stored percent signal is kept', ordinarySignal[0]?.metrics.find((metric) => metric.key === 'w_pct')?.compliance === 'red');
 
 const patterns = liveRowsToDisplay(
   [{ team_name: 'Visit', won_both_halves: Number.NaN, win_to_nil: 50, cs_pct: 80 } as unknown as TeamStatRow],
@@ -100,11 +103,11 @@ check('missing pattern stays blank', patterns[0]?.metrics[0]?.value == null);
 check('present pattern is kept', patterns[0]?.metrics[1]?.value === 50);
 
 const streaks = liveRowsToDisplay(
-  [{ team_name: 'Visit', win_streak: 4, loss_streak: 0 } as unknown as TeamStatRow],
+  [{ team_name: 'Visit', w: 4, l: 0 } as unknown as TeamStatRow],
   'series',
 );
-check('a streak of 4 is green', streaks[0]?.metrics[0]?.compliance === 'green');
-check('a streak of 0 is red', streaks[0]?.metrics.find((metric) => metric.key === 'loss_streak')?.compliance === 'red');
+check('a win run of 4 is represented', streaks[0]?.metrics[0]?.value === 4);
+check('a stored zero loss run remains zero', streaks[0]?.metrics.find((metric) => metric.key === 'l')?.value === 0);
 
 check(
   'ppg first-half home maps to the builder table',

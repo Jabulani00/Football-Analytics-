@@ -10,23 +10,46 @@ import type { ComplianceLevel, StatFamily, StatsTableMeta, TeamStatsRow } from '
 import type { TeamStatRow } from '@/types/data';
 import { rowGames } from '@/utils/countedGames';
 import { complianceFromPercent, complianceFromPpg } from '@/utils/compliance';
+import { SERIES_DEFS } from '@/utils/fixtureSeries';
 
 type Col = { key: string; label: string; raw?: boolean };
 
 /** Default (ordinary / league_avg) columns — percentage stats. */
 export const DISPLAY_STATS: Col[] = [
-  { key: 'w_pct', label: 'Win%' },
-  { key: 'd_pct', label: 'Draw%' },
-  { key: 'l_pct', label: 'Loss%' },
-  { key: 'btts_yes', label: 'BTTS' },
-  { key: 'cs_pct', label: 'CS%' },
-  { key: 'fts_pct', label: 'FTS%' },
-  { key: 'sc_pct', label: 'Scored' },
-  { key: 'conc_pct', label: 'Conc' },
-  { key: 'over15', label: 'O1.5' },
-  { key: 'over25', label: 'O2.5' },
-  { key: 'over35', label: 'O3.5' },
-  { key: 'scoring_15', label: 'Sc2+' },
+  { key: 'sc_pct', label: 'SC%' },
+  { key: 'conc_pct', label: 'Conc%' },
+  { key: 'sc_avg', label: 'SC/m', raw: true },
+  { key: 'conc_avg', label: 'Conc/m', raw: true },
+  { key: 'btts_yes', label: 'BTTS Yes' },
+  { key: 'btts_no', label: 'BTTS No' },
+  { key: 'cs_pct', label: 'CS' },
+  { key: 'avg_goals', label: 'AVG goals', raw: true },
+  { key: 'fts_pct', label: 'FTS' },
+  { key: 'w_pct', label: 'W' },
+  { key: 'd_pct', label: 'D' },
+  { key: 'l_pct', label: 'L' },
+  { key: 'over15', label: 'Over 1.5' },
+  { key: 'over25', label: 'Over 2.5' },
+  { key: 'over35', label: 'Over 3.5' },
+  { key: 'over45', label: 'Over 4.5' },
+  { key: 'under15', label: 'Under 1.5' },
+  { key: 'under25', label: 'Under 2.5' },
+  { key: 'under35', label: 'Under 3.5' },
+  { key: 'under45', label: 'Under 4.5' },
+  { key: 'over05', label: 'Over 0.5' },
+  { key: 'under05', label: 'Under 0.5' },
+  { key: 'scoring_05', label: 'Scoring 0.5+' },
+  { key: 'conceding_05', label: 'Conceding 0.5+' },
+  { key: 'scoring_15', label: 'Scoring 1.5+' },
+  { key: 'conceding_15', label: 'Conceding 1.5+' },
+  { key: 'scoring_25', label: 'Scoring 2.5+' },
+  { key: 'conceding_25', label: 'Conceding 2.5+' },
+  { key: 'scored_first', label: 'Scored First' },
+  { key: 'handicap', label: 'Handicap' },
+  { key: 'early_goals_1h', label: 'Early 1H (20m)' },
+  { key: 'early_goals_2h', label: 'Early 2H (60m)' },
+  { key: 'early_goals_conceded', label: 'Early conceded' },
+  { key: 'late_goals', label: 'Late goals' },
 ];
 
 const PPG_COLS: Col[] = [
@@ -34,24 +57,13 @@ const PPG_COLS: Col[] = [
   { key: 'ppg_vs_green', label: 'vs Green', raw: true },
   { key: 'ppg_vs_yellow', label: 'vs Yellow', raw: true },
   { key: 'ppg_vs_red', label: 'vs Red', raw: true },
-  { key: 'w_pct', label: 'Win%' },
-  { key: 'd_pct', label: 'Draw%' },
-  { key: 'l_pct', label: 'Loss%' },
-  { key: 'btts_yes', label: 'BTTS' },
-  { key: 'cs_pct', label: 'CS%' },
-  { key: 'over25', label: 'O2.5' },
 ];
 
-const SERIES_COLS: Col[] = [
-  { key: 'win_streak', label: 'Win', raw: true },
-  { key: 'unbeaten_streak', label: 'Unb', raw: true },
-  { key: 'loss_streak', label: 'Loss', raw: true },
-  { key: 'btts_streak', label: 'BTTS', raw: true },
-  { key: 'over25_streak', label: 'O2.5', raw: true },
-  { key: 'cs_streak', label: 'CS', raw: true },
-  { key: 'scoring_streak', label: 'Sc', raw: true },
-  { key: 'fts_streak', label: 'FTS', raw: true },
-];
+const SERIES_COLS: Col[] = SERIES_DEFS.map((def) => ({
+  key: def.key,
+  label: `${def.label}${def.invert ? ' without' : ''}`,
+  raw: true,
+}));
 
 const FT_ONLY_COLS: Col[] = [
   { key: 'won_both_halves', label: 'Won BH' },
@@ -62,8 +74,14 @@ const FT_ONLY_COLS: Col[] = [
   { key: 'cs_pct', label: 'CS%' },
 ];
 
-export function columnsForFamily(family?: StatFamily, metricGroup?: StatsTableMeta['metricGroup']): Col[] {
-  if (family === 'ppg' && metricGroup === 'tiers') return PPG_COLS.slice(1, 4);
+const HALF_ONLY_COLS: Col[] = [
+  { key: 'half_nil', label: '0–0' },
+  { key: 'half_under05', label: 'Under 0.5' },
+  { key: 'half_over15', label: 'Over 1.5' },
+  { key: 'half_avg', label: 'Average goals', raw: true },
+];
+
+export function columnsForFamily(family?: StatFamily): Col[] {
   switch (family) {
     case 'ppg':
       return PPG_COLS;
@@ -71,6 +89,8 @@ export function columnsForFamily(family?: StatFamily, metricGroup?: StatsTableMe
       return SERIES_COLS;
     case 'ft_only':
       return FT_ONLY_COLS;
+    case 'half_only':
+      return HALF_ONLY_COLS;
     default:
       return DISPLAY_STATS; // ordinary, league_avg
   }
@@ -101,9 +121,11 @@ export function metaToLiveTableName(meta: StatsTableMeta): string {
  * matches (3+ is a run worth naming) and PPG has its own 0–3 scale. Anything
  * that *is* a percentage falls through to the one shared rule.
  */
-function rawCompliance(key: string, v: number): ComplianceLevel {
+function rawCompliance(key: string, v: number): ComplianceLevel | null {
   if (key.includes('streak')) return v >= 3 ? 'green' : v >= 1 ? 'yellow' : 'red';
+  if (SERIES_DEFS.some((def) => def.key === key)) return v >= 5 ? 'green' : v >= 3 ? 'yellow' : 'red';
   if (key.startsWith('ppg') || key === 'avg_pts') return complianceFromPpg(v);
+  if (['sc_avg', 'conc_avg', 'avg_goals', 'half_avg'].includes(key)) return null;
   return complianceFromPercent(v);
 }
 
@@ -121,8 +143,9 @@ function sampleValue(col: Col, seed: number, index: number, salt: number): numbe
   return 20 + ((n * 11) % 60);
 }
 
-function sampleCompliance(col: Col, value: number): ComplianceLevel {
+function sampleCompliance(col: Col, value: number): ComplianceLevel | null {
   if (!col.raw) return complianceFromPercent(value);
+  if (['sc_avg', 'conc_avg', 'avg_goals', 'half_avg'].includes(col.key)) return null;
   if (col.key.includes('streak')) return value >= 3 ? 'green' : value >= 1 ? 'yellow' : 'red';
   return complianceFromPpg(value);
 }
@@ -150,8 +173,8 @@ export function sampleRowsForFamily(family?: StatFamily, salt = 0): TeamStatsRow
 
 const LEAD_FLOOR = 5;
 
-export function liveRowsToDisplay(rows: TeamStatRow[], family?: StatFamily, metricGroup?: StatsTableMeta['metricGroup']): TeamStatsRow[] {
-  const cols = columnsForFamily(family, metricGroup);
+export function liveRowsToDisplay(rows: TeamStatRow[], family?: StatFamily): TeamStatsRow[] {
+  const cols = columnsForFamily(family);
   return rows.map((row) => {
     const played = typeof row.sample_size === 'number' && Number.isFinite(row.sample_size) ? row.sample_size : undefined;
     return {
@@ -163,7 +186,7 @@ export function liveRowsToDisplay(rows: TeamStatRow[], family?: StatFamily, metr
         const finite = typeof cell === 'number' && Number.isFinite(cell);
         const value = finite ? (raw ? Math.round(cell * 100) / 100 : Math.round(cell * 10) / 10) : null;
         const signal = row[`${key}_signal`];
-        const compliance: ComplianceLevel =
+        const compliance: ComplianceLevel | null =
           !finite
             ? 'red'
             : signal === 'green' || signal === 'yellow' || signal === 'red'
