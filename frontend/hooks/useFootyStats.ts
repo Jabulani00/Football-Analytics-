@@ -159,8 +159,9 @@ export function useFootyStats(filter: {
   country: string | null;
   competitionId: number | null;
   kind: CompetitionKind;
-}): FootyStatsData {
+}, options: { loadSupplementalStats?: boolean } = {}): FootyStatsData {
   const { country, competitionId, kind } = filter;
+  const loadSupplementalStats = options.loadSupplementalStats ?? true;
   const [data, setData] = useState<FootyStatsData>(EMPTY);
 
   useEffect(() => {
@@ -245,6 +246,13 @@ export function useFootyStats(filter: {
           capped,
         });
 
+        // Score-based consumers do not need the additional match-stat requests
+        // (corners/cards/offsides); avoid hundreds of unrelated API calls.
+        if (!loadSupplementalStats) {
+          setData((prev) => ({ ...prev, statsLoading: false }));
+          return;
+        }
+
         let seasonFeed: DisciplineFeed | null = null;
         if (competitionId != null) {
           const selected = catalog.find((comp) => comp.id === competitionId);
@@ -304,7 +312,7 @@ export function useFootyStats(filter: {
       alive = false;
       ctrl.abort();
     };
-  }, [country, competitionId, kind]);
+  }, [country, competitionId, kind, loadSupplementalStats]);
 
   return data;
 }
