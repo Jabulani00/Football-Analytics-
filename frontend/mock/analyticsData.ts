@@ -20,7 +20,6 @@ export const ANALYTICS_TABS: { id: AnalyticsTab; label: string }[] = [
   { id: 'tables', label: 'Stats Tables' },
   { id: 'additional', label: 'Additional stats' },
   { id: 'footy', label: 'Footy Stats' },
-  { id: 'leagues', label: 'League Builder' },
   { id: 'predictions', label: 'Predictions' },
   { id: 'finder', label: '🔎 Bet Finder' },
   { id: 'streams', label: 'Streams' },

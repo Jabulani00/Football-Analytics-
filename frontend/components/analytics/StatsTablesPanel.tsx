@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View, useWindowDimensio
 import { useQuery } from '@tanstack/react-query';
 
 import LeagueStatsPanel from '@/components/league/LeagueStatsPanel';
+import LeagueBuilderPanel from '@/components/analytics/LeagueBuilderPanel';
 import CompetitionPicker from '@/components/shared/CompetitionPicker';
 import DragScroll from '@/components/shared/DragScroll';
 import FilterDropdown from '@/components/shared/FilterDropdown';
@@ -35,7 +36,7 @@ const PERIOD_TO_BUILDER: Record<StatsTableMeta['period'], string> = { fulltime: 
 const tableKey = (table: StatsTableMeta) =>
   `${table.recency && table.recency !== 'all' ? table.recency : 'ordinary'}_${PERIOD_TO_BUILDER[table.period]}_${table.split}`;
 
-export default function StatsTablesPanel({
+function StatsTablesContent({
   variant = 'all',
   showCatalogue = false,
 }: { variant?: 'all' | 'additional'; showCatalogue?: boolean }) {
@@ -383,8 +384,39 @@ export default function StatsTablesPanel({
   );
 }
 
+export default function StatsTablesPanel(props: { variant?: 'all' | 'additional'; showCatalogue?: boolean }) {
+  const [view, setView] = useState<'teams' | 'leagues'>('teams');
+  const variant = props.variant ?? 'all';
+  return (
+    <View style={styles.container}>
+      {variant === 'all' ? (
+        <View style={styles.viewPicker}>
+          <Text style={styles.controlLabel}>SHOW RANKINGS FOR</Text>
+          <View style={styles.viewChoices}>
+            <Pressable accessibilityRole="button" accessibilityState={{ selected: view === 'teams' }} onPress={() => setView('teams')} style={[styles.viewChoice, view === 'teams' && styles.viewChoiceActive]}>
+              <Text style={[styles.viewChoiceText, view === 'teams' && styles.viewChoiceTextActive]}>Teams · 72 statistics tables</Text>
+            </Pressable>
+            <Pressable accessibilityRole="button" accessibilityState={{ selected: view === 'leagues' }} onPress={() => setView('leagues')} style={[styles.viewChoice, view === 'leagues' && styles.viewChoiceActive]}>
+              <Text style={[styles.viewChoiceText, view === 'leagues' && styles.viewChoiceTextActive]}>Leagues</Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
+      {view === 'leagues' && variant === 'all'
+        ? <LeagueBuilderPanel />
+        : <StatsTablesContent {...props} />}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { width: '100%' },
+  viewPicker: { width: '100%', marginBottom: spacing.md },
+  viewChoices: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  viewChoice: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderWidth: layout.borderWidth, borderColor: theme.border, borderRadius: 999, backgroundColor: theme.surface },
+  viewChoiceActive: { borderColor: theme.accentGreen, backgroundColor: 'rgba(0,180,120,0.10)' },
+  viewChoiceText: { fontFamily: fonts.bodyMedium, fontSize: 12, color: theme.textMuted },
+  viewChoiceTextActive: { color: theme.accentGreen },
   catalogue: {
     width: '100%', padding: spacing.md, marginBottom: spacing.lg,
     borderWidth: layout.borderWidth, borderColor: theme.border,

@@ -11,7 +11,6 @@ import OverviewPanel from '@/components/analytics/OverviewPanel';
 import PredictionsPanel from '@/components/analytics/PredictionsPanel';
 import SmartFinderPanel from '@/components/analytics/SmartFinderPanel';
 import FootyStatsPanel from '@/components/analytics/FootyStatsPanel';
-import LeagueBuilderPanel from '@/components/analytics/LeagueBuilderPanel';
 import StatsTablesPanel from '@/components/analytics/StatsTablesPanel';
 import StrategiesPanel from '@/components/analytics/StrategiesPanel';
 import StreamsPanel from '@/components/analytics/StreamsPanel';
@@ -52,8 +51,6 @@ function PanelForTab({
       return <AdditionalStatsPanel />;
     case 'footy':
       return <FootyStatsPanel />;
-    case 'leagues':
-      return <LeagueBuilderPanel />;
     case 'predictions':
       return <PredictionsPanel />;
     case 'finder':

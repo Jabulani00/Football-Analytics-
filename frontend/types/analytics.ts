@@ -109,7 +109,6 @@ export type AnalyticsTab =
   | 'tables'
   | 'additional'
   | 'footy'
-  | 'leagues'
   | 'predictions'
   | 'finder'
   | 'streams'
