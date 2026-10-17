@@ -202,6 +202,14 @@ function StatsTablesContent({
         onSelect={setCompetitionId}
         emptyLabel={feed.loading ? 'Loading…' : feed.error ? 'Couldn’t load' : 'No competitions'}
       />
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Refresh live statistics"
+        disabled={live.loading || competitionId == null}
+        onPress={live.refresh}
+        style={[styles.refreshButton, (live.loading || competitionId == null) && styles.refreshButtonDisabled]}>
+        <Text style={styles.refreshText}>{live.refreshing ? 'Refreshing…' : live.loading ? 'Updating…' : '↻ Refresh statistics'}</Text>
+      </Pressable>
 
       {/* Status */}
       <View style={styles.statusRow}>
@@ -421,15 +429,15 @@ export default function StatsTablesPanel(props: { variant?: 'all' | 'additional'
     <View style={styles.container}>
       {variant === 'all' ? (
         <View style={styles.viewPicker}>
-          <Text style={styles.controlLabel}>SHOW RANKINGS FOR</Text>
-          <View style={styles.viewChoices}>
-            <Pressable accessibilityRole="button" accessibilityState={{ selected: view === 'teams' }} onPress={() => setView('teams')} style={[styles.viewChoice, view === 'teams' && styles.viewChoiceActive]}>
-              <Text style={[styles.viewChoiceText, view === 'teams' && styles.viewChoiceTextActive]}>Teams · 72 statistics tables</Text>
-            </Pressable>
-            <Pressable accessibilityRole="button" accessibilityState={{ selected: view === 'leagues' }} onPress={() => setView('leagues')} style={[styles.viewChoice, view === 'leagues' && styles.viewChoiceActive]}>
-              <Text style={[styles.viewChoiceText, view === 'leagues' && styles.viewChoiceTextActive]}>Leagues</Text>
-            </Pressable>
-          </View>
+          <FilterDropdown
+            label="Rank results by"
+            value={view}
+            options={[
+              { value: 'teams', label: 'Teams · 72 statistics tables' },
+              { value: 'leagues', label: 'Leagues · custom stat builder' },
+            ]}
+            onChange={(value) => setView(value as 'teams' | 'leagues')}
+          />
         </View>
       ) : null}
       {view === 'leagues' && variant === 'all'
@@ -442,11 +450,6 @@ export default function StatsTablesPanel(props: { variant?: 'all' | 'additional'
 const styles = StyleSheet.create({
   container: { width: '100%' },
   viewPicker: { width: '100%', marginBottom: spacing.md },
-  viewChoices: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  viewChoice: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderWidth: layout.borderWidth, borderColor: theme.border, borderRadius: 999, backgroundColor: theme.surface },
-  viewChoiceActive: { borderColor: theme.accentGreen, backgroundColor: 'rgba(0,180,120,0.10)' },
-  viewChoiceText: { fontFamily: fonts.bodyMedium, fontSize: 12, color: theme.textMuted },
-  viewChoiceTextActive: { color: theme.accentGreen },
   catalogue: {
     width: '100%', padding: spacing.md, marginBottom: spacing.lg,
     borderWidth: layout.borderWidth, borderColor: theme.border,
@@ -477,6 +480,9 @@ const styles = StyleSheet.create({
   statusLive: { color: theme.accentGreen },
   statusMuted: { fontFamily: fonts.body, fontSize: 12, color: theme.textMuted },
   qualityBox: { width: '100%', marginBottom: spacing.md },
+  refreshButton: { alignSelf: 'flex-end', paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderWidth: 1, borderColor: theme.border, borderRadius: 8, backgroundColor: theme.surface, marginBottom: spacing.sm },
+  refreshButtonDisabled: { opacity: 0.55 },
+  refreshText: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: theme.accentGreen },
   qualityText: {
     width: '100%', textAlign: 'center', fontFamily: fonts.body,
     fontSize: 11, lineHeight: 16, color: theme.textMuted,

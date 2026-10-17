@@ -72,6 +72,7 @@ export default function AnalyticsHub({ onBack: _onBack }: AnalyticsHubProps) {
   const narrow = useWindowDimensions().width < 720;
   const [activeTab, setActiveTab] = useState<AnalyticsTab>('overview');
   const [showTableCatalogue, setShowTableCatalogue] = useState(false);
+  const [showUpcoming, setShowUpcoming] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const panelY = useRef(0);
   const needsPopularOdds = activeTab === 'strategies' || activeTab === 'odds';
@@ -103,7 +104,20 @@ export default function AnalyticsHub({ onBack: _onBack }: AnalyticsHubProps) {
           </Pressable>
         </View>
 
-        <UpcomingMatchesPanel focus={focusForTab(activeTab)} />
+        <View style={styles.dropdownCard}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ expanded: showUpcoming }}
+            onPress={() => setShowUpcoming((open) => !open)}
+            style={styles.dropdownHeader}>
+            <View>
+              <Text style={styles.dropdownTitle}>Upcoming matches</Text>
+              <Text style={styles.dropdownHint}>Open the fixture feed when you need it</Text>
+            </View>
+            <Text style={styles.dropdownChevron}>{showUpcoming ? '▴' : '▾'}</Text>
+          </Pressable>
+          {showUpcoming ? <UpcomingMatchesPanel focus={focusForTab(activeTab)} /> : null}
+        </View>
 
         <AnalyticsNav active={activeTab} onChange={setActiveTab} />
 
@@ -166,4 +180,12 @@ const styles = StyleSheet.create({
     width: '100%',
     alignItems: 'stretch',
   },
+  dropdownCard: {
+    width: '100%', marginBottom: spacing.md, padding: spacing.md,
+    borderWidth: 1, borderColor: theme.border, borderRadius: 12, backgroundColor: theme.surface,
+  },
+  dropdownHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
+  dropdownTitle: { fontFamily: fonts.bodySemiBold, fontSize: 14, color: theme.textPrimary },
+  dropdownHint: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted, marginTop: 2 },
+  dropdownChevron: { fontFamily: fonts.bodySemiBold, fontSize: 18, color: theme.accentGreen, paddingHorizontal: spacing.sm },
 });

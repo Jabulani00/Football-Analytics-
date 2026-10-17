@@ -273,6 +273,7 @@ export default function LeagueBuilderPanel() {
   const [requireGoalWithin10, setRequireGoalWithin10] = useState(false);
   const [strategyName, setStrategyName] = useState('');
   const [statSearch, setStatSearch] = useState('');
+  const [openLibraryPanel, setOpenLibraryPanel] = useState<StatPeriod>('fullTime');
   const [savedBuilders, setSavedBuilders] = useState<SavedBuilder[]>(() => {
     if (Platform.OS !== 'web' || typeof window === 'undefined') return [];
     try { return JSON.parse(window.localStorage.getItem(SAVED_BUILDERS_KEY) ?? '[]') as SavedBuilder[]; } catch { return []; }
@@ -336,10 +337,21 @@ export default function LeagueBuilderPanel() {
         <Text style={styles.label}>STAT LIBRARY · drag into a period panel or select it</Text>
         <Text style={styles.helper}>The score feed supports goal totals, BTTS and score outcomes. Unsupported timing stats are listed separately and cannot enter a formula. {UNIQUE_METRICS.length} selectable conditions support about {scenarioCount.toExponential(1)} possible non-empty combinations.</Text>
         <TextInput accessibilityLabel="Search available stats" placeholder="Search stats (e.g. BTTS, 2nd half, streak)" placeholderTextColor={theme.textMuted} value={statSearch} onChangeText={setStatSearch} style={styles.nameInput} />
-        <View style={styles.libraryGroups}>{STAT_PANELS.map((panel) => <View key={`library-${panel.id}`} style={styles.libraryGroup}>
-          <Text style={styles.label}>{panel.label.toUpperCase()} · {panel.stats.length} CONDITIONS</Text>
-          <View style={styles.statLibrary}>{panel.stats.filter((stat) => stat.label.toLowerCase().includes(statSearch.trim().toLowerCase())).map((stat) => <StatChip key={stat.id} stat={stat} active={metrics.includes(stat.id)} onPress={() => toggleMetric(stat.id)} />)}</View>
-        </View>)}</View>
+        <View style={styles.libraryGroups}>{STAT_PANELS.map((panel) => {
+          const expanded = openLibraryPanel === panel.id || !!statSearch.trim();
+          const matchingStats = panel.stats.filter((stat) => stat.label.toLowerCase().includes(statSearch.trim().toLowerCase()));
+          return <View key={`library-${panel.id}`} style={styles.libraryGroup}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ expanded }}
+              onPress={() => setOpenLibraryPanel((current) => current === panel.id ? 'unavailable' : panel.id)}
+              style={styles.libraryToggle}>
+              <Text style={styles.label}>{panel.label.toUpperCase()} · {panel.stats.length} CONDITIONS</Text>
+              <Text style={styles.libraryChevron}>{expanded ? '▴' : '▾'}</Text>
+            </Pressable>
+            {expanded ? <View style={styles.statLibrary}>{matchingStats.map((stat) => <StatChip key={stat.id} stat={stat} active={metrics.includes(stat.id)} onPress={() => toggleMetric(stat.id)} />)}</View> : null}
+          </View>;
+        })}</View>
         <View style={[styles.periodGrid, wide && styles.periodGridWide]}>
           {STAT_PANELS.map((panel) => {
             const selected = panel.stats.filter((stat) => metrics.includes(stat.id));
@@ -473,6 +485,8 @@ const styles = StyleSheet.create({
   dropHint: { padding: 10, borderWidth: 1, borderStyle: 'dashed', borderColor: theme.borderStrong, borderRadius: 8, color: theme.textFaint, fontFamily: fonts.body, fontSize: 11 },
   libraryGroups: { gap: spacing.sm, padding: spacing.sm, borderWidth: 1, borderColor: theme.border, borderRadius: 10, backgroundColor: theme.bg },
   libraryGroup: { gap: 5 },
+  libraryToggle: { minHeight: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.sm, borderWidth: 1, borderColor: theme.border, borderRadius: 8, backgroundColor: theme.bg },
+  libraryChevron: { color: theme.accentGreen, fontSize: 16, paddingHorizontal: spacing.xs },
   statLibrary: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   statChip: { paddingHorizontal: 9, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: theme.border, backgroundColor: theme.surface },
   statChipActive: { borderColor: theme.accentGreen, backgroundColor: 'rgba(0,180,120,0.12)' },

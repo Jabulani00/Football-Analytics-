@@ -712,6 +712,7 @@ export type FixturesFetcher = (opts: {
   toUnix: number;
   competitions?: string;
   maxPages?: number;
+  cache?: 'off';
 }) => Promise<RawFixture[]>;
 
 /**
@@ -727,6 +728,7 @@ export async function buildLeagueStatsLive(
     season?: string;
     teamRanks?: { teamId: number; rank: number }[];
     maxPages?: number;
+    cache?: 'off';
   },
 ): Promise<TeamStatsExport> {
   const fixtures = await fetcher({
@@ -734,6 +736,7 @@ export async function buildLeagueStatsLive(
     toUnix: opts.toUnix,
     competitions: String(opts.competitionId),
     maxPages: opts.maxPages ?? 6,
+    cache: opts.cache,
   });
   return buildStatsTables({
     fixtures,

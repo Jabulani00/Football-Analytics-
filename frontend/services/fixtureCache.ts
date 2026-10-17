@@ -40,6 +40,11 @@ export function cachedFetch<T>(key: string, ttlMs: number, fn: () => Promise<T>)
   return p;
 }
 
+/** Store a value under its normal key after an explicit upstream cache bypass. */
+export function setCachedFetch<T>(key: string, ttlMs: number, value: T): void {
+  store.set(key, { value, expires: Date.now() + ttlMs });
+}
+
 /** Clear everything (tests / manual refresh). */
 export function clearFixtureCache(): void {
   store.clear();
