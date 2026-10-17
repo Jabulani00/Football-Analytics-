@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import LeagueStatsPanel from '@/components/league/LeagueStatsPanel';
 import LeagueBuilderPanel from '@/components/analytics/LeagueBuilderPanel';
+import MixedStatsPanel from '@/components/analytics/MixedStatsPanel';
 import CompetitionPicker from '@/components/shared/CompetitionPicker';
 import DragScroll from '@/components/shared/DragScroll';
 import FilterDropdown from '@/components/shared/FilterDropdown';
@@ -22,7 +23,7 @@ import { rowGames } from '@/utils/countedGames';
 import { liveRowsToDisplay, sortByPrimary } from '@/utils/statsTableAdapter';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
-type FamilyOption = { key: StatFamily; label: string; family: StatFamily; blurb: string };
+type FamilyOption = { key: StatFamily | 'mixed'; label: string; family: StatFamily; blurb: string };
 const FAMILIES: FamilyOption[] = [
   { key: 'ordinary', label: 'Ordinary', family: 'ordinary', blurb: 'Core goal and result rates.' },
   { key: 'ppg', label: 'PPG', family: 'ppg', blurb: 'Points per game and points against current league tiers.' },
@@ -30,6 +31,7 @@ const FAMILIES: FamilyOption[] = [
   { key: 'league_avg', label: 'League Stats', family: 'league_avg', blurb: 'League average for the selected ordinary statistic.' },
   { key: 'ft_only', label: 'FT-Only', family: 'ft_only', blurb: 'Full-match patterns such as winning both halves and leading at half-time.' },
   { key: 'half_only', label: 'Half stats', family: 'half_only', blurb: 'Half-time or second-half only statistics.' },
+  { key: 'mixed', label: 'Mixed Stats (1–23)', family: 'ordinary', blurb: 'Choose up to 23 existing statistics from the families available for this table.' },
 ];
 
 const PERIOD_TO_BUILDER: Record<StatsTableMeta['period'], string> = { fulltime: 'ft', firsthalf: 'ht', secondhalf: '2h' };
@@ -44,11 +46,12 @@ function StatsTablesContent({
   const narrow = useWindowDimensions().width < 720;
   const [tableId, setTableId] = useState('overall-fulltime-all');
   const activeTable = availableTables.find((table) => table.id === tableId) ?? availableTables[0];
-  const [familyKey, setFamilyKey] = useState<StatFamily>(variant === 'additional' ? 'ppg' : 'ordinary');
+  const [familyKey, setFamilyKey] = useState<StatFamily | 'mixed'>(variant === 'additional' ? 'ppg' : 'ordinary');
   const activePeriod = activeTable?.period ?? 'fulltime';
   const scope = activeTable?.split ?? 'overall';
   const family = FAMILIES.find((f) => f.key === familyKey) ?? FAMILIES[0];
   useEffect(() => {
+    if (familyKey === 'mixed') return;
     if ((familyKey === 'ft_only' && activePeriod !== 'fulltime') ||
         (familyKey === 'half_only' && activePeriod === 'fulltime') ||
         (familyKey === 'league_avg' && activeTable?.group !== 'base')) setFamilyKey('ordinary');
@@ -94,7 +97,7 @@ function StatsTablesContent({
   const tableName = activeTable
     ? activeTable.group === 'lastN'
       ? tableKey(activeTable)
-      : `${familyKey === 'half_only' ? 'ft_only' : familyKey}_${PERIOD_TO_BUILDER[activePeriod]}_${scope}`
+      : `${familyKey === 'mixed' ? 'ordinary' : familyKey === 'half_only' ? 'ft_only' : familyKey}_${PERIOD_TO_BUILDER[activePeriod]}_${scope}`
     : '';
   const unfilteredLiveTable = competitionId != null ? live.data?.tables[tableName] : undefined;
   const teamBand = useMemo(() => new Map((teamRanks ?? []).map(({ teamId, rank }) => [teamId, bandOf(rank, teamRanks!.length)])), [teamRanks]);
@@ -110,6 +113,24 @@ function StatsTablesContent({
       : undefined;
   const liveRows = isLeagueStats ? leagueTeamRows : liveTable;
   const isLive = !!(liveRows && liveRows.length);
+
+  const mixedSources = useMemo(() => {
+    const sourceTable = (sourceFamily: StatFamily) => {
+      if (!activeTable) return [];
+      const key = activeTable.group === 'lastN'
+        ? tableName
+        : `${sourceFamily}_${PERIOD_TO_BUILDER[activePeriod]}_${scope}`;
+      return liveRowsToDisplay(live.data?.tables[key] ?? [], sourceFamily);
+    };
+    const sources = {
+      ordinary: sourceTable('ordinary'),
+      ppg: sourceTable('ppg'),
+      series: sourceTable('series'),
+      ft_only: activePeriod === 'fulltime' ? sourceTable('ft_only') : [],
+      half_only: activePeriod !== 'fulltime' ? sourceTable('half_only') : [],
+    };
+    return sources;
+  }, [activeTable, activePeriod, live.data?.tables, scope, tableName]);
 
   const needsStandings = familyKey === 'ppg' || (activeTable?.group === 'base' && activeTable.band !== 'all');
   const waiting = feed.loading || (needsStandings && standingsQuery.isPending) || (!!competitionId && live.loading && !isLive);
@@ -255,12 +276,12 @@ function StatsTablesContent({
           label="Statistics"
           value={familyKey}
           options={FAMILIES.filter((option) =>
-            option.key === 'ordinary' || option.key === 'ppg' || option.key === 'series' ||
+            (option.key === 'mixed' && variant === 'all') || option.key === 'ordinary' || option.key === 'ppg' || option.key === 'series' ||
             (option.key === 'league_avg' && activeTable?.group === 'base') ||
             (option.key === 'ft_only' && activePeriod === 'fulltime') ||
             (option.key === 'half_only' && activePeriod !== 'fulltime'),
           ).map((option) => ({ value: option.key, label: option.label }))}
-          onChange={(value) => setFamilyKey(value as StatFamily)}
+          onChange={(value) => setFamilyKey(value as StatFamily | 'mixed')}
           style={narrow ? styles.filterFull : undefined}
         />
       </View>
@@ -270,7 +291,9 @@ function StatsTablesContent({
       </Text>
 
       {/* Table */}
-      {isLeagueStats ? (
+      {familyKey === 'mixed' ? (
+        <MixedStatsPanel key={activePeriod} sources={mixedSources} period={activePeriod} loading={waiting} error={feedError} />
+      ) : isLeagueStats ? (
         <>
           <LeagueStatsPanel
             teamRows={leagueTeamRows}

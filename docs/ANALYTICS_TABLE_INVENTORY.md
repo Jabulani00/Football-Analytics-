@@ -13,6 +13,8 @@ The Analytics catalogue is intentionally 72 views, defined by the user's request
 
 The table picker controls the requested view. A separate Statistics picker controls which existing calculation appears under it, so calculation families do not add entries to the 72-view catalogue. Ordinary has 34 mapped columns; Series has the 29 `SERIES_DEFS`; PPG has PPG and its three opponent-tier values; League Stats uses the existing average row; FT-Only is available on full-time views; Half stats are available on half views. Last-N rows use their matching builder window and the same family columns where those fields are built.
 
+**Mixed Stats (1–23)** is a separate panel in the Statistics picker for the selected 72-view table. It lets the user combine up to 23 columns from the existing Ordinary, PPG, Series, FT-Only, and period-appropriate Half Stats calculations. It reuses the builder's values rather than introducing a new formula; missing or inapplicable values remain blank. The project does not currently define a fixed canonical list of 23 mixed formulas.
+
 ## Internal data model and compatibility
 
 The live builder and Python export retain their legacy family-specific table names and schema. The frontend's 72 views are projections over those calculations; this change does not delete or rename stored tables. The builder's legacy matrix includes ordinary, PPG, series, FT-only, and league-average families across periods/scopes, plus Last 5/6/8/10 windows. Internal builder counts are not the user-facing catalogue count.
