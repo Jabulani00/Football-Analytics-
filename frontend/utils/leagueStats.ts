@@ -56,7 +56,7 @@ export const LEAGUE_STAT_DEFS: LeagueStatDef[] = [
   { key: 'over35', label: 'Over 3.5', short: 'O3.5', group: 'overs' },
   { key: 'over45', label: 'Over 4.5', short: 'O4.5', group: 'overs' },
 
-  { key: 'under05', label: 'Under 0.5', short: 'U0.5', group: 'unders' },
+  { key: 'under05', label: 'No goal (NG) — selected period', short: 'NG', group: 'unders' },
   { key: 'under15', label: 'Under 1.5', short: 'U1.5', group: 'unders' },
   { key: 'under25', label: 'Under 2.5', short: 'U2.5', group: 'unders' },
   { key: 'under35', label: 'Under 3.5', short: 'U3.5', group: 'unders' },

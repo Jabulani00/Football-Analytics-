@@ -19,6 +19,15 @@ function when(unix: number): string {
   });
 }
 
+function noGoalMark(game: CountedGame): 'yes' | 'no' | 'unknown' {
+  if (game.ftFor != null && game.ftAgainst != null) {
+    return game.ftFor + game.ftAgainst === 0 ? 'yes' : 'no';
+  }
+  const score = /^(\d+)\s*[-–:]\s*(\d+)$/.exec(game.score.trim());
+  if (!score) return 'unknown';
+  return Number(score[1]) + Number(score[2]) === 0 ? 'yes' : 'no';
+}
+
 /** Games behind a stat row, opened at the top of the screen. Each one opens the match page. */
 export default function IncludedGamesList({
   title,
@@ -60,8 +69,9 @@ export default function IncludedGamesList({
             <Text style={styles.empty}>No fixtures are tied to this row.</Text>
           ) : (
             <DragScroll fill={false} style={[styles.list, { maxHeight: Math.round(height * 0.46) }]}>
-              {visible.map((game, index) => (
-                <Pressable
+              {visible.map((game, index) => {
+                const ng = noGoalMark(game);
+                return <Pressable
                   key={`${game.id}-${start + index}`}
                   onPress={() => {
                     if (game.id > 0) {
@@ -77,10 +87,17 @@ export default function IncludedGamesList({
                       {game.score ? ` · ${game.score}` : ''}
                       {game.detail ? ` · ${game.detail}` : ''}
                     </Text>
+                    <View style={styles.markers}>
+                      <Text style={[styles.marker, ng === 'yes' ? styles.markerYes : ng === 'no' ? styles.markerNo : styles.markerUnknown]}>
+                        NG {ng === 'yes' ? 'YES' : ng === 'no' ? 'NO' : '—'}
+                      </Text>
+                      <Text style={styles.markerUnknown}>SF —</Text>
+                      <Text style={styles.markerUnknown}>CF —</Text>
+                    </View>
                   </View>
                   <Text style={styles.open}>Match</Text>
-                </Pressable>
-              ))}
+                </Pressable>;
+              })}
             </DragScroll>
           )}
           <PageControls
@@ -135,6 +152,29 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: theme.textMuted,
     lineHeight: 18,
+  },
+  markers: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 3 },
+  marker: {
+    overflow: 'hidden',
+    borderRadius: 5,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 9,
+    color: theme.textPrimary,
+    backgroundColor: theme.surfaceMuted,
+  },
+  markerYes: { color: theme.loss, backgroundColor: 'rgba(220, 38, 38, 0.09)' },
+  markerNo: { color: theme.textMuted },
+  markerUnknown: {
+    overflow: 'hidden',
+    borderRadius: 5,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 9,
+    color: theme.textFaint,
+    backgroundColor: theme.surfaceMuted,
   },
   close: {
     minHeight: 44,

@@ -152,6 +152,11 @@ export default function LeagueStatsPanel({
           <Text style={styles.caption}>
             {table.stat.label} · {table.rows.length} teams{contextLabel ? ` · ${contextLabel}` : ''}
           </Text>
+          {table.stat.key === 'under05' ? (
+            <Text style={styles.legend}>
+              NG is 0–0 in the selected period. Team and league values are percentages of finished matches in this scope.
+            </Text>
+          ) : null}
           {avg ? null : (
             <Text style={styles.legend}>
               How often it lands: {COMPLIANCE_RULE_TEXT}
@@ -214,6 +219,7 @@ export default function LeagueStatsPanel({
               : ''}
             Colour is how often the stat lands, not whether it is good — a high
             &quot;fails to score&quot; is still green.
+            {' '}Scored first (SF) and conceded first (CF) need first-goal order, which the league results feed does not provide; they are shown as unavailable on match rows.
             {error ? ` ${error}` : ''}
           </Text>
         </>
