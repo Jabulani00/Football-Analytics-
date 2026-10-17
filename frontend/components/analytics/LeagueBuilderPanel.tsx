@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import { useFootyStats } from '@/hooks/useFootyStats';
 import type { FootyFixture } from '@/services/footyMarketStats';
@@ -107,6 +107,9 @@ function rankRows(fixtures: FootyFixture[], metrics: Metric[], method: 'all' | '
 }
 
 export default function LeagueBuilderPanel() {
+  const { width } = useWindowDimensions();
+  const wide = width >= 1100;
+  const narrow = width < 720;
   const data = useFootyStats({ country: null, competitionId: null, kind: 'domestic' }, { loadSupplementalStats: false });
   const [metrics, setMetrics] = useState<Metric[]>(['over25']);
   const [method, setMethod] = useState<'all' | 'any'>('all');
@@ -126,24 +129,38 @@ export default function LeagueBuilderPanel() {
     ? (previous.length === 1 ? previous : previous.filter((item) => item !== id))
     : [...previous, id]);
 
-  return <View style={styles.container}>
-    <Text style={styles.title}>League rankings & custom stat builder</Text>
-    <Text style={styles.copy}>Domestic leagues only. Rank leagues with a custom formula, then open a league to build an independent team formula.</Text>
-    <Text style={styles.label}>LEAGUE RANKING · select one or more stats</Text>
-    <View style={styles.controls}>{METRICS.map((metric) => <Choice key={metric.id} label={metric.label} active={metrics.includes(metric.id)} onPress={() => toggleMetric(metric.id)} />)}</View>
-    <Text style={styles.label}>MATCH METHOD</Text>
-    <View style={styles.controls}><Choice label="ALL selected stats" active={method === 'all'} onPress={() => setMethod('all')} /><Choice label="ANY selected stat" active={method === 'any'} onPress={() => setMethod('any')} /></View>
-    <Text style={styles.label}>MINIMUM LEAGUE RATE</Text>
-    <View style={styles.controls}>{RATE_FILTERS.map((rate) => <Choice key={`league-rate-${rate.id}`} label={rate.label} active={minLeaguePct === rate.id} onPress={() => setMinLeaguePct(rate.id)} />)}</View>
-    <Text style={styles.label}>TEAM VENUE</Text>
-    <View style={styles.controls}>{SCOPES.map((item) => <Choice key={item.id} label={item.label} active={scope === item.id} onPress={() => setScope(item.id)} />)}</View>
-    <Text style={styles.label}>SAMPLE WINDOW</Text>
-    <View style={styles.controls}>{WINDOWS.map((item) => <Choice key={item.id} label={item.label} active={windowSize === item.id} onPress={() => setWindowSize(item.id)} />)}</View>
+  return <View style={[styles.container, wide && styles.containerWide]}>
+    <View style={[styles.heading, !narrow && styles.headingWide]}>
+      <View style={styles.headingCopy}>
+        <Text style={styles.eyebrow}>LEAGUE EXPLORER</Text>
+        <Text style={styles.title}>League rankings & custom stat builder</Text>
+        <Text style={styles.copy}>Rank domestic leagues with a custom formula, then open any league to build an independent team ranking.</Text>
+      </View>
+      <View style={styles.headingBadge}><View style={styles.liveDot} /><Text style={styles.badgeText}>DOMESTIC LEAGUES</Text></View>
+    </View>
+    <View style={[styles.builderGrid, wide && styles.builderGridWide, narrow && styles.builderGridNarrow]}>
+      <View style={[styles.builderCard, styles.formulaCard]}>
+        <Text style={styles.cardTitle}>1. Build the league formula</Text>
+        <Text style={styles.label}>MATCH STATS · select one or more</Text>
+        <View style={styles.controls}>{METRICS.map((metric) => <Choice key={metric.id} label={metric.label} active={metrics.includes(metric.id)} onPress={() => toggleMetric(metric.id)} />)}</View>
+        <Text style={styles.label}>MATCH METHOD</Text>
+        <View style={styles.controls}><Choice label="ALL selected stats" active={method === 'all'} onPress={() => setMethod('all')} /><Choice label="ANY selected stat" active={method === 'any'} onPress={() => setMethod('any')} /></View>
+      </View>
+      <View style={[styles.builderCard, styles.refineCard]}>
+        <Text style={styles.cardTitle}>2. Refine the ranking</Text>
+        <Text style={styles.label}>MINIMUM LEAGUE RATE</Text>
+        <View style={styles.controls}>{RATE_FILTERS.map((rate) => <Choice key={`league-rate-${rate.id}`} label={rate.label} active={minLeaguePct === rate.id} onPress={() => setMinLeaguePct(rate.id)} />)}</View>
+        <View style={[styles.refineRow, narrow && styles.refineColumn]}>
+          <View style={styles.refineGroup}><Text style={styles.label}>TEAM VENUE</Text><View style={styles.controls}>{SCOPES.map((item) => <Choice key={item.id} label={item.label} active={scope === item.id} onPress={() => setScope(item.id)} />)}</View></View>
+          <View style={styles.refineGroup}><Text style={styles.label}>SAMPLE WINDOW</Text><View style={styles.controls}>{WINDOWS.map((item) => <Choice key={item.id} label={item.label} active={windowSize === item.id} onPress={() => setWindowSize(item.id)} />)}</View></View>
+        </View>
+      </View>
+    </View>
     {data.loading ? <View style={styles.loading}><ActivityIndicator color={theme.accentGreen} /><Text style={styles.copy}>Loading finished domestic league results…</Text></View> : null}
     {data.error ? <Text style={styles.error}>{data.error}</Text> : null}
-    {!data.loading ? <Text style={styles.coverage}>Ranked {rows.length} leagues from {data.loadedLeagues} loaded active leagues · based on completed score data{data.capped ? ' · provider-load limit is active' : ''}</Text> : null}
+    {!data.loading ? <View style={styles.resultsHeading}><View><Text style={styles.cardTitle}>League leaderboard</Text><Text style={styles.coverage}>Ranked {rows.length} leagues from {data.loadedLeagues} loaded active leagues · completed score data{data.capped ? ' · provider-load limit is active' : ''}</Text></View><Text style={styles.sortBadge}>RATE ↓</Text></View> : null}
     <ScrollView horizontal showsHorizontalScrollIndicator style={styles.tableScroll}>
-      <View style={styles.table}>
+      <View style={[styles.table, wide && styles.tableWide, narrow && styles.tableNarrow]}>
         <View style={[styles.row, styles.header]}><Text style={[styles.cell, styles.name]}>League / team</Text><Text style={styles.cell}>Played</Text><Text style={styles.cell}>Hits</Text><Text style={styles.cell}>Rate</Text></View>
         {rows.map((row, index) => <View key={row.id}>
           <Pressable accessibilityRole="button" accessibilityState={{ expanded: expanded === row.id }} onPress={() => setExpanded(expanded === row.id ? null : row.id)} style={[styles.row, index % 2 === 1 && styles.alt]}>
@@ -151,6 +168,7 @@ export default function LeagueBuilderPanel() {
             <Text style={styles.cell}>{row.played}</Text><Text style={styles.cell}>{row.hits}</Text><Text style={[styles.cell, styles.rate]}>{row.pct.toFixed(1)}%</Text>
           </Pressable>
           {expanded === row.id ? <View style={styles.teamBuilder}>
+            <Text style={styles.cardTitle}>Team ranking · {row.name}</Text>
             <Text style={styles.label}>TEAM FILTERS · applied inside this league</Text>
             <View style={styles.controls}>{METRICS.map((metric) => <Choice key={`team-${metric.id}`} label={metric.label} active={teamMetrics.includes(metric.id)} onPress={() => toggleTeamMetric(metric.id)} />)}</View>
             <View style={styles.controls}><Choice label="ALL team stats" active={teamMethod === 'all'} onPress={() => setTeamMethod('all')} /><Choice label="ANY team stat" active={teamMethod === 'any'} onPress={() => setTeamMethod('any')} /></View>
@@ -175,14 +193,26 @@ function Choice({ label, active, onPress }: { label: string; active: boolean; on
 }
 
 const styles = StyleSheet.create({
-  container: { width: '100%', gap: spacing.sm }, title: { fontFamily: fonts.display, fontSize: 22, color: theme.textPrimary },
+  container: { width: '100%', gap: spacing.md, padding: spacing.md, borderRadius: 16, borderWidth: 1, borderColor: theme.border, backgroundColor: theme.background },
+  containerWide: { padding: spacing.xl, gap: spacing.lg },
+  heading: { gap: spacing.sm }, headingWide: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, headingCopy: { flex: 1, gap: 4 },
+  eyebrow: { fontFamily: fonts.bodySemiBold, fontSize: 10, letterSpacing: 1.4, color: theme.accentGreen },
+  title: { fontFamily: fonts.display, fontSize: 26, color: theme.textPrimary },
   copy: { fontFamily: fonts.body, fontSize: 13, lineHeight: 19, color: theme.textMuted },
-  label: { fontFamily: fonts.bodySemiBold, fontSize: 11, color: theme.textMuted, letterSpacing: 0.7, marginTop: spacing.sm },
-  controls: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, choice: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: theme.border, backgroundColor: theme.surface },
+  headingBadge: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1, borderColor: theme.border, borderRadius: 999, backgroundColor: theme.surface },
+  liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: theme.accentGreen }, badgeText: { fontFamily: fonts.bodySemiBold, fontSize: 10, letterSpacing: 0.6, color: theme.textMuted },
+  builderGrid: { gap: spacing.md }, builderGridWide: { flexDirection: 'row', alignItems: 'stretch' }, builderGridNarrow: { flexDirection: 'column' },
+  builderCard: { padding: spacing.md, borderRadius: 12, borderWidth: 1, borderColor: theme.border, backgroundColor: theme.surface, gap: 4 },
+  formulaCard: { flex: 1.25 }, refineCard: { flex: 1, minWidth: 300 }, cardTitle: { fontFamily: fonts.bodySemiBold, fontSize: 15, color: theme.textPrimary },
+  label: { fontFamily: fonts.bodySemiBold, fontSize: 10, color: theme.textMuted, letterSpacing: 0.8, marginTop: spacing.sm },
+  controls: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, choice: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: theme.border, backgroundColor: theme.background },
   choiceActive: { borderColor: theme.accentGreen, backgroundColor: 'rgba(0,180,120,0.12)' }, choiceText: { fontFamily: fonts.body, fontSize: 12, color: theme.textMuted }, choiceTextActive: { color: theme.accentGreen, fontFamily: fonts.bodySemiBold },
+  refineRow: { flexDirection: 'row', gap: spacing.md }, refineColumn: { flexDirection: 'column' }, refineGroup: { flex: 1 },
   loading: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: spacing.md }, error: { color: theme.loss },
-  coverage: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: theme.textMuted, marginTop: spacing.sm }, tableScroll: { width: '100%', marginTop: spacing.sm }, table: { minWidth: 580, borderWidth: 1, borderColor: theme.border, borderRadius: 10, overflow: 'hidden' },
-  row: { flexDirection: 'row', alignItems: 'center', minHeight: 42, paddingHorizontal: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: theme.border }, header: { backgroundColor: theme.surface }, alt: { backgroundColor: 'rgba(255,255,255,0.025)' },
-  teamBuilder: { padding: spacing.sm, borderBottomWidth: 1, borderColor: theme.border },
-  cell: { width: 82, paddingVertical: 9, fontFamily: fonts.body, fontSize: 12, color: theme.textMuted, textAlign: 'right' }, name: { width: 330, textAlign: 'left' }, leagueName: { color: theme.textPrimary, fontFamily: fonts.bodySemiBold }, country: { color: theme.textMuted, fontFamily: fonts.body, fontSize: 10 }, rate: { color: theme.accentGreen, fontFamily: fonts.bodySemiBold }, teamRow: { paddingLeft: 30 }, teamName: { color: theme.textMuted }, empty: { padding: spacing.md, color: theme.textMuted }, note: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted, lineHeight: 17, marginTop: spacing.sm },
+  resultsHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, marginTop: spacing.sm },
+  coverage: { fontFamily: fonts.body, fontSize: 12, color: theme.textMuted, marginTop: 4 }, sortBadge: { fontFamily: fonts.bodySemiBold, fontSize: 10, color: theme.accentGreen, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: 'rgba(0,180,120,0.1)' },
+  tableScroll: { width: '100%', marginTop: spacing.xs }, table: { width: '100%', minWidth: 580, borderWidth: 1, borderColor: theme.border, borderRadius: 10, overflow: 'hidden' }, tableWide: { minWidth: 0 }, tableNarrow: { minWidth: 520 },
+  row: { flexDirection: 'row', alignItems: 'center', minHeight: 44, paddingHorizontal: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: theme.border }, header: { backgroundColor: theme.surface }, alt: { backgroundColor: 'rgba(255,255,255,0.025)' },
+  teamBuilder: { padding: spacing.md, borderBottomWidth: 1, borderColor: theme.border, backgroundColor: 'rgba(255,255,255,0.015)' },
+  cell: { width: 96, paddingVertical: 10, fontFamily: fonts.body, fontSize: 12, color: theme.textMuted, textAlign: 'right' }, name: { flex: 1, minWidth: 220, textAlign: 'left' }, leagueName: { color: theme.textPrimary, fontFamily: fonts.bodySemiBold }, country: { color: theme.textMuted, fontFamily: fonts.body, fontSize: 10 }, rate: { color: theme.accentGreen, fontFamily: fonts.bodySemiBold }, teamRow: { paddingLeft: 30 }, teamName: { color: theme.textMuted }, empty: { padding: spacing.md, color: theme.textMuted }, note: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted, lineHeight: 17, marginTop: spacing.sm },
 });
