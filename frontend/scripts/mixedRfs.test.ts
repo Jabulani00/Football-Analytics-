@@ -50,6 +50,10 @@ const scoring15 = result.ordinary.find((entry) => entry.key === 'scoring_15');
 if (!scoring15 || scoring15.last.score !== '1-0' || scoring15.rate !== 80) {
   throw new Error('RFS must flag a team scoring fewer than 2 goals after scoring 2+ in 80% of its five-game sample.');
 }
+const over25 = result.ordinary.find((entry) => entry.key === 'over25');
+if (!over25 || over25.rate !== 60) {
+  throw new Error('Mixed RFS must apply the 55% threshold and include a latest failure at a 60% usual rate.');
+}
 
 const firstHalf = buildMixedRfs([ordinary], [series], 'firsthalf')[0];
 if (firstHalf.ordinary.some((entry) => entry.key === 'over15')) {

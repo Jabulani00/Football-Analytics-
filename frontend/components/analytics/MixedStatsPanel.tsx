@@ -101,6 +101,10 @@ function ordinaryRfsLabels(rfs?: TeamRfsRows): string {
   return (rfs?.ordinary ?? []).map((row) => [row.label, ...row.alsoLabels].join(' + ')).join(' · ') || 'No recent ordinary failure';
 }
 
+function seriesRfsLabels(rfs?: TeamRfsRows): string {
+  return (rfs?.series ?? []).map((row) => `${row.label}${row.without ? ' without' : ''} · failed streak: ${row.run} · reset: 0`).join(' · ') || 'No broken series';
+}
+
 export default function MixedStatsPanel({
   mode = 'mixed',
   sources,
@@ -224,7 +228,7 @@ export default function MixedStatsPanel({
 
       {mode === 'rfs' ? <View style={styles.rfsPanel}>
         <Text style={styles.rfsTitle}>RFS · RECENT FAILURE SIGNAL</Text>
-        <Text style={styles.copy}>An ordinary RFS appears when a stat normally lands in the green band (at least 65% over 5+ matches) but failed in the latest match. Series RFS marks a qualifying run broken by the latest match. Calculations follow this table’s period, venue and match window.</Text>
+        <Text style={styles.copy}>An ordinary RFS appears when a stat normally lands in the green band (at least 55% over 5+ matches) but failed in the latest match. Series RFS marks a qualifying run broken by the latest match. Calculations follow this table’s period, venue and match window.</Text>
         <View style={styles.options}>
           {([
             ['rfs_ordinary', 'RFS · Ordinary'],
@@ -274,7 +278,7 @@ export default function MixedStatsPanel({
         {!loading && rfsView === 'series_rfs' ? (
           <ScrollView horizontal showsHorizontalScrollIndicator style={styles.tableScroll}>
             <View style={styles.rfsTable}>
-              <View style={styles.rfsRow}><RfsCell label="Team" head team />{sources.series[0]?.metrics.map((metric) => <RfsCell key={metric.key} label={metric.label} head />)}</View>
+              <View style={styles.rfsRow}><RfsCell label="Team" head team />{sources.series[0]?.metrics.map((metric) => <RfsCell key={metric.key} label={metric.label} head />)}<RfsCell label="RFS · broken run" head /></View>
               {sources.series.map((teamRow, index) => (
                 <View key={teamRow.team} style={[styles.rfsRow, index % 2 === 1 && styles.alt]}>
                   <RfsCell label={teamRow.team} team />
@@ -282,6 +286,7 @@ export default function MixedStatsPanel({
                     const broken = rfsByTeam.get(teamRow.team)?.series.find((entry) => entry.key === metric.key);
                     return <RfsCell key={metric.key} label={formatSeriesRfsValue(metric.value, broken)} failure={Boolean(broken)} />;
                   })}
+                  <RfsCell label={seriesRfsLabels(rfsByTeam.get(teamRow.team))} failure={Boolean(rfsByTeam.get(teamRow.team)?.series.length)} />
                 </View>
               ))}
             </View>

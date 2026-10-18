@@ -8,6 +8,9 @@ export type TeamRfsRows = {
   series: RfsSeriesRow[];
 };
 
+/** The Mixed Stats RFS panel uses the threshold requested for its calls. */
+export const MIXED_RFS_MIN_RATE = 55;
+
 /** Put the broken run beside the zeroed series value in its own table cell. */
 export function formatSeriesRfsValue(value: number | null, broken?: RfsSeriesRow): string {
   if (broken) return `${value ?? 0} (failed streak: ${broken.run})`;
@@ -61,7 +64,7 @@ export function buildMixedRfs(
   return [...teams].map((team) => {
     const ordinaryResults = resultsFor(ordinaryRows.find((row) => row.team === team) ?? { team, metrics: [] }, period);
     const seriesResults = resultsFor(seriesRows.find((row) => row.team === team) ?? { team, metrics: [] }, period);
-    const ordinary = buildFixtureRfs({ homeResults: ordinaryResults, awayResults: [] }).ordinary;
+    const ordinary = buildFixtureRfs({ homeResults: ordinaryResults, awayResults: [], minRate: MIXED_RFS_MIN_RATE }).ordinary;
     const series = buildFixtureRfs({ homeResults: seriesResults, awayResults: [] }).series;
     return { team, ordinary, series };
   });
