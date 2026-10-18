@@ -1,4 +1,4 @@
-import { buildMixedRfs, describeBrokenSeries } from '../utils/mixedRfs';
+import { buildMixedRfs, formatSeriesRfsValue } from '../utils/mixedRfs';
 import type { TeamStatsRow } from '../types/analytics';
 import type { CountedGame } from '../utils/countedGames';
 
@@ -69,9 +69,9 @@ const brokenWinRun = row('Team', [
   game(6, 600, 2, 0, 1, 0),
 ]);
 const brokenWin = buildMixedRfs([brokenWinRun], [brokenWinRun], 'fulltime')[0].series.find((entry) => entry.key === 'w');
-const brokenWinDescription = brokenWin ? describeBrokenSeries(brokenWin) : '';
-if (!brokenWin || brokenWin.run !== 4 || !brokenWinDescription.includes('failed streak: 4') || !brokenWinDescription.includes('current streak: 0')) {
-  throw new Error('Series RFS must preserve the failed streak length and show the reset current streak as zero.');
+const failedStreakCell = formatSeriesRfsValue(0, brokenWin);
+if (!brokenWin || brokenWin.run !== 4 || failedStreakCell !== '0 (failed streak: 4)') {
+  throw new Error('Series RFS must place the failed streak beside the reset zero in that series cell.');
 }
 
 console.log('✓ Mixed RFS uses the newest match, selected period, and existing ordinary thresholds.');

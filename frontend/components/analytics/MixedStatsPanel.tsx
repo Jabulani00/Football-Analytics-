@@ -4,7 +4,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import { columnsForFamily, sortByPrimary } from '@/utils/statsTableAdapter';
 import type { StatFamily, TeamStatsRow, TimePeriod } from '@/types/analytics';
 import { halfGoalShares, secondHalfLeagueRates, secondHalfTeamRates } from '@/utils/mixedStats';
-import { buildMixedRfs, describeBrokenSeries, type TeamRfsRows } from '@/utils/mixedRfs';
+import { buildMixedRfs, formatSeriesRfsValue, type TeamRfsRows } from '@/utils/mixedRfs';
 import { fonts, spacing, theme } from '@/styles/theme';
 
 type SourceKey = 'ordinary' | 'ppg' | 'series' | 'ft_only' | 'half_only';
@@ -99,10 +99,6 @@ type RfsView = 'rfs_ordinary' | 'ordinary_rfs' | 'series_rfs';
 
 function ordinaryRfsLabels(rfs?: TeamRfsRows): string {
   return (rfs?.ordinary ?? []).map((row) => [row.label, ...row.alsoLabels].join(' + ')).join(' · ') || 'No recent ordinary failure';
-}
-
-function seriesRfsLabels(rfs?: TeamRfsRows): string {
-  return (rfs?.series ?? []).map(describeBrokenSeries).join(' · ') || 'No broken series';
 }
 
 export default function MixedStatsPanel({
@@ -278,12 +274,14 @@ export default function MixedStatsPanel({
         {!loading && rfsView === 'series_rfs' ? (
           <ScrollView horizontal showsHorizontalScrollIndicator style={styles.tableScroll}>
             <View style={styles.rfsTable}>
-              <View style={styles.rfsRow}><RfsCell label="Team" head team />{sources.series[0]?.metrics.map((metric) => <RfsCell key={metric.key} label={metric.label} head />)}<RfsCell label="RFS · broken run" head /></View>
+              <View style={styles.rfsRow}><RfsCell label="Team" head team />{sources.series[0]?.metrics.map((metric) => <RfsCell key={metric.key} label={metric.label} head />)}</View>
               {sources.series.map((teamRow, index) => (
                 <View key={teamRow.team} style={[styles.rfsRow, index % 2 === 1 && styles.alt]}>
                   <RfsCell label={teamRow.team} team />
-                  {teamRow.metrics.map((metric) => <RfsCell key={metric.key} label={metric.value == null ? '—' : `${metric.value}`} failure={rfsByTeam.get(teamRow.team)?.series.some((entry) => entry.key === metric.key)} />)}
-                  <RfsCell label={seriesRfsLabels(rfsByTeam.get(teamRow.team))} failure={Boolean(rfsByTeam.get(teamRow.team)?.series.length)} />
+                  {teamRow.metrics.map((metric) => {
+                    const broken = rfsByTeam.get(teamRow.team)?.series.find((entry) => entry.key === metric.key);
+                    return <RfsCell key={metric.key} label={formatSeriesRfsValue(metric.value, broken)} failure={Boolean(broken)} />;
+                  })}
                 </View>
               ))}
             </View>
