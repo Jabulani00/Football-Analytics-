@@ -4,7 +4,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import { columnsForFamily, sortByPrimary } from '@/utils/statsTableAdapter';
 import type { StatFamily, TeamStatsRow, TimePeriod } from '@/types/analytics';
 import { halfGoalShares, secondHalfLeagueRates, secondHalfTeamRates } from '@/utils/mixedStats';
-import { buildMixedRfs, type TeamRfsRows } from '@/utils/mixedRfs';
+import { buildMixedRfs, describeBrokenSeries, type TeamRfsRows } from '@/utils/mixedRfs';
 import { fonts, spacing, theme } from '@/styles/theme';
 
 type SourceKey = 'ordinary' | 'ppg' | 'series' | 'ft_only' | 'half_only';
@@ -102,7 +102,7 @@ function ordinaryRfsLabels(rfs?: TeamRfsRows): string {
 }
 
 function seriesRfsLabels(rfs?: TeamRfsRows): string {
-  return (rfs?.series ?? []).map((row) => `${row.label}${row.without ? ' without' : ''} · ${row.run}`).join(' · ') || 'No broken series';
+  return (rfs?.series ?? []).map(describeBrokenSeries).join(' · ') || 'No broken series';
 }
 
 export default function MixedStatsPanel({

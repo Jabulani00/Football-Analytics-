@@ -8,6 +8,11 @@ export type TeamRfsRows = {
   series: RfsSeriesRow[];
 };
 
+/** Keep the completed run length visible after the live streak resets. */
+export function describeBrokenSeries(row: RfsSeriesRow): string {
+  return `${row.label}${row.without ? ' without' : ''} · failed streak: ${row.run} · current streak: 0`;
+}
+
 function resultsFor(row: TeamStatsRow, period: TimePeriod): TeamResult[] {
   return (row.games ?? [])
     .flatMap((game): TeamResult[] => {

@@ -1,4 +1,4 @@
-import { buildMixedRfs } from '../utils/mixedRfs';
+import { buildMixedRfs, describeBrokenSeries } from '../utils/mixedRfs';
 import type { TeamStatsRow } from '../types/analytics';
 import type { CountedGame } from '../utils/countedGames';
 
@@ -59,6 +59,19 @@ if (firstHalf.ordinary.some((entry) => entry.key === 'over15')) {
 const secondHalf = buildMixedRfs([ordinary], [series], 'secondhalf')[0];
 if (secondHalf.ordinary.some((entry) => entry.key === 'over15')) {
   throw new Error('Second-half RFS must use second-half goals; the latest match had one second-half goal.');
+}
+
+const brokenWinRun = row('Team', [
+  game(10, 1000, 1, 1, 0, 0),
+  game(9, 900, 2, 0, 1, 0),
+  game(8, 800, 1, 0, 1, 0),
+  game(7, 700, 3, 1, 1, 0),
+  game(6, 600, 2, 0, 1, 0),
+]);
+const brokenWin = buildMixedRfs([brokenWinRun], [brokenWinRun], 'fulltime')[0].series.find((entry) => entry.key === 'w');
+const brokenWinDescription = brokenWin ? describeBrokenSeries(brokenWin) : '';
+if (!brokenWin || brokenWin.run !== 4 || !brokenWinDescription.includes('failed streak: 4') || !brokenWinDescription.includes('current streak: 0')) {
+  throw new Error('Series RFS must preserve the failed streak length and show the reset current streak as zero.');
 }
 
 console.log('✓ Mixed RFS uses the newest match, selected period, and existing ordinary thresholds.');
