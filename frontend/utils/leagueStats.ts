@@ -17,7 +17,8 @@ export type LeagueStatGroupId =
   | 'result'
   | 'scoring'
   | 'conceding'
-  | 'goals';
+  | 'goals'
+  | 'firstGoal';
 
 export const LEAGUE_STAT_GROUPS: { id: LeagueStatGroupId; label: string }[] = [
   { id: 'btts', label: 'BTTS & Nil' },
@@ -27,6 +28,7 @@ export const LEAGUE_STAT_GROUPS: { id: LeagueStatGroupId; label: string }[] = [
   { id: 'scoring', label: 'Scoring' },
   { id: 'conceding', label: 'Conceding' },
   { id: 'goals', label: 'Goal averages' },
+  { id: 'firstGoal', label: 'First goal' },
 ];
 
 export type LeagueStatDef = {
@@ -40,9 +42,8 @@ export type LeagueStatDef = {
 };
 
 /**
- * The §4.7 stat set: the 34 Ordinary stats of §4.1 minus SC% / Conc% (excluded
- * by the spec) and minus the six that need per-goal timing the results feed does
- * not carry (`NOT_DERIVABLE` in services/statsBuilder).
+ * The league stat set projects available ordinary results metrics, excluding
+ * SC% / Conc% and metrics that still require exact per-goal timing.
  */
 export const LEAGUE_STAT_DEFS: LeagueStatDef[] = [
   { key: 'btts_yes', label: 'BTTS - Yes', short: 'BTTS Y', group: 'btts' },
@@ -61,6 +62,9 @@ export const LEAGUE_STAT_DEFS: LeagueStatDef[] = [
   { key: 'under25', label: 'Under 2.5', short: 'U2.5', group: 'unders' },
   { key: 'under35', label: 'Under 3.5', short: 'U3.5', group: 'unders' },
   { key: 'under45', label: 'Under 4.5', short: 'U4.5', group: 'unders' },
+
+  { key: 'scored_first', label: 'Scored first (SF)', short: 'SF', group: 'firstGoal' },
+  { key: 'conceded_first', label: 'Conceded first (CF)', short: 'CF', group: 'firstGoal' },
 
   { key: 'w_pct', label: 'W — won', short: 'W', group: 'result' },
   { key: 'd_pct', label: 'D — drawn', short: 'D', group: 'result' },
@@ -103,6 +107,8 @@ export type LeagueStatRank = {
   value: number;
   /** Finished games behind the value. */
   sample: number;
+  /** For SF/CF: games whose first-goal order was determinable. */
+  eligibleSample?: number;
   /** value − league average, at the average's precision. */
   diff: number;
   side: LeagueStatSide;
@@ -118,6 +124,7 @@ export type LeagueAverage = {
   teams: number;
   /** Smallest per-team sample among them. */
   minSample: number;
+  eligibleSample?: number;
 };
 
 export type LeagueStatTable = {
@@ -178,6 +185,9 @@ export function buildLeagueStatTable(opts: {
         team: String(row.team_name),
         value: round1(value),
         sample: numberAt(row, 'sample_size') ?? 0,
+        eligibleSample: def.key === 'scored_first' || def.key === 'conceded_first'
+          ? numberAt(row, 'first_goal_sample') ?? 0
+          : undefined,
         level: levelAt(row, def, value),
       };
     })
@@ -197,6 +207,7 @@ export function buildLeagueStatTable(opts: {
       rank: i + 1,
       value: e.value,
       sample: e.sample,
+      eligibleSample: e.eligibleSample,
       diff,
       side: diff > 0 ? 'above' : diff < 0 ? 'below' : 'level',
       level: e.level,
@@ -216,6 +227,9 @@ export function buildLeagueStatTable(opts: {
               : complianceFromPercent(averageValue),
           teams: entries.length,
           minSample: entries.reduce((lo, e) => Math.min(lo, e.sample), Number.POSITIVE_INFINITY),
+          eligibleSample: def.key === 'scored_first' || def.key === 'conceded_first'
+            ? numberAt(opts.leagueRow ?? ({} as TeamStatRow), 'first_goal_sample') ?? undefined
+            : undefined,
         };
 
   return {

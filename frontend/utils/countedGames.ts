@@ -13,6 +13,8 @@ export type CountedGame = {
   /** Team-perspective goal counts retained for cross-period mixed statistics. */
   ftFor?: number;
   ftAgainst?: number;
+  /** Team-relative first-goal evidence; unknown is retained when order cannot be proven. */
+  firstGoal?: 'team' | 'opponent' | 'none' | 'unknown';
   htFor?: number | null;
   htAgainst?: number | null;
   /** This team was behind at half-time. */

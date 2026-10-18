@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import SubTabBar from '@/components/shared/SubTabBar';
+import { firstGoalSide } from '@/utils/firstGoal';
 import type { H2HMatch } from '@/services/oddAlerts';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 import {
@@ -100,6 +101,7 @@ function H2HRow({
   const bg = outcomeBg(outcome);
   const homeHighlight = teamsMatch(match.home_name, focusTeam);
   const awayHighlight = teamsMatch(match.away_name, focusTeam);
+  const first = firstGoalSide(match.home_goals, match.away_goals, match.ht_score);
 
   return (
     <View style={styles.row}>
@@ -140,6 +142,13 @@ function H2HRow({
         {match.over_25 ? <Tag label="O2.5" /> : null}
         {match.over_35 ? <Tag label="O3.5" /> : null}
         <Tag label={`${match.total_goals} goals`} muted />
+        {match.home_goals != null && match.away_goals != null ? (
+          <>
+            <GoalTag label={`SF ${first === 'home' ? match.home_name : first === 'away' ? match.away_name : first === 'none' ? 'NONE' : '—'}`} tone={first === 'unknown' || first === 'none' ? 'neutral' : 'good'} />
+            <GoalTag label={`CF ${first === 'home' ? match.away_name : first === 'away' ? match.home_name : first === 'none' ? 'NONE' : '—'}`} tone={first === 'unknown' || first === 'none' ? 'neutral' : 'bad'} />
+            <GoalTag label={`NG ${match.home_goals + match.away_goals === 0 ? 'YES' : 'NO'}`} tone={match.home_goals + match.away_goals === 0 ? 'good' : 'neutral'} />
+          </>
+        ) : null}
       </View>
 
       {match.stats?.possession?.home != null || match.stats?.corners?.home != null ? (
@@ -161,6 +170,14 @@ function H2HRow({
           ) : null}
         </View>
       ) : null}
+    </View>
+  );
+}
+
+function GoalTag({ label, tone }: { label: string; tone: 'good' | 'bad' | 'neutral' }) {
+  return (
+    <View style={[styles.goalTag, tone === 'good' ? styles.goalTagGood : tone === 'bad' ? styles.goalTagBad : styles.goalTagNeutral]}>
+      <Text style={styles.goalTagText}>{label}</Text>
     </View>
   );
 }
@@ -732,6 +749,11 @@ const styles = StyleSheet.create({
   tagMuted: {
     backgroundColor: theme.surfaceMuted,
   },
+  goalTag: { borderWidth: 1, borderRadius: 5, paddingHorizontal: 5, paddingVertical: 2 },
+  goalTagGood: { borderColor: 'rgba(4,120,87,0.28)', backgroundColor: 'rgba(16,185,129,0.10)' },
+  goalTagBad: { borderColor: 'rgba(185,28,28,0.24)', backgroundColor: 'rgba(239,68,68,0.08)' },
+  goalTagNeutral: { borderColor: theme.border, backgroundColor: theme.surfaceMuted },
+  goalTagText: { fontFamily: fonts.bodySemiBold, fontSize: 8, color: theme.textPrimary },
   tagText: {
     fontFamily: fonts.body,
     fontSize: 10,

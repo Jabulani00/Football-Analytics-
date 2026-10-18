@@ -4,6 +4,7 @@ import CountryFlag from '@/components/shared/CountryFlag';
 import LivePulse from '@/components/shared/LivePulse';
 import TeamLogo from '@/components/shared/TeamLogo';
 import StreamlineChip from '@/components/scores/StreamlineChip';
+import { firstGoalSide } from '@/utils/firstGoal';
 import type { Fixture, FixtureKind } from '@/services/oddAlerts';
 import type { StreamName } from '@/utils/powerDynamicsEngine';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
@@ -56,6 +57,10 @@ export default function ScoresMatchRow({
   const isLive = fixture.status === 'LIVE' || fixture.status === 'HT';
   const upcoming = fixture.status === 'NS' || fixture.status === 'LIVE' || fixture.status === 'HT';
   const streamCol = showStreamline ?? upcoming;
+  const first = fixture.status === 'FT'
+    ? firstGoalSide(fixture.home.goals, fixture.away.goals, fixture.htScore)
+    : 'unknown';
+  const hasFinishedScore = fixture.status === 'FT' && fixture.home.goals != null && fixture.away.goals != null;
 
   return (
     <Pressable
@@ -65,6 +70,7 @@ export default function ScoresMatchRow({
         styles.row,
         (pressed || (Platform.OS === 'web' && hovered)) && onPress ? styles.rowHover : null,
       ]}>
+      <View style={styles.mainRow}>
       <View style={styles.statusCol}>
         <StatusColumn fixture={fixture} />
       </View>
@@ -96,8 +102,20 @@ export default function ScoresMatchRow({
         </Text>
       </View>
       {streamCol ? <StreamlineChip stream={stream} /> : null}
+      </View>
+      {hasFinishedScore ? (
+        <View style={styles.markers}>
+          <Marker label={`SF ${first === 'home' ? fixture.home.name : first === 'away' ? fixture.away.name : first === 'none' ? 'NONE' : '—'}`} state={first === 'unknown' ? 'unknown' : first === 'none' ? 'neutral' : 'yes'} />
+          <Marker label={`CF ${first === 'home' ? fixture.away.name : first === 'away' ? fixture.home.name : first === 'none' ? 'NONE' : '—'}`} state={first === 'unknown' ? 'unknown' : first === 'none' ? 'neutral' : 'no'} />
+          <Marker label={`NG ${home + away === 0 ? 'YES' : 'NO'}`} state={home + away === 0 ? 'yes' : 'no'} />
+        </View>
+      ) : null}
     </Pressable>
   );
+}
+
+function Marker({ label, state }: { label: string; state: 'yes' | 'no' | 'neutral' | 'unknown' }) {
+  return <Text style={[styles.marker, state === 'yes' ? styles.markerYes : state === 'no' ? styles.markerNo : state === 'neutral' ? styles.markerNeutral : styles.markerUnknown]}>{label}</Text>;
 }
 
 function TeamSide({ name, kind }: { name: string; kind: FixtureKind }) {
@@ -109,8 +127,8 @@ function TeamSide({ name, kind }: { name: string; kind: FixtureKind }) {
 
 const styles = StyleSheet.create({
   row: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: 'column',
+    alignItems: 'stretch',
     paddingVertical: spacing.sm,
     paddingLeft: spacing.sm,
     paddingRight: spacing.sm,
@@ -121,6 +139,13 @@ const styles = StyleSheet.create({
       ? ({ transition: 'background-color 120ms ease' } as object)
       : {}),
   },
+  mainRow: { flexDirection: 'row', alignItems: 'center', minHeight: 36 },
+  markers: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', gap: 4, paddingTop: 3 },
+  marker: { overflow: 'hidden', borderRadius: 5, borderWidth: 1, paddingHorizontal: 5, paddingVertical: 1, fontFamily: fonts.bodySemiBold, fontSize: 8 },
+  markerYes: { color: '#047857', borderColor: 'rgba(4,120,87,0.28)', backgroundColor: 'rgba(16,185,129,0.10)' },
+  markerNo: { color: '#b91c1c', borderColor: 'rgba(185,28,28,0.24)', backgroundColor: 'rgba(239,68,68,0.08)' },
+  markerNeutral: { color: theme.textMuted, borderColor: theme.border, backgroundColor: theme.surfaceMuted },
+  markerUnknown: { color: theme.textFaint, borderColor: theme.border, backgroundColor: theme.surface },
   rowHover: {
     backgroundColor: theme.surfaceHover,
   },

@@ -92,7 +92,12 @@ eq('A under25', A.under25, 33.3);
 eq('A sc_pct signal', A.sc_pct_signal, 'green'); // 66.7 >= 65
 eq('A w_pct signal', A.w_pct_signal, 'red');     // 33.3 < 45
 eq('A sc_avg signal', A.sc_avg_signal, '');      // averages have no signal
-eq('A scored_first is not-derivable', Number.isNaN(A.scored_first as number), true);
+eq('A scored_first from determinable FT order', A.scored_first, 50);
+eq('A conceded_first from determinable FT order', A.conceded_first, 0);
+eq('A first-goal eligible sample', A.first_goal_sample, 2);
+const leagueFirstGoal = exp.tables['league_avg_ft_overall'][0];
+eq('league SF uses determinable team-match sample', leagueFirstGoal.scored_first, 25);
+eq('league CF uses determinable team-match sample', leagueFirstGoal.conceded_first, 25);
 
 // HT period for A: HT (gf,ga) = (1,0),(0,0),(2,1)
 const Aht = exp.tables['ordinary_ht_overall'].find((r) => r.team_name === 'A')!;

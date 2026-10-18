@@ -22,6 +22,7 @@ import { complianceFromPercent } from '@/utils/compliance';
 import { bandOf } from '@/utils/leagueTables';
 import { SERIES_DEFS } from '@/utils/fixtureSeries';
 import type { TeamResult } from '@/utils/teamResults';
+import { firstGoalSide } from '@/utils/firstGoal';
 // Type-only (stripped at runtime) — keeps this module free of RN imports.
 import type { RawFixture } from '@/services/oddAlerts';
 
@@ -39,13 +40,14 @@ const WINDOWS: Record<string, number> = {
 
 type Period = (typeof PERIODS)[number];
 
-/** The 34 ordinary stats (order matches backend/schema.py ORDINARY_STATS). */
+/** Ordinary calculations exposed by the frontend, including derived SF/CF rates. */
 const ORDINARY_STATS = [
   'sc_pct', 'conc_pct', 'sc_avg', 'conc_avg', 'btts_yes', 'btts_no', 'cs_pct',
   'avg_goals', 'fts_pct', 'w_pct', 'd_pct', 'l_pct', 'over05', 'over15',
   'over25', 'over35', 'over45', 'under05', 'under15', 'under25', 'under35',
   'under45', 'scoring_05', 'conceding_05', 'scoring_15', 'conceding_15',
   'scoring_25', 'conceding_25', 'scored_first', 'handicap', 'early_goals_1h',
+  'conceded_first',
   'early_goals_2h', 'early_goals_conceded', 'late_goals',
 ] as const;
 
@@ -53,11 +55,11 @@ const ORDINARY_STATS = [
 const AVERAGE_STATS = new Set(['sc_avg', 'conc_avg', 'avg_goals']);
 
 /**
- * Stats that need per-goal timing/order, which `/fixtures/between` does NOT
+ * Stats that need exact per-goal timing, which `/fixtures/between` does NOT
  * provide (see docs/ODDALERTS_API_GAPS.md). Emitted as null, honestly.
  */
 const NOT_DERIVABLE = new Set([
-  'scored_first', 'handicap', 'early_goals_1h', 'early_goals_2h',
+  'handicap', 'early_goals_1h', 'early_goals_2h',
   'early_goals_conceded', 'late_goals',
 ]);
 
@@ -72,6 +74,8 @@ type TeamMatch = {
   gfHt: number; gaHt: number; // first-half
   /** False when the feed had no half-time score. Those matches stay out of half rates. */
   htKnown: boolean;
+  /** Team-relative order, derived only when final/half-time scores prove it. */
+  firstGoal: 'team' | 'opponent' | 'none' | 'unknown';
   id: number;
   match: string;
   score: string;
@@ -179,6 +183,16 @@ function computeStats(matches: TeamMatch[], period: Period): {
   values.conceding_05 = rate(hits((g) => g.ga >= 1), n);
   values.conceding_15 = rate(hits((g) => g.ga >= 2), n);
   values.conceding_25 = rate(hits((g) => g.ga >= 3), n);
+
+  const firstGoalKnown = period === 'ft' ? counted.filter((m) => m.firstGoal !== 'unknown') : [];
+  const firstGoalSample = firstGoalKnown.length;
+  values.scored_first = firstGoalSample
+    ? rate(firstGoalKnown.filter((m) => m.firstGoal === 'team').length, firstGoalSample)
+    : null;
+  values.conceded_first = firstGoalSample
+    ? rate(firstGoalKnown.filter((m) => m.firstGoal === 'opponent').length, firstGoalSample)
+    : null;
+  values.first_goal_sample = period === 'ft' ? firstGoalSample : 0;
 
   return { values, sampleSize: n };
 }
@@ -416,6 +430,7 @@ function countedFrom(matches: TeamMatch[]): CountedGame[] {
     score: match.score,
     detail: `${match.competition}${match.isHome ? ' · Home' : ' · Away'}`,
     htKnown: match.htKnown,
+    firstGoal: match.firstGoal,
     halfValid: halfIsUsable(match),
     ftFor: match.gfFt,
     ftAgainst: match.gaFt,
@@ -429,7 +444,7 @@ function countedFrom(matches: TeamMatch[]): CountedGame[] {
 const RATE_KEYS = [
   'sc_pct', 'conc_pct', 'btts_yes', 'btts_no', 'cs_pct', 'fts_pct', 'w_pct', 'd_pct', 'l_pct',
   'over05', 'over15', 'over25', 'over35', 'over45', 'under05', 'under15', 'under25', 'under35', 'under45',
-  'scoring_05', 'conceding_05', 'scoring_15', 'conceding_15', 'scoring_25', 'conceding_25',
+  'scoring_05', 'conceding_05', 'scoring_15', 'conceding_15', 'scoring_25', 'conceding_25', 'scored_first', 'conceded_first',
 ] as const;
 
 const SUM_KEYS = ['sc_avg', 'conc_avg', 'avg_goals'] as const;
@@ -462,19 +477,29 @@ const RATE_PREDICATE: Record<(typeof RATE_KEYS)[number], (g: Goal) => boolean> =
   conceding_05: (g) => g.ga >= 1,
   conceding_15: (g) => g.ga >= 2,
   conceding_25: (g) => g.ga >= 3,
+  scored_first: () => false,
+  conceded_first: () => false,
 };
 
-type LeaguePool = { games: number; hits: Record<string, number>; sums: Record<string, number> };
+type LeaguePool = { games: number; hits: Record<string, number>; sums: Record<string, number>; firstGoalSample: number; firstGoalHits: Record<string, number> };
 
 function emptyPool(): LeaguePool {
-  return { games: 0, hits: {}, sums: {} };
+  return { games: 0, hits: {}, sums: {}, firstGoalSample: 0, firstGoalHits: {} };
 }
 
 function addToPool(pool: LeaguePool, matches: TeamMatch[], period: Period) {
   const goals = matches.map((match) => periodGoals(match, period));
   pool.games += goals.length;
   for (const key of RATE_KEYS) {
-    pool.hits[key] = (pool.hits[key] ?? 0) + goals.filter(RATE_PREDICATE[key]).length;
+    if (key !== 'scored_first' && key !== 'conceded_first') {
+      pool.hits[key] = (pool.hits[key] ?? 0) + goals.filter(RATE_PREDICATE[key]).length;
+    }
+  }
+  if (period === 'ft') {
+    const known = matches.filter((match) => match.firstGoal !== 'unknown');
+    pool.firstGoalSample += known.length;
+    pool.firstGoalHits.scored_first = (pool.firstGoalHits.scored_first ?? 0) + known.filter((m) => m.firstGoal === 'team').length;
+    pool.firstGoalHits.conceded_first = (pool.firstGoalHits.conceded_first ?? 0) + known.filter((m) => m.firstGoal === 'opponent').length;
   }
   for (const match of goals) {
     pool.sums.sc_avg = (pool.sums.sc_avg ?? 0) + match.gf;
@@ -563,6 +588,7 @@ export function buildStatsTables(opts: BuildOptions): TeamStatsExport {
     const ag = fx.away_goals as number;
     const ht = parseHtScore(fx.ht_score);
     const htKnown = ht != null;
+    const firstScorer = firstGoalSide(hg, ag, fx.ht_score);
     const [hHt, aHt] = ht ?? [0, 0];
     const score = `${hg}-${ag}`;
     const match = `${fx.home_name} ${score} ${fx.away_name}`;
@@ -570,11 +596,13 @@ export function buildStatsTables(opts: BuildOptions): TeamStatsExport {
     add(fx.home_name, league, fx.home_id, {
       teamId: fx.home_id,
       isHome: true, opponentId: fx.away_id, opponentName: fx.away_name, unix: fx.unix, gfFt: hg, gaFt: ag, gfHt: hHt, gaHt: aHt, htKnown,
+      firstGoal: firstScorer === 'home' ? 'team' : firstScorer === 'away' ? 'opponent' : firstScorer,
       id: fx.id, match, score, competition,
     });
     add(fx.away_name, league, fx.away_id, {
       teamId: fx.away_id,
       isHome: false, opponentId: fx.home_id, opponentName: fx.home_name, unix: fx.unix, gfFt: ag, gaFt: hg, gfHt: aHt, gaHt: hHt, htKnown,
+      firstGoal: firstScorer === 'away' ? 'team' : firstScorer === 'home' ? 'opponent' : firstScorer,
       id: fx.id, match, score, competition,
     });
   }
@@ -676,6 +704,13 @@ export function buildStatsTables(opts: BuildOptions): TeamStatsExport {
       const avg: Record<string, number | null> = {};
       for (const key of ORDINARY_STATS) {
         if (NOT_DERIVABLE.has(key)) { avg[key] = null; continue; }
+        if (key === 'scored_first' || key === 'conceded_first') {
+          avg[key] = period === 'ft' && pool.firstGoalSample
+            ? rate(pool.firstGoalHits[key] ?? 0, pool.firstGoalSample)
+            : null;
+          avg.first_goal_sample = period === 'ft' ? pool.firstGoalSample : 0;
+          continue;
+        }
         if ((SUM_KEYS as readonly string[]).includes(key)) {
           avg[key] = pool.games ? round1((pool.sums[key] ?? 0) / pool.games) : null;
           continue;

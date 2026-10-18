@@ -71,7 +71,7 @@ function StatRow({
       <Text style={styles.rank}>{row.rank}</Text>
       <Text style={[styles.team, marked && styles.teamMarked]} numberOfLines={1}>
         {row.team}
-        {row.thin ? <Text style={styles.thin}> n={row.sample}</Text> : null}
+        {row.eligibleSample != null ? <Text style={styles.thin}> n={row.eligibleSample}/{row.sample}</Text> : row.thin ? <Text style={styles.thin}> n={row.sample}</Text> : null}
       </Text>
       <View style={styles.barTrack}>
         <View
@@ -157,6 +157,11 @@ export default function LeagueStatsPanel({
               NG is 0–0 in the selected period. Team and league values are percentages of finished matches in this scope.
             </Text>
           ) : null}
+          {table.stat.key === 'scored_first' || table.stat.key === 'conceded_first' ? (
+            <Text style={styles.legend}>
+              Percent of matches with determinable first-goal order · sample shown as usable order / finished matches. Unclear order is excluded, never guessed.
+            </Text>
+          ) : null}
           {avg ? null : (
             <Text style={styles.legend}>
               How often it lands: {COMPLIANCE_RULE_TEXT}
@@ -213,13 +218,13 @@ export default function LeagueStatsPanel({
           />
 
           <Text style={styles.foot}>
-            {average ? `Average of all ${average.teams} teams · smallest sample n=${average.minSample} · ` : ''}
+            {average ? `Average of all ${average.teams} teams · smallest sample n=${average.minSample}${average.eligibleSample != null ? ` · first-goal sample n=${average.eligibleSample}` : ''} · ` : ''}
             {table.thinTeams > 0
               ? `${table.thinTeams} team${table.thinTeams === 1 ? '' : 's'} under ${MIN_LEAGUE_SAMPLE} finished games — sample shown next to the name. `
               : ''}
             Colour is how often the stat lands, not whether it is good — a high
             &quot;fails to score&quot; is still green.
-            {' '}Scored first (SF) and conceded first (CF) need first-goal order, which the league results feed does not provide; they are shown as unavailable on match rows.
+            {' '}SF (scored first), CF (conceded first) and NG (no goal) percentages use the displayed Overall/Home/Away scope.
             {error ? ` ${error}` : ''}
           </Text>
         </>

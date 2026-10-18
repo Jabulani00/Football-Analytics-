@@ -529,6 +529,8 @@ export type Fixture = {
   kind: FixtureKind;
   home: { id: number | null; name: string; goals: number | null; position: number | null };
   away: { id: number | null; name: string; goals: number | null; position: number | null };
+  /** Half-time score supplied by OddAlerts, used to determine first scorer where possible. */
+  htScore?: string | null;
   seasonId: number | null;
   /** Season name (e.g. "2024/2025") — drives season-window lookups. */
   season: string | null;
@@ -594,6 +596,7 @@ export function mapFixture(raw: RawFixture): Fixture {
       goals: raw.away_goals,
       position: raw.away_position,
     },
+    htScore: raw.ht_score,
     seasonId: raw.season_id ?? null,
     season: raw.season ?? null,
     competition: {

@@ -63,7 +63,7 @@ console.log('\nLeague stats — the §4.7 stat set');
     (k) => !(LEAGUE_STAT_EXCLUDED as readonly string[]).includes(k) && !notDerivable.has(k),
   );
 
-  check('26 stats in the set', keys.length === 26, `got ${keys.length}`);
+  check('28 stats in the set including SF and CF', keys.length === 28, `got ${keys.length}`);
   check('keys are unique', new Set(keys).size === keys.length);
   check(
     'set is Ordinary minus SC%/Conc% minus the non-derivable six',
@@ -209,8 +209,8 @@ console.log('\nLeague stats — fallbacks');
   );
 
   check(
-    'an unknown stat key returns null',
-    buildLeagueStatTable({ statKey: 'scored_first', teamRows: rows }) === null,
+    'SF is rankable when the builder supplies it',
+    buildLeagueStatTable({ statKey: 'scored_first', teamRows: rows }) !== null,
   );
   check(
     'SC% is not rankable here',

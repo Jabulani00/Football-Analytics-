@@ -71,6 +71,8 @@ export default function IncludedGamesList({
             <DragScroll fill={false} style={[styles.list, { maxHeight: Math.round(height * 0.46) }]}>
               {visible.map((game, index) => {
                 const ng = noGoalMark(game);
+                const sf = game.firstGoal === 'team' ? 'yes' : game.firstGoal === 'opponent' || game.firstGoal === 'none' ? 'no' : 'unknown';
+                const cf = game.firstGoal === 'opponent' ? 'yes' : game.firstGoal === 'team' || game.firstGoal === 'none' ? 'no' : 'unknown';
                 return <Pressable
                   key={`${game.id}-${start + index}`}
                   onPress={() => {
@@ -91,8 +93,8 @@ export default function IncludedGamesList({
                       <Text style={[styles.marker, ng === 'yes' ? styles.markerYes : ng === 'no' ? styles.markerNo : styles.markerUnknown]}>
                         NG {ng === 'yes' ? 'YES' : ng === 'no' ? 'NO' : '—'}
                       </Text>
-                      <Text style={styles.markerUnknown}>SF —</Text>
-                      <Text style={styles.markerUnknown}>CF —</Text>
+                      <Text style={[styles.marker, sf === 'yes' ? styles.markerYes : sf === 'no' ? styles.markerNo : styles.markerUnknown]}>SF {sf === 'unknown' ? '—' : sf.toUpperCase()}</Text>
+                      <Text style={[styles.marker, cf === 'yes' ? styles.markerNo : cf === 'no' ? styles.markerYes : styles.markerUnknown]}>CF {cf === 'unknown' ? '—' : cf.toUpperCase()}</Text>
                     </View>
                   </View>
                   <Text style={styles.open}>Match</Text>
@@ -164,8 +166,8 @@ const styles = StyleSheet.create({
     color: theme.textPrimary,
     backgroundColor: theme.surfaceMuted,
   },
-  markerYes: { color: theme.loss, backgroundColor: 'rgba(220, 38, 38, 0.09)' },
-  markerNo: { color: theme.textMuted },
+  markerYes: { color: '#047857', borderColor: 'rgba(4,120,87,0.28)', backgroundColor: 'rgba(16,185,129,0.10)' },
+  markerNo: { color: '#b91c1c', borderColor: 'rgba(185,28,28,0.24)', backgroundColor: 'rgba(239,68,68,0.08)' },
   markerUnknown: {
     overflow: 'hidden',
     borderRadius: 5,

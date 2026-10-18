@@ -35,7 +35,7 @@ check('ppg table includes all three current-tier metrics', ['ppg_vs_green', 'ppg
 check('series leads with the current win run', seriesCols[0] === 'w');
 check('ft-only leads with won both halves', ftCols[0] === 'won_both_halves');
 check('ordinary includes the scored percentage headline', columnsForFamily('ordinary')[0]?.key === 'sc_pct');
-check('ordinary exposes all 34 requested columns', columnsForFamily('ordinary').length === 34);
+check('ordinary exposes all 35 columns including SF and CF', columnsForFamily('ordinary').length === 35);
 check('ft-only does not repeat the ordinary win column', !ftCols.includes('w_pct'));
 check('catalogue exposes the requested 72 views', STATS_TABLES.length === 72);
 check('36 base views cover all teams and the three current league tiers', STATS_TABLES.filter((table) => table.group === 'base').length === 36 && ['all', 'green', 'yellow', 'red'].every((band) => STATS_TABLES.filter((table) => table.band === band).length === 9));

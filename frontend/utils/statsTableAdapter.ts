@@ -45,6 +45,7 @@ export const DISPLAY_STATS: Col[] = [
   { key: 'scoring_25', label: 'Scoring 2.5+' },
   { key: 'conceding_25', label: 'Conceding 2.5+' },
   { key: 'scored_first', label: 'Scored First' },
+  { key: 'conceded_first', label: 'Conceded First' },
   { key: 'handicap', label: 'Handicap' },
   { key: 'early_goals_1h', label: 'Early 1H (20m)' },
   { key: 'early_goals_2h', label: 'Early 2H (60m)' },
