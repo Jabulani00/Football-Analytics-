@@ -15,6 +15,10 @@ export type CountedGame = {
   ftAgainst?: number;
   /** Team-relative first-goal evidence; unknown is retained when order cannot be proven. */
   firstGoal?: 'team' | 'opponent' | 'none' | 'unknown';
+  teamId?: number | null;
+  opponentId?: number | null;
+  opponentName?: string;
+  isHome?: boolean;
   htFor?: number | null;
   htAgainst?: number | null;
   /** This team was behind at half-time. */
