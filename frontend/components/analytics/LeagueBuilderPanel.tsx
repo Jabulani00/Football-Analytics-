@@ -305,7 +305,7 @@ export default function LeagueBuilderPanel() {
       const away = awayLeague?.teams.find((team) => team.name === fixture.awayName);
       // Keep the minimum of five historical matches before a future call can qualify.
       return homeLeague && awayLeague && home && away && home.pct >= minTeamPct && away.pct >= minTeamPct && homeLeague.pct >= minLeaguePct && awayLeague.pct >= minLeaguePct && home.played >= 5 && away.played >= 5
-        ? [{ fixture, home, away, fit: Math.round((home.pct + away.pct + homeLeague.pct + awayLeague.pct) / 4), homeLeaguePct: homeLeague.pct, awayLeaguePct: awayLeague.pct }]
+        ? [{ fixture, home, away, fit: Math.round((home.pct + away.pct) / 2), homeLeaguePct: homeLeague.pct, awayLeaguePct: awayLeague.pct }]
         : [];
     }).sort((a, b) => b.fit - a.fit || a.fixture.unix - b.fixture.unix);
   }, [data.finished, data.upcoming, metrics, method, windowSize, teamMetrics, teamMethod, minTeamPct, minLeaguePct, requireSeries, requireGoalWithin10]);
@@ -412,7 +412,7 @@ export default function LeagueBuilderPanel() {
       {futureCalls.slice(0, 30).map(({ fixture, home, away, fit, homeLeaguePct, awayLeaguePct }) => <View key={fixture.id} style={styles.futureRow}>
         <Text style={styles.futureMatch}>{fixture.homeName} vs {fixture.awayName}</Text>
         <Text style={styles.helper}>{fixture.competitionName} · {new Date(fixture.unix * 1000).toLocaleString()}</Text>
-        <Text style={styles.rate}>{fit}% combined historical fit</Text>
+        <Text style={styles.rate}>{fit}% combined team fit</Text>
         <Text style={styles.helper}>{fixture.homeName} home {home.pct.toFixed(1)}% (n={home.played}) · {fixture.awayName} away {away.pct.toFixed(1)}% (n={away.played}) · league rates {homeLeaguePct.toFixed(1)}% / {awayLeaguePct.toFixed(1)}%</Text>
       </View>)}
       {!futureCalls.length ? <Text style={styles.helper}>No upcoming fixture currently meets the selected filters and five-match sample minimum.</Text> : null}
