@@ -151,11 +151,11 @@ console.log('\nlive sector values');
   const value = (id: string, side: 't1' | 't2') => calc.sectors.find((sector) => sector.id === id)?.[side];
   const tick = (id: string) => calc.ticks.find((row) => row.id === id);
 
-  check('Alpha is imbangi', value('imbangi', 't1') === 6);
-  check('Foxtrot is not imbangi', value('imbangi', 't2') === 0);
+  check('1st place is imbangi', value('imbangi', 't1') === 6);
+  check('6th place is not imbangi', value('imbangi', 't2') === 0);
   check('next game intense is 2', value('indlela', 't1') === 2);
   check('next game quiet is 0', value('indlela', 't2') === 0);
-  check('sudden drop is 2', value('sudden_drop', 't1') === 2 && value('sudden_drop', 't2') === 0);
+  check('sudden drop is awarded to the opponent', value('sudden_drop', 't1') === 0 && value('sudden_drop', 't2') === 2);
   check('sudden pick up is 2 for the other side', value('sudden_pickup', 't2') === 2 && value('sudden_pickup', 't1') === 0);
   check('problem causer uses the level score', value('problem_causer', 't1') === 3);
   check('yellow side keeps Y applications in core', calc.t2Yellow && calc.sectors.find((s) => s.id === 'indlela')?.coreFor.includes('t2') === true);
@@ -166,6 +166,45 @@ console.log('\nlive sector values');
   check('contested pack includes 1st only of these two', tick('contested_league')?.t1 === true && tick('contested_league')?.t2 === false);
   check('home/away strong copies the baseline', value('home_away_strong', 't1') === value('baseline', 't1'));
   check('totals include the numbered sectors', calc.calc2.t1 > calc.calc2.t2);
+}
+
+console.log('\nimbangi is 1st or 2nd only');
+{
+  const table: StandingLike[] = [
+    { rank: 1, teamId: 1, name: 'Alpha', points: 40, played: 10, zone: 'top' },
+    { rank: 2, teamId: 2, name: 'Bravo', points: 20, played: 10, zone: 'top' },
+    { rank: 3, teamId: 3, name: 'Charlie', points: 19, played: 10, zone: 'mid' },
+    { rank: 4, teamId: 4, name: 'Delta', points: 18, played: 10, zone: 'mid' },
+  ];
+  const pd = evaluatePowerDynamics({
+    table,
+    homeId: 3,
+    awayId: 2,
+    homeName: 'Charlie',
+    awayName: 'Bravo',
+    homeResults: [],
+    awayResults: [],
+  });
+  const calc = buildPowerDynamicsCalculations({
+    pd,
+    standings: table,
+    matches: [],
+    schedule: [],
+    h2hMatches: [],
+    homeName: 'Charlie',
+    awayName: 'Bravo',
+    initial: { home: null, away: null, overallHome: null, overallAway: null },
+    indlela: { t1: path(null), t2: path(null) },
+    problem: evaluateProblemCauser({ matches: [], t1Name: pd.t1.name, t2Name: pd.t2.name }),
+    swing: { t1: swing(true), t2: swing(true) },
+    loss: { t1: streak(0, false), t2: streak(0, false) },
+    win: { t1: streak(0, false), t2: streak(0, false) },
+  });
+  const imbangi = calc.sectors.find((sector) => sector.id === 'imbangi');
+  const drop = calc.sectors.find((sector) => sector.id === 'sudden_drop');
+  check('2nd place is imbangi even with a wide gap', pd.t1.rank === 2 && imbangi?.t1 === 6);
+  check('3rd place is not imbangi even when the neighbour is close', pd.t2.rank === 3 && imbangi?.t2 === 0);
+  check('both sudden drops award 2 to each opponent', drop?.t1 === 2 && drop?.t2 === 2);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

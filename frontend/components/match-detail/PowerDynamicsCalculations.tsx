@@ -44,11 +44,11 @@ const GROUP_COPY: Record<SectorGroup, { title: string; note: string }> = {
   },
   semi: {
     title: 'Semi-core',
-    note: 'Imbangi is 6 when the side has a neighbour within 4 points, otherwise 0.',
+    note: 'Imbangi is 6 when the side is 1st or 2nd, otherwise 0.',
   },
   y: {
     title: 'Y applications',
-    note: 'Each application is 2 when it is on, otherwise 0. A yellow side counts these inside Core.',
+    note: 'Each application is 2 when it is on, otherwise 0. A sudden drop gives that 2 to the opponent. A yellow side counts these inside Core.',
   },
 };
 

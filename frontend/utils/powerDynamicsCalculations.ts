@@ -8,10 +8,7 @@ import type { H2HMatch } from '@/services/oddAlerts';
 import { buildBhozomaTable, type SeasonMatch } from '@/utils/bhozomaEngine';
 import { evaluateH2HOptions, h2hGradeScore } from '@/utils/h2hOptions';
 import { evaluateImportanceOf3 } from '@/utils/importanceOf3Engine';
-import {
-  buildImbangiRows,
-  type ImbangiScheduleMatch,
-} from '@/utils/imbangiEngine';
+import type { ImbangiScheduleMatch } from '@/utils/imbangiEngine';
 import type { FixtureInitialState, InitialStateSide } from '@/utils/last5Analysis';
 import { PERIOD_WORD, VENUE_WORD } from '@/utils/last5Sections';
 import {
@@ -361,23 +358,13 @@ function h2hGradeValues(
   };
 }
 
-function imbangiValue(
-  standings: StandingLike[],
-  matches: SeasonMatch[],
-  schedule: ImbangiScheduleMatch[],
-  seasonProgress: number | null | undefined,
-  teamId: number | null,
-): { value: number; detail: string } {
-  if (teamId == null) return { value: 0, detail: 'Team is not on this table' };
-  const rows = buildImbangiRows(standings, matches, seasonProgress, schedule).filter(
-    (row) => row.teamId === teamId && row.tight,
-  );
-  if (rows.length === 0) return { value: 0, detail: 'No neighbour within 4 points' };
-  const closest = [...rows].sort((a, b) => a.pointsDiff - b.pointsDiff)[0];
-  return {
-    value: IMBANGI_TRUE_VALUE,
-    detail: `${closest.pointsDiff} pts from ${closest.opponentName} (${closest.relation})`,
-  };
+/** Imbangi is the side sitting 1st or 2nd. */
+function imbangiValue(rank: number | null, label: string): { value: number; detail: string } {
+  if (rank === 1 || rank === 2) {
+    return { value: IMBANGI_TRUE_VALUE, detail: `${label} is #${rank}` };
+  }
+  if (rank == null) return { value: 0, detail: `${label} is not on this table` };
+  return { value: 0, detail: `${label} is #${rank}` };
 }
 
 function bhozomaValue(
@@ -503,8 +490,8 @@ export function buildPowerDynamicsCalculations(
     pd.t2.name,
     input.competitionName,
   );
-  const imbangiT1 = imbangiValue(standings, matches, input.schedule, input.seasonProgress, pd.t1.teamId);
-  const imbangiT2 = imbangiValue(standings, matches, input.schedule, input.seasonProgress, pd.t2.teamId);
+  const imbangiT1 = imbangiValue(pd.t1.rank, pd.t1.label);
+  const imbangiT2 = imbangiValue(pd.t2.rank, pd.t2.label);
   const bhozomaT1 = bhozomaValue(
     standings,
     matches,
@@ -537,8 +524,12 @@ export function buildPowerDynamicsCalculations(
       ? 'Next game is not more intense than this one'
       : 'Next game cannot be compared yet',
   );
-  const dropT1 = flagValue(input.swing.t1.drop, input.swing.t1.detail, input.swing.t1.detail);
-  const dropT2 = flagValue(input.swing.t2.drop, input.swing.t2.detail, input.swing.t2.detail);
+  const dropForOpponent = (dropped: boolean, droppedBy: string, receiver: string, read: string) =>
+    dropped
+      ? { value: Y_APPLICATION_VALUE, detail: `${droppedBy} is in a sudden drop, so ${receiver} receives 2. ${read}` }
+      : { value: 0, detail: `${droppedBy} is not in a sudden drop` };
+  const dropToT2 = dropForOpponent(input.swing.t1.drop, pd.t1.label, pd.t2.label, input.swing.t1.detail);
+  const dropToT1 = dropForOpponent(input.swing.t2.drop, pd.t2.label, pd.t1.label, input.swing.t2.detail);
   const riseT1 = flagValue(input.swing.t1.rise, input.swing.t1.detail, input.swing.t1.detail);
   const riseT2 = flagValue(input.swing.t2.rise, input.swing.t2.detail, input.swing.t2.detail);
 
@@ -626,8 +617,8 @@ export function buildPowerDynamicsCalculations(
       'sudden_drop',
       'Sudden drop',
       'y',
-      { t1: dropT1.value, t2: dropT2.value },
-      `${pd.t1.label}: ${dropT1.detail}. ${pd.t2.label}: ${dropT2.detail}.`,
+      { t1: dropToT1.value, t2: dropToT2.value },
+      `${dropToT1.detail}. ${dropToT2.detail}.`,
       [],
       yellowSides,
     ),
