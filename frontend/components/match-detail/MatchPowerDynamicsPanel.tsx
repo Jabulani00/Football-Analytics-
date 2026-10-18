@@ -1,6 +1,8 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
-
+import ColourVerificationPanel from '@/components/match-detail/ColourVerificationPanel';
+import PowerDynamicsCalculations from '@/components/match-detail/PowerDynamicsCalculations';
+import FilterDropdown from '@/components/shared/FilterDropdown';
 import FormChildBeaterPanel from '@/components/match-detail/FormChildBeaterPanel';
 import H2HPanel from '@/components/match-detail/H2HPanel';
 import ImportanceOf3Panel from '@/components/match-detail/ImportanceOf3Panel';
@@ -160,6 +162,7 @@ export default function MatchPowerDynamicsPanel({
   kickoffUnix,
   fixtureId,
 }: Props) {
+  const [page, setPage] = useState<'original' | 'calculations'>('original');
   const [view, setView] = useState<PowerDynamicsTabId>('baseline');
   const [baselineSub, setBaselineSub] = useState<BaselineSubId>('original');
   const [streamlineSub, setStreamlineSub] = useState<StreamlineSubId>('bateteme');
@@ -208,6 +211,7 @@ export default function MatchPowerDynamicsPanel({
 
   const season = competition?.seasons[0] ?? null;
   const needSeasonFx =
+    page === 'calculations' ||
     view === 'bhozoma' ||
     view === 'imbangi' ||
     view === 'importance_3pts' ||
@@ -222,7 +226,8 @@ export default function MatchPowerDynamicsPanel({
     view === 'won_6' ||
     view === 'lost_6' ||
     view === 'sudden_drop' ||
-    view === 'sudden_pickup';
+    view === 'sudden_pickup' ||
+    view === 'colour_verification';
   const seasonFx = useSeasonFixtures(competition, season, needSeasonFx);
 
   const form = useFixtureFormAnalysis({
@@ -593,7 +598,19 @@ export default function MatchPowerDynamicsPanel({
       case 'home_away_strong':
         return formGate(<VenueCards pd={pd} />);
       case 'colour_verification':
-        return formGate(<ColourCards pd={pd} />);
+        return formGate(
+          <View>
+            <ColourVerificationPanel
+              pd={pd}
+              standings={standings}
+              matches={seasonFx.matches}
+              matchesLoading={seasonId != null && seasonFx.loading && seasonFx.matches.length === 0}
+              matchesError={seasonFx.error}
+              seasonLinked={seasonId != null}
+            />
+            <ColourCards pd={pd} />
+          </View>,
+        );
       case 'character':
         return formGate(<CharacterCards pd={pd} />);
       case 'middle_guys':
@@ -722,7 +739,7 @@ export default function MatchPowerDynamicsPanel({
           />,
         );
       case 'contested_leagues':
-        return <ContestedCards pd={pd} />;
+        return <ContestedCards pd={pd} standings={like} />;
       case 'struggle':
         return formGate(<StruggleCards pd={pd} />);
       default:
@@ -730,23 +747,67 @@ export default function MatchPowerDynamicsPanel({
     }
   })();
 
+  const calculationsLoading =
+    page === 'calculations' && seasonId != null && seasonFx.loading && seasonFx.matches.length === 0;
+
   return (
     <View>
-      <Text style={styles.blurb}>
-        Power dynamics for {t1Label} vs {t2Label} — T1 is the better table side (points, then GD, then goals scored). Open each sector in order.
-        Numbers are live from the table and recent finished games.
-      </Text>
-      <SubTabBar
-        tabs={[...POWER_DYNAMICS_TABS]}
-        active={view}
-        onChange={(id) => setView(id)}
+      <FilterDropdown
+        label="Power dynamics"
+        value={page}
+        options={[
+          { value: 'original', label: 'Original power dynamics' },
+          { value: 'calculations', label: 'Power dynamics calculations' },
+        ]}
+        onChange={(id) => setPage(id as 'original' | 'calculations')}
+        style={styles.pagePicker}
       />
-      {body}
+      {page === 'calculations' ? (
+        calculationsLoading ? (
+          <View style={styles.center}>
+            <ActivityIndicator color={theme.accentGreen} />
+            <Text style={styles.muted}>Loading season games for the calculations…</Text>
+          </View>
+        ) : (
+          <PowerDynamicsCalculations
+            pd={pd}
+            standings={like}
+            matches={seasonFx.matches}
+            schedule={seasonFx.schedule}
+            seasonProgress={seasonProgress}
+            competitionId={competitionId}
+            h2hMatches={h2hMatches}
+            homeName={homeName}
+            awayName={awayName}
+            competitionName={competitionName}
+            initial={initialState}
+            indlela={indlela}
+            problem={problem}
+            swing={history.swing}
+            loss={history.loss}
+            win={history.win}
+          />
+        )
+      ) : (
+        <View>
+          <Text style={styles.blurb}>
+            Power dynamics for {t1Label} vs {t2Label} — T1 is the better table side (points, then GD, then goals scored). Open each sector in order.
+            Numbers are live from the table and recent finished games.
+          </Text>
+          <SubTabBar
+            tabs={[...POWER_DYNAMICS_TABS]}
+            active={view}
+            onChange={(id) => setView(id)}
+          />
+          {body}
+        </View>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  pagePicker: { width: '100%', marginBottom: spacing.sm },
   blurb: {
     fontFamily: fonts.body,
     fontSize: 12,

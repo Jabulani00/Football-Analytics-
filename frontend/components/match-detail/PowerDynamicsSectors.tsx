@@ -111,6 +111,7 @@ import {
 } from '@/utils/reverseEngineering';
 import type { SeasonMatch } from '@/utils/bhozomaEngine';
 import { GRADE_LABEL, STANCE_LABEL, type StandingLike } from '@/utils/motivationEngine';
+import { contestedLeagueBoard } from '@/utils/separatorTools';
 import SubTabBar from '@/components/shared/SubTabBar';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
@@ -2516,7 +2517,7 @@ export function ColourCards({ pd }: { pd: PowerDynamicsBundle }) {
   return (
     <View>
       <SectorIntro
-        title="Colour verification"
+        title="PPG vs colour"
         note="Does PPG match Green / Yellow / Red? Six PPG types: overall, home, away, against, vs top third, vs bottom third."
       />
       <Callout text={pd.colour.whoFacesWho} />
@@ -2938,23 +2939,64 @@ export function PointsDiffCards({ pd }: { pd: PowerDynamicsBundle }) {
   );
 }
 
-export function ContestedCards({ pd }: { pd: PowerDynamicsBundle }) {
+export function ContestedCards({
+  pd,
+  standings,
+}: {
+  pd: PowerDynamicsBundle;
+  standings: StandingLike[];
+}) {
+  const board = contestedLeagueBoard(standings);
+  const mark = (teamId: number | null) =>
+    teamId != null && (teamId === pd.t1.teamId || teamId === pd.t2.teamId);
+  const place = (side: 't1' | 't2') => {
+    const snap = pd[side];
+    const inPack = board.active && snap.rank != null && snap.rank <= 5;
+    return `${snap.label} ${inPack ? 'is inside the top 5' : 'is outside the top 5'}`;
+  };
   return (
     <View>
       <SectorIntro
         title="Highly contested leagues"
-        note="Positions 1–5 within 3 points = dangerous to play. Check whether T1 or T2 sit in that pack."
+        note="A league is contested when 1st and 5th are 4 points apart or closer."
       />
-      <Callout
-        text={pd.contested.flag.detail}
-        tone={pd.contested.flag.active ? 'warn' : 'info'}
-      />
-      <Line
-        text={`${pd.t1.label} ${pd.contested.t1InPack ? 'is in the top 5 pack' : 'is outside the top 5 pack'}`}
-      />
-      <Line
-        text={`${pd.t2.label} ${pd.contested.t2InPack ? 'is in the top 5 pack' : 'is outside the top 5 pack'}`}
-      />
+      <View style={[styles.contestBanner, board.active ? styles.contestOn : styles.contestOff]}>
+        <Text style={styles.contestKicker}>{board.active ? 'Contested league' : 'Not contested'}</Text>
+        <Text style={styles.contestSpread}>
+          {board.spread == null ? '—' : `${board.spread} pts`}
+        </Text>
+        <Text style={styles.contestDetail}>{board.detail}</Text>
+      </View>
+      {board.rows.length > 0 ? (
+        <View style={styles.contestTable}>
+          <View style={[styles.contestRow, styles.contestHead]}>
+            <Text style={[styles.contestCell, styles.contestPos]}>#</Text>
+            <Text style={[styles.contestCell, styles.contestTeam]}>Team</Text>
+            <Text style={[styles.contestCell, styles.contestPts]}>Pts</Text>
+            <Text style={[styles.contestCell, styles.contestGap]}>Behind 1st</Text>
+          </View>
+          {board.rows.map((row) => {
+            const focus = mark(row.teamId);
+            const tag =
+              row.teamId === pd.t1.teamId ? 'T1' : row.teamId === pd.t2.teamId ? 'T2' : null;
+            return (
+              <View key={row.teamId} style={[styles.contestRow, focus && styles.contestFocus]}>
+                <Text style={[styles.contestCell, styles.contestPos]}>{row.rank}</Text>
+                <Text style={[styles.contestCell, styles.contestTeam]} numberOfLines={1}>
+                  {tag ? `${tag} · ` : ''}
+                  {row.name}
+                </Text>
+                <Text style={[styles.contestCell, styles.contestPts]}>{row.points}</Text>
+                <Text style={[styles.contestCell, styles.contestGap]}>
+                  {row.behindLeader === 0 ? 'Leader' : row.behindLeader}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+      ) : null}
+      <Line text={place('t1')} />
+      <Line text={place('t2')} />
     </View>
   );
 }
@@ -3482,4 +3524,64 @@ const styles = StyleSheet.create({
   formRead: { width: 120, paddingHorizontal: 4, fontFamily: fonts.bodySemiBold, fontSize: 13 },
   formName: { width: 200, paddingHorizontal: 4, fontFamily: fonts.bodySemiBold, fontSize: 13 },
   formTrend: { width: 52, textAlign: 'center', fontFamily: fonts.bodySemiBold },
+  contestBanner: {
+    borderWidth: layout.borderWidth,
+    borderRadius: layout.borderRadius,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  contestOn: {
+    borderColor: theme.accentOrange,
+    backgroundColor: 'rgba(234, 88, 12, 0.08)',
+  },
+  contestOff: {
+    borderColor: theme.border,
+    backgroundColor: theme.surface,
+  },
+  contestKicker: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 11,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    color: theme.textMuted,
+  },
+  contestSpread: {
+    fontFamily: fonts.display,
+    fontSize: 28,
+    color: theme.textPrimary,
+    marginVertical: 2,
+  },
+  contestDetail: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    color: theme.textPrimary,
+    lineHeight: 18,
+  },
+  contestTable: {
+    borderWidth: layout.borderWidth,
+    borderColor: theme.border,
+    borderRadius: layout.borderRadius,
+    overflow: 'hidden',
+    marginBottom: spacing.sm,
+  },
+  contestRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 36,
+    borderBottomWidth: layout.borderWidth,
+    borderBottomColor: theme.border,
+    backgroundColor: theme.surface,
+  },
+  contestHead: { backgroundColor: theme.surfaceMuted, minHeight: 32 },
+  contestFocus: { backgroundColor: 'rgba(37, 99, 235, 0.08)' },
+  contestCell: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 13,
+    color: theme.textPrimary,
+    paddingHorizontal: spacing.xs,
+  },
+  contestPos: { width: 36, textAlign: 'center', fontFamily: fonts.bodySemiBold },
+  contestTeam: { flex: 1 },
+  contestPts: { width: 48, textAlign: 'right' },
+  contestGap: { width: 88, textAlign: 'right', paddingRight: spacing.sm },
 });

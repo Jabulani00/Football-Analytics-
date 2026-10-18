@@ -141,29 +141,66 @@ function oneGoalFlags(results: TeamResult[], side: 'home' | 'away'): SeparatorFl
   return flags;
 }
 
-/** Top of table tightly packed (pos 1–5 within ≤3 pts of each other). */
-export function contestedLeagueTop(table: StandingLike[], depth = 5): SeparatorFlag {
+/** Leader to the last of the top pack. 4 points or less marks a contested league. */
+export const CONTESTED_TOP_SPREAD = 4;
+
+export type ContestedPackRow = {
+  rank: number;
+  teamId: number;
+  name: string;
+  points: number;
+  /** Points behind the leader of this pack. */
+  behindLeader: number;
+};
+
+export type ContestedLeagueBoard = {
+  active: boolean;
+  spread: number | null;
+  rows: ContestedPackRow[];
+  detail: string;
+};
+
+/** Top of the table, with the points gap from 1st to the last of those places. */
+export function contestedLeagueBoard(table: StandingLike[], depth = 5): ContestedLeagueBoard {
   const top = [...table].sort((a, b) => a.rank - b.rank).slice(0, Math.min(depth, table.length));
+  const leaderPoints = top[0]?.points ?? 0;
+  const rows = top.map((row) => ({
+    rank: row.rank,
+    teamId: row.teamId,
+    name: row.name,
+    points: row.points,
+    behindLeader: leaderPoints - row.points,
+  }));
   if (top.length < 3) {
     return {
-      id: 'contested_top',
-      label: 'Contested league top',
       active: false,
-      grade: 'info',
+      spread: null,
+      rows,
       detail: 'Not enough teams to judge',
-      side: 'fixture',
     };
   }
   const spread = top[0].points - top[top.length - 1].points;
-  const active = spread <= 3;
+  const active = spread <= CONTESTED_TOP_SPREAD;
+  const places = `1–${top.length}`;
+  return {
+    active,
+    spread,
+    rows,
+    detail: active
+      ? `Positions ${places} are ${spread} pts apart. ${CONTESTED_TOP_SPREAD} or less, so this is a contested league.`
+      : `Positions ${places} are ${spread} pts apart. More than ${CONTESTED_TOP_SPREAD}, so this is not a contested league.`,
+  };
+}
+
+/** Top of table tightly packed (pos 1–5 within ≤4 pts of the leader). */
+export function contestedLeagueTop(table: StandingLike[], depth = 5): SeparatorFlag {
+  const board = contestedLeagueBoard(table, depth);
   return {
     id: 'contested_top',
     label: 'Contested league top',
-    active,
-    grade: active ? 'warn' : 'info',
-    detail: active
-      ? `Positions 1–${top.length} separated by only ${spread} pts — dangerous to play`
-      : `Top ${top.length} spread = ${spread} pts`,
+    active: board.active,
+    grade: board.active ? 'warn' : 'info',
+    detail: board.detail,
     side: 'fixture',
   };
 }

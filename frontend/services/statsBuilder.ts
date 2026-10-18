@@ -393,6 +393,71 @@ function computeHalfOnly(matches: TeamMatch[], period: 'ht' | '2h'): Record<stri
   };
 }
 
+/** One of our matches, already reduced to this team's goals. */
+export type StatSliceMatch = {
+  isHome: boolean;
+  opponentId: number;
+  unix: number;
+  gf: number;
+  ga: number;
+  gfHt: number | null;
+  gaHt: number | null;
+};
+
+function sliceToTeamMatch(match: StatSliceMatch, index: number): TeamMatch {
+  const htKnown = match.gfHt != null && match.gaHt != null;
+  const homeGoals = match.isHome ? match.gf : match.ga;
+  const awayGoals = match.isHome ? match.ga : match.gf;
+  const htScore = htKnown
+    ? `${match.isHome ? match.gfHt : match.gaHt}-${match.isHome ? match.gaHt : match.gfHt}`
+    : null;
+  const first = firstGoalSide(homeGoals, awayGoals, htScore);
+  const firstGoal: TeamMatch['firstGoal'] =
+    first === 'none' || first === 'unknown'
+      ? first
+      : (match.isHome ? first === 'home' : first === 'away')
+        ? 'team'
+        : 'opponent';
+  return {
+    teamId: null,
+    isHome: match.isHome,
+    opponentId: match.opponentId,
+    opponentName: '',
+    unix: match.unix,
+    gfFt: match.gf,
+    gaFt: match.ga,
+    gfHt: match.gfHt ?? 0,
+    gaHt: match.gaHt ?? 0,
+    htKnown,
+    firstGoal,
+    id: index,
+    match: '',
+    score: `${match.gf}-${match.ga}`,
+    competition: '',
+  };
+}
+
+/**
+ * One stat for a slice of matches (for example, only games against green teams).
+ * Matches are ordered newest-first so series use the current run.
+ */
+export function statOnMatches(
+  matches: StatSliceMatch[],
+  key: string,
+  period: 'ft' | 'ht' | '2h',
+): number | null {
+  const ordered = [...matches]
+    .sort((a, b) => b.unix - a.unix || b.opponentId - a.opponentId)
+    .map(sliceToTeamMatch);
+  if ((PPG_STATS as readonly string[]).includes(key)) return computePpg(ordered, period);
+  if ((SERIES_STATS as readonly string[]).includes(key)) return computeSeries(ordered, period)[key] ?? null;
+  if ((HALF_ONLY_STATS as readonly string[]).includes(key)) {
+    return period === 'ft' ? null : computeHalfOnly(ordered, period)[key] ?? null;
+  }
+  if ((FT_ONLY_STATS as readonly string[]).includes(key)) return computeFtOnly(ordered)[key] ?? null;
+  return computeStats(ordered, period).values[key] ?? null;
+}
+
 // ---- Build the representation ------------------------------------------------
 type TeamKey = string; // `${leagueId}::${teamName}`
 
