@@ -106,11 +106,13 @@ function seriesRfsLabels(rfs?: TeamRfsRows): string {
 }
 
 export default function MixedStatsPanel({
+  mode = 'mixed',
   sources,
   period,
   loading,
   error,
 }: {
+  mode?: 'mixed' | 'rfs';
   sources: Sources;
   period: TimePeriod;
   loading: boolean;
@@ -168,6 +170,7 @@ export default function MixedStatsPanel({
 
   return (
     <View style={styles.panel}>
+      {mode === 'mixed' ? <>
       <Text style={styles.title}>Mixed Stats · Last left-over stats (1–23)</Text>
       <Text style={styles.copy}>These derived views follow the supplied transcription and use the same team, venue, competition, and Last-N fixture sample as the selected 72-table view.</Text>
       <Text style={styles.note}>First-half and second-half goal shares use the same matches with valid half-time scores, so each scored, conceded, and total-goals pair sums to 100%. Items 7–10 show team and league second-half goal averages and consistency.</Text>
@@ -221,8 +224,9 @@ export default function MixedStatsPanel({
           </View>
         </ScrollView>
       ) : null}
+      </> : null}
 
-      <View style={styles.rfsPanel}>
+      {mode === 'rfs' ? <View style={styles.rfsPanel}>
         <Text style={styles.rfsTitle}>RFS · RECENT FAILURE SIGNAL</Text>
         <Text style={styles.copy}>An ordinary RFS appears when a stat normally lands in the green band (at least 65% over 5+ matches) but failed in the latest match. Series RFS marks a qualifying run broken by the latest match. Calculations follow this table’s period, venue and match window.</Text>
         <View style={styles.options}>
@@ -285,7 +289,7 @@ export default function MixedStatsPanel({
             </View>
           </ScrollView>
         ) : null}
-      </View>
+      </View> : null}
     </View>
   );
 }
