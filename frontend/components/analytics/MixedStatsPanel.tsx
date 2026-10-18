@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 
 import { columnsForFamily, sortByPrimary } from '@/utils/statsTableAdapter';
 import type { StatFamily, TeamStatsRow, TimePeriod } from '@/types/analytics';
+import { halfGoalShares, secondHalfLeagueRates, secondHalfTeamRates } from '@/utils/mixedStats';
 import { fonts, spacing, theme } from '@/styles/theme';
 
 type SourceKey = 'ordinary' | 'ppg' | 'series' | 'ft_only' | 'half_only';
@@ -10,11 +11,11 @@ type Sources = Record<SourceKey, TeamStatsRow[]> & { ordinaryByPeriod: Record<Ti
 type MixedOption = { id: string; source: SourceKey; label: string; key: string };
 
 const TRANSCRIBED_STATS = [
-  ['sc_1h_share', 'SC* 1H%', '1H SC% ÷ FT SC%'], ['sc_2h_share', 'SC* 2H%', '2H SC% ÷ FT SC%'],
-  ['avg_1h_share', 'AVG* 1H%', '1H AVG ÷ FT AVG'], ['conc_1h_share', 'Conc* 1H%', '1H Conc% ÷ FT Conc%'],
-  ['conc_2h_share', 'Conc* 2H%', '2H Conc% ÷ Tsc (denominator unclear)'], ['avg_2h_share', 'AVG* 2H%', '2H AVG ÷ FT AVG'],
-  ['fhg_team_avg', 'FHG_T (AVG)', 'First-half team goals ÷ matches'], ['fhg_team_consistency', 'FHG_T (consistency)', 'Matches with team first-half goal ÷ matches'],
-  ['fhg_league_avg', 'FHG_L (AVG)', 'League first-half total goals ÷ matches'], ['fhg_league_consistency', 'FHG_L (consistent)', 'League matches with first-half goal ÷ matches'],
+  ['sc_1h_share', 'SC* 1H%', '1H team goals ÷ FT team goals'], ['sc_2h_share', 'SC* 2H%', '2H team goals ÷ FT team goals'],
+  ['avg_1h_share', 'AVG* 1H%', '1H match goals ÷ FT match goals'], ['conc_1h_share', 'Conc* 1H%', '1H conceded goals ÷ FT conceded goals'],
+  ['conc_2h_share', 'Conc* 2H%', '2H conceded goals ÷ FT conceded goals'], ['avg_2h_share', 'AVG* 2H%', '2H match goals ÷ FT match goals'],
+  ['shg_team_avg', '2H_T (AVG)', 'Team second-half goals ÷ valid matches'], ['shg_team_consistency', '2H_T (consistency)', 'Matches with team second-half goal ÷ valid matches'],
+  ['shg_league_avg', '2H_L (AVG)', 'League second-half total goals ÷ fixtures'], ['shg_league_consistency', '2H_L (consistency)', 'Fixtures with second-half goal ÷ fixtures'],
   ['most_match_goals_half', 'Most goals · match', 'First half / second half / tie'], ['most_scored_half', 'Most goals scored', 'First half / second half / tie'],
   ['most_conceded_half', 'Most goals conceded', 'First half / second half / tie'], ['btts_win', 'BTTS · win', 'BTTS wins ÷ matches'],
   ['btts_draw', 'BTTS · draw', 'BTTS draws ÷ matches'], ['btts_loss', 'BTTS · loss', 'BTTS losses ÷ matches'],
@@ -29,31 +30,26 @@ function rowMetric(rows: TeamStatsRow[], team: string, key: string): number | nu
   const value = rows.find((row) => row.team === team)?.metrics.find((metric) => metric.key === key)?.value;
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
-function ratio(numerator: number | null, denominator: number | null): number | null {
-  return numerator == null || denominator == null || denominator === 0 ? null : Math.round(numerator / denominator * 1000) / 10;
-}
 function transcribedRows(sources: Sources): TeamStatsRow[] {
   const full = sources.ordinaryByPeriod.fulltime;
   const first = sources.ordinaryByPeriod.firsthalf;
   const second = sources.ordinaryByPeriod.secondhalf;
   const teams = [...new Set([...full, ...first, ...second].map((row) => row.team))];
-  const leagueGames = new Map<number, NonNullable<TeamStatsRow['games']>[number]>();
-  for (const row of first) for (const game of row.games ?? []) if (game.htFor != null && game.htAgainst != null) leagueGames.set(game.id, game);
-  const aggregate = [...leagueGames.values()];
-  const leagueFhgAvg = aggregate.length ? aggregate.reduce((sum, game) => sum + (game.htFor ?? 0) + (game.htAgainst ?? 0), 0) / aggregate.length : null;
-  const leagueFhgRate = aggregate.length ? aggregate.filter((game) => (game.htFor ?? 0) + (game.htAgainst ?? 0) > 0).length / aggregate.length * 100 : null;
+  const allGames = full.flatMap((row) => row.games ?? []);
+  const leagueSecondHalf = secondHalfLeagueRates(allGames);
   const valueFor = (team: string, id: TranscribedId): { value: number | null; raw?: boolean } => {
-    const ftSc = rowMetric(full, team, 'sc_pct'); const ftConc = rowMetric(full, team, 'conc_pct'); const ftAvg = rowMetric(full, team, 'avg_goals');
-    const fhSc = rowMetric(first, team, 'sc_pct'); const shSc = rowMetric(second, team, 'sc_pct');
-    const fhConc = rowMetric(first, team, 'conc_pct');
     const fhAvg = rowMetric(first, team, 'avg_goals'); const shAvg = rowMetric(second, team, 'avg_goals');
-    const fhScAvg = rowMetric(first, team, 'sc_avg'); const fhScRate = rowMetric(first, team, 'scoring_05');
+    const fhScAvg = rowMetric(first, team, 'sc_avg');
+    const ftConc = rowMetric(full, team, 'conc_pct');
+    const games = full.find((row) => row.team === team)?.games ?? [];
+    const shares = halfGoalShares(games);
+    const secondHalf = secondHalfTeamRates(games);
     const values: Record<TranscribedId, { value: number | null; raw?: boolean }> = {
-      sc_1h_share: { value: ratio(fhSc, ftSc) }, sc_2h_share: { value: ratio(shSc, ftSc) },
-      avg_1h_share: { value: ratio(fhAvg, ftAvg) }, conc_1h_share: { value: ratio(fhConc, ftConc) },
-      conc_2h_share: { value: null }, avg_2h_share: { value: ratio(shAvg, ftAvg) },
-      fhg_team_avg: { value: fhScAvg, raw: true }, fhg_team_consistency: { value: fhScRate },
-      fhg_league_avg: { value: leagueFhgAvg, raw: true }, fhg_league_consistency: { value: leagueFhgRate },
+      sc_1h_share: { value: shares.scFirst }, sc_2h_share: { value: shares.scSecond },
+      avg_1h_share: { value: shares.avgFirst }, conc_1h_share: { value: shares.concFirst },
+      conc_2h_share: { value: shares.concSecond }, avg_2h_share: { value: shares.avgSecond },
+      shg_team_avg: { value: secondHalf.teamAverage, raw: true }, shg_team_consistency: { value: secondHalf.teamConsistency },
+      shg_league_avg: { value: leagueSecondHalf.leagueAverage, raw: true }, shg_league_consistency: { value: leagueSecondHalf.leagueConsistency },
       most_match_goals_half: { value: comparePeriods(fhAvg, shAvg) }, most_scored_half: { value: comparePeriods(fhScAvg, rowMetric(second, team, 'sc_avg')) },
       most_conceded_half: { value: comparePeriods(rowMetric(first, team, 'conc_avg'), rowMetric(second, team, 'conc_avg')) },
       btts_win: { value: bttsOutcomeRate(full.find((row) => row.team === team), 'win') },
@@ -158,7 +154,7 @@ export default function MixedStatsPanel({
     <View style={styles.panel}>
       <Text style={styles.title}>Mixed Stats · Last left-over stats (1–23)</Text>
       <Text style={styles.copy}>These derived views follow the supplied transcription and use the same team, venue, competition, and Last-N fixture sample as the selected 72-table view.</Text>
-      <Text style={styles.note}>“Conc* 2H%” is left blank because its transcribed denominator “Tsc” is unclear. FHG_T is read literally as team first-half goals and FHG_L as league first-half total goals; the note calling items 7–10 second-half features conflicts with their 1H formulas. RFS variants are not fabricated from this panel’s current fixture feed.</Text>
+      <Text style={styles.note}>First-half and second-half goal shares use the same matches with valid half-time scores, so each scored, conceded, and total-goals pair sums to 100%. Items 7–10 now show team and league second-half goal averages and consistency. RFS variants are not fabricated from this panel’s current fixture feed.</Text>
       {!loading && transcribed.length > 0 ? <ScrollView horizontal showsHorizontalScrollIndicator style={styles.tableScroll}>
         <View><View style={styles.tableRow}><Text style={[styles.cell, styles.teamCell, styles.header]}>Team</Text>{TRANSCRIBED_STATS.map(([key, label, formula]) => <Text key={key} style={[styles.cell, styles.header]}>{label}{'\n'}<Text style={styles.formula}>{formula}</Text></Text>)}</View>
           {transcribed.map((row, index) => <View key={row.team} style={[styles.tableRow, index % 2 === 1 && styles.alt]}>
