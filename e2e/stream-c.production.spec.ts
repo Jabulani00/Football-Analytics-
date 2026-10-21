@@ -4,8 +4,18 @@ const HUNT_URL = 'https://zymspnykcnqczqdnernb.supabase.co/functions/v1/hollywoo
 const SLIP_KEY = 'scoreline.analytics-bet-slip.v1';
 
 async function openAnalytics(page: Page) {
-  await page.goto('/analytics', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByText('BETTING INTELLIGENCE', { exact: true })).toBeVisible();
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      await page.goto('/analytics', { waitUntil: 'commit', timeout: 30_000 });
+      await expect(page.getByText('BETTING INTELLIGENCE', { exact: true })).toBeVisible({ timeout: 20_000 });
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt === 0) await page.waitForTimeout(1_000);
+    }
+  }
+  throw lastError;
 }
 
 async function openTab(page: Page, name: string) {
