@@ -93,9 +93,12 @@ test.describe('Stream C production acceptance', () => {
     for (const metric of ['CURRENT', 'REMOVED', 'COVERAGE', 'CRAWL ISSUES']) {
       await expect(page.getByText(metric, { exact: true })).toBeVisible();
     }
-    await expect(page.getByPlaceholder('Filter countries…')).toBeVisible();
+    const country = page.getByRole('button', { name: /^Country: / });
+    await expect(country).toBeVisible();
+    await country.click();
+    await expect(page.getByPlaceholder('Search…')).toBeVisible();
 
-    const southAfrica = page.getByText('South Africa', { exact: true }).first();
+    const southAfrica = page.getByRole('button', { name: 'Country option: South Africa', exact: true });
     if (await southAfrica.count()) {
       await southAfrica.click();
       await expect(page.getByText('League', { exact: true })).toBeVisible();
