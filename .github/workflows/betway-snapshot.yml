@@ -1,8 +1,6 @@
-name: Betway upcoming snapshot
+name: Betway snapshot (manual fallback)
 
 on:
-  schedule:
-    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 permissions:
