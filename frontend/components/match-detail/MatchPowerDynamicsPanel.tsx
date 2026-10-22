@@ -1,6 +1,8 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import ColourVerificationPanel from '@/components/match-detail/ColourVerificationPanel';
+import PowerDynamicCallResult from '@/components/match-detail/PowerDynamicCallResult';
+import PowerDynamicsCaller from '@/components/match-detail/PowerDynamicsCaller';
 import PowerDynamicsCalculations from '@/components/match-detail/PowerDynamicsCalculations';
 import FilterDropdown from '@/components/shared/FilterDropdown';
 import FormChildBeaterPanel from '@/components/match-detail/FormChildBeaterPanel';
@@ -52,6 +54,7 @@ import { excludeFixture, type TeamResult } from '@/utils/teamResults';
 
 /** Power dynamics checklist order (SKM notes; #24 odds omitted). */
 export const POWER_DYNAMICS_TABS = [
+  { id: 'call', label: 'Call' },
   { id: 'baseline', label: '1. Baseline' },
   { id: 'importance_3pts', label: '2. Importance of 3 pts' },
   { id: 'last5', label: '3. Last 5' },
@@ -227,7 +230,8 @@ export default function MatchPowerDynamicsPanel({
     view === 'lost_6' ||
     view === 'sudden_drop' ||
     view === 'sudden_pickup' ||
-    view === 'colour_verification';
+    view === 'colour_verification' ||
+    view === 'call';
   const seasonFx = useSeasonFixtures(competition, season, needSeasonFx);
 
   const form = useFixtureFormAnalysis({
@@ -397,6 +401,50 @@ export default function MatchPowerDynamicsPanel({
 
   const body = (() => {
     switch (view) {
+      case 'call':
+        return (
+          <PowerDynamicsCaller
+            t1={pd.t1}
+            t2={pd.t2}
+            renderResult={(tabId, functionId) => (
+              <PowerDynamicCallResult
+                ctx={{
+                  pd,
+                  like,
+                  standings,
+                  matches: seasonFx.matches,
+                  schedule: seasonFx.schedule,
+                  matchesLoading: seasonFx.loading,
+                  matchesError: seasonFx.error,
+                  seasonId,
+                  seasonProgress,
+                  competitionId,
+                  competitionName,
+                  h2hMatches,
+                  homeName,
+                  awayName,
+                  form,
+                  initial: initialState,
+                  history,
+                  indlela,
+                  problem,
+                  t1Label,
+                  t2Label,
+                  homePdLabel,
+                  awayPdLabel,
+                  highlightIds,
+                  teamLabels,
+                  fixtureId,
+                  kickoffUnix,
+                  homeId,
+                  awayId,
+                }}
+                tabId={tabId}
+                functionId={functionId}
+              />
+            )}
+          />
+        );
       case 'baseline':
         return (
           <View>
@@ -420,8 +468,8 @@ export default function MatchPowerDynamicsPanel({
                     tabs={[...BATETEME_SUBS]}
                     active={batetemeSub}
                     highlighted={
-                      pd.streamline.batetemeKind != null
-                        ? String(pd.streamline.batetemeKind)
+                      pd.streamline.batetemeKind === 1 || pd.streamline.batetemeKind === 2
+                        ? String(pd.streamline.batetemeKind) as '1' | '2'
                         : null
                     }
                     onChange={(id) => setBatetemeSub(id)}

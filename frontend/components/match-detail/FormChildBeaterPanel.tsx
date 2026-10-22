@@ -39,6 +39,8 @@ type Props = {
   competitionId?: number | string | null;
   exclude?: FixtureExclude | null;
   seasonLinked: boolean;
+  /** Opens on this period. The caller remounts the panel when the function changes. */
+  initialGroup?: FormChildGroup;
 };
 
 function toSide(snap: PowerDynamicsBundle['t1']): FormChildSide {
@@ -142,8 +144,9 @@ export default function FormChildBeaterPanel({
   competitionId,
   exclude,
   seasonLinked,
+  initialGroup,
 }: Props) {
-  const [group, setGroup] = useState<FormChildGroup>('table');
+  const [group, setGroup] = useState<FormChildGroup>(initialGroup ?? 'table');
   const [venue, setVenue] = useState<FormChildVenue>('overall');
   const needsGames = group !== 'table';
   const ht = halfTimeCoverage(matches);

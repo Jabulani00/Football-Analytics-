@@ -323,8 +323,9 @@ export default function H2HPanel({
   t1Name,
   t2Name,
   competitionName,
-}: H2HPanelProps) {
-  const [split, setSplit] = useState<H2HSplit>('overall');
+  initialSplit = 'overall',
+}: H2HPanelProps & { initialSplit?: H2HSplit }) {
+  const [split, setSplit] = useState<H2HSplit>(initialSplit);
   const [gradeModal, setGradeModal] = useState<{
     kind: H2HGradeGuideKind;
     grade: H2HGrade;

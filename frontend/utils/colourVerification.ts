@@ -250,6 +250,37 @@ function sliceFor(match: ColourFixture, teamId: number): StatSliceMatch | null {
   };
 }
 
+export type FullTableRate = {
+  /** The stat on every match in this venue and period, before opponents are split by colour. */
+  value: number | null;
+  played: number;
+};
+
+/**
+ * The chosen stat on the full table: every match in the venue and period,
+ * before those matches are separated into green, yellow and red.
+ */
+export function rateOnFullTable(
+  teamId: number,
+  stat: { key: string },
+  matches: ColourFixture[],
+  venue: ColourVenue = 'overall',
+  period: ColourPeriodId = 'ft',
+): FullTableRate {
+  const slices: StatSliceMatch[] = [];
+  for (const match of matches) {
+    const slice = sliceFor(match, teamId);
+    if (!slice) continue;
+    if (venue === 'home' && !slice.isHome) continue;
+    if (venue === 'away' && slice.isHome) continue;
+    slices.push(slice);
+  }
+  return {
+    played: slices.length,
+    value: slices.length > 0 ? statOnMatches(slices, stat.key, period) : null,
+  };
+}
+
 /**
  * Green, yellow and red, each carrying our stat against that colour.
  * Order stays green, yellow, red. Ranking follows the chosen filter.

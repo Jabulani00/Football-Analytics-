@@ -15,6 +15,7 @@ import {
   countMatchesAgainstColour,
   formatColourStatValue,
   passesColourPosition,
+  rateOnFullTable,
   ratesAgainstColours,
   type ColourDirection,
   type ColourFixture,
@@ -165,6 +166,10 @@ function SideVerify({
     if (!stat || !pick.venue || !pick.period || snap.teamId == null) return [];
     return ratesAgainstColours(snap.teamId, stat, standings, matches, ranking, pick.venue, pick.period);
   }, [stat, pick.venue, pick.period, snap.teamId, standings, matches, ranking]);
+  const fullTable = useMemo(() => {
+    if (!stat || !pick.venue || !pick.period || snap.teamId == null) return null;
+    return rateOnFullTable(snap.teamId, stat, matches, pick.venue, pick.period);
+  }, [stat, pick.venue, pick.period, snap.teamId, matches]);
   const opponentRate = colour != null ? rates.find((row) => row.colour === colour) ?? null : null;
   const opponentFails = (pick.direction === 'strong' || pick.direction === 'weak')
     && opponentRate?.position != null
@@ -261,13 +266,29 @@ function SideVerify({
         </Text>
       ) : null}
 
-      {stat && pick.venue && pick.period ? (
-        <ColourRates
-          stat={stat}
-          rows={rates}
-          opponentColour={colour}
-          direction={enough ? pick.direction : ''}
-        />
+      {stat && pick.venue && pick.period && fullTable ? (
+        <>
+          <View style={styles.fullTable}>
+            <View style={styles.fullTableCopy}>
+              <Text style={styles.fullTableTitle}>Full table</Text>
+              <Text style={styles.fullTableHint}>Your {stat.name} before the matches are split into colours.</Text>
+            </View>
+            <View style={styles.fullTableFigure}>
+              <Text style={styles.fullTableValue}>
+                {fullTable.value == null ? '—' : formatColourStatValue(stat, fullTable.value)}
+              </Text>
+              <Text style={styles.fullTablePlayed}>
+                {fullTable.played} match{fullTable.played === 1 ? '' : 'es'}
+              </Text>
+            </View>
+          </View>
+          <ColourRates
+            stat={stat}
+            rows={rates}
+            opponentColour={colour}
+            direction={enough ? pick.direction : ''}
+          />
+        </>
       ) : (
         <Text style={styles.prompt}>
           {!pick.statId
@@ -582,6 +603,29 @@ const styles = StyleSheet.create({
   bannerTitleBad: { color: theme.loss },
   bannerBody: { fontFamily: fonts.body, fontSize: 12, lineHeight: 16, color: theme.textMuted, marginTop: 2 },
   prompt: { fontFamily: fonts.body, fontSize: 12, lineHeight: 17, color: theme.textMuted },
+  fullTable: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderWidth: layout.borderWidth,
+    borderColor: theme.border,
+    borderRadius: layout.borderRadius,
+    backgroundColor: theme.bg,
+    padding: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  fullTableCopy: { flex: 1, minWidth: 0 },
+  fullTableTitle: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 11,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    color: theme.textPrimary,
+  },
+  fullTableHint: { fontFamily: fonts.body, fontSize: 12, lineHeight: 16, color: theme.textMuted, marginTop: 2 },
+  fullTableFigure: { alignItems: 'flex-end' },
+  fullTableValue: { fontFamily: fonts.display, fontSize: 22, color: theme.textPrimary },
+  fullTablePlayed: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted, marginTop: 1 },
   failNote: {
     fontFamily: fonts.bodySemiBold,
     fontSize: 13,
