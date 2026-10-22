@@ -1,8 +1,11 @@
 /**
  * Colour verification — rank green, yellow and red by our own stat against
- * each colour, then test the opponent's colour with Up or Down.
+ * each colour, then test the opponent's colour with Strong or Weak.
  *
- * Position 1 is our highest figure. Ties share a position and the next one skips.
+ * Strong numbers position 1 as our highest figure.
+ * Weak numbers position 1 as our smallest figure, then up to the highest.
+ * Ties share a position and the next one skips.
+ * Strong passes at position 1 or 2. Weak passes at position 2 or 3.
  * The check is allowed only after we have played 3 matches against the
  * opponent's current colour.
  */
@@ -24,12 +27,6 @@ const NOT_RANKED = new Set([
 
 const AVERAGE_KEYS = new Set(['sc_avg', 'conc_avg', 'avg_goals', 'half_avg', 'rescued_points', 'blown_points']);
 const PPG_KEYS = new Set<string>(PPG_STATS);
-
-const PERIODS = [
-  { id: 'ft', label: 'Full time' },
-  { id: 'ht', label: '1st half' },
-  { id: '2h', label: '2nd half' },
-] as const;
 
 const PPG_NAMES: Record<string, string> = {
   ppg: 'PPG',
@@ -79,15 +76,40 @@ const LEGACY_SERIES_NAMES: Record<string, string> = {
   scoring_streak: 'Scoring streak',
 };
 
-export type ColourDirection = 'up' | 'down';
+export type ColourDirection = 'strong' | 'weak';
+export type ColourVenue = 'overall' | 'home' | 'away';
+export type ColourPeriodId = 'ft' | 'ht' | '2h';
+
+export const COLOUR_VENUES: { id: ColourVenue; label: string }[] = [
+  { id: 'overall', label: 'Overall' },
+  { id: 'home', label: 'Home' },
+  { id: 'away', label: 'Away' },
+];
+
+export const COLOUR_PERIODS: { id: ColourPeriodId; label: string }[] = [
+  { id: 'ft', label: 'Full time' },
+  { id: 'ht', label: '1st half' },
+  { id: '2h', label: '2nd half' },
+];
+
+const ALL_PERIODS: ColourPeriodId[] = ['ft', 'ht', '2h'];
+
+export function colourVenueLabel(venue: ColourVenue): string {
+  return COLOUR_VENUES.find((item) => item.id === venue)?.label ?? venue;
+}
+
+export function colourPeriodLabel(period: ColourPeriodId): string {
+  return COLOUR_PERIODS.find((item) => item.id === period)?.label ?? period;
+}
 
 export type ColourStat = {
   id: string;
   key: string;
-  table: string;
+  family: 'ordinary' | 'ppg' | 'series' | 'ft_only' | 'half';
   group: string;
-  period: string;
-  /** Searchable dropdown label. */
+  /** Periods this stat can be read on. Full-time patterns stay full time; half stats stay in the halves. */
+  periods: ColourPeriodId[];
+  /** Searchable dropdown label: group and stat, without venue or period. */
   label: string;
   /** Stat name without the group prefix. */
   name: string;
@@ -98,55 +120,50 @@ function isRaw(key: string): boolean {
   return PPG_KEYS.has(key) || AVERAGE_KEYS.has(key) || (SERIES_STATS as readonly string[]).includes(key);
 }
 
-function pushStat(out: ColourStat[], group: string, period: string, table: string, key: string, name: string) {
+function pushStat(
+  out: ColourStat[],
+  family: ColourStat['family'],
+  group: string,
+  key: string,
+  name: string,
+  periods: ColourPeriodId[],
+) {
   out.push({
-    id: `${table}::${key}`,
+    id: `${family}::${key}`,
     key,
-    table,
+    family,
     group,
-    period,
+    periods,
     name,
-    label: `${group} · ${period} · ${name}`,
+    label: `${group} · ${name}`,
     raw: isRaw(key),
   });
 }
 
-/** Every rankable stat the tables already compute, on the season overall colour table. */
+/** Every rankable stat, once. Venue and period are chosen after the stat. */
 export const COLOUR_STAT_CATALOGUE: ColourStat[] = (() => {
   const out: ColourStat[] = [];
   const seriesKeys = new Set(SERIES_DEFS.map((def) => def.key));
-  for (const period of PERIODS) {
-    for (const col of DISPLAY_STATS) {
-      if (NOT_RANKED.has(col.key)) continue;
-      pushStat(out, 'Ordinary', period.label, `ordinary_${period.id}_overall`, col.key, col.label);
-    }
-    for (const key of PPG_STATS) {
-      if (key.startsWith('ppg_vs_')) continue;
-      pushStat(out, 'PPG', period.label, `ppg_${period.id}_overall`, key, PPG_NAMES[key] ?? key);
-    }
-    for (const def of SERIES_DEFS) {
-      pushStat(
-        out,
-        'Series',
-        period.label,
-        `series_${period.id}_overall`,
-        def.key,
-        `${def.label}${def.invert ? ' without' : ''}`,
-      );
-    }
-    for (const key of SERIES_STATS) {
-      if (seriesKeys.has(key)) continue;
-      pushStat(out, 'Series', period.label, `series_${period.id}_overall`, key, LEGACY_SERIES_NAMES[key] ?? key);
-    }
+  for (const col of DISPLAY_STATS) {
+    if (NOT_RANKED.has(col.key)) continue;
+    pushStat(out, 'ordinary', 'Ordinary', col.key, col.label, ALL_PERIODS);
+  }
+  for (const key of PPG_STATS) {
+    if (key.startsWith('ppg_vs_')) continue;
+    pushStat(out, 'ppg', 'PPG', key, PPG_NAMES[key] ?? key, ALL_PERIODS);
+  }
+  for (const def of SERIES_DEFS) {
+    pushStat(out, 'series', 'Series', def.key, `${def.label}${def.invert ? ' without' : ''}`, ALL_PERIODS);
+  }
+  for (const key of SERIES_STATS) {
+    if (seriesKeys.has(key)) continue;
+    pushStat(out, 'series', 'Series', key, LEGACY_SERIES_NAMES[key] ?? key, ALL_PERIODS);
   }
   for (const key of FT_ONLY_STATS) {
-    pushStat(out, 'Full time', 'Full time', 'ft_only_ft_overall', key, FT_NAMES[key] ?? key);
+    pushStat(out, 'ft_only', 'Full time', key, FT_NAMES[key] ?? key, ['ft']);
   }
-  for (const period of PERIODS) {
-    if (period.id === 'ft') continue;
-    for (const key of HALF_ONLY_STATS) {
-      pushStat(out, 'Half', period.label, `ft_only_${period.id}_overall`, key, HALF_NAMES[key] ?? key);
-    }
+  for (const key of HALF_ONLY_STATS) {
+    pushStat(out, 'half', 'Half', key, HALF_NAMES[key] ?? key, ['ht', '2h']);
   }
   return out;
 })();
@@ -180,13 +197,16 @@ export function countMatchesAgainstColour(
   colour: Band,
   standings: { teamId: number; rank: number }[],
   matches: { homeId: number; awayId: number }[],
+  venue: ColourVenue = 'overall',
 ): number {
   if (standings.length === 0) return 0;
   const bandByTeam = new Map(standings.map((row) => [row.teamId, bandOf(row.rank, standings.length)]));
   let count = 0;
   for (const match of matches) {
-    const opponentId = match.homeId === teamId ? match.awayId : match.awayId === teamId ? match.homeId : null;
-    if (opponentId != null && bandByTeam.get(opponentId) === colour) count += 1;
+    const side = match.homeId === teamId ? 'home' : match.awayId === teamId ? 'away' : null;
+    if (side == null || (venue !== 'overall' && side !== venue)) continue;
+    const opponentId = side === 'home' ? match.awayId : match.homeId;
+    if (bandByTeam.get(opponentId) === colour) count += 1;
   }
   return count;
 }
@@ -206,15 +226,13 @@ export type ColourRateRow = {
   /** Our figure for the chosen stat in matches against this colour. */
   value: number | null;
   played: number;
-  /** Highest figure is position 1. Missing figures are not ranked. */
+  /**
+   * Strong: highest figure is position 1.
+   * Weak: smallest figure is position 1, then up to the highest.
+   * Missing figures are not ranked.
+   */
   position: number | null;
 };
-
-function periodOf(table: string): 'ft' | 'ht' | '2h' {
-  if (table.includes('_ht_')) return 'ht';
-  if (table.includes('_2h_')) return '2h';
-  return 'ft';
-}
 
 function sliceFor(match: ColourFixture, teamId: number): StatSliceMatch | null {
   const isHome = match.homeId === teamId;
@@ -234,13 +252,16 @@ function sliceFor(match: ColourFixture, teamId: number): StatSliceMatch | null {
 
 /**
  * Green, yellow and red, each carrying our stat against that colour.
- * Order stays green, yellow, red. Position 1 is the highest figure.
+ * Order stays green, yellow, red. Ranking follows the chosen filter.
  */
 export function ratesAgainstColours(
   teamId: number,
-  stat: { key: string; table: string },
+  stat: { key: string },
   standings: { teamId: number; rank: number }[],
   matches: ColourFixture[],
+  direction: ColourDirection = 'strong',
+  venue: ColourVenue = 'overall',
+  period: ColourPeriodId = 'ft',
 ): ColourRateRow[] {
   const grouped: Record<Band, StatSliceMatch[]> = { green: [], yellow: [], red: [] };
   if (standings.length > 0) {
@@ -248,12 +269,13 @@ export function ratesAgainstColours(
     for (const match of matches) {
       const slice = sliceFor(match, teamId);
       if (!slice) continue;
+      if (venue === 'home' && !slice.isHome) continue;
+      if (venue === 'away' && slice.isHome) continue;
       const colour = bandByTeam.get(slice.opponentId);
       if (!colour) continue;
       grouped[colour].push(slice);
     }
   }
-  const period = periodOf(stat.table);
   const rows: ColourRateRow[] = BANDS.map((colour) => {
     const played = grouped[colour].length;
     return {
@@ -263,22 +285,31 @@ export function ratesAgainstColours(
       position: null,
     };
   });
+  assignColourPositions(rows, direction);
+  return rows;
+}
+
+/** Number ranked colours. Strong starts at the highest figure; weak starts at the smallest. */
+export function assignColourPositions(rows: ColourRateRow[], direction: ColourDirection): void {
   const ranked = rows
     .filter((row): row is ColourRateRow & { value: number } => row.value != null)
-    .sort((a, b) => b.value - a.value || a.colour.localeCompare(b.colour));
+    .sort((a, b) => {
+      const byValue = direction === 'weak' ? a.value - b.value : b.value - a.value;
+      return byValue || a.colour.localeCompare(b.colour);
+    });
   let position = 0;
   ranked.forEach((row, index) => {
     if (index === 0 || row.value !== ranked[index - 1].value) position = index + 1;
     row.position = position;
   });
-  return rows;
 }
 
 /**
- * Up passes at position 1 or 2.
- * Down passes at position 2 or 3. Position 1 and every later position fail.
+ * Strong passes at position 1 or 2 (the higher figures).
+ * Weak passes at position 2 or 3. Position 1, the smallest figure, does not pass.
  */
 export function passesColourPosition(position: number, direction: ColourDirection): boolean {
-  if (direction === 'up') return position === 1 || position === 2;
-  return position === 2 || position === 3;
+  if (direction === 'strong') return position === 1 || position === 2;
+  if (direction === 'weak') return position === 2 || position === 3;
+  return false;
 }
