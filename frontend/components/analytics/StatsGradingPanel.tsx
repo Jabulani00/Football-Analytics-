@@ -281,7 +281,7 @@ export default function StatsGradingPanel() {
                   <Text style={[styles.cell, styles.cNum, styles.headText, styles.headRight]}>League</Text>
                   <Text style={[styles.cell, styles.cDir, styles.headText]}>Dir</Text>
                   <Text style={[styles.cell, styles.cNext, styles.headText]}>Next match</Text>
-                  <Text style={[styles.cell, styles.cOpp, styles.headText]}>Opp</Text>
+                  <Text style={[styles.cell, styles.cOpp, styles.headText, styles.headCenter]}>Opp</Text>
                 </View>
                 {tableRows.map((r, i) => {
                   const id = rowId(r);
@@ -340,10 +340,13 @@ export default function StatsGradingPanel() {
                       </View>
                       <View style={[styles.cell, styles.cOpp]}>
                         {oppGrade ? (
-                          <View style={[styles.chip, { borderColor: oppColor }]}>
-                            <Text style={[styles.chipLetter, { color: oppColor }]}>{oppGrade}</Text>
-                            <Text style={[styles.chipArrow, { color: oppColor }]}>{oppRow?.direction === 'strong' ? '↑' : '↓'}</Text>
-                          </View>
+                          <>
+                            <View style={[styles.chip, { borderColor: oppColor }]}>
+                              <Text style={[styles.chipLetter, { color: oppColor }]}>{oppGrade}</Text>
+                              <Text style={[styles.chipArrow, { color: oppColor }]}>{oppRow?.direction === 'strong' ? '↑' : '↓'}</Text>
+                            </View>
+                            {oppRow?.roman ? <Text style={styles.gradeRoman}>{oppRow.roman}</Text> : null}
+                          </>
                         ) : (
                           <Text style={styles.nextNone}>{nf ? 'n/g' : '—'}</Text>
                         )}
@@ -555,6 +558,7 @@ const styles = StyleSheet.create({
   cell: { paddingHorizontal: 4, justifyContent: 'center' },
   headText: { fontFamily: fonts.bodySemiBold, fontSize: 10, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
   headRight: { textAlign: 'right' },
+  headCenter: { textAlign: 'center' },
   cRank: { width: 30 },
   cTeam: { flex: 1, minWidth: 150 },
   cComp: { width: 120 },
@@ -562,7 +566,7 @@ const styles = StyleSheet.create({
   cNum: { width: 72, alignItems: 'flex-end' },
   cDir: { width: 84 },
   cNext: { width: 180, alignItems: 'flex-start' },
-  cOpp: { width: 60, alignItems: 'center' },
+  cOpp: { width: 86, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   nextOpp: { fontFamily: fonts.bodyMedium, fontSize: 12, color: theme.textPrimary },
   nextKo: { fontFamily: fonts.body, fontSize: 10, color: theme.textMuted, marginTop: 1 },
   nextNone: { fontFamily: fonts.body, fontSize: 11, color: theme.textFaint },
