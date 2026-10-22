@@ -62,12 +62,18 @@ function ttlOverrides(): Partial<Record<TtlName, TtlWindow>> {
 export function ttlNameFor(path: string): TtlName | null {
   if (path === 'fixtures/live') return 'fixtures/live';
   if (path === 'fixtures/upcoming' || path === 'value/upcoming') return 'fixtures/upcoming';
-  if (/^fixtures\/[^/]+$/.test(path)) return 'fixtures/id';
+  // `fixtures/between` must be matched before the single-segment id regex below,
+  // which it also satisfies — otherwise it falls through to the 15s id TTL
+  // instead of its designed 60s window, quadrupling pulls of the results feed.
   if (path === 'fixtures/between') return 'fixtures/between';
+  if (/^fixtures\/[^/]+$/.test(path)) return 'fixtures/id';
+  // Accept the bare `stats/season` / `stats/fixture` labels the client passes to
+  // clientStaleTime as well as the id-suffixed server paths; without this they
+  // drop to the 30s fallback instead of the 60s stats window.
   if (
-    path.startsWith('stats/season/') ||
-    path.startsWith('stats/fixture/') ||
-    path.startsWith('players/fixture/')
+    path.startsWith('stats/season') ||
+    path.startsWith('stats/fixture') ||
+    path.startsWith('players/fixture')
   ) {
     return 'stats';
   }

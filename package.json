@@ -16,6 +16,9 @@
     "train:btts": "node scripts/run-backend.js train_btts.py",
     "build": "npm run build --prefix frontend",
     "lint": "npm run lint --prefix frontend",
+    "test:e2e:production": "playwright test",
+    "test:e2e:production:headed": "playwright test --headed",
+    "test:e2e:report": "playwright show-report e2e-results/html",
     "supabase": "supabase",
     "supabase:version": "supabase --version",
     "supabase:login": "supabase login",
@@ -32,6 +35,7 @@
     "@expo/server": "0.7.5"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "supabase": "2.117.0"
   }
 }

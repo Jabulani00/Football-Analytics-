@@ -53,6 +53,7 @@ app-example
 # Local agent/editor state and generated review artifacts
 .claude/settings.local.json
 tmp/
+e2e-results/
 
 # Backend — local SQLite (regenerate via npm run db:setup)
 backend/scoreline.db

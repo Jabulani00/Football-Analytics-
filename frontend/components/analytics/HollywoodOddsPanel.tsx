@@ -296,7 +296,7 @@ export default function HollywoodOddsPanel({ onAddLeg }: { onAddLeg?: (leg: BetS
             />
             <HuntMetric label="NOT CRAWLED >24H" value={String(crawlHealth.stale)} />
             <HuntMetric
-              label="CRAWL FAILURES"
+              label="CRAWL ISSUES"
               value={String(crawlHealth.failures)}
               alert={crawlHealth.failures > 0}
             />

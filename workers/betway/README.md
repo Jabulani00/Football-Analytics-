@@ -1,5 +1,10 @@
 # Betway pre-match snapshot worker
 
+> Production scheduling has moved to the Supabase `betway-hunt` and
+> `betway-verify` Edge Functions. This Python/Scrapling package remains as a
+> local diagnostic tool and manually triggered fallback; GitHub Actions no
+> longer schedules it.
+
 This standalone worker uses Scrapling's regular HTTP fetcher to read the public
 JSON listing that Betway South Africa's Soccer / Upcoming page itself requests.
 It captures bookmaker event IDs, teams, league and region, scheduled kickoff,
@@ -44,7 +49,13 @@ competition, and kickoff can verify an absence.
 Cancelled, postponed, rescheduled, started, and finished matches are rejected
 as bookmaker removals and recorded with their source status.
 
-Configure the server-side Vercel project before enabling the GitHub workflow:
+The Supabase production verifier calls API-Football directly. Configure
+`API_FOOTBALL_KEY` as a Supabase Edge Function secret, not a public frontend
+variable. Follow [the Supabase worker runbook](../../docs/BETWAY_SUPABASE_WORKERS.md)
+for secrets, deployment, scheduling, and verification.
+
+The legacy Python fallback can still use the older protected Vercel proxy when
+run manually. Only for that fallback:
 
 1. In **Vercel → Project → Settings → Environment Variables**, add
    `API_FOOTBALL_KEY` for the **Production** environment. The live football
@@ -64,14 +75,11 @@ Configure the server-side Vercel project before enabling the GitHub workflow:
 
 ## Supabase and schedule
 
-The GitHub Actions workflow runs every five minutes and requires repository
-secrets named `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. Store the
-service-role key only as a GitHub secret; never put it in the repository. It
-also requires the `BETWAY_STATUS_PROXY_URL` repository variable and
-`BETWAY_STATUS_PROXY_TOKEN` secret described above. After applying both
-migrations and configuring Vercel/GitHub, use **Actions → Betway upcoming
-snapshot → Run workflow** for the first persisted run. The action serializes
-crawls so overlapping runs cannot double-count a missing fixture.
+Supabase Cron now invokes `betway-hunt` every five minutes and
+`betway-verify` every fifteen minutes. The GitHub workflow is manual-only and
+is not part of production scheduling. Database advisory locks and transactional
+RPCs serialize state changes so overlapping persistence calls cannot split
+current fixture state from the removal audit trail.
 
 ## Run
 

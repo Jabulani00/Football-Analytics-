@@ -32,6 +32,9 @@ export default function FilterDropdown({ label, value, options, onChange, style,
     <View style={[styles.field, style, narrow && styles.fieldNarrow]}>
       <Text style={styles.label}>{label}</Text>
       <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${label}: ${selected?.label ?? emptyLabel}`}
+        accessibilityState={{ expanded: open }}
         onPress={() => {
           setQuery('');
           setOpen(true);
@@ -72,6 +75,9 @@ export default function FilterDropdown({ label, value, options, onChange, style,
                   return (
                     <Pressable
                       key={opt.value || '__all'}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${label} option: ${opt.label}`}
+                      accessibilityState={{ selected: active }}
                       onPress={() => {
                         onChange(opt.value);
                         setOpen(false);
