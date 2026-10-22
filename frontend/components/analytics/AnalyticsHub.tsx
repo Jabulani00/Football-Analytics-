@@ -10,7 +10,7 @@ import OddsFusionPanel from '@/components/analytics/OddsFusionPanel';
 import OverviewPanel from '@/components/analytics/OverviewPanel';
 import PredictionsPanel from '@/components/analytics/PredictionsPanel';
 import SmartFinderPanel from '@/components/analytics/SmartFinderPanel';
-import StatsArrangementPanel from '@/components/analytics/StatsArrangementPanel';
+import StatsGradingPanel from '@/components/analytics/StatsGradingPanel';
 import FootyStatsPanel from '@/components/analytics/FootyStatsPanel';
 import StatsTablesPanel from '@/components/analytics/StatsTablesPanel';
 import StrategiesPanel from '@/components/analytics/StrategiesPanel';
@@ -46,8 +46,8 @@ function PanelForTab({
   switch (tab) {
     case 'overview':
       return <OverviewPanel />;
-    case 'arrangement':
-      return <StatsArrangementPanel />;
+    case 'grading':
+      return <StatsGradingPanel />;
     case 'tables':
       return <StatsTablesPanel showCatalogue={showTableCatalogue} />;
     case 'additional':
