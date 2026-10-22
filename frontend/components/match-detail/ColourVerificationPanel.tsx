@@ -4,18 +4,24 @@ import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-na
 import FilterDropdown from '@/components/shared/FilterDropdown';
 import { colourWord, type PowerDynamicsBundle, type SideSnapshot, type TableColour } from '@/utils/powerDynamicsEngine';
 import {
+  COLOUR_PERIODS,
   COLOUR_STAT_CATALOGUE,
+  COLOUR_VENUES,
   MIN_COLOUR_OPPONENT_MATCHES,
   bandForTeam,
+  colourPeriodLabel,
   colourStatById,
+  colourVenueLabel,
   countMatchesAgainstColour,
   formatColourStatValue,
   passesColourPosition,
   ratesAgainstColours,
   type ColourDirection,
   type ColourFixture,
+  type ColourPeriodId,
   type ColourRateRow,
   type ColourStat,
+  type ColourVenue,
 } from '@/utils/colourVerification';
 import type { Band } from '@/utils/leagueTables';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
@@ -37,9 +43,14 @@ type Props = {
   seasonLinked: boolean;
 };
 
-type SidePick = { statId: string; direction: '' | ColourDirection };
+type SidePick = {
+  statId: string;
+  venue: '' | ColourVenue;
+  period: '' | ColourPeriodId;
+  direction: '' | ColourDirection;
+};
 
-const EMPTY_PICK: SidePick = { statId: '', direction: '' };
+const EMPTY_PICK: SidePick = { statId: '', venue: '', period: '', direction: '' };
 
 export default function ColourVerificationPanel({
   pd,
@@ -64,12 +75,14 @@ export default function ColourVerificationPanel({
     <View>
       <Text style={styles.title}>Colour verification</Text>
       <Text style={styles.note}>
-        Pick a stat, then Up or Down. The ranking is your own figure against the green, yellow and red tables.
-        Position 1 is your highest figure. The read opens after 3 matches against the opponent’s colour.
+        Pick a stat, then overall, home or away, then full time, 1st half or 2nd half. Finish with Strong or Weak.
+        The ranking is your own figure against the green, yellow and red tables.
+        Strong numbers position 1 as your highest figure. Weak numbers position 1 as your smallest figure, then up to the highest.
+        The read opens after 3 matches against the opponent’s colour in that split.
       </Text>
       <View style={styles.rules}>
-        <Rule title="Up" body="Successful when the opponent’s colour is position 1 or 2." />
-        <Rule title="Down" body="Successful at position 2 or 3. Position 1 does not pass." />
+        <Rule title="Strong" body="Position 1 is your highest figure. Successful at position 1 or 2." />
+        <Rule title="Weak" body="Position 1 is your smallest figure, then up to the highest. Successful at position 2 or 3." />
         <Rule title="Sample" body="At least 3 matches vs the opponent’s colour." />
       </View>
       {!seasonLinked ? (
@@ -137,16 +150,25 @@ function SideVerify({
   statOptions: { value: string; label: string }[];
 }) {
   const colour = bandForTeam(opponent.teamId, standings) ?? opponent.colour;
+  const venue = pick.venue || 'overall';
   const played = colour != null && snap.teamId != null
-    ? countMatchesAgainstColour(snap.teamId, colour, standings, matches)
+    ? countMatchesAgainstColour(snap.teamId, colour, standings, matches, venue)
     : 0;
   const enough = played >= MIN_COLOUR_OPPONENT_MATCHES;
   const stat = colourStatById(pick.statId);
+  const periodOptions = useMemo(
+    () => COLOUR_PERIODS.filter((item) => stat?.periods.includes(item.id)).map((item) => ({ value: item.id, label: item.label })),
+    [stat],
+  );
+  const ranking: ColourDirection = pick.direction === 'weak' ? 'weak' : 'strong';
   const rates = useMemo(() => {
-    if (!stat || snap.teamId == null) return [];
-    return ratesAgainstColours(snap.teamId, stat, standings, matches);
-  }, [stat, snap.teamId, standings, matches]);
+    if (!stat || !pick.venue || !pick.period || snap.teamId == null) return [];
+    return ratesAgainstColours(snap.teamId, stat, standings, matches, ranking, pick.venue, pick.period);
+  }, [stat, pick.venue, pick.period, snap.teamId, standings, matches, ranking]);
   const opponentRate = colour != null ? rates.find((row) => row.colour === colour) ?? null : null;
+  const opponentFails = (pick.direction === 'strong' || pick.direction === 'weak')
+    && opponentRate?.position != null
+    && !passesColourPosition(opponentRate.position, pick.direction);
 
   return (
     <View style={styles.card}>
@@ -164,6 +186,7 @@ function SideVerify({
         colour={colour}
         played={played}
         enough={enough}
+        venue={pick.venue}
         loading={matchesLoading}
         error={matchesError}
       />
@@ -173,24 +196,48 @@ function SideVerify({
         value={pick.statId}
         options={statOptions}
         emptyLabel="Choose a stat"
-        onChange={(statId) => onChange({ statId })}
+        onChange={(statId) => onChange({ statId, venue: '', period: '' })}
         style={styles.dropdown}
       />
-      <Text style={styles.fieldLabel}>Direction</Text>
-      <View style={styles.directions}>
-        <DirectionButton
-          label="Up"
-          hint="Pos 1–2"
-          active={pick.direction === 'up'}
-          onPress={() => onChange({ direction: 'up' })}
+      {pick.statId ? (
+        <FilterDropdown
+          label="Where"
+          value={pick.venue}
+          options={COLOUR_VENUES.map((item) => ({ value: item.id, label: item.label }))}
+          emptyLabel="Overall, home or away"
+          onChange={(next) => onChange({ venue: next as ColourVenue })}
+          style={styles.dropdown}
         />
-        <DirectionButton
-          label="Down"
-          hint="Pos 2–3"
-          active={pick.direction === 'down'}
-          onPress={() => onChange({ direction: 'down' })}
+      ) : null}
+      {pick.statId && pick.venue ? (
+        <FilterDropdown
+          label="When"
+          value={pick.period}
+          options={periodOptions}
+          emptyLabel="Full time, 1st half or 2nd half"
+          onChange={(next) => onChange({ period: next as ColourPeriodId })}
+          style={styles.dropdown}
         />
-      </View>
+      ) : null}
+      {pick.statId && pick.venue && pick.period ? (
+        <>
+          <Text style={styles.fieldLabel}>Filter</Text>
+          <View style={styles.directions}>
+            <DirectionButton
+              label="Strong"
+              hint="Highest · 1–2"
+              active={pick.direction === 'strong'}
+              onPress={() => onChange({ direction: 'strong' })}
+            />
+            <DirectionButton
+              label="Weak"
+              hint="Pos 2–3"
+              active={pick.direction === 'weak'}
+              onPress={() => onChange({ direction: 'weak' })}
+            />
+          </View>
+        </>
+      ) : null}
 
       <Verdict
         colour={colour}
@@ -199,12 +246,22 @@ function SideVerify({
         matchesLoading={matchesLoading}
         matchesError={matchesError}
         stat={stat ?? null}
+        venue={pick.venue}
+        period={pick.period}
         direction={pick.direction}
+        opponentName={opponent.name}
         position={opponentRate?.position ?? null}
-        missingValue={stat != null && opponentRate != null && opponentRate.value == null}
+        missingValue={stat != null && pick.venue !== '' && pick.period !== '' && opponentRate != null && opponentRate.value == null}
       />
 
-      {stat ? (
+      {opponentFails && enough && stat && pick.venue && pick.period ? (
+        <Text style={styles.failNote}>
+          {opponent.name} is in an unsuccessful position
+          {opponentRate?.position != null ? ` (${opponentRate.position})` : ''}.
+        </Text>
+      ) : null}
+
+      {stat && pick.venue && pick.period ? (
         <ColourRates
           stat={stat}
           rows={rates}
@@ -213,7 +270,11 @@ function SideVerify({
         />
       ) : (
         <Text style={styles.prompt}>
-          Choose a stat to rank your figure against the green, yellow and red tables.
+          {!pick.statId
+            ? 'Choose a stat first.'
+            : !pick.venue
+              ? 'Choose overall, home or away.'
+              : 'Choose full time, 1st half or 2nd half.'}
         </Text>
       )}
     </View>
@@ -224,12 +285,14 @@ function SampleLine({
   colour,
   played,
   enough,
+  venue,
   loading,
   error,
 }: {
   colour: TableColour | null;
   played: number;
   enough: boolean;
+  venue: '' | ColourVenue;
   loading: boolean;
   error: string | null;
 }) {
@@ -237,6 +300,8 @@ function SampleLine({
   if (error) return <Text style={styles.sampleBad}>{error}</Text>;
   if (loading) return <Text style={styles.sampleMuted}>Counting matches against {colourWord(colour).toLowerCase()} teams…</Text>;
   const fill = Math.min(100, (played / MIN_COLOUR_OPPONENT_MATCHES) * 100);
+  const place = venue === 'home' ? 'home ' : venue === 'away' ? 'away ' : '';
+  const versus = `${place}matches vs ${colourWord(colour).toLowerCase()} teams`;
   return (
     <View style={styles.sampleBlock}>
       <View style={styles.track}>
@@ -249,8 +314,8 @@ function SampleLine({
       </View>
       <Text style={[styles.sampleText, enough ? styles.sampleGood : styles.sampleWait]}>
         {enough
-          ? `${played} matches vs ${colourWord(colour).toLowerCase()} teams`
-          : `${played} of ${MIN_COLOUR_OPPONENT_MATCHES} matches vs ${colourWord(colour).toLowerCase()} teams`}
+          ? `${played} ${versus}`
+          : `${played} of ${MIN_COLOUR_OPPONENT_MATCHES} ${versus}`}
       </Text>
     </View>
   );
@@ -286,7 +351,10 @@ function Verdict({
   matchesLoading,
   matchesError,
   stat,
+  venue,
+  period,
   direction,
+  opponentName,
   position,
   missingValue,
 }: {
@@ -296,7 +364,10 @@ function Verdict({
   matchesLoading: boolean;
   matchesError: string | null;
   stat: ColourStat | null;
+  venue: '' | ColourVenue;
+  period: '' | ColourPeriodId;
   direction: '' | ColourDirection;
+  opponentName: string;
   position: number | null;
   missingValue: boolean;
 }) {
@@ -318,18 +389,32 @@ function Verdict({
       />
     );
   }
-  if (!stat) return <Banner tone="wait" title="Choose a stat" body="The dropdown lists every stat this app can measure against a colour." />;
-  if (!direction) return <Banner tone="wait" title="Choose Up or Down" body="Up passes at 1 or 2. Down passes at 2 or 3." />;
+  if (!stat) return <Banner tone="wait" title="Choose a stat" body="Start with the stat. Venue and period come next." />;
+  if (!venue) return <Banner tone="wait" title="Choose where" body="Overall, home or away." />;
+  if (!period) return <Banner tone="wait" title="Choose when" body="Full time, 1st half or 2nd half." />;
+  if (!direction) return <Banner tone="wait" title="Choose Strong or Weak" body="Strong passes at 1 or 2 from the highest figure. Weak passes at 2 or 3, with position 1 the smallest figure." />;
   if (position == null || missingValue) {
     return <Banner tone="wait" title="No figure" body={`${stat.name} has no figure against the ${colourWord(colour).toLowerCase()} table.`} />;
   }
   const pass = passesColourPosition(position, direction);
-  const rule = direction === 'up' ? 'Up passes at position 1 or 2.' : 'Down passes at position 2 or 3.';
+  const split = `${colourVenueLabel(venue)}, ${colourPeriodLabel(period).toLowerCase()}`;
+  const rule = direction === 'strong'
+    ? 'Strong passes at position 1 or 2, with position 1 the highest figure.'
+    : 'Weak passes at position 2 or 3. Position 1, the smallest figure, does not pass.';
+  if (!pass) {
+    return (
+      <Banner
+        tone="bad"
+        title="Unsuccessful position"
+        body={`${opponentName} is in an unsuccessful position. ${colourWord(colour)} is position ${position} on your ${stat.name} (${split}). ${rule}`}
+      />
+    );
+  }
   return (
     <Banner
-      tone={pass ? 'good' : 'bad'}
-      title={pass ? 'Successful' : 'Unsuccessful'}
-      body={`${colourWord(colour)} is position ${position} on your ${stat.name}. ${rule}`}
+      tone="good"
+      title="Successful"
+      body={`${colourWord(colour)} is position ${position} on your ${stat.name} (${split}). ${rule}`}
     />
   );
 }
@@ -373,21 +458,24 @@ function ColourRates({
       {ordered.map((row) => {
         const focus = row.colour === opponentColour;
         const pass = direction !== '' && row.position != null && passesColourPosition(row.position, direction);
+        const fail = direction !== '' && row.position != null && !pass;
         return (
           <View
             key={row.colour}
             style={[
               styles.ladderRow,
               styles.tableBody,
-              direction !== '' && pass && styles.ladderPass,
               focus && styles.ladderFocus,
+              pass && styles.ladderPass,
+              fail && styles.ladderFail,
             ]}>
             <Text style={[styles.pos, { color: COLOUR_HEX[row.colour] }]}>{row.position ?? '—'}</Text>
             <View style={styles.colourCell}>
               <View style={[styles.swatch, { backgroundColor: COLOUR_HEX[row.colour] }]} />
-              <Text style={[styles.ladderName, focus && styles.ladderNameFocus]} numberOfLines={1}>
+              <Text style={[styles.ladderName, focus && styles.ladderNameFocus, fail && styles.ladderFailText]} numberOfLines={2}>
                 {colourWord(row.colour)}
                 {focus ? ' · opponent' : ''}
+                {fail ? ' · unsuccessful' : ''}
               </Text>
             </View>
             <Text style={styles.playedCol}>{row.played}</Text>
@@ -494,6 +582,13 @@ const styles = StyleSheet.create({
   bannerTitleBad: { color: theme.loss },
   bannerBody: { fontFamily: fonts.body, fontSize: 12, lineHeight: 16, color: theme.textMuted, marginTop: 2 },
   prompt: { fontFamily: fonts.body, fontSize: 12, lineHeight: 17, color: theme.textMuted },
+  failNote: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 13,
+    lineHeight: 18,
+    color: theme.loss,
+    marginBottom: spacing.sm,
+  },
   table: {
     marginTop: spacing.xs,
     borderWidth: layout.borderWidth,
@@ -534,6 +629,8 @@ const styles = StyleSheet.create({
   },
   ladderFocus: { backgroundColor: theme.surfaceMuted },
   ladderPass: { backgroundColor: 'rgba(5, 150, 105, 0.1)' },
+  ladderFail: { backgroundColor: 'rgba(220, 38, 38, 0.1)' },
+  ladderFailText: { color: theme.loss },
   pos: { width: 36, fontFamily: fonts.display, fontSize: 18, textAlign: 'center' },
   colourCell: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minWidth: 0 },
   swatch: { width: 8, height: 18, borderRadius: 99 },
