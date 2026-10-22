@@ -7,6 +7,7 @@ import {
   colourStatById,
   countMatchesAgainstColour,
   passesColourPosition,
+  rateOnFullTable,
   ratesAgainstColours,
 } from '../utils/colourVerification';
 
@@ -75,6 +76,11 @@ const homeRates = stat ? ratesAgainstColours(1, stat, standings, matches, 'stron
 const homeByColour = Object.fromEntries(homeRates.map((row) => [row.colour, row]));
 check('home keeps only home matches', homeByColour.red?.played === 1 && homeByColour.yellow?.played === 1 && homeByColour.green?.played === 0 && homeByColour.red?.value === 100);
 check('home sample against red is one match', countMatchesAgainstColour(1, 'red', standings, matches, 'home') === 1);
+
+const full = stat ? rateOnFullTable(1, stat, matches) : null;
+check('full table is the win rate before colours', full?.played === 4 && full?.value === 50);
+const fullHome = stat ? rateOnFullTable(1, stat, matches, 'home') : null;
+check('full table home is both home wins', fullHome?.played === 2 && fullHome?.value === 100);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
