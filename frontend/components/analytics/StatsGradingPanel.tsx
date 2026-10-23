@@ -272,16 +272,16 @@ export default function StatsGradingPanel() {
             <DragScroll horizontal style={styles.tableScroll} contentContainerStyle={styles.tableScrollContent}>
               <View style={styles.table}>
                 <View style={[styles.row, styles.headRow]}>
-                  <Text style={[styles.cell, styles.cRank, styles.headText]}>#</Text>
+                  <Text style={[styles.cell, styles.cRank, styles.headText, styles.headRight]}>#</Text>
                   <Text style={[styles.cell, styles.cTeam, styles.headText]}>Team</Text>
                   {allLeagues ? <Text style={[styles.cell, styles.cComp, styles.headText]}>League</Text> : null}
                   <Text style={[styles.cell, styles.cGrade, styles.headText]}>Grade</Text>
-                  <Text style={[styles.cell, styles.cNum, styles.headText]}>Home</Text>
-                  <Text style={[styles.cell, styles.cNum, styles.headText]}>Overall</Text>
-                  <Text style={[styles.cell, styles.cNum, styles.headText]}>League</Text>
+                  <Text style={[styles.cell, styles.cNum, styles.headText, styles.headRight]}>Home</Text>
+                  <Text style={[styles.cell, styles.cNum, styles.headText, styles.headRight]}>Overall</Text>
+                  <Text style={[styles.cell, styles.cNum, styles.headText, styles.headRight]}>League</Text>
                   <Text style={[styles.cell, styles.cDir, styles.headText]}>Dir</Text>
                   <Text style={[styles.cell, styles.cNext, styles.headText]}>Next match</Text>
-                  <Text style={[styles.cell, styles.cOpp, styles.headText]}>Opp</Text>
+                  <Text style={[styles.cell, styles.cOpp, styles.headText, styles.headCenter]}>Opp</Text>
                 </View>
                 {tableRows.map((r, i) => {
                   const id = rowId(r);
@@ -307,8 +307,9 @@ export default function StatsGradingPanel() {
                       <View style={[styles.cell, styles.cGrade]}>
                         <View style={[styles.chip, { borderColor: color }]}>
                           <Text style={[styles.chipLetter, { color }]}>{r.grade}</Text>
-                          {r.roman ? <Text style={styles.chipRoman}>{r.roman}</Text> : null}
+                          <Text style={[styles.chipArrow, { color }]}>{r.direction === 'strong' ? '↑' : '↓'}</Text>
                         </View>
+                        {r.roman ? <Text style={styles.gradeRoman}>{r.roman}</Text> : null}
                         {r.da ? <View style={styles.daDot}><Text style={styles.daDotText}>DA</Text></View> : null}
                       </View>
                       <Text style={[styles.cell, styles.cNum, styles.num]}>{pct(r.homeValue)}</Text>
@@ -339,10 +340,13 @@ export default function StatsGradingPanel() {
                       </View>
                       <View style={[styles.cell, styles.cOpp]}>
                         {oppGrade ? (
-                          <View style={[styles.chip, { borderColor: oppColor }]}>
-                            <Text style={[styles.chipLetter, { color: oppColor }]}>{oppGrade}</Text>
-                            {oppRow?.roman ? <Text style={styles.chipRoman}>{oppRow.roman}</Text> : null}
-                          </View>
+                          <>
+                            <View style={[styles.chip, { borderColor: oppColor }]}>
+                              <Text style={[styles.chipLetter, { color: oppColor }]}>{oppGrade}</Text>
+                              <Text style={[styles.chipArrow, { color: oppColor }]}>{oppRow?.direction === 'strong' ? '↑' : '↓'}</Text>
+                            </View>
+                            {oppRow?.roman ? <Text style={styles.gradeRoman}>{oppRow.roman}</Text> : null}
+                          </>
                         ) : (
                           <Text style={styles.nextNone}>{nf ? 'n/g' : '—'}</Text>
                         )}
@@ -446,8 +450,9 @@ function DetailCard({ row, showComp, onClose }: { row: TeamGradeRow; showComp: b
       <View style={styles.detailHead}>
         <View style={[styles.chip, styles.chipLg, { borderColor: color }]}>
           <Text style={[styles.chipLetterLg, { color }]}>{row.grade}</Text>
-          {row.roman ? <Text style={styles.chipRoman}>{row.roman}</Text> : null}
+          <Text style={[styles.chipArrowLg, { color }]}>{row.direction === 'strong' ? '↑' : '↓'}</Text>
         </View>
+        {row.roman ? <Text style={styles.detailRoman}>{row.roman}</Text> : null}
         <View style={{ flex: 1 }}>
           <Text style={styles.detailTeam} numberOfLines={1}>{row.team}</Text>
           <Text style={styles.detailSub}>
@@ -501,7 +506,7 @@ function explain(r: TeamGradeRow): string {
 }
 
 const styles = StyleSheet.create({
-  container: { width: '100%', maxWidth: 960, alignSelf: 'center' },
+  container: { width: '100%', alignSelf: 'stretch' },
 
   header: { marginBottom: spacing.md },
   title: { fontFamily: fonts.display, fontSize: 24, color: theme.textPrimary, marginBottom: spacing.xs },
@@ -543,7 +548,7 @@ const styles = StyleSheet.create({
   tableScroll: { width: '100%', maxWidth: '100%' },
   tableScrollContent: { minWidth: '100%' },
   table: {
-    minWidth: 860, backgroundColor: theme.surface, borderWidth: layout.borderWidth,
+    width: '100%', minWidth: 860, backgroundColor: theme.surface, borderWidth: layout.borderWidth,
     borderColor: theme.border, borderRadius: layout.borderRadius, overflow: 'hidden',
   },
   row: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.sm, paddingHorizontal: spacing.sm },
@@ -552,14 +557,16 @@ const styles = StyleSheet.create({
   rowOn: { backgroundColor: '#DBEAFE' },
   cell: { paddingHorizontal: 4, justifyContent: 'center' },
   headText: { fontFamily: fonts.bodySemiBold, fontSize: 10, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
+  headRight: { textAlign: 'right' },
+  headCenter: { textAlign: 'center' },
   cRank: { width: 30 },
-  cTeam: { width: 150 },
+  cTeam: { flex: 1, minWidth: 150 },
   cComp: { width: 120 },
-  cGrade: { width: 92, flexDirection: 'row', alignItems: 'center', gap: 4 },
-  cNum: { width: 70, alignItems: 'flex-end' },
-  cDir: { width: 78 },
-  cNext: { width: 170, alignItems: 'flex-start' },
-  cOpp: { width: 60, alignItems: 'center' },
+  cGrade: { width: 104, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  cNum: { width: 72, alignItems: 'flex-end' },
+  cDir: { width: 84 },
+  cNext: { width: 180, alignItems: 'flex-start' },
+  cOpp: { width: 86, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   nextOpp: { fontFamily: fonts.bodyMedium, fontSize: 12, color: theme.textPrimary },
   nextKo: { fontFamily: fonts.body, fontSize: 10, color: theme.textMuted, marginTop: 1 },
   nextNone: { fontFamily: fonts.body, fontSize: 11, color: theme.textFaint },
@@ -568,10 +575,13 @@ const styles = StyleSheet.create({
   compText: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted },
   num: { fontFamily: fonts.body, fontSize: 12, color: theme.textPrimary, textAlign: 'right' },
   numStrong: { fontFamily: fonts.bodySemiBold, fontSize: 13, textAlign: 'right' },
-  dirTag: { fontFamily: fonts.bodyMedium, fontSize: 11 },
-  chip: { flexDirection: 'row', alignItems: 'center', gap: 3, borderWidth: 1.5, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 },
+  dirTag: { fontFamily: fonts.bodySemiBold, fontSize: 12 },
+  chip: { flexDirection: 'row', alignItems: 'center', gap: 2, borderWidth: 1.5, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 1 },
   chipLetter: { fontFamily: fonts.display, fontSize: 15 },
-  chipRoman: { fontFamily: fonts.body, fontSize: 9, color: theme.textMuted },
+  chipArrow: { fontFamily: fonts.bodySemiBold, fontSize: 13 },
+  chipArrowLg: { fontFamily: fonts.bodySemiBold, fontSize: 20 },
+  gradeRoman: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: theme.textMuted, minWidth: 18 },
+  detailRoman: { fontFamily: fonts.bodySemiBold, fontSize: 16, color: theme.textMuted },
   daDot: { backgroundColor: theme.accentPurple, borderRadius: 999, paddingHorizontal: 4, paddingVertical: 1 },
   daDotText: { fontFamily: fonts.bodySemiBold, fontSize: 8, color: '#FFFFFF' },
   tableHint: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted, textAlign: 'center', marginTop: spacing.sm },
