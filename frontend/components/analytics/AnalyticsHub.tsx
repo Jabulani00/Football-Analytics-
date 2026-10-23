@@ -11,6 +11,7 @@ import OverviewPanel from '@/components/analytics/OverviewPanel';
 import PredictionsPanel from '@/components/analytics/PredictionsPanel';
 import SmartFinderPanel from '@/components/analytics/SmartFinderPanel';
 import StatsGradingPanel from '@/components/analytics/StatsGradingPanel';
+import StatsGradingMethod2Panel from '@/components/analytics/StatsGradingMethod2Panel';
 import FootyStatsPanel from '@/components/analytics/FootyStatsPanel';
 import StatsTablesPanel from '@/components/analytics/StatsTablesPanel';
 import StrategiesPanel from '@/components/analytics/StrategiesPanel';
@@ -48,6 +49,8 @@ function PanelForTab({
       return <OverviewPanel />;
     case 'grading':
       return <StatsGradingPanel />;
+    case 'grading2':
+      return <StatsGradingMethod2Panel />;
     case 'tables':
       return <StatsTablesPanel showCatalogue={showTableCatalogue} />;
     case 'additional':
