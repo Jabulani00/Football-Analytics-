@@ -7,6 +7,7 @@ import { fonts, layout, spacing, theme } from '@/styles/theme';
 const LINKS: { href: Href; label: string; match: string }[] = [
   { href: '/', label: 'Scores', match: '/' },
   { href: '/analytics', label: 'Analytics', match: '/analytics' },
+  { href: '/power-dynamics', label: 'Power dynamics', match: '/power-dynamics' },
   { href: '/sl-stats', label: 'SL-STATS', match: '/sl-stats' },
   { href: '/additional-stats', label: 'Additional stats', match: '/additional-stats' },
   { href: '/stats-ordinary', label: 'Ordinary', match: '/stats-ordinary' },

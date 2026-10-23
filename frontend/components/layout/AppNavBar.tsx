@@ -7,6 +7,7 @@ import { formatTopBarDate } from '@/utils/dates';
 const NAV: { href: Href; label: string; match: string }[] = [
   { href: '/', label: 'Scores', match: '/' },
   { href: '/analytics', label: 'Analytics', match: '/analytics' },
+  { href: '/power-dynamics', label: 'Power dynamics', match: '/power-dynamics' },
   { href: '/sl-stats', label: 'SL-STATS', match: '/sl-stats' },
   { href: '/additional-stats', label: 'Additional', match: '/additional-stats' },
   { href: '/stats-ordinary', label: 'Ordinary', match: '/stats-ordinary' },
