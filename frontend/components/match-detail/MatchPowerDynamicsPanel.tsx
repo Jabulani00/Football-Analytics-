@@ -1,8 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import ColourVerificationPanel from '@/components/match-detail/ColourVerificationPanel';
-import PowerDynamicCallResult from '@/components/match-detail/PowerDynamicCallResult';
-import PowerDynamicsCaller from '@/components/match-detail/PowerDynamicsCaller';
+import PowerDynamicCallSearch from '@/components/match-detail/PowerDynamicCallSearch';
 import PowerDynamicsCalculations from '@/components/match-detail/PowerDynamicsCalculations';
 import FilterDropdown from '@/components/shared/FilterDropdown';
 import FormChildBeaterPanel from '@/components/match-detail/FormChildBeaterPanel';
@@ -230,8 +229,7 @@ export default function MatchPowerDynamicsPanel({
     view === 'lost_6' ||
     view === 'sudden_drop' ||
     view === 'sudden_pickup' ||
-    view === 'colour_verification' ||
-    view === 'call';
+    view === 'colour_verification';
   const seasonFx = useSeasonFixtures(competition, season, needSeasonFx);
 
   const form = useFixtureFormAnalysis({
@@ -402,49 +400,7 @@ export default function MatchPowerDynamicsPanel({
   const body = (() => {
     switch (view) {
       case 'call':
-        return (
-          <PowerDynamicsCaller
-            t1={pd.t1}
-            t2={pd.t2}
-            renderResult={(tabId, functionId) => (
-              <PowerDynamicCallResult
-                ctx={{
-                  pd,
-                  like,
-                  standings,
-                  matches: seasonFx.matches,
-                  schedule: seasonFx.schedule,
-                  matchesLoading: seasonFx.loading,
-                  matchesError: seasonFx.error,
-                  seasonId,
-                  seasonProgress,
-                  competitionId,
-                  competitionName,
-                  h2hMatches,
-                  homeName,
-                  awayName,
-                  form,
-                  initial: initialState,
-                  history,
-                  indlela,
-                  problem,
-                  t1Label,
-                  t2Label,
-                  homePdLabel,
-                  awayPdLabel,
-                  highlightIds,
-                  teamLabels,
-                  fixtureId,
-                  kickoffUnix,
-                  homeId,
-                  awayId,
-                }}
-                tabId={tabId}
-                functionId={functionId}
-              />
-            )}
-          />
-        );
+        return <PowerDynamicCallSearch />;
       case 'baseline':
         return (
           <View>
