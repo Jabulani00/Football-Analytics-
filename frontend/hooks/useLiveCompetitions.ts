@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import { oddAlertsKeys } from '@/services/oddAlertsKeys';
 import { clientStaleTime } from '@/services/oddAlertsCachePolicy';
-import { fetchUpcomingFixtures, type RawFixture } from '@/services/oddAlerts';
+import { detectKind, fetchAllCompetitions, fetchUpcomingFixtures, type RawFixture } from '@/services/oddAlerts';
 
 export type LiveCompetition = {
   id: number;
@@ -83,4 +83,43 @@ export function useLiveCompetitionFeed(days = 3): {
 
 export function useLiveCompetitions(days = 3): LiveCompetition[] {
   return useLiveCompetitionFeed(days).competitions;
+}
+
+/**
+ * Every gradeable domestic league from the API's full competition list (1000+),
+ * not just the ~90 with fixtures in the next few days. Keeps club leagues (no
+ * cups, no national-team competitions) whose current season has games played,
+ * so each one has results to grade. Sorted by country then name.
+ */
+export function useAllGradingLeagues(): { leagues: LiveCompetition[]; loading: boolean; error: string | null } {
+  const query = useQuery({
+    queryKey: ['all-competitions', 'grading-leagues'],
+    queryFn: ({ signal }) => fetchAllCompetitions(signal),
+    staleTime: clientStaleTime('competitions'),
+  });
+
+  const leagues = useMemo<LiveCompetition[]>(() => {
+    const out: LiveCompetition[] = [];
+    for (const c of query.data ?? []) {
+      if (c.isCup || detectKind(c.name) !== 'club') continue;
+      // Use the current season (or newest) for the stat window. The API's `played`
+      // count is unreliable (often null even for major leagues), so it isn't gated
+      // on here — a league with no finished results simply grades empty when picked.
+      const current = c.seasons.find((s) => s.isCurrent) ?? c.seasons[0];
+      if (!current) continue;
+      out.push({
+        id: c.id,
+        name: c.name,
+        season: current.seasonName,
+        seasonId: current.seasonId,
+        country: c.country,
+        upcoming: 0,
+        rank: 0,
+      });
+    }
+    return out.sort((a, b) => a.country.localeCompare(b.country) || a.name.localeCompare(b.name));
+  }, [query.data]);
+
+  const error = query.error instanceof Error ? query.error.message : query.error ? String(query.error) : null;
+  return { leagues, loading: query.isPending, error };
 }

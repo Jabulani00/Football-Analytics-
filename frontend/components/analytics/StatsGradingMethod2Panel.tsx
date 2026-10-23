@@ -5,7 +5,7 @@ import { useQueries } from '@tanstack/react-query';
 import DragScroll from '@/components/shared/DragScroll';
 import FilterDropdown from '@/components/shared/FilterDropdown';
 import PageControls, { PAGE_SIZE } from '@/components/shared/PageControls';
-import { useLiveCompetitionFeed } from '@/hooks/useLiveCompetitions';
+import { useAllGradingLeagues, useLiveCompetitionFeed } from '@/hooks/useLiveCompetitions';
 import { useLiveStatsTables } from '@/hooks/useLiveStatsTables';
 import { fetchAllFixturesBetween, seasonWindowUnix } from '@/services/oddAlerts';
 import { clientStaleTime } from '@/services/oddAlertsCachePolicy';
@@ -40,18 +40,25 @@ export default function StatsGradingMethod2Panel() {
   const narrow = useWindowDimensions().width < 720;
 
   const feed = useLiveCompetitionFeed(3);
-  const leagues = useMemo(() => feed.competitions.filter((c) => c.rank === 0), [feed.competitions]);
+  // Active leagues (have upcoming fixtures) — the set small enough to combine.
+  const liveLeagues = useMemo(() => feed.competitions.filter((c) => c.rank === 0), [feed.competitions]);
+  // The full gradeable league list (1000+) for single-league selection.
+  const all = useAllGradingLeagues();
+  const pickLeagues = all.leagues;
+  const leaguesById = useMemo(
+    () => new Map([...pickLeagues, ...liveLeagues].map((l) => [l.id, l])),
+    [pickLeagues, liveLeagues],
+  );
 
   const [selection, setSelection] = useState<string>('');
   useEffect(() => {
-    if (leagues.length === 0) return;
-    if (selection === '' || (selection !== ALL && !leagues.some((l) => String(l.id) === selection))) {
-      setSelection(String(leagues[0].id));
-    }
-  }, [leagues, selection]);
+    if (selection !== '') return;
+    const first = liveLeagues[0]?.id ?? pickLeagues[0]?.id;
+    if (first != null) setSelection(String(first));
+  }, [liveLeagues, pickLeagues, selection]);
   const allLeagues = selection === ALL;
   const singleId = allLeagues ? null : Number(selection);
-  const activeComp = leagues.find((l) => l.id === singleId) ?? null;
+  const activeComp = singleId != null ? leaguesById.get(singleId) ?? null : null;
 
   const [statKey, setStatKey] = useState('over25');
   const [gradeSel, setGradeSel] = useState<string>(ALL_GRADES);
@@ -63,7 +70,7 @@ export default function StatsGradingMethod2Panel() {
   });
 
   const allResults = useQueries({
-    queries: (allLeagues ? leagues : []).map((comp) => {
+    queries: (allLeagues ? liveLeagues : []).map((comp) => {
       const { fromUnix, toUnix } = seasonWindowUnix(comp.season ?? '');
       return {
         queryKey: ['stats-grading2-league', comp.id, comp.season] as const,
@@ -78,13 +85,13 @@ export default function StatsGradingMethod2Panel() {
       };
     }),
   });
-  const allSig = allResults.map((r, i) => (r.data ? `${leagues[i]?.id}:${r.dataUpdatedAt}` : '')).join('|');
+  const allSig = allResults.map((r, i) => (r.data ? `${liveLeagues[i]?.id}:${r.dataUpdatedAt}` : '')).join('|');
   const settled = allResults.filter((r) => r.isSuccess || r.isError).length;
 
   const grid: Method2Grid | null = useMemo(() => {
     if (!allLeagues) return live.data ? buildMethod2Grid(live.data, statKey, activeComp?.name ?? '') : null;
     const grids = allResults
-      .map((r, i) => (r.data && leagues[i] ? buildMethod2Grid(r.data, statKey, leagues[i].name) : null))
+      .map((r, i) => (r.data && liveLeagues[i] ? buildMethod2Grid(r.data, statKey, liveLeagues[i].name) : null))
       .filter((g): g is Method2Grid => g != null);
     return grids.length ? mergeGrids(grids) : null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -101,12 +108,12 @@ export default function StatsGradingMethod2Panel() {
   const selectedBucket = buckets.find((b) => gradeId(b) === gradeSel) ?? null;
   useEffect(() => setPage(1), [gradeSel, statKey, selection]);
 
-  const loading = feed.loading || (allLeagues ? settled < leagues.length : singleId != null && live.loading && !live.data);
+  const loading = selection === '' || (allLeagues ? feed.loading || settled < liveLeagues.length : live.loading && !live.data);
   const err = feed.error ?? (allLeagues ? null : live.error);
 
   const leagueOptions = [
-    { value: ALL, label: `All leagues combined (${leagues.length})` },
-    ...leagues.map((l) => ({ value: String(l.id), label: `${l.name} · ${l.country}` })),
+    { value: ALL, label: `All active leagues combined (${liveLeagues.length})` },
+    ...pickLeagues.map((l) => ({ value: String(l.id), label: `${l.name} · ${l.country}` })),
   ];
   const gradeOptions = [
     { value: ALL_GRADES, label: 'All grades · overview' },
@@ -140,13 +147,13 @@ export default function StatsGradingMethod2Panel() {
         {loading ? (
           <>
             <ActivityIndicator size="small" color={theme.accentGreen} />
-            <Text style={styles.statusMuted}>{allLeagues ? `Grading ${settled}/${leagues.length} leagues…` : 'Grading teams live…'}</Text>
+            <Text style={styles.statusMuted}>{allLeagues ? `Grading ${settled}/${liveLeagues.length} leagues…` : 'Grading teams live…'}</Text>
           </>
         ) : err ? (
           <Text style={styles.statusMuted}>Live data unavailable: {err}</Text>
         ) : (
           <Text style={styles.statusLive}>
-            ● {allLeagues ? `${leagues.length} leagues` : activeComp?.name ?? ''} · {GRADABLE_STATS.find((s) => s.key === statKey)?.label}
+            ● {allLeagues ? `${liveLeagues.length} active leagues` : activeComp?.name ?? ''} · {GRADABLE_STATS.find((s) => s.key === statKey)?.label}
           </Text>
         )}
       </View>

@@ -4,7 +4,7 @@ import { useQueries } from '@tanstack/react-query';
 
 import DragScroll from '@/components/shared/DragScroll';
 import FilterDropdown from '@/components/shared/FilterDropdown';
-import { useLiveCompetitionFeed } from '@/hooks/useLiveCompetitions';
+import { useAllGradingLeagues, useLiveCompetitionFeed } from '@/hooks/useLiveCompetitions';
 import { useLiveFixtures } from '@/hooks/useLiveFixtures';
 import { useLiveStatsTables } from '@/hooks/useLiveStatsTables';
 import { fetchAllFixturesBetween, seasonWindowUnix } from '@/services/oddAlerts';
@@ -72,21 +72,26 @@ export default function StatsGradingPanel() {
   const narrow = useWindowDimensions().width < 720;
 
   const feed = useLiveCompetitionFeed(3);
-  // Leagues only — rank 0 is a domestic league; cups (1) and friendlies/youth (2) are excluded.
-  const leagues = useMemo(() => feed.competitions.filter((c) => c.rank === 0), [feed.competitions]);
+  // Active leagues (rank 0, have upcoming fixtures) — the set small enough to combine.
+  const liveLeagues = useMemo(() => feed.competitions.filter((c) => c.rank === 0), [feed.competitions]);
+  // The full gradeable league list (1000+) for single-league selection.
+  const all = useAllGradingLeagues();
+  const pickLeagues = all.leagues;
+  const leaguesById = useMemo(
+    () => new Map([...pickLeagues, ...liveLeagues].map((l) => [l.id, l])),
+    [pickLeagues, liveLeagues],
+  );
 
-  // Selection: 'all' (every league combined) or a league id as a string. Default
-  // to the first league so the page loads light; "All leagues" is one click away.
+  // Selection: 'all' (every active league combined) or a league id as a string.
   const [selection, setSelection] = useState<string>('');
   useEffect(() => {
-    if (leagues.length === 0) return;
-    if (selection === '' || (selection !== ALL && !leagues.some((l) => String(l.id) === selection))) {
-      setSelection(String(leagues[0].id));
-    }
-  }, [leagues, selection]);
+    if (selection !== '') return;
+    const first = liveLeagues[0]?.id ?? pickLeagues[0]?.id;
+    if (first != null) setSelection(String(first));
+  }, [liveLeagues, pickLeagues, selection]);
   const allLeagues = selection === ALL;
   const singleId = allLeagues ? null : Number(selection);
-  const activeComp = leagues.find((l) => l.id === singleId) ?? null;
+  const activeComp = singleId != null ? leaguesById.get(singleId) ?? null : null;
 
   const [statKey, setStatKey] = useState('over25');
   const [sourceList, setSourceList] = useState<SourceListId>(1);
@@ -103,7 +108,7 @@ export default function StatsGradingPanel() {
 
   // All leagues: one live build per league, combined.
   const allResults = useQueries({
-    queries: (allLeagues ? leagues : []).map((comp) => {
+    queries: (allLeagues ? liveLeagues : []).map((comp) => {
       const { fromUnix, toUnix } = seasonWindowUnix(comp.season ?? '');
       return {
         queryKey: ['stats-grading-league', comp.id, comp.season] as const,
@@ -118,7 +123,7 @@ export default function StatsGradingPanel() {
       };
     }),
   });
-  const allSig = allResults.map((r, i) => (r.data ? `${leagues[i]?.id}:${r.dataUpdatedAt}` : '')).join('|');
+  const allSig = allResults.map((r, i) => (r.data ? `${liveLeagues[i]?.id}:${r.dataUpdatedAt}` : '')).join('|');
   const settled = allResults.filter((r) => r.isSuccess || r.isError).length;
 
   const allRows = useMemo(() => {
@@ -128,7 +133,7 @@ export default function StatsGradingPanel() {
     }
     const combined: TeamGradeRow[] = [];
     allResults.forEach((r, i) => {
-      const comp = leagues[i];
+      const comp = liveLeagues[i];
       if (r.data && comp) combined.push(...gradeAllTeamsForStat(r.data, sourceList, statKey, comp.name));
     });
     return sortRows(combined);
@@ -170,13 +175,13 @@ export default function StatsGradingPanel() {
   const strongCount = gradedRows.filter((r) => r.direction === 'strong').length;
   const weakCount = gradedRows.filter((r) => r.direction === 'weak').length;
   const source = sourceListById(sourceList);
-  const loading = feed.loading || (allLeagues ? settled < leagues.length : singleId != null && live.loading && !live.data);
+  const loading = selection === '' || (allLeagues ? feed.loading || settled < liveLeagues.length : live.loading && !live.data);
   const err = feed.error ?? (allLeagues ? null : live.error);
   const selectedRow = tableRows.find((r) => rowId(r) === selected) ?? null;
 
   const leagueOptions = [
-    { value: ALL, label: `All leagues combined (${leagues.length})` },
-    ...leagues.map((l) => ({ value: String(l.id), label: `${l.name} · ${l.country}` })),
+    { value: ALL, label: `All active leagues combined (${liveLeagues.length})` },
+    ...pickLeagues.map((l) => ({ value: String(l.id), label: `${l.name} · ${l.country}` })),
   ];
 
   return (
@@ -240,14 +245,14 @@ export default function StatsGradingPanel() {
           <>
             <ActivityIndicator size="small" color={theme.accentGreen} />
             <Text style={styles.statusMuted}>
-              {allLeagues ? `Grading ${settled}/${leagues.length} leagues…` : 'Grading teams live…'}
+              {allLeagues ? `Grading ${settled}/${liveLeagues.length} leagues…` : 'Grading teams live…'}
             </Text>
           </>
         ) : err ? (
           <Text style={styles.statusMuted}>Live data unavailable: {err}</Text>
         ) : (
           <Text style={styles.statusLive}>
-            ● {allLeagues ? `${leagues.length} leagues` : activeComp?.name ?? ''} · {source.id}. {source.label}
+            ● {allLeagues ? `${liveLeagues.length} active leagues` : activeComp?.name ?? ''} · {source.id}. {source.label}
           </Text>
         )}
       </View>
