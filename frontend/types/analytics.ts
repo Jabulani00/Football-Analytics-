@@ -118,4 +118,5 @@ export type AnalyticsTab =
   | 'strategies'
   | 'odds'
   | 'hollywood'
+  | 'betway'
   | 'betslip';

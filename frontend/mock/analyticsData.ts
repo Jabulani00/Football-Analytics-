@@ -29,6 +29,7 @@ export const ANALYTICS_TABS: { id: AnalyticsTab; label: string }[] = [
   { id: 'strategies', label: 'Strategies' },
   { id: 'odds', label: 'Odds Fusion' },
   { id: 'hollywood', label: 'Hollywoodbets' },
+  { id: 'betway', label: 'Betway' },
   { id: 'betslip', label: 'Bet Slip' },
 ];
 
@@ -37,7 +38,7 @@ export const PROJECT_SUMMARY = {
   baseTables: 45,
   lastNTables: 36,
   metricsPerTable: 100,
-  dataSources: ['Flashscore', 'Footy Stats', 'Odds Alert API', 'Sofascore', 'Hollywoodbets'],
+  dataSources: ['Flashscore', 'Footy Stats', 'Odds Alert API', 'Sofascore', 'Hollywoodbets', 'Betway'],
 };
 
 export const DATA_SOURCES: DataSource[] = [
@@ -75,6 +76,13 @@ export const DATA_SOURCES: DataSource[] = [
     category: 'odds',
     status: 'planned',
     dataCollected: ['Odds', 'Bet-slip generation'],
+  },
+  {
+    id: 'betway',
+    name: 'Betway',
+    category: 'odds',
+    status: 'active',
+    dataCollected: ['Pre-match 1X2 odds', 'Odds movements', 'Verified fixture removals'],
   },
 ];
 

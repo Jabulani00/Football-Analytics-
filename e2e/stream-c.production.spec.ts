@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 const HUNT_URL = 'https://zymspnykcnqczqdnernb.supabase.co/functions/v1/hollywood-hunt';
+const BETWAY_HUNT_URL = '/betway-hunt-status';
 const SLIP_KEY = 'scoreline.analytics-bet-slip.v1';
 
 async function openAnalytics(page: Page) {
@@ -42,6 +43,7 @@ test.describe('Stream C production acceptance', () => {
       'Strategies',
       'Odds Fusion',
       'Hollywoodbets',
+      'Betway',
       'Bet Slip',
     ]) {
       await openTab(page, tab);
@@ -198,10 +200,26 @@ test.describe('Stream C production acceptance', () => {
     expect(Array.isArray(payload) || typeof payload === 'object').toBeTruthy();
   });
 
+  test('Betway public hunt status is readable and visible in Analytics', async ({ page, request }) => {
+    const response = await request.get(BETWAY_HUNT_URL);
+    expect(response.status()).toBe(200);
+    const payload = await response.json();
+    expect(payload.bookmaker).toBe('Betway');
+    expect(typeof payload.historyAvailable).toBe('boolean');
+    expect(Array.isArray(payload.currentEvents)).toBeTruthy();
+    expect(Array.isArray(payload.verifiedRemovals)).toBeTruthy();
+    expect(Array.isArray(payload.pendingRemovals)).toBeTruthy();
+
+    await openAnalytics(page);
+    await openTab(page, 'Betway');
+    await expect(page.getByText('BETWAY HUNT', { exact: true })).toBeVisible();
+    await expect(page.getByText('CURRENT BETWAY 1X2', { exact: true })).toBeVisible();
+  });
+
   test('mobile viewport keeps core Stream C controls reachable', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await openAnalytics(page);
-    for (const tab of ['Strategies', 'Odds Fusion', 'Hollywoodbets', 'Bet Slip']) {
+    for (const tab of ['Strategies', 'Odds Fusion', 'Hollywoodbets', 'Betway', 'Bet Slip']) {
       await openTab(page, tab);
     }
     await expect(page.getByText('Generated Bet Slip', { exact: true })).toBeVisible();

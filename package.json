@@ -26,7 +26,8 @@
     "supabase:link": "supabase link --project-ref zymspnykcnqczqdnernb",
     "supabase:db:dry-run": "supabase db push --dry-run",
     "supabase:db:push": "supabase db push",
-    "supabase:function:deploy": "supabase functions deploy hollywood-hunt"
+    "supabase:function:deploy": "supabase functions deploy hollywood-hunt",
+    "supabase:function:deploy:betway": "supabase functions deploy betway-hunt"
   },
   "engines": {
     "node": ">=20"
