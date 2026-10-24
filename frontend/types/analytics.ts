@@ -108,6 +108,7 @@ export type AnalyticsTab =
   | 'overview'
   | 'grading'
   | 'grading2'
+  | 'omit'
   | 'tables'
   | 'additional'
   | 'footy'
