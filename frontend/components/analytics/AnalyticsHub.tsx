@@ -4,6 +4,7 @@ import { Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimen
 import AdditionalStatsPanel from '@/components/analytics/AdditionalStatsPanel';
 import AppNavBar from '@/components/layout/AppNavBar';
 import AnalyticsNav from '@/components/analytics/AnalyticsNav';
+import BetwayOddsPanel from '@/components/analytics/BetwayOddsPanel';
 import BetSlipPanel from '@/components/analytics/BetSlipPanel';
 import HollywoodOddsPanel from '@/components/analytics/HollywoodOddsPanel';
 import OddsFusionPanel from '@/components/analytics/OddsFusionPanel';
@@ -25,7 +26,7 @@ import { fonts, spacing, theme } from '@/styles/theme';
 
 function focusForTab(tab: AnalyticsTab): PredictFocus {
   if (tab === 'footy' || tab === 'odds') return 'goals';
-  if (tab === 'tables' || tab === 'additional' || tab === 'streams' || tab === 'strategies' || tab === 'hollywood') return 'result';
+  if (tab === 'tables' || tab === 'additional' || tab === 'streams' || tab === 'strategies' || tab === 'hollywood' || tab === 'betway') return 'result';
   return 'all';
 }
 
@@ -69,6 +70,8 @@ function PanelForTab({
       return <OddsFusionPanel live={live} onAddLeg={slip.addLeg} />;
     case 'hollywood':
       return <HollywoodOddsPanel onAddLeg={slip.addLeg} />;
+    case 'betway':
+      return <BetwayOddsPanel onAddLeg={slip.addLeg} />;
     case 'betslip':
       return <BetSlipPanel legs={slip.legs} onRemove={slip.removeLeg} onClear={slip.clear} />;
   }
