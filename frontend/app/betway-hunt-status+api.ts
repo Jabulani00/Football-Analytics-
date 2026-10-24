@@ -65,10 +65,9 @@ function isEsports(event: Row): boolean {
 function betwayApiUrl(skip: number): string {
   const url = new URL('https://www.betway.co.za/sportsapi/br/v1/BetBook/Upcoming/');
   const values: [string, string][] = [
-    ['countryCode', 'ZA'], ['sportId', 'soccer'], ['Skip', String(skip)], ['Take', '500'],
+    ['countryCode', 'ZA'], ['sportId', 'soccer'], ['Skip', String(skip)], ['Take', '100'],
     ['cultureCode', 'en-US'], ['isEsport', 'false'], ['boostedOnly', 'false'],
-    ['marketTypes', '[Win/Draw/Win]'], ['marketTypes', 'Total Goals'],
-    ['marketTypes', '[Both Teams To Score]'],
+    ['marketTypes', '[Win/Draw/Win]'],
   ];
   for (const [key, value] of values) url.searchParams.append(key, value);
   return url.toString();
@@ -86,7 +85,7 @@ async function captureLiveBetway(): Promise<LiveCapture> {
     const response = await fetch(betwayApiUrl(skip), {
       headers: { Accept: 'application/json', Referer: 'https://www.betway.co.za/sport/soccer/upcoming' },
       cache: 'no-store',
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.timeout(8_000),
     });
     if (!response.ok) throw new Error(`Betway API returned HTTP ${response.status}`);
     const body = await response.json() as Row;
@@ -165,7 +164,10 @@ async function captureLiveBetway(): Promise<LiveCapture> {
     }
     pages += 1;
     skip += sourceRows.length;
-    if (body.isFinalPage) {
+    // Live fallback is display-only and never infers removals. One bounded page
+    // keeps the Vercel response below its request deadline; the scheduled
+    // Supabase worker remains responsible for exhaustive pagination/history.
+    if (body.isFinalPage || pageNumber === 0) {
       return { capturedAt: capturedAt.toISOString(), pages, sourceEvents, excludedEvents, events };
     }
     if (sourceRows.length === 0) throw new Error('Betway API returned an incomplete empty page');
