@@ -18,6 +18,18 @@ export const BAND_MID = 40;
 /** Teams under this many games are shown but flagged as a thin sample. */
 export const MIN_SAMPLE = 5;
 
+/**
+ * The document's "First rule": a team is only graded when it has played enough
+ * games — overall and at home — otherwise a 1–2 game 100% reading would classify
+ * it. The all-games / last-10&8 windows want 8 overall + 4 home; the shorter
+ * last-6&5 window is relaxed to what that window can hold.
+ */
+export const MIN_PLAYED: Record<SourceListId, { overall: number; home: number }> = {
+  1: { overall: 8, home: 4 },
+  2: { overall: 8, home: 4 },
+  3: { overall: 5, home: 3 },
+};
+
 export type Direction = 'up' | 'mid' | 'down';
 
 export function directionOf(value: number): Direction {
@@ -253,18 +265,24 @@ export function gradeAllTeamsForStat(
     }
   }
 
+  const minPlayed = MIN_PLAYED[sourceList];
   const out: TeamGradeRow[] = [];
   for (const key of order) {
     const overallRows = overallMaps.map((m) => m.get(key));
     const homeRows = homeByWindow.map((m) => m.get(key));
     const overallValue = mean(overallRows.map((r) => numAt(r, statKey)));
     const homeValue = mean(homeRows.map((r) => numAt(r, statKey)));
-    const graded = gradeFor(homeValue, overallValue, leagueValue);
-    const direction = graded ? (isStrong(graded.grade) ? 'strong' : 'weak') : null;
 
     const primaryOverall = overallRows.find((r) => r != null);
-    const sampleRaw = primaryOverall?.['sample_size'];
-    const sample = typeof sampleRaw === 'number' && Number.isFinite(sampleRaw) ? sampleRaw : null;
+    const primaryHome = homeRows.find((r) => r != null);
+    const sample = numAt(primaryOverall, 'sample_size');
+    const homeSample = numAt(primaryHome, 'sample_size');
+
+    // First rule: skip teams without enough games — a 1–2 game 100% is not a grade.
+    const enoughGames = (sample ?? 0) >= minPlayed.overall && (homeSample ?? 0) >= minPlayed.home;
+    const graded = enoughGames ? gradeFor(homeValue, overallValue, leagueValue) : null;
+    const direction = graded ? (isStrong(graded.grade) ? 'strong' : 'weak') : null;
+
     const teamIdRaw = primaryOverall?.['team_id'];
     const teamId = typeof teamIdRaw === 'number' && Number.isFinite(teamIdRaw) ? teamIdRaw : null;
     const name = String(primaryOverall?.team_name ?? key);

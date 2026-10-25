@@ -107,6 +107,10 @@ export type OddsFusionRow = {
 export type AnalyticsTab =
   | 'overview'
   | 'grading'
+  | 'grading2'
+  | 'omit'
+  | 'dominance'
+  | 'opposite'
   | 'tables'
   | 'additional'
   | 'footy'
@@ -116,4 +120,5 @@ export type AnalyticsTab =
   | 'strategies'
   | 'odds'
   | 'hollywood'
+  | 'betway'
   | 'betslip';

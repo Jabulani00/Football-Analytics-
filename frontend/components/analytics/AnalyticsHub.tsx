@@ -4,6 +4,7 @@ import { Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimen
 import AdditionalStatsPanel from '@/components/analytics/AdditionalStatsPanel';
 import AppNavBar from '@/components/layout/AppNavBar';
 import AnalyticsNav from '@/components/analytics/AnalyticsNav';
+import BetwayOddsPanel from '@/components/analytics/BetwayOddsPanel';
 import BetSlipPanel from '@/components/analytics/BetSlipPanel';
 import HollywoodOddsPanel from '@/components/analytics/HollywoodOddsPanel';
 import OddsFusionPanel from '@/components/analytics/OddsFusionPanel';
@@ -11,6 +12,10 @@ import OverviewPanel from '@/components/analytics/OverviewPanel';
 import PredictionsPanel from '@/components/analytics/PredictionsPanel';
 import SmartFinderPanel from '@/components/analytics/SmartFinderPanel';
 import StatsGradingPanel from '@/components/analytics/StatsGradingPanel';
+import StatsGradingMethod2Panel from '@/components/analytics/StatsGradingMethod2Panel';
+import OmitTestPanel from '@/components/analytics/OmitTestPanel';
+import DominanceCheckerPanel from '@/components/analytics/DominanceCheckerPanel';
+import OppositeStatsAnalysisPanel from '@/components/analytics/OppositeStatsAnalysisPanel';
 import FootyStatsPanel from '@/components/analytics/FootyStatsPanel';
 import StatsTablesPanel from '@/components/analytics/StatsTablesPanel';
 import StrategiesPanel from '@/components/analytics/StrategiesPanel';
@@ -24,7 +29,7 @@ import { fonts, spacing, theme } from '@/styles/theme';
 
 function focusForTab(tab: AnalyticsTab): PredictFocus {
   if (tab === 'footy' || tab === 'odds') return 'goals';
-  if (tab === 'tables' || tab === 'additional' || tab === 'streams' || tab === 'strategies' || tab === 'hollywood') return 'result';
+  if (tab === 'tables' || tab === 'additional' || tab === 'streams' || tab === 'strategies' || tab === 'hollywood' || tab === 'betway') return 'result';
   return 'all';
 }
 
@@ -48,6 +53,14 @@ function PanelForTab({
       return <OverviewPanel />;
     case 'grading':
       return <StatsGradingPanel />;
+    case 'grading2':
+      return <StatsGradingMethod2Panel />;
+    case 'omit':
+      return <OmitTestPanel />;
+    case 'dominance':
+      return <DominanceCheckerPanel />;
+    case 'opposite':
+      return <OppositeStatsAnalysisPanel />;
     case 'tables':
       return <StatsTablesPanel showCatalogue={showTableCatalogue} />;
     case 'additional':
@@ -66,6 +79,8 @@ function PanelForTab({
       return <OddsFusionPanel live={live} onAddLeg={slip.addLeg} />;
     case 'hollywood':
       return <HollywoodOddsPanel onAddLeg={slip.addLeg} />;
+    case 'betway':
+      return <BetwayOddsPanel onAddLeg={slip.addLeg} />;
     case 'betslip':
       return <BetSlipPanel legs={slip.legs} onRemove={slip.removeLeg} onClear={slip.clear} />;
   }
