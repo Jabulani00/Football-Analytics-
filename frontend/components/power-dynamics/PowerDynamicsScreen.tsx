@@ -16,7 +16,7 @@ export default function PowerDynamicsScreen() {
           <Text style={styles.kicker}>All leagues</Text>
           <Text style={[styles.title, narrow && styles.titleNarrow]}>Power dynamics</Text>
           <Text style={styles.blurb}>
-            Pick a power dynamic, a function, and an aspect. Teams from every club league are listed from the closest fit to the weakest.
+            Pick a sector, an option, and an in-option, then a day. Fixtures that day are listed from the closest fit.
           </Text>
         </View>
         <PowerDynamicCallSearch heading={false} />
