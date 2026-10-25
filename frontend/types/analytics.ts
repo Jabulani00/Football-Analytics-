@@ -109,6 +109,7 @@ export type AnalyticsTab =
   | 'grading'
   | 'grading2'
   | 'omit'
+  | 'dominance'
   | 'tables'
   | 'additional'
   | 'footy'
