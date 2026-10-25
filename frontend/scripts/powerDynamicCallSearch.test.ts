@@ -3,7 +3,7 @@
  * Run: npx tsx scripts/powerDynamicCallSearch.test.ts
  */
 import { POWER_DYNAMIC_CALLS } from '../utils/powerDynamicCalls';
-import { nearestPointsGap, callAspectsFor, scoreCallAspect, type CallTableRow } from '../utils/powerDynamicCallSearch';
+import { nearestPointsGap, callAspectsFor, scoreCallAspect, scoreCallFixture, type CallTableRow } from '../utils/powerDynamicCallSearch';
 import type { SeasonMatch } from '../utils/bhozomaEngine';
 
 let passed = 0;
@@ -60,16 +60,59 @@ const wins: SeasonMatch[] = [1, 2, 3, 4, 5, 6].map((unix) => ({
   unix,
 }));
 check(
-  'six wins in a row is a full won-6 match',
-  scoreCallAspect('won-6-current', table[0], table, { matches: wins })?.percent === 100,
+  'six wins in a row is a ticked won-6 match',
+  scoreCallAspect('won-6-current::tick', table[0], table, { matches: wins })?.percent === 100,
+);
+check(
+  'the wrong mark is the opposite of six wins',
+  scoreCallAspect('won-6-current::wrong', table[3], table, { matches: wins })?.percent === 100,
 );
 check(
   'the side on the other end of those games has six losses',
-  scoreCallAspect('lost-6-current', table[1], table, { matches: wins })?.percent === 100,
+  scoreCallAspect('lost-6-current::tick', table[1], table, { matches: wins })?.percent === 100,
+);
+
+const unbeaten: SeasonMatch[] = [1, 2].map((unix) => ({
+  homeId: 2,
+  awayId: 1,
+  homeGoals: 1,
+  awayGoals: 0,
+  unix,
+}));
+check(
+  'tick calls T1 has never beaten T2 when that is true',
+  scoreCallFixture('h2h-never-t1::tick', table[0], table[1], table, { matches: unbeaten })?.percent === 100,
+);
+check(
+  'wrong calls the same in-option when T1 has beaten T2',
+  scoreCallFixture('h2h-never-t1::wrong', table[0], table[1], table, { matches: wins })?.percent === 100,
 );
 check(
   'a stronger neighbour is a compliant match',
   scoreCallAspect('compliant-stronger', table[0], table)?.percent === 100,
+);
+check(
+  'five wins in the last five is Good',
+  scoreCallAspect('naming-l5-good::tick', table[0], table, { matches: wins })?.percent === 100,
+);
+check(
+  'Good vs Bad is the last-5 form matchup',
+  scoreCallFixture('ukulumbana-1::tick', table[0], table[1], table, { matches: wins })?.percent === 100,
+);
+check(
+  'five straight wins for T1 is a polar edge',
+  scoreCallFixture('h2h-polar::tick', table[0], table[1], table, {
+    matches: wins.slice(0, 5),
+    fixture: { homeId: 1, awayId: 2, unix: 9 },
+  })?.percent === 100,
+);
+check(
+  'Negative change is the last-5 label name',
+  callAspectsFor('last5', 'label_change').some((item) => item.label === 'Negative change' && item.mark === 'tick'),
+);
+check(
+  'form matchup lists every Ukulumbana pairing',
+  callAspectsFor('last5', 'form_matchup').filter((item) => item.id.startsWith('ukulumbana-') && item.mark === 'tick').length === 21,
 );
 
 console.log(`\n${passed} passed, ${failed} failed`);

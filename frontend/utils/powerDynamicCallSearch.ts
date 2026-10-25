@@ -12,6 +12,7 @@ import {
 import {
   classifyBaselineLetter,
   STREAMLINE_CLOSE_MAX,
+  t1IsHomeSide,
   type BaselineLetter,
 } from '@/utils/powerDynamicsEngine';
 
@@ -38,6 +39,11 @@ export type CallAspect = {
   needsFixtures?: boolean;
   measure?: string;
   token?: string;
+  /** True/false call, shown with a tick or a wrong. */
+  binary?: boolean;
+  /** Scored once for the fixture, from T1 toward T2. */
+  pair?: boolean;
+  mark?: 'tick' | 'wrong';
 };
 
 export type CallScore = {
@@ -63,6 +69,7 @@ export const CALL_ASPECTS: CallAspect[] = [
     functionId: 'gap',
     label: 'Close gap',
     detail: 'Points to the next side. A gap of 0 is a perfect close match. Each point lowers the fit.',
+    pair: true,
   },
   {
     id: 'baseline-gap-far',
@@ -70,6 +77,7 @@ export const CALL_ASPECTS: CallAspect[] = [
     functionId: 'gap',
     label: 'Wide gap',
     detail: 'Points to the next side. A wider gap is a stronger wide-gap match.',
+    pair: true,
   },
   {
     id: 'bateteme-1-close',
@@ -77,6 +85,7 @@ export const CALL_ASPECTS: CallAspect[] = [
     functionId: 'bateteme_1',
     label: 'Bateteme closeness',
     detail: `Bateteme starts when two sides are within ${STREAMLINE_CLOSE_MAX} points. The closest gap is the best match. Odds are not part of this league scan.`,
+    pair: true,
   },
   {
     id: 'bateteme-2-close',
@@ -84,6 +93,7 @@ export const CALL_ASPECTS: CallAspect[] = [
     functionId: 'bateteme_2',
     label: 'Bateteme closeness',
     detail: `Bateteme starts when two sides are within ${STREAMLINE_CLOSE_MAX} points. The closest gap is the best match. Odds are not part of this league scan.`,
+    pair: true,
   },
   {
     id: 'colour-green',
@@ -126,6 +136,7 @@ export const CALL_ASPECTS: CallAspect[] = [
     functionId: 'read',
     label: 'Tight on the table',
     detail: 'Smallest points gap to the next side. Level sides are the best match.',
+    pair: true,
   },
   {
     id: 'points-clear',
@@ -133,6 +144,7 @@ export const CALL_ASPECTS: CallAspect[] = [
     functionId: 'read',
     label: 'Clear gap',
     detail: 'Largest points gap to the next side. A wider gap is a stronger match.',
+    pair: true,
   },
   ...measureAspects(),
 ];
@@ -199,6 +211,19 @@ function venuePercent(row: CallTableRow, home: boolean): number | null {
   return home ? homeShare : 100 - homeShare;
 }
 
+function gapFor(row: CallTableRow, table: CallTableRow[], context?: CallSearchContext): number | null {
+  if (context?.opponentId != null) {
+    const other = table.find((item) => item.teamId === context.opponentId);
+    if (other) return Math.abs(other.points - row.points);
+  }
+  return nearestPointsGap(row, table);
+}
+
+function withMark(aspect: CallAspect, score: CallScore | null): CallScore | null {
+  if (!score || aspect.mark !== 'wrong') return score;
+  return { percent: 100 - score.percent, reason: score.reason };
+}
+
 /** 0–100 fit for one team. Null when this aspect cannot be measured for the side. */
 export function scoreCallAspect(
   aspectId: string,
@@ -210,7 +235,7 @@ export function scoreCallAspect(
   if (!aspect || row.played <= 0) return null;
   if (aspect.needsFixtures && !context?.matches) return null;
   if (aspect.measure && aspect.token) {
-    return scoreMeasure(aspect as MeasureAspect, row, table, context);
+    return withMark(aspect, scoreMeasure(aspect as MeasureAspect, row, table, context));
   }
 
   if (aspectId.startsWith('baseline-letter-')) {
@@ -225,7 +250,7 @@ export function scoreCallAspect(
   }
 
   if (aspectId === 'baseline-gap-close' || aspectId === 'bateteme-1-close' || aspectId === 'bateteme-2-close' || aspectId === 'points-tight') {
-    const gap = nearestPointsGap(row, table);
+    const gap = gapFor(row, table, context);
     if (gap == null) return null;
     return {
       percent: closePercent(gap),
@@ -234,7 +259,7 @@ export function scoreCallAspect(
   }
 
   if (aspectId === 'baseline-gap-far' || aspectId === 'points-clear') {
-    const gap = nearestPointsGap(row, table);
+    const gap = gapFor(row, table, context);
     if (gap == null) return null;
     return {
       percent: widePercent(gap),
@@ -264,4 +289,32 @@ export function scoreCallAspect(
   }
 
   return null;
+}
+
+/** Fit of one fixture. Pair reads use T1 against T2. Team reads use the closer side. */
+export function scoreCallFixture(
+  aspectId: string,
+  home: CallTableRow,
+  away: CallTableRow,
+  table: CallTableRow[],
+  context?: CallSearchContext,
+): CallScore | null {
+  const aspect = callAspectById(aspectId);
+  if (!aspect) return null;
+  const fixture = context?.fixture ?? { homeId: home.teamId, awayId: away.teamId, unix: 0 };
+  const scoreSide = (side: CallTableRow, opponent: CallTableRow) =>
+    scoreCallAspect(aspectId, side, table, { ...context, opponentId: opponent.teamId, fixture });
+  if (aspect.pair) {
+    const t1 = t1IsHomeSide(home, away) ? home : away;
+    const t2 = t1.teamId === home.teamId ? away : home;
+    return scoreSide(t1, t2);
+  }
+  const homeScore = scoreSide(home, away);
+  const awayScore = scoreSide(away, home);
+  if (!homeScore) return awayScore;
+  if (!awayScore) return homeScore;
+  if (awayScore.percent > homeScore.percent) {
+    return { percent: awayScore.percent, reason: `${away.name} · ${awayScore.reason}` };
+  }
+  return { percent: homeScore.percent, reason: `${home.name} · ${homeScore.reason}` };
 }

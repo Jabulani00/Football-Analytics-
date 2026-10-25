@@ -5,7 +5,7 @@
  */
 import type { H2HMatch } from '@/services/oddAlerts';
 import type { SeasonMatch } from '@/utils/bhozomaEngine';
-import { BHOZOMA_MIN_MP, buildBhozomaTable } from '@/utils/bhozomaEngine';
+import { BHOZOMA_ABOVE_PCT, UMNQUMI_BELOW_PCT, buildBhozomaTable } from '@/utils/bhozomaEngine';
 import {
   COLOUR_STAT_CATALOGUE,
   colourPeriodLabel,
@@ -23,12 +23,28 @@ import {
   type FormChildBand,
 } from '@/utils/formChildBeater';
 import { buildImbangiTable, leagueProgressInfo, type ImbangiGrade, type ImbangiScheduleMatch } from '@/utils/imbangiEngine';
+import { H2H_MEETINGS_LIMIT } from '@/utils/h2hDisplay';
+import { isNikaNikaRecord, polarEdgeGrade } from '@/utils/h2hOptions';
 import { bandOf } from '@/utils/leagueTables';
-import { statusFromOutcome } from '@/utils/last5Analysis';
+import {
+  CHANGE_LABEL,
+  OPTION_LABEL,
+  UKULUMBANA,
+  analyseTeamLast5,
+  bandFromTablePoints,
+  compareLenses,
+  findUkulumbana,
+  statusFromOutcome,
+  trueOption,
+  type FormChange,
+  type TrueOption,
+} from '@/utils/last5Analysis';
 import { last5LabelChanges, twoGoalBandSides, type TwoGoalGrade } from '@/utils/last5Sections';
 import {
   LAST5_WINDOW,
+  LAST6_BAND_LABEL,
   LAST6_SPLIT_PTS,
+  LAST6_TREND_SHORT,
   LAST6_WINDOW,
   analyseTeamLast6,
   last5FormLeagueTable,
@@ -40,15 +56,18 @@ import {
   currentStreak,
   indlelaPath,
   neverTwiceInRow,
+  PPG_BAND_LABEL,
+  mshayiNote,
   ppgAlignsWithColour,
   ppgBandForColour,
   ppgSwing,
+  type PpgBand,
   type IndlelaPath,
   type TableColour,
 } from '@/utils/powerDynamicsEngine';
 import { evaluateProblemCauser, type ProblemLevelName } from '@/utils/problemCauser';
 import { reverseEngineer } from '@/utils/reverseEngineering';
-import type { ResultOutcome } from '@/utils/teamResults';
+import { pointsFromOutcomes, type ResultOutcome } from '@/utils/teamResults';
 
 export type MeasureRow = {
   rank: number;
@@ -70,6 +89,11 @@ export type MeasureAspect = {
   needsFixtures: boolean;
   measure: string;
   token: string;
+  /** True/false call. Shown twice: a tick when it holds, a wrong when it does not. */
+  binary?: boolean;
+  /** Scored once for the fixture, from T1 toward T2. */
+  pair?: boolean;
+  mark?: 'tick' | 'wrong';
 };
 
 export type MeasureScore = { percent: number; reason: string };
@@ -78,6 +102,10 @@ export type CallSearchContext = {
   matches?: SeasonMatch[];
   schedule?: ImbangiScheduleMatch[];
   cache?: Map<string, unknown>;
+  /** The other side of the fixture being called. */
+  opponentId?: number;
+  /** This fixture, used as the current stop on a path. */
+  fixture?: { homeId: number; awayId: number; unix: number };
 };
 
 const PAIR = 'Compared with the nearest side on the table.';
@@ -148,6 +176,7 @@ function formChildAspects(): MeasureAspect[] {
         functionId: group,
         label: 'Umshayi wezingane',
         detail: `${sample} Red PPG in the child-beater band.`,
+        binary: true,
         needsFixtures: group !== 'table',
         measure: 'form-child',
         token: 'child',
@@ -171,18 +200,54 @@ const DEATH_TRENDS = [
   { id: 'constant', label: 'Constant' },
 ] as const;
 
+const DEATH_CALL: Record<(typeof DEATH_SERIES)[number]['id'], Record<(typeof DEATH_TRENDS)[number]['id'], string>> = {
+  losses: {
+    decline: 'Decline goal difference',
+    incline: 'Incline goal difference',
+    up_down: 'Up down',
+    constant: 'Constant',
+  },
+  wins: {
+    decline: 'Decline goal difference',
+    incline: 'Incline goal difference',
+    up_down: 'Up down',
+    constant: 'Constant',
+  },
+  scoring: {
+    decline: 'Decline goal scoring',
+    incline: 'Incline goal scoring',
+    up_down: 'Up down',
+    constant: 'Constant',
+  },
+  conceding: {
+    decline: 'Decline goal conceding',
+    incline: 'Incline goal conceding',
+    up_down: 'Up down',
+    constant: 'Constant',
+  },
+};
+
+const DEATH_HEAD: Record<(typeof DEATH_SERIES)[number]['id'], string> = {
+  losses: 'Losses',
+  wins: 'Wins',
+  scoring: 'Goal scoring',
+  conceding: 'Goal conceding',
+};
+
 function deathAspects(): MeasureAspect[] {
   const out: MeasureAspect[] = [];
   for (const series of DEATH_SERIES) {
     for (const trend of DEATH_TRENDS) {
+      const call = DEATH_CALL[series.id][trend.id];
       out.push(
         aspect({
           id: `death-${series.id}-${trend.id}`,
           tabId: 'last5',
           functionId: 'death_trap',
-          label: `${series.label} · ${trend.label}`,
-          detail: `Overall full time, last 5. ${series.label} ${trend.label.toLowerCase()}.`,
+          label: `${DEATH_HEAD[series.id]} · ${call}`,
+          detail: `Overall full time, last 5. ${DEATH_HEAD[series.id]}: ${call}.`,
           needsFixtures: true,
+          binary: true,
           measure: 'death-trap',
           token: `${series.id}:${trend.id}`,
         }),
@@ -196,7 +261,7 @@ const GRADES: { id: TwoGoalGrade; label: string }[] = [
   { id: 'great', label: 'Great' },
   { id: 'good', label: 'Good' },
   { id: 'mediocre', label: 'Mediocre' },
-  { id: 'mediocre_positive', label: 'Mediocre, still a fight' },
+  { id: 'mediocre_positive', label: 'Mediocre + well fought battle = positive' },
   { id: 'bad', label: 'Bad' },
 ];
 
@@ -212,7 +277,7 @@ const MOTIVATION_OUTCOMES: { id: MotivationOutcome; label: string }[] = [
   { id: 'futile_chase', label: 'Futile chase' },
 ];
 
-export function measureAspects(): MeasureAspect[] {
+function rawMeasureAspects(): MeasureAspect[] {
   const h2h = (venue: 'overall' | 'home' | 'away', token: string, label: string, detail: string): MeasureAspect =>
     aspect({
       id: `h2h-${venue}-${token}`,
@@ -239,9 +304,11 @@ export function measureAspects(): MeasureAspect[] {
       id: 'zidane-never-beat',
       tabId: 'baseline',
       functionId: 'zidane_law',
-      label: 'Never beaten the next side',
-      detail: `Stronger side, and they have met without this side winning. ${PAIR} ${SEASON}`,
+      label: 'T1 has never beaten T2',
+      detail: 'T1 has never beaten T2 in the meetings.',
       needsFixtures: true,
+      binary: true,
+      pair: true,
       measure: 'stream-h2h',
       token: 'never',
     }),
@@ -249,9 +316,11 @@ export function measureAspects(): MeasureAspect[] {
       id: 'bookie-did-beat',
       tabId: 'baseline',
       functionId: 'bookie',
-      label: 'Has beaten the next side',
-      detail: `Stronger side, and they have a win in the meetings. ${PAIR} ${SEASON}`,
+      label: 'T1 did beat T2',
+      detail: 'T1 did beat T2 in the meetings.',
       needsFixtures: true,
+      binary: true,
+      pair: true,
       measure: 'stream-h2h',
       token: 'beat',
     }),
@@ -259,9 +328,11 @@ export function measureAspects(): MeasureAspect[] {
       id: 'bookie2-no-meetings',
       tabId: 'baseline',
       functionId: 'bookie2',
-      label: 'No meetings with the next side',
-      detail: `No finished meeting with the nearest side. ${PAIR}`,
+      label: 'No H2H games were found',
+      detail: 'No H2H games were found.',
       needsFixtures: true,
+      binary: true,
+      pair: true,
       measure: 'stream-h2h',
       token: 'none',
     }),
@@ -271,6 +342,7 @@ export function measureAspects(): MeasureAspect[] {
       functionId: 'read',
       label: 'Chasing',
       detail: 'The three points pull this side up the table.',
+      binary: true,
       measure: 'motive',
       token: 'chase',
     }),
@@ -280,6 +352,7 @@ export function measureAspects(): MeasureAspect[] {
       functionId: 'read',
       label: 'Escaping',
       detail: 'The three points are about getting out of trouble.',
+      binary: true,
       measure: 'motive',
       token: 'escape',
     }),
@@ -287,8 +360,9 @@ export function measureAspects(): MeasureAspect[] {
       id: 'motive-none',
       tabId: 'importance_3pts',
       functionId: 'read',
-      label: 'Nothing on the line',
-      detail: 'No chase and no escape from the table.',
+      label: 'Little to gain',
+      detail: 'Little to gain from the table.',
+      binary: true,
       measure: 'motive',
       token: 'no_reward',
     }),
@@ -296,8 +370,9 @@ export function measureAspects(): MeasureAspect[] {
       id: 'motive-grade-a',
       tabId: 'importance_3pts',
       functionId: 'read',
-      label: 'Grade A',
-      detail: 'How close the three points are to a grade A need.',
+      label: 'Strong need',
+      detail: 'Strong need for the three points.',
+      binary: true,
       measure: 'motive',
       token: 'grade-A',
     }),
@@ -305,8 +380,9 @@ export function measureAspects(): MeasureAspect[] {
       id: 'motive-grade-b',
       tabId: 'importance_3pts',
       functionId: 'read',
-      label: 'Grade B',
-      detail: 'How close the three points are to a grade B need.',
+      label: 'Some need',
+      detail: 'Some need for the three points.',
+      binary: true,
       measure: 'motive',
       token: 'grade-B',
     }),
@@ -319,6 +395,16 @@ export function measureAspects(): MeasureAspect[] {
       measure: 'motive',
       token: 'win-climbs',
     }),
+    aspect({
+      id: 'motive-futile',
+      tabId: 'importance_3pts',
+      functionId: 'read',
+      label: 'Futile chase',
+      detail: 'Futile chase — remaining matches cannot close it.',
+      binary: true,
+      measure: 'motive',
+      token: 'futile',
+    }),
     ...MOTIVATION_OUTCOMES.map((item) =>
       aspect({
         id: `motive-${item.id}`,
@@ -326,40 +412,48 @@ export function measureAspects(): MeasureAspect[] {
         functionId: 'read',
         label: item.label,
         detail: `The three-point read is “${item.label}”.`,
+        binary: true,
         measure: 'motive',
         token: `outcome:${item.id}`,
       }),
     ),
+    ...(['good', 'medium', 'bad', 'good_inhla', 'medium_inhla', 'bad_inhla'] as TrueOption[]).map((option) =>
+      aspect({
+        id: `naming-l5-${option}`,
+        tabId: 'last5',
+        functionId: 'initial_state',
+        label: OPTION_LABEL[option],
+        detail: `Last 5 naming: ${OPTION_LABEL[option]}. 9+ pts Good, 5–8 Medium, 4 or less Bad. 3+ draws add Inhlambuluko.`,
+        needsFixtures: true,
+        binary: true,
+        measure: 'naming',
+        token: option,
+      }),
+    ),
     aspect({
-      id: 'last5-good',
+      id: 'naming-l5-inhla',
       tabId: 'last5',
       functionId: 'initial_state',
-      label: 'Good',
-      detail: 'Share of the last 5 that Section 1 calls Good.',
+      label: 'Inhlambuluko — 3+ draws in the last 5',
+      detail: 'Inhlambuluko — 3+ draws in the last 5.',
       needsFixtures: true,
-      measure: 'initial',
-      token: 'Good',
+      binary: true,
+      measure: 'naming',
+      token: 'inhla',
     }),
-    aspect({
-      id: 'last5-med',
-      tabId: 'last5',
-      functionId: 'initial_state',
-      label: 'Med',
-      detail: 'Share of the last 5 that Section 1 calls Med.',
-      needsFixtures: true,
-      measure: 'initial',
-      token: 'Med',
-    }),
-    aspect({
-      id: 'last5-bad',
-      tabId: 'last5',
-      functionId: 'initial_state',
-      label: 'Bad',
-      detail: 'Share of the last 5 that Section 1 calls Bad.',
-      needsFixtures: true,
-      measure: 'initial',
-      token: 'Bad',
-    }),
+    ...(['positive', 'zero', 'negative'] as FormChange[]).map((change) =>
+      aspect({
+        id: `l5-change-${change}`,
+        tabId: 'last5',
+        functionId: 'initial_state',
+        label: CHANGE_LABEL[change],
+        detail: CHANGE_LABEL[change],
+        needsFixtures: true,
+        binary: true,
+        measure: 'l5-change',
+        token: change,
+      }),
+    ),
     aspect({
       id: 'last5-best',
       tabId: 'last5',
@@ -400,6 +494,20 @@ export function measureAspects(): MeasureAspect[] {
       measure: 'matchup',
       token: 'behind',
     }),
+    ...UKULUMBANA.map((pair) =>
+      aspect({
+        id: `ukulumbana-${pair.id}`,
+        tabId: 'last5',
+        functionId: 'form_matchup',
+        label: pair.label,
+        detail: pair.label,
+        needsFixtures: true,
+        binary: true,
+        pair: true,
+        measure: 'ukulumbana',
+        token: String(pair.id),
+      }),
+    ),
     aspect({
       id: 'last5-home-stronger',
       tabId: 'last5',
@@ -419,6 +527,22 @@ export function measureAspects(): MeasureAspect[] {
       needsFixtures: true,
       measure: 'venue-form',
       token: 'away',
+    }),
+    ...(['A', 'B', 'C', 'D'] as const).map((id) => {
+      const label =
+        id === 'A' ? 'Home vs Away' : id === 'B' ? 'Home vs Overall' : id === 'C' ? 'Overall vs Away' : 'Overall vs Overall';
+      return aspect({
+        id: `lens-${id}-same`,
+        tabId: 'last5',
+        functionId: 'diff',
+        label: `${label} · same strength`,
+        detail: `${label} · same strength`,
+        needsFixtures: true,
+        binary: true,
+        pair: true,
+        measure: 'lens',
+        token: id,
+      });
     }),
     aspect({
       id: 'two-goal-wins',
@@ -446,8 +570,9 @@ export function measureAspects(): MeasureAspect[] {
         tabId: 'last5',
         functionId: 'two_goal',
         label: grade.label,
-        detail: `Share of the overall last 5 the colour-band sheet calls ${grade.label}. ${PAIR}`,
+        detail: grade.label,
         needsFixtures: true,
+        binary: true,
         measure: 'two-goal',
         token: grade.id,
       }),
@@ -456,9 +581,10 @@ export function measureAspects(): MeasureAspect[] {
       id: 'label-strength',
       tabId: 'last5',
       functionId: 'label_change',
-      label: 'Hidden strength',
-      detail: `Positive label changes in the last 5. Place 1 is the strongest match. ${PAIR}`,
+      label: 'Positive change',
+      detail: 'Positive change in the last 5.',
       needsFixtures: true,
+      binary: true,
       measure: 'label-change',
       token: 'strength',
     }),
@@ -466,9 +592,10 @@ export function measureAspects(): MeasureAspect[] {
       id: 'label-weakness',
       tabId: 'last5',
       functionId: 'label_change',
-      label: 'Hidden weakness',
-      detail: `Negative label changes in the last 5. ${PAIR}`,
+      label: 'Negative change',
+      detail: 'Negative change in the last 5.',
       needsFixtures: true,
+      binary: true,
       measure: 'label-change',
       token: 'weakness',
     }),
@@ -477,8 +604,9 @@ export function measureAspects(): MeasureAspect[] {
       tabId: 'last5',
       functionId: 'label_change',
       label: 'Cancel',
-      detail: `Positive and negative label changes cancel. ${PAIR}`,
+      detail: 'Positive and negative changes cancel.',
       needsFixtures: true,
+      binary: true,
       measure: 'label-change',
       token: 'cancel',
     }),
@@ -487,12 +615,35 @@ export function measureAspects(): MeasureAspect[] {
       tabId: 'last5',
       functionId: 'label_change',
       label: 'No change',
-      detail: `The last 5 did not move the label. ${PAIR}`,
+      detail: 'No change in the last 5.',
       needsFixtures: true,
+      binary: true,
       measure: 'label-change',
       token: 'no_change',
     }),
     ...deathAspects(),
+    aspect({
+      id: 'death-stronger',
+      tabId: 'last5',
+      functionId: 'death_trap',
+      label: 'Getting stronger',
+      detail: 'A shrinking loss margin, or a growing win margin.',
+      needsFixtures: true,
+      binary: true,
+      measure: 'death-reading',
+      token: 'stronger',
+    }),
+    aspect({
+      id: 'death-weaker',
+      tabId: 'last5',
+      functionId: 'death_trap',
+      label: 'Getting weaker',
+      detail: 'A growing loss margin, or a shrinking win margin.',
+      needsFixtures: true,
+      binary: true,
+      measure: 'death-reading',
+      token: 'weaker',
+    }),
     aspect({
       id: 'reverse-last5',
       tabId: 'last5',
@@ -527,9 +678,10 @@ export function measureAspects(): MeasureAspect[] {
       id: 'form-strong',
       tabId: 'form',
       functionId: 'read',
-      label: 'Strong',
-      detail: 'Last 6 band. Strong is the best match, then mixed, then poor.',
+      label: LAST6_BAND_LABEL.strong,
+      detail: LAST6_BAND_LABEL.strong,
       needsFixtures: true,
+      binary: true,
       measure: 'form-band',
       token: 'strong',
     }),
@@ -537,9 +689,10 @@ export function measureAspects(): MeasureAspect[] {
       id: 'form-mixed',
       tabId: 'form',
       functionId: 'read',
-      label: 'Mixed',
-      detail: 'Last 6 band. Mixed is the best match.',
+      label: LAST6_BAND_LABEL.mixed,
+      detail: LAST6_BAND_LABEL.mixed,
       needsFixtures: true,
+      binary: true,
       measure: 'form-band',
       token: 'mixed',
     }),
@@ -547,9 +700,10 @@ export function measureAspects(): MeasureAspect[] {
       id: 'form-poor',
       tabId: 'form',
       functionId: 'read',
-      label: 'Poor',
-      detail: 'Last 6 band. Poor is the best match.',
+      label: LAST6_BAND_LABEL.poor,
+      detail: LAST6_BAND_LABEL.poor,
       needsFixtures: true,
+      binary: true,
       measure: 'form-band',
       token: 'poor',
     }),
@@ -557,9 +711,10 @@ export function measureAspects(): MeasureAspect[] {
       id: 'form-up',
       tabId: 'form',
       functionId: 'read',
-      label: 'Picking up',
-      detail: 'Last 3 of the last 6 took more points than the previous 3.',
+      label: LAST6_TREND_SHORT.picking_up,
+      detail: LAST6_TREND_SHORT.picking_up,
       needsFixtures: true,
+      binary: true,
       measure: 'form-trend',
       token: 'picking_up',
     }),
@@ -567,9 +722,10 @@ export function measureAspects(): MeasureAspect[] {
       id: 'form-down',
       tabId: 'form',
       functionId: 'read',
-      label: 'Dropping',
-      detail: 'Last 3 of the last 6 took fewer points than the previous 3.',
+      label: LAST6_TREND_SHORT.dropping,
+      detail: LAST6_TREND_SHORT.dropping,
       needsFixtures: true,
+      binary: true,
       measure: 'form-trend',
       token: 'dropping',
     }),
@@ -577,11 +733,146 @@ export function measureAspects(): MeasureAspect[] {
       id: 'form-steady',
       tabId: 'form',
       functionId: 'read',
-      label: 'Steady',
-      detail: 'The last 6 did not swing up or down.',
+      label: LAST6_TREND_SHORT.steady,
+      detail: LAST6_TREND_SHORT.steady,
       needsFixtures: true,
+      binary: true,
       measure: 'form-trend',
       token: 'steady',
+    }),
+    ...(['good', 'medium', 'bad', 'good_inhla', 'medium_inhla', 'bad_inhla'] as TrueOption[]).map((option) =>
+      aspect({
+        id: `naming-l6-${option}`,
+        tabId: 'form',
+        functionId: 'read',
+        label: OPTION_LABEL[option],
+        detail: `Last 6 naming: ${OPTION_LABEL[option]}.`,
+        needsFixtures: true,
+        binary: true,
+        measure: 'naming',
+        token: `l6:${option}`,
+      }),
+    ),
+    aspect({
+      id: 'naming-l6-inhla',
+      tabId: 'form',
+      functionId: 'read',
+      label: 'Inhlambuluko',
+      detail: 'Inhlambuluko — 3+ draws in the last 6.',
+      needsFixtures: true,
+      binary: true,
+      measure: 'naming',
+      token: 'l6:inhla',
+    }),
+    ...UKULUMBANA.map((pair) =>
+      aspect({
+        id: `ukulumbana-l6-${pair.id}`,
+        tabId: 'form',
+        functionId: 'read',
+        label: pair.label,
+        detail: pair.label,
+        needsFixtures: true,
+        binary: true,
+        pair: true,
+        measure: 'ukulumbana',
+        token: `l6:${pair.id}`,
+      }),
+    ),
+    aspect({
+      id: 'h2h-never-t1',
+      tabId: 'h2h',
+      functionId: 'overall',
+      label: 'T1 has never beaten T2',
+      detail: 'T1 has never beaten T2 in these meetings.',
+      needsFixtures: true,
+      binary: true,
+      pair: true,
+      measure: 'stream-h2h',
+      token: 'never',
+    }),
+    aspect({
+      id: 'h2h-polar',
+      tabId: 'h2h',
+      functionId: 'overall',
+      label: 'T1 edge (polar)',
+      detail: 'T1 edge (polar).',
+      needsFixtures: true,
+      binary: true,
+      pair: true,
+      measure: 'h2h-say',
+      token: 'polar',
+    }),
+    aspect({
+      id: 'h2h-no-polar',
+      tabId: 'h2h',
+      functionId: 'overall',
+      label: 'No edge (polar)',
+      detail: 'Neither side’s H2H record matches a polar edge grade.',
+      needsFixtures: true,
+      binary: true,
+      pair: true,
+      measure: 'h2h-say',
+      token: 'no-polar',
+    }),
+    aspect({
+      id: 'h2h-nika',
+      tabId: 'h2h',
+      functionId: 'overall',
+      label: 'Nika nika',
+      detail: "Anyone's game — no clear dominator.",
+      needsFixtures: true,
+      binary: true,
+      pair: true,
+      measure: 'h2h-say',
+      token: 'nika',
+    }),
+    aspect({
+      id: 'h2h-level',
+      tabId: 'h2h',
+      functionId: 'overall',
+      label: 'Point difference is 0',
+      detail: 'T1 and T2 are level on H2H points.',
+      needsFixtures: true,
+      binary: true,
+      pair: true,
+      measure: 'h2h-say',
+      token: 'level',
+    }),
+    aspect({
+      id: 'h2h-even',
+      tabId: 'h2h',
+      functionId: 'overall',
+      label: 'Even in past meetings',
+      detail: 'Even in past meetings.',
+      needsFixtures: true,
+      binary: true,
+      pair: true,
+      measure: 'h2h-say',
+      token: 'even',
+    }),
+    aspect({
+      id: 'h2h-home-edge',
+      tabId: 'h2h',
+      functionId: 'overall',
+      label: 'Home edge in H2H',
+      detail: 'Home edge in H2H.',
+      needsFixtures: true,
+      binary: true,
+      pair: true,
+      measure: 'h2h-say',
+      token: 'home-edge',
+    }),
+    aspect({
+      id: 'h2h-away-edge',
+      tabId: 'h2h',
+      functionId: 'overall',
+      label: 'Away edge in H2H',
+      detail: 'Away edge in H2H.',
+      needsFixtures: true,
+      binary: true,
+      pair: true,
+      measure: 'h2h-say',
+      token: 'away-edge',
     }),
     h2h('overall', 'won', 'Won the meetings', 'Win share across every meeting.'),
     h2h('overall', 'shared', 'Shared the meetings', 'Draw share across every meeting.'),
@@ -602,32 +893,81 @@ export function measureAspects(): MeasureAspect[] {
       measure: 'venue-balance',
       token: 'even',
     }),
+    aspect({
+      id: 'venue-unbeaten-home',
+      tabId: 'home_away_strong',
+      functionId: 'read',
+      label: 'has never been beaten at home',
+      detail: 'The home side has never been beaten at home.',
+      needsFixtures: true,
+      binary: true,
+      pair: true,
+      measure: 'venue-unbeaten',
+      token: 'home',
+    }),
+    aspect({
+      id: 'venue-unbeaten-away',
+      tabId: 'home_away_strong',
+      functionId: 'read',
+      label: 'has never been beaten away',
+      detail: 'The away side has never been beaten away.',
+      needsFixtures: true,
+      binary: true,
+      pair: true,
+      measure: 'venue-unbeaten',
+      token: 'away',
+    }),
     ...colourAspects(),
     aspect({
       id: 'ppg-aligns',
       tabId: 'colour_verification',
       functionId: 'ppg_colour',
-      label: 'PPG matches the colour',
-      detail: 'Season PPG sits in the band the table colour expects.',
+      label: 'Aligns with the colour plan',
+      detail: 'Aligns with the colour plan.',
+      binary: true,
       measure: 'ppg-colour',
       token: 'aligns',
     }),
+    ...(Object.keys(PPG_BAND_LABEL) as PpgBand[]).map((band) =>
+      aspect({
+        id: `ppg-band-${band}`,
+        tabId: 'colour_verification',
+        functionId: 'ppg_colour',
+        label: PPG_BAND_LABEL[band],
+        detail: PPG_BAND_LABEL[band],
+        binary: true,
+        measure: 'ppg-band',
+        token: band,
+      }),
+    ),
     aspect({
-      id: 'ppg-off',
+      id: 'mshayi-high',
       tabId: 'colour_verification',
       functionId: 'ppg_colour',
-      label: 'PPG misses the colour',
-      detail: 'Season PPG sits outside the band the table colour expects.',
-      measure: 'ppg-colour',
-      token: 'off',
+      label: 'Bottom-third PPG is high (>1.5) — punching above the colour',
+      detail: 'Bottom-third PPG is high (>1.5) — punching above the colour',
+      binary: true,
+      measure: 'mshayi',
+      token: 'high',
+    }),
+    aspect({
+      id: 'mshayi-weak',
+      tabId: 'colour_verification',
+      functionId: 'ppg_colour',
+      label: 'Top-third PPG is weak (<0.8) — colour and PPG disagree',
+      detail: 'Top-third PPG is weak (<0.8) — colour and PPG disagree',
+      binary: true,
+      measure: 'mshayi',
+      token: 'weak',
     }),
     aspect({
       id: 'character-split',
       tabId: 'character',
       functionId: 'read',
-      label: 'Split home and away',
-      detail: 'Home PPG and away PPG differ by 0.50 or more.',
+      label: 'Split character',
+      detail: 'Home PPG and away PPG differ by 0.50 or more — split character.',
       needsFixtures: true,
+      binary: true,
       measure: 'character',
       token: 'split',
     }),
@@ -638,6 +978,7 @@ export function measureAspects(): MeasureAspect[] {
       label: 'Even home and away',
       detail: 'Home PPG and away PPG stay inside 0.50 of each other.',
       needsFixtures: true,
+      binary: true,
       measure: 'character',
       token: 'even',
     }),
@@ -645,8 +986,9 @@ export function measureAspects(): MeasureAspect[] {
       id: 'middle-above-strong',
       tabId: 'middle_guys',
       functionId: 'read',
-      label: 'Takes points above',
-      detail: 'Middle third. Share of points taken against sides above. 50% is the strong show.',
+      label: 'Strong show vs sides above',
+      detail: 'Strong show: takes points against sides above.',
+      binary: true,
       needsFixtures: true,
       measure: 'middle',
       token: 'above-strong',
@@ -655,8 +997,9 @@ export function measureAspects(): MeasureAspect[] {
       id: 'middle-above-weak',
       tabId: 'middle_guys',
       functionId: 'read',
-      label: 'Soft against sides above',
-      detail: 'Middle third. A lower share against sides above is a stronger weak-show match.',
+      label: 'Weak show vs sides above',
+      detail: 'Weak show: soft against sides above.',
+      binary: true,
       needsFixtures: true,
       measure: 'middle',
       token: 'above-weak',
@@ -665,8 +1008,9 @@ export function measureAspects(): MeasureAspect[] {
       id: 'middle-below-strong',
       tabId: 'middle_guys',
       functionId: 'read',
-      label: 'Dominates sides below',
-      detail: 'Middle third. Share of points taken against sides below. 75% is the strong show.',
+      label: 'Strong show vs sides below',
+      detail: 'Strong show: dominates sides below.',
+      binary: true,
       needsFixtures: true,
       measure: 'middle',
       token: 'below-strong',
@@ -675,8 +1019,9 @@ export function measureAspects(): MeasureAspect[] {
       id: 'middle-below-weak',
       tabId: 'middle_guys',
       functionId: 'read',
-      label: 'Drops points below',
-      detail: 'Middle third. A lower share against sides below is a stronger weak-show match.',
+      label: 'Weak show vs sides below',
+      detail: 'Weak show: drops points to sides below.',
+      binary: true,
       needsFixtures: true,
       measure: 'middle',
       token: 'below-weak',
@@ -686,7 +1031,8 @@ export function measureAspects(): MeasureAspect[] {
       tabId: 'bhozoma',
       functionId: 'read',
       label: 'Bhozoma',
-      detail: 'Points taken against sides above. A higher share is a stronger Bhozoma match.',
+      detail: 'Bhozoma — points taken against sides above.',
+      binary: true,
       needsFixtures: true,
       measure: 'bhozoma',
       token: 'above',
@@ -696,7 +1042,8 @@ export function measureAspects(): MeasureAspect[] {
       tabId: 'bhozoma',
       functionId: 'read',
       label: 'Goliath hero',
-      detail: 'A low share against sides above. The lower share is the stronger Goliath match.',
+      detail: 'Goliath hero — a low share against sides above.',
+      binary: true,
       needsFixtures: true,
       measure: 'bhozoma',
       token: 'goliath',
@@ -706,7 +1053,8 @@ export function measureAspects(): MeasureAspect[] {
       tabId: 'bhozoma',
       functionId: 'read',
       label: 'Umnqumi wehlathi',
-      detail: 'Points taken against sides below. A higher share is a stronger Umnqumi match.',
+      detail: 'Umnqumi wehlathi — points taken against sides below.',
+      binary: true,
       needsFixtures: true,
       measure: 'bhozoma',
       token: 'umnqumi',
@@ -716,7 +1064,8 @@ export function measureAspects(): MeasureAspect[] {
       tabId: 'bhozoma',
       functionId: 'read',
       label: 'Hlathi submissive',
-      detail: 'A low share against sides below. The lower share is the stronger Hlathi match.',
+      detail: 'Hlathi submissive — a low share against sides below.',
+      binary: true,
       needsFixtures: true,
       measure: 'bhozoma',
       token: 'hlathi',
@@ -727,7 +1076,8 @@ export function measureAspects(): MeasureAspect[] {
         tabId: 'problem_causer',
         functionId: 'read',
         label: level,
-        detail: `Problem-causer level against the nearest side. ${level} is the best match, and the neighbouring levels sit closer than the far ones.`,
+        detail: level,
+        binary: true,
         needsFixtures: true,
         measure: 'problem',
         token: level,
@@ -739,7 +1089,8 @@ export function measureAspects(): MeasureAspect[] {
         tabId: 'imbangi',
         functionId: 'read',
         label: `Grade ${grade}`,
-        detail: `Imbangi grade against a neighbour within 4 points. Grade ${grade} is a full match.`,
+        detail: `Imbangi grade ${grade}.`,
+        binary: true,
         needsFixtures: true,
         measure: 'imbangi',
         token: grade,
@@ -749,29 +1100,21 @@ export function measureAspects(): MeasureAspect[] {
       id: 'indlela-easy',
       tabId: 'indlela',
       functionId: 'read',
-      label: 'Easy',
-      detail: 'The next match is easy: this opponent is weaker than both the last opponent and the one after.',
+      label: 'EASY',
+      detail: 'EASY — this opponent is weaker than the last opponent and the next one.',
       needsFixtures: true,
+      binary: true,
       measure: 'indlela',
       token: 'easy',
-    }),
-    aspect({
-      id: 'indlela-hard',
-      tabId: 'indlela',
-      functionId: 'read',
-      label: 'Not easy',
-      detail: 'The next match is not easy on the last, current, and next opponents.',
-      needsFixtures: true,
-      measure: 'indlela',
-      token: 'hard',
     }),
     aspect({
       id: 'indlela-last-stronger',
       tabId: 'indlela',
       functionId: 'read',
-      label: 'Last opponent stronger',
-      detail: 'The previous opponent is stronger than the next match’s opponent.',
+      label: 'Last opponent stronger than this one?',
+      detail: 'Last opponent stronger than this one?',
       needsFixtures: true,
+      binary: true,
       measure: 'indlela',
       token: 'last',
     }),
@@ -779,9 +1122,10 @@ export function measureAspects(): MeasureAspect[] {
       id: 'indlela-next-stronger',
       tabId: 'indlela',
       functionId: 'read',
-      label: 'Next opponent stronger',
-      detail: 'The opponent after this match is stronger than the next match’s opponent.',
+      label: 'Next opponent stronger than this one?',
+      detail: 'Next opponent stronger than this one?',
       needsFixtures: true,
+      binary: true,
       measure: 'indlela',
       token: 'next',
     }),
@@ -807,8 +1151,9 @@ export function measureAspects(): MeasureAspect[] {
       id: 'status-none',
       tabId: 'competition_status',
       functionId: 'read',
-      label: 'No reward',
-      detail: 'Nothing left to chase or escape.',
+      label: 'Little to gain',
+      detail: 'Little to gain.',
+      binary: true,
       measure: 'motive',
       token: 'no_reward',
     }),
@@ -834,8 +1179,9 @@ export function measureAspects(): MeasureAspect[] {
       id: 'status-dethroned',
       tabId: 'competition_status',
       functionId: 'read',
-      label: 'Dethroned',
-      detail: 'Dropped out of a critical band and still linked to it.',
+      label: 'Dethroned but still linked to the band',
+      detail: 'Dethroned but still linked to the band.',
+      binary: true,
       measure: 'motive',
       token: 'dethroned',
     }),
@@ -853,48 +1199,31 @@ export function measureAspects(): MeasureAspect[] {
       tabId: 'lost_twice',
       functionId: 'read',
       label: 'Never lost twice',
-      detail: 'No two losses in a row in the finished league games.',
+      detail: 'Never lost two matches in a row.',
       needsFixtures: true,
+      binary: true,
       measure: 'twice',
       token: 'L:never',
-    }),
-    aspect({
-      id: 'has-lost-twice',
-      tabId: 'lost_twice',
-      functionId: 'read',
-      label: 'Has lost twice',
-      detail: 'At least one pair of losses in a row.',
-      needsFixtures: true,
-      measure: 'twice',
-      token: 'L:broke',
     }),
     aspect({
       id: 'never-won',
       tabId: 'won_twice',
       functionId: 'read',
       label: 'Never won twice',
-      detail: 'No two wins in a row in the finished league games.',
+      detail: 'Never won two matches in a row.',
       needsFixtures: true,
+      binary: true,
       measure: 'twice',
       token: 'W:never',
-    }),
-    aspect({
-      id: 'has-won-twice',
-      tabId: 'won_twice',
-      functionId: 'read',
-      label: 'Has won twice',
-      detail: 'At least one pair of wins in a row.',
-      needsFixtures: true,
-      measure: 'twice',
-      token: 'W:broke',
     }),
     aspect({
       id: 'won-6-current',
       tabId: 'won_6',
       functionId: 'read',
-      label: 'Six wins in a row',
-      detail: 'Current win run. Six is a full match. A shorter run scores in proportion.',
+      label: 'Won 6 in a row',
+      detail: 'A current run of six wins or more.',
       needsFixtures: true,
+      binary: true,
       measure: 'streak',
       token: 'W',
     }),
@@ -902,9 +1231,10 @@ export function measureAspects(): MeasureAspect[] {
       id: 'lost-6-current',
       tabId: 'lost_6',
       functionId: 'read',
-      label: 'Six losses in a row',
-      detail: 'Current loss run. Six is a full match. A shorter run scores in proportion.',
+      label: 'Lost 6 in a row',
+      detail: 'A current run of six losses or more.',
       needsFixtures: true,
+      binary: true,
       measure: 'streak',
       token: 'L',
     }),
@@ -932,8 +1262,9 @@ export function measureAspects(): MeasureAspect[] {
       id: 'swing-drop',
       tabId: 'sudden_drop',
       functionId: 'read',
-      label: 'Sudden drop',
-      detail: 'Earlier PPG above the last 5. A drop of 0.75 is a full match.',
+      label: 'SUDDEN DROP',
+      detail: 'SUDDEN DROP.',
+      binary: true,
       needsFixtures: true,
       measure: 'swing',
       token: 'drop',
@@ -942,8 +1273,9 @@ export function measureAspects(): MeasureAspect[] {
       id: 'swing-rise',
       tabId: 'sudden_pickup',
       functionId: 'read',
-      label: 'Sudden pick up',
-      detail: 'Last-5 PPG above the earlier games. A rise of 0.75 is a full match.',
+      label: 'SUDDEN PICK UP',
+      detail: 'SUDDEN PICK UP.',
+      binary: true,
       needsFixtures: true,
       measure: 'swing',
       token: 'rise',
@@ -971,8 +1303,9 @@ export function measureAspects(): MeasureAspect[] {
       tabId: 'struggle',
       functionId: 'read',
       label: 'Struggling and fighting',
-      detail: 'Two losses or a winless run in the last three, and something on the table to fight for.',
+      detail: 'Struggling, and something to fight for.',
       needsFixtures: true,
+      binary: true,
       measure: 'struggle',
       token: 'fight',
     }),
@@ -981,22 +1314,30 @@ export function measureAspects(): MeasureAspect[] {
       tabId: 'struggle',
       functionId: 'read',
       label: 'Struggling',
-      detail: 'Two losses or a winless run in the last three.',
+      detail: 'Struggling across the last two or three games.',
       needsFixtures: true,
+      binary: true,
       measure: 'struggle',
       token: 'yes',
     }),
-    aspect({
-      id: 'struggle-no',
-      tabId: 'struggle',
-      functionId: 'read',
-      label: 'Not struggling',
-      detail: 'The last three are not a struggle run.',
-      needsFixtures: true,
-      measure: 'struggle',
-      token: 'no',
-    }),
   ];
+}
+
+function presentInOptions(items: MeasureAspect[]): MeasureAspect[] {
+  const out: MeasureAspect[] = [];
+  for (const item of items) {
+    if (!item.binary) {
+      out.push(item);
+      continue;
+    }
+    out.push({ ...item, id: `${item.id}::tick`, mark: 'tick' });
+    out.push({ ...item, id: `${item.id}::wrong`, mark: 'wrong' });
+  }
+  return out;
+}
+
+export function measureAspects(): MeasureAspect[] {
+  return presentInOptions(rawMeasureAspects());
 }
 
 function fit(percent: number, reason: string): MeasureScore {
@@ -1021,7 +1362,11 @@ function resultsFor(row: MeasureRow, table: MeasureRow[], matches: SeasonMatch[]
   return resultsFromSeasonMatches(row.teamId, matches, table, venue ? { venue } : {});
 }
 
-function neighbourOf(row: MeasureRow, table: MeasureRow[]): MeasureRow | null {
+function neighbourOf(row: MeasureRow, table: MeasureRow[], context?: CallSearchContext): MeasureRow | null {
+  if (context?.opponentId != null && context.opponentId !== row.teamId) {
+    const opponent = table.find((item) => item.teamId === context.opponentId);
+    if (opponent) return opponent;
+  }
   const index = table.findIndex((item) => item.teamId === row.teamId);
   if (index < 0) return null;
   const candidates: MeasureRow[] = [];
@@ -1066,6 +1411,23 @@ function outcomeOn(match: SeasonMatch, teamId: number): ResultOutcome {
   return 'D';
 }
 
+function recentMeetings(matches: SeasonMatch[], teamId: number, otherId: number): SeasonMatch[] {
+  return pairGames(matches, teamId, otherId, 'overall')
+    .sort((a, b) => b.unix - a.unix)
+    .slice(0, H2H_MEETINGS_LIMIT);
+}
+
+function recordOf(games: SeasonMatch[], teamId: number): { w: number; d: number; l: number; pts: number } {
+  const outcomes = games.map((game) => outcomeOn(game, teamId));
+  const w = outcomes.filter((outcome) => outcome === 'W').length;
+  const d = outcomes.filter((outcome) => outcome === 'D').length;
+  return { w, d, l: games.length - w - d, pts: pointsFromOutcomes(outcomes) };
+}
+
+function namedOption(points: number, draws: number): TrueOption {
+  return trueOption(bandFromTablePoints(points), draws >= 3);
+}
+
 function pointsOf(results: { outcome: ResultOutcome }[]): number {
   return results.reduce((sum, result) => sum + (result.outcome === 'W' ? 3 : result.outcome === 'D' ? 1 : 0), 0);
 }
@@ -1099,11 +1461,13 @@ function scoreMotive(row: MeasureRow, table: MeasureRow[], token: string, contex
     const on = mot.outcomes.includes(key);
     return fit(on ? 100 : 0, mot.reasons[0] ?? mot.stanceReason);
   }
-  if (token === 'grade-A' || token === 'grade-B') {
-    const target: MotivationGrade = token === 'grade-A' ? 'A' : 'B';
-    const order: MotivationGrade[] = ['A', 'B', 'none'];
-    const distance = Math.abs(order.indexOf(mot.grade) - order.indexOf(target));
-    return fit((1 - distance / (order.length - 1)) * 100, `Grade ${mot.grade} · ${mot.stanceReason}`);
+  if (token === 'grade-A' || token === 'grade-B' || token === 'grade-none') {
+    const target: MotivationGrade = token === 'grade-A' ? 'A' : token === 'grade-B' ? 'B' : 'none';
+    const word = target === 'A' ? 'Strong need' : target === 'B' ? 'Some need' : 'No special need';
+    return fit(mot.grade === target ? 100 : 0, `${word} · ${mot.stanceReason}`);
+  }
+  if (token === 'futile') {
+    return fit(mot.futileChase ? 100 : 0, mot.futileChase ? 'Futile chase — remaining matches cannot close it' : mot.stanceReason);
   }
   const stance = token as TeamStance;
   return fit(mot.stance === stance ? 100 : 0, mot.stanceReason);
@@ -1145,16 +1509,23 @@ function indlelaFor(
   table: MeasureRow[],
   context: CallSearchContext | undefined,
 ): IndlelaPath | null {
-  return cached(context, `indlela:${row.teamId}`, () => {
+  const fixture = context?.fixture;
+  return cached(context, `indlela:${row.teamId}:${fixture?.unix ?? 0}`, () => {
     const schedule = context?.schedule ?? [];
-    const current = nextFixture(row, schedule);
+    const current =
+      fixture && (fixture.homeId === row.teamId || fixture.awayId === row.teamId)
+        ? { homeId: fixture.homeId, awayId: fixture.awayId, unix: fixture.unix, finished: false, homeGoals: null, awayGoals: null }
+        : nextFixture(row, schedule);
     if (!current) return null;
+    const listed = schedule.some(
+      (match) => match.homeId === current.homeId && match.awayId === current.awayId && match.unix === current.unix,
+    );
     return indlelaPath({
       teamId: row.teamId,
       homeId: current.homeId,
       awayId: current.awayId,
       kickoffUnix: current.unix,
-      schedule,
+      schedule: listed ? schedule : [...schedule, current],
       table,
     });
   });
@@ -1190,7 +1561,7 @@ export function scoreMeasure(
   const { measure, token } = item;
 
   if (measure === 'compliant') {
-    const other = neighbourOf(row, table);
+    const other = neighbourOf(row, table, context);
     if (!other) return null;
     const stronger = strongerThan(row, other);
     const percent = stronger == null ? 50 : stronger ? 100 : 0;
@@ -1200,7 +1571,7 @@ export function scoreMeasure(
   }
 
   if (measure === 'stream-h2h') {
-    const other = neighbourOf(row, table);
+    const other = neighbourOf(row, table, context);
     if (!other) return null;
     const games = pairGames(matches, row.teamId, other.teamId, 'overall');
     const wins = games.filter((match) => outcomeOn(match, row.teamId) === 'W').length;
@@ -1271,7 +1642,7 @@ export function scoreMeasure(
   }
 
   if (measure === 'matchup') {
-    const other = neighbourOf(row, table);
+    const other = neighbourOf(row, table, context);
     if (!other) return null;
     const mine = analyseTeamLast6(row.teamId, results, LAST5_WINDOW);
     const theirs = analyseTeamLast6(other.teamId, resultsFor(other, table, matches), LAST5_WINDOW);
@@ -1301,7 +1672,7 @@ export function scoreMeasure(
   }
 
   if (measure === 'two-goal' || measure === 'label-change') {
-    const other = neighbourOf(row, table);
+    const other = neighbourOf(row, table, context);
     if (!other) return null;
     if (measure === 'two-goal') {
       const sides = twoGoalBandSides({
@@ -1317,7 +1688,8 @@ export function scoreMeasure(
       const games = sides.left?.games ?? [];
       if (games.length === 0) return null;
       const hits = games.filter((game) => game.grade === token).length;
-      return fit(share(hits, games.length), `${hits} of ${games.length} graded ${token.replace(/_/g, ' ')}`);
+      const label = GRADES.find((grade) => grade.id === token)?.label ?? token;
+      return fit(hits > 0 ? 100 : 0, hits > 0 ? `${hits} of ${games.length} · ${label}` : label);
     }
     const sides = last5LabelChanges({
       t1Id: row.teamId,
@@ -1331,11 +1703,10 @@ export function scoreMeasure(
     });
     const side = sides.left;
     if (!side) return null;
-    if (side.hierarchy.kind !== token) return fit(0, side.hierarchy.title);
-    if (token === 'strength' || token === 'weakness') {
-      return fit((1 - (side.hierarchy.grade - 1) / 6) * 100, `${side.hierarchy.title} · ${side.hierarchy.code}`);
-    }
-    return fit(100, side.hierarchy.title);
+    const called =
+      token === 'weakness' ? 'Negative change' : token === 'strength' ? 'Positive change' : side.hierarchy.title;
+    if (side.hierarchy.kind !== token) return fit(0, called);
+    return fit(100, `${called} · ${side.hierarchy.code}`);
   }
 
   if (measure === 'death-trap') {
@@ -1378,17 +1749,15 @@ export function scoreMeasure(
     const form = analyseTeamLast6(row.teamId, results, LAST6_WINDOW);
     if (!form) return null;
     if (measure === 'form-band') {
-      const order = ['poor', 'mixed', 'strong'];
-      const distance = Math.abs(order.indexOf(form.band) - order.indexOf(token));
-      return fit((1 - distance / (order.length - 1)) * 100, form.read);
+      const label = LAST6_BAND_LABEL[form.band];
+      return fit(form.band === token ? 100 : 0, label);
     }
-    const order = ['dropping', 'steady', 'picking_up'];
-    const distance = Math.abs(order.indexOf(form.trend) - order.indexOf(token));
-    return fit((1 - distance / (order.length - 1)) * 100, form.read);
+    const label = LAST6_TREND_SHORT[form.trend];
+    return fit(form.trend === token ? 100 : 0, label);
   }
 
   if (measure === 'h2h') {
-    const other = neighbourOf(row, table);
+    const other = neighbourOf(row, table, context);
     if (!other) return null;
     const venue = item.functionId === 'home' || item.functionId === 'away' ? item.functionId : 'overall';
     const games = pairGames(matches, row.teamId, other.teamId, venue);
@@ -1435,8 +1804,9 @@ export function scoreMeasure(
     const awayRate = rateOf(away);
     if (homeRate == null || awayRate == null) return null;
     const gap = Math.abs(homeRate - awayRate);
-    const percent = token === 'split' ? Math.min(100, (gap / 0.5) * 100) : Math.max(0, 100 - (gap / 0.5) * 100);
-    return fit(percent, `Home ${homeRate.toFixed(2)} · away ${awayRate.toFixed(2)}`);
+    const split = gap >= 0.5;
+    const reason = `Home ${homeRate.toFixed(2)} · away ${awayRate.toFixed(2)}${split ? ' — split character' : ''}`;
+    return fit(token === 'split' ? (split ? 100 : 0) : split ? 0 : 100, reason);
   }
 
   if (measure === 'middle') {
@@ -1447,12 +1817,14 @@ export function scoreMeasure(
     const belowPct = below.length === 0 ? null : share(pointsOf(below), below.length * 3);
     if (token.startsWith('above')) {
       if (abovePct == null) return null;
-      const percent = token === 'above-strong' ? abovePct : 100 - abovePct;
-      return fit(percent, `${Math.round(abovePct)}% vs sides above`);
+      const on = token === 'above-strong' ? abovePct >= 50 : abovePct < 30;
+      const word = token === 'above-strong' ? 'Strong show' : 'Weak show';
+      return fit(on ? 100 : 0, `${word}: ${Math.round(abovePct)}% vs sides above`);
     }
     if (belowPct == null) return null;
-    const percent = token === 'below-strong' ? belowPct : 100 - belowPct;
-    return fit(percent, `${Math.round(belowPct)}% vs sides below`);
+    const on = token === 'below-strong' ? belowPct >= 75 : belowPct < 45;
+    const word = token === 'below-strong' ? 'Strong show' : 'Weak show';
+    return fit(on ? 100 : 0, `${word}: ${Math.round(belowPct)}% vs sides below`);
   }
 
   if (measure === 'bhozoma') {
@@ -1460,13 +1832,20 @@ export function scoreMeasure(
     const found = built.rows.find((item) => item.teamId === row.teamId);
     if (!found) return null;
     const side = token === 'above' || token === 'goliath' ? found.above : found.below;
-    if (side.dataDust || side.mp < BHOZOMA_MIN_MP || side.pctAttained == null) return null;
-    const percent = token === 'goliath' || token === 'hlathi' ? 100 - side.pctAttained : side.pctAttained;
-    return fit(percent, side.label ?? `${Math.round(side.pctAttained)}%`);
+    if (side.mp === 0 || side.pctAttained == null) return null;
+    const called =
+      token === 'above' || token === 'goliath'
+        ? side.pctAttained < BHOZOMA_ABOVE_PCT
+          ? 'goliath'
+          : 'above'
+        : side.pctAttained > UMNQUMI_BELOW_PCT
+          ? 'umnqumi'
+          : 'hlathi';
+    return fit(called === token ? 100 : 0, side.label ?? `${Math.round(side.pctAttained)}%`);
   }
 
   if (measure === 'problem') {
-    const other = neighbourOf(row, table);
+    const other = neighbourOf(row, table, context);
     if (!other) return null;
     const games = pairGames(matches, row.teamId, other.teamId, 'overall');
     if (games.length === 0) return null;
@@ -1475,10 +1854,8 @@ export function scoreMeasure(
       t1Name: row.name,
       t2Name: other.name,
     });
-    const scores: Record<ProblemLevelName, number> = { Entry: 3, Moderate: 5, Major: 7, Extreme: 10 };
-    const actual = scores[read.t1.level.name];
-    const target = scores[token as ProblemLevelName];
-    return fit((1 - Math.abs(actual - target) / 7) * 100, `${read.t1.level.name} vs ${other.name}`);
+    const name = read.t1.level.name;
+    return fit(name === (token as ProblemLevelName) ? 100 : 0, `${name} vs ${other.name}`);
   }
 
   if (measure === 'imbangi') {
@@ -1512,7 +1889,7 @@ export function scoreMeasure(
     const outcome = token as ResultOutcome;
     const run = currentStreak(results, outcome);
     const word = outcome === 'W' ? 'wins' : 'losses';
-    return fit((run / 6) * 100, `${run} ${word} in a row`);
+    return fit(run >= 6 ? 100 : 0, `${run} ${word} in a row`);
   }
 
   if (measure === 'child') {
@@ -1536,7 +1913,8 @@ export function scoreMeasure(
     const swing = ppgSwing(results);
     if (swing.recentPpg == null || swing.priorPpg == null) return null;
     const gap = token === 'drop' ? swing.priorPpg - swing.recentPpg : swing.recentPpg - swing.priorPpg;
-    return fit(gap <= 0 ? 0 : Math.min(100, (gap / 0.75) * 100), swing.detail);
+    const word = token === 'drop' ? 'SUDDEN DROP' : 'SUDDEN PICK UP';
+    return fit(gap >= 0.75 ? 100 : 0, gap >= 0.75 ? word : swing.detail);
   }
 
   if (measure === 'struggle') {
@@ -1547,9 +1925,123 @@ export function scoreMeasure(
     const mot = motivationFor(row, table, context);
     const fight = active && !!mot && (mot.stance === 'chase' || mot.stance === 'escape') && mot.grade !== 'none';
     const seq = last3.map((result) => result.outcome).join(' ');
-    if (token === 'fight') return fit(fight ? 100 : active ? 40 : 0, fight ? `Struggling (${seq}) and fighting` : `Last 3: ${seq}`);
+    if (token === 'fight') return fit(fight ? 100 : 0, fight ? `Struggling (${seq}) and fighting` : `Last 3: ${seq}`);
     if (token === 'yes') return fit(active ? 100 : 0, active ? `Struggling (${seq})` : `Last 3: ${seq}`);
     return fit(active ? 0 : 100, active ? `Struggling (${seq})` : `Last 3: ${seq}`);
+  }
+
+  if (measure === 'naming') {
+    const last6 = token.startsWith('l6:');
+    const key = last6 ? token.slice(3) : token;
+    const form = analyseTeamLast6(row.teamId, results, last6 ? LAST6_WINDOW : LAST5_WINDOW);
+    if (!form || form.mp === 0) return null;
+    if (key === 'inhla') {
+      const line = last6 ? 'Inhlambuluko — 3+ draws in the last 6' : 'Inhlambuluko — 3+ draws in the last 5';
+      return fit(form.drawn >= 3 ? 100 : 0, form.drawn >= 3 ? line : `${form.drawn} draws`);
+    }
+    const option = namedOption(form.points, form.drawn);
+    return fit(option === key ? 100 : 0, `${OPTION_LABEL[option]} · ${form.points} pts`);
+  }
+
+  if (measure === 'l5-change') {
+    const team = analyseTeamLast5(row.teamId, results);
+    if (!team) return null;
+    return fit(team.change === token ? 100 : 0, CHANGE_LABEL[team.change]);
+  }
+
+  if (measure === 'ukulumbana') {
+    const other = neighbourOf(row, table, context);
+    if (!other) return null;
+    const last6 = token.startsWith('l6:');
+    const wanted = Number(last6 ? token.slice(3) : token);
+    const window = last6 ? LAST6_WINDOW : LAST5_WINDOW;
+    const mine = analyseTeamLast6(row.teamId, results, window);
+    const theirs = analyseTeamLast6(other.teamId, resultsFor(other, table, matches), window);
+    if (!mine || !theirs || mine.mp === 0 || theirs.mp === 0) return null;
+    const hit = findUkulumbana(namedOption(mine.points, mine.drawn), namedOption(theirs.points, theirs.drawn));
+    return fit(hit?.id === wanted ? 100 : 0, hit?.label ?? 'No pairing');
+  }
+
+  if (measure === 'h2h-say') {
+    const other = neighbourOf(row, table, context);
+    if (!other) return null;
+    const games = recentMeetings(matches, row.teamId, other.teamId);
+    if (games.length === 0) return null;
+    const t1 = recordOf(games, row.teamId);
+    const t2 = recordOf(games, other.teamId);
+    const shareDiff = Math.abs(t1.pts - t2.pts);
+    const greaterIsT1 = t1.pts >= t2.pts;
+    const greater = greaterIsT1 ? t1 : t2;
+    const polar = polarEdgeGrade(games.length, greater.w, greater.d, greater.l) != null;
+    const nika =
+      isNikaNikaRecord(games.length, t1.w, t1.d, t1.l) || isNikaNikaRecord(games.length, t2.w, t2.d, t2.l);
+    const fixture = context?.fixture;
+    const homeId = fixture?.homeId ?? row.teamId;
+    const awayId = fixture?.awayId ?? other.teamId;
+    const homePts = recordOf(games, homeId).pts;
+    const awayPts = recordOf(games, awayId).pts;
+    const even = shareDiff <= 3;
+    if (token === 'polar') return fit(greaterIsT1 && polar ? 100 : 0, greaterIsT1 && polar ? 'T1 edge (polar)' : polar ? 'T2 edge (polar)' : 'No edge (polar)');
+    if (token === 'no-polar') return fit(polar ? 0 : 100, polar ? `${greaterIsT1 ? 'T1' : 'T2'} edge (polar)` : 'No edge (polar)');
+    if (token === 'nika') return fit(nika ? 100 : 0, nika ? 'Nika nika' : 'Not nika nika');
+    if (token === 'level') return fit(shareDiff === 0 ? 100 : 0, shareDiff === 0 ? 'Point difference is 0' : `${t1.pts}–${t2.pts}`);
+    if (token === 'even') return fit(even ? 100 : 0, even ? 'Even in past meetings' : `${t1.pts}–${t2.pts}`);
+    if (token === 'home-edge') return fit(!even && homePts > awayPts ? 100 : 0, !even && homePts > awayPts ? 'Home edge in H2H' : `${homePts}–${awayPts}`);
+    return fit(!even && awayPts > homePts ? 100 : 0, !even && awayPts > homePts ? 'Away edge in H2H' : `${homePts}–${awayPts}`);
+  }
+
+  if (measure === 'venue-unbeaten') {
+    const fixture = context?.fixture;
+    if (!fixture) return null;
+    const sideId = token === 'home' ? fixture.homeId : fixture.awayId;
+    const games = recentMeetings(matches, fixture.homeId, fixture.awayId).filter((game) =>
+      token === 'home' ? game.homeId === sideId : game.awayId === sideId,
+    );
+    const place = token === 'home' ? 'at home' : 'away';
+    if (games.length === 0) return fit(0, `No ${token} H2H in the last 5`);
+    const losses = games.filter((game) => outcomeOn(game, sideId) === 'L').length;
+    return fit(losses === 0 ? 100 : 0, losses === 0 ? `has never been beaten ${place}` : `has been beaten ${place}`);
+  }
+
+  if (measure === 'lens') {
+    const fixture = context?.fixture;
+    if (!fixture) return null;
+    const home = table.find((item) => item.teamId === fixture.homeId);
+    const away = table.find((item) => item.teamId === fixture.awayId);
+    if (!home || !away) return null;
+    const lenses = compareLenses(resultsFor(home, table, matches), resultsFor(away, table, matches));
+    const lens = lenses.find((item) => item.id === token);
+    if (!lens) return null;
+    const word = lens.sameStrength ? 'same strength' : 'split';
+    return fit(lens.sameStrength ? 100 : 0, `${lens.label} · ${word}`);
+  }
+
+  if (measure === 'ppg-band') {
+    const colour = colourFromZone(row.zone);
+    const rate = row.played > 0 ? row.points / row.played : null;
+    if (!colour || rate == null) return null;
+    const band = ppgBandForColour(rate, colour);
+    return fit(band === token ? 100 : 0, PPG_BAND_LABEL[band]);
+  }
+
+  if (measure === 'mshayi') {
+    const colour = colourFromZone(row.zone);
+    const rate = row.played > 0 ? row.points / row.played : null;
+    if (!colour || rate == null) return null;
+    const note = mshayiNote(rate, colour);
+    const wanted =
+      token === 'high'
+        ? 'Bottom-third PPG is high (>1.5) — punching above the colour'
+        : 'Top-third PPG is weak (<0.8) — colour and PPG disagree';
+    return fit(note === wanted ? 100 : 0, note ?? wanted);
+  }
+
+  if (measure === 'death-reading') {
+    if (results.length === 0) return null;
+    const side = deathTrapSide({ teamId: row.teamId, label: row.name, results, venue: 'overall', period: 'ft' });
+    const readings = [side.losses.reading, side.wins.reading].filter((reading): reading is string => reading != null);
+    const wanted = token === 'stronger' ? 'Getting stronger' : 'Getting weaker';
+    return fit(readings.includes(wanted) ? 100 : 0, readings.length > 0 ? readings.join(' · ') : wanted);
   }
 
   return null;
