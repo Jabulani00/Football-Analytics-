@@ -17,6 +17,7 @@ import {
   type GradeBucket,
   type Method2Grid,
 } from '@/utils/statsGradingMethod2';
+import UnityStat from '@/components/analytics/UnityStat';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
 const ALL = 'all';
@@ -108,6 +109,14 @@ export default function StatsGradingMethod2Panel() {
   const selectedBucket = buckets.find((b) => gradeId(b) === gradeSel) ?? null;
   useEffect(() => setPage(1), [gradeSel, statKey, selection]);
 
+  // DA Unity: teams in a DA grade row (B / E) ÷ all graded teams, for this stat.
+  const unity = useMemo(() => {
+    const total = buckets.reduce((s, b) => s + b.teams.length, 0);
+    const da = buckets.filter((b) => b.da).reduce((s, b) => s + b.teams.length, 0);
+    return { total, da, unity: total ? da / total : null };
+  }, [buckets]);
+  const statLabel = GRADABLE_STATS.find((s) => s.key === statKey)?.label ?? statKey;
+
   const loading = selection === '' || (allLeagues ? feed.loading || settled < liveLeagues.length : live.loading && !live.data);
   const err = feed.error ?? (allLeagues ? null : live.error);
 
@@ -157,6 +166,12 @@ export default function StatsGradingMethod2Panel() {
           </Text>
         )}
       </View>
+
+      {!loading && !err && grid ? (
+        <View style={styles.unityRow}>
+          <UnityStat label={statLabel} unity={unity.unity} da={unity.da} total={unity.total} denom="graded teams" />
+        </View>
+      ) : null}
 
       {!loading && !err && grid ? (
         selectedBucket ? (
@@ -324,6 +339,7 @@ const styles = StyleSheet.create({
   statusLive: { fontFamily: fonts.bodyMedium, fontSize: 12, color: theme.accentGreen },
   statusMuted: { fontFamily: fonts.body, fontSize: 12, color: theme.textMuted },
 
+  unityRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md },
   sectionTitle: { fontFamily: fonts.display, fontSize: 16, marginBottom: spacing.sm },
 
   scroll: { width: '100%', maxWidth: '100%' },

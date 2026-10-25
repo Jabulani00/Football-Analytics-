@@ -10,10 +10,14 @@ import {
   buildHalfDominance,
   dominanceTally,
   teamNamesIn,
+  DOMINANCE_STATS,
+  HALF_STATS,
   LONG_DIFF,
   EVEN_DIFF,
   type DominanceRow,
 } from '@/utils/dominance';
+import { leagueUnityFor, DA_MIN, type LeagueUnity, type UnitySection } from '@/utils/unity';
+import { unityPct } from '@/components/analytics/UnityStat';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
 type SideStyle = { label: string; color: string };
@@ -59,6 +63,21 @@ export default function DominanceCheckerPanel() {
   const ha = useMemo(() => (live.data && team ? buildHomeAwayDominance(live.data, team) : []), [live.data, team]);
   const half = useMemo(() => (live.data && team ? buildHalfDominance(live.data, team) : []), [live.data, team]);
 
+  // League Unity per stat: the share of the whole league's teams that are DA on
+  // that stat (same Home/Away or 1st/2nd-half difference), shown beside the
+  // selected team's own reading so one team is seen against its league.
+  const unityByStat = useMemo(() => {
+    const build = (defs: { key: string }[], section: UnitySection) => {
+      const m = new Map<string, LeagueUnity>();
+      if (live.data && activeComp) for (const d of defs) m.set(d.key, leagueUnityFor(live.data, activeComp.name, section, d.key));
+      return m;
+    };
+    return {
+      homeaway: build(DOMINANCE_STATS, 'homeaway'),
+      halves: build(HALF_STATS, 'halves'),
+    };
+  }, [live.data, activeComp]);
+
   const loading = selection === '' || (live.loading && !live.data);
   // The upcoming-fixtures feed only seeds the default league; its errors must not
   // block the panel, which reads the season stats (fixtures/between) separately.
@@ -74,7 +93,9 @@ export default function DominanceCheckerPanel() {
         <Text style={styles.subtitle}>
           For one team, every stat compared Home vs Away and 1st half vs 2nd half. The dominant side
           is called when the difference is long (≥ {LONG_DIFF}%); a short difference (≤ {EVEN_DIFF}%)
-          is even. % stats compare by points, PPG and AVG by relative size.
+          is even, {EVEN_DIFF + 1}–{LONG_DIFF - 1}% a lean. % stats compare by points, PPG and AVG by
+          relative size. The Unity column is the share of the whole league&apos;s teams that are DA on
+          that stat (difference ≥ {DA_MIN}%).
         </Text>
       </View>
 
@@ -109,6 +130,7 @@ export default function DominanceCheckerPanel() {
             aSide={{ label: 'HOME', color: theme.accentGreen }}
             bSide={{ label: 'AWAY', color: theme.accentBlue }}
             rows={ha}
+            unityByStat={unityByStat.homeaway}
           />
           <DominanceTable
             title="1st H / 2nd H Analysis"
@@ -117,6 +139,7 @@ export default function DominanceCheckerPanel() {
             aSide={{ label: '1st H', color: theme.accentGreen }}
             bSide={{ label: '2nd H', color: theme.accentPurple }}
             rows={half}
+            unityByStat={unityByStat.halves}
             signed
           />
         </>
@@ -132,6 +155,7 @@ function DominanceTable({
   aSide,
   bSide,
   rows,
+  unityByStat,
   signed,
 }: {
   title: string;
@@ -140,6 +164,7 @@ function DominanceTable({
   aSide: SideStyle;
   bSide: SideStyle;
   rows: DominanceRow[];
+  unityByStat: Map<string, LeagueUnity>;
   signed?: boolean;
 }) {
   const tally = dominanceTally(rows);
@@ -161,10 +186,13 @@ function DominanceTable({
             <Text style={[styles.cNum, styles.headText, styles.right]}>{bLabel}</Text>
             <Text style={[styles.cNum, styles.headText, styles.right]}>Diff</Text>
             <Text style={[styles.cDom, styles.headText]}>Dominance</Text>
+            <Text style={[styles.cUnity, styles.headText]}>League Unity</Text>
           </View>
           {rows.map((r, i) => {
             const side = r.side === 'a' ? aSide : r.side === 'b' ? bSide : null;
             const strong = r.magnitude === 'long';
+            const u = unityByStat.get(r.statKey);
+            const uWidth = Math.max(0, Math.min(100, Math.round((u?.unity ?? 0) * 100)));
             return (
               <View key={r.statKey} style={[styles.row, i % 2 === 1 && styles.rowAlt]}>
                 <Text style={[styles.cStat, styles.stat]} numberOfLines={1}>{r.statLabel}</Text>
@@ -184,6 +212,18 @@ function DominanceTable({
                     </View>
                   ) : r.side === 'even' ? (
                     <Text style={styles.even}>Even</Text>
+                  ) : (
+                    <Text style={styles.even}>—</Text>
+                  )}
+                </View>
+                <View style={styles.cUnity}>
+                  {u && u.total > 0 ? (
+                    <>
+                      <View style={styles.uBar}>
+                        <View style={[styles.uFill, { width: `${uWidth}%` }]} />
+                      </View>
+                      <Text style={styles.uPct}>{unityPct(u.unity)}</Text>
+                    </>
                   ) : (
                     <Text style={styles.even}>—</Text>
                   )}
@@ -236,7 +276,7 @@ const styles = StyleSheet.create({
   scroll: { width: '100%', maxWidth: '100%' },
   scrollContent: { minWidth: '100%' },
   table: {
-    width: '100%', minWidth: 520, backgroundColor: theme.surface, borderWidth: layout.borderWidth,
+    width: '100%', minWidth: 660, backgroundColor: theme.surface, borderWidth: layout.borderWidth,
     borderColor: theme.border, borderRadius: layout.borderRadius, overflow: 'hidden',
   },
   row: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.sm, paddingHorizontal: spacing.sm },
@@ -247,6 +287,10 @@ const styles = StyleSheet.create({
   cStat: { flex: 1, minWidth: 120, paddingHorizontal: 4 },
   cNum: { width: 76, paddingHorizontal: 4 },
   cDom: { width: 120, paddingHorizontal: 4 },
+  cUnity: { width: 120, paddingHorizontal: 4, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  uBar: { flex: 1, height: 7, borderRadius: 999, backgroundColor: theme.surfaceMuted, overflow: 'hidden' },
+  uFill: { height: '100%', backgroundColor: theme.accentGreen },
+  uPct: { width: 34, fontFamily: fonts.bodySemiBold, fontSize: 11, color: theme.textPrimary, textAlign: 'right' },
   stat: { fontFamily: fonts.bodyMedium, fontSize: 13, color: theme.textPrimary },
   num: { fontFamily: fonts.body, fontSize: 12, color: theme.textPrimary, textAlign: 'right' },
   badge: { alignSelf: 'flex-start', borderWidth: 1.5, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 },

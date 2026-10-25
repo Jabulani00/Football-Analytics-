@@ -29,6 +29,8 @@ import {
   type SourceListId,
   type UpcomingLite,
 } from '@/utils/statsGrading';
+import { gradingUnity } from '@/utils/unity';
+import UnityStat from '@/components/analytics/UnityStat';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
 type DirectionFilter = 'all' | 'strong' | 'weak';
@@ -174,6 +176,8 @@ export default function StatsGradingPanel() {
 
   const strongCount = gradedRows.filter((r) => r.direction === 'strong').length;
   const weakCount = gradedRows.filter((r) => r.direction === 'weak').length;
+  const unity = useMemo(() => gradingUnity(gradedRows), [gradedRows]);
+  const statLabel = GRADABLE_STATS.find((s) => s.key === statKey)?.label ?? statKey;
   const source = sourceListById(sourceList);
   const loading = selection === '' || (allLeagues ? feed.loading || settled < liveLeagues.length : live.loading && !live.data);
   const err = feed.error ?? (allLeagues ? null : live.error);
@@ -263,6 +267,11 @@ export default function StatsGradingPanel() {
         <Tile label="Strong ↑" value={String(strongCount)} accent={theme.accentGreen} />
         <Tile label="Weak ↓" value={String(weakCount)} accent={theme.loss} />
         <Tile label="Ungraded" value={String(ungradedRows.length)} accent={theme.textMuted} />
+      </View>
+
+      {/* DA Unity — share of graded teams that are Double Agents (B / E). */}
+      <View style={styles.unityRow}>
+        <UnityStat label={statLabel} unity={unity.unity} da={unity.da} total={unity.graded} denom="graded teams" />
       </View>
 
       {/* Grade distribution */}
@@ -530,6 +539,7 @@ const styles = StyleSheet.create({
   statusLive: { fontFamily: fonts.bodyMedium, fontSize: 12, color: theme.accentGreen },
   statusMuted: { fontFamily: fonts.body, fontSize: 12, color: theme.textMuted },
 
+  unityRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md },
   tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm },
   tile: {
     flexGrow: 1, flexBasis: 90, minWidth: 80, alignItems: 'center',

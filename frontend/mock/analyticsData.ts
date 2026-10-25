@@ -22,6 +22,7 @@ export const ANALYTICS_TABS: { id: AnalyticsTab; label: string }[] = [
   { id: 'omit', label: 'Omit Test' },
   { id: 'dominance', label: 'Dominance Checker' },
   { id: 'opposite', label: 'Opposite Stats Analysis' },
+  { id: 'unity', label: 'DA Unity Finder' },
   { id: 'tables', label: 'Stats Tables' },
   { id: 'additional', label: 'Additional stats' },
   { id: 'footy', label: 'Footy Stats' },

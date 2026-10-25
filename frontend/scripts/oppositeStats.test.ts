@@ -3,15 +3,17 @@ import {
   buildOppositeStats,
   sortOpposite,
   SHORT_MAX,
+  DA_MIN,
   TRIGGER_RATE,
 } from '../utils/oppositeStats';
 import type { TeamStatRow, TeamStatsExport } from '../types/data';
 
-// ---- allocation thresholds ----
-if (allocationFor(10) !== 'short' || allocationFor(15) !== 'short') throw new Error('≤15% is a short difference.');
-if (allocationFor(16) !== 'long' || allocationFor(40) !== 'long') throw new Error('>15% is a long difference.');
+// ---- allocation thresholds: 0–15 short · 16–24 borderline · 25+ long (DA) ----
+if (allocationFor(10) !== 'short' || allocationFor(15) !== 'short') throw new Error('≤15% is a short difference (no DA).');
+if (allocationFor(16) !== 'borderline' || allocationFor(24) !== 'borderline') throw new Error('16–24% is the borderline band.');
+if (allocationFor(25) !== 'long' || allocationFor(40) !== 'long') throw new Error('≥25% is a long difference (DA).');
 if (allocationFor(null) !== 'na') throw new Error('Missing difference → na.');
-if (SHORT_MAX !== 15 || TRIGGER_RATE !== 1) throw new Error('Thresholds must be 15% and 1.0.');
+if (SHORT_MAX !== 15 || DA_MIN !== 25 || TRIGGER_RATE !== 1) throw new Error('Thresholds must be 15 / 25 / 1.0.');
 
 function row(team: string, fields: Record<string, number>): TeamStatRow {
   return { team_name: team, league_id: 'L1', season: '2024/2025', ...fields } as unknown as TeamStatRow;

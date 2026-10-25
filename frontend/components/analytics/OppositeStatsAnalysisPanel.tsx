@@ -14,11 +14,14 @@ import {
   buildOppositeStats,
   sortOpposite,
   SHORT_MAX,
+  DA_MIN,
   TRIGGER_RATE,
   type OppositePair,
   type OppositeRow,
   type OppositeScope,
 } from '@/utils/oppositeStats';
+import { leagueUnity, measuresForSection, type LeagueUnity } from '@/utils/unity';
+import UnityStat from '@/components/analytics/UnityStat';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
 const ALL = 'all';
@@ -87,6 +90,22 @@ export default function OppositeStatsAnalysisPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allLeagues, live.data, allSig, activeComp?.name, scope, triggerOnly]);
 
+  // Unity per pair: the share of this league's teams that are DA (difference ≥ DA_MIN)
+  // on that pair — measured over every team, independent of the trigger filter.
+  const pairUnity = useMemo<LeagueUnity[]>(() => {
+    const forPair = (statKey: string): LeagueUnity => {
+      const measures: (number | null)[] = [];
+      if (allLeagues) {
+        allResults.forEach((r) => { if (r.data) measures.push(...measuresForSection(r.data, 'opposites', statKey)); });
+      } else if (live.data) {
+        measures.push(...measuresForSection(live.data, 'opposites', statKey));
+      }
+      return leagueUnity(allLeagues ? 'all leagues' : activeComp?.name ?? '', measures);
+    };
+    return [forPair('0'), forPair('1')];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allLeagues, live.data, allSig, activeComp?.name]);
+
   useEffect(() => {
     setPage(1);
   }, [selection, scope, triggerOnly]);
@@ -109,10 +128,11 @@ export default function OppositeStatsAnalysisPanel() {
       <View style={styles.header}>
         <Text style={styles.title}>Opposite Stats Analysis</Text>
         <Text style={styles.subtitle}>
-          Complementary pairs — SC% vs FTS% and Conc% vs CS% — per team. A short difference (≤ {SHORT_MAX}%)
-          is balanced near 50/50 (no DA); a long difference is a Double Agent. The trigger keeps teams
-          that both score and concede (SC/m ≥ {TRIGGER_RATE} and Conc/m ≥ {TRIGGER_RATE}). Smallest
-          difference first. Pick the scope to match the fixture&apos;s Home/Away side.
+          Complementary pairs — SC% vs FTS% and Conc% vs CS% — per team. The difference falls in a DA
+          band: ≤ {SHORT_MAX}% short (balanced, no DA), {SHORT_MAX + 1}–{DA_MIN - 1}% borderline, ≥ {DA_MIN}% long
+          (Double Agent). Unity above is the share of the league&apos;s teams that are DA on each pair. The
+          trigger keeps teams that both score and concede (SC/m ≥ {TRIGGER_RATE} and Conc/m ≥ {TRIGGER_RATE}).
+          Smallest difference first. Pick the scope to match the fixture&apos;s Home/Away side.
         </Text>
       </View>
 
@@ -165,6 +185,10 @@ export default function OppositeStatsAnalysisPanel() {
           </Text>
         ) : (
           <>
+            <View style={styles.unityRow}>
+              <UnityStat label="SC% vs FTS%" unity={pairUnity[0].unity} da={pairUnity[0].da} total={pairUnity[0].total} />
+              <UnityStat label="Conc% vs CS%" unity={pairUnity[1].unity} da={pairUnity[1].da} total={pairUnity[1].total} />
+            </View>
             <PageControls page={safe} pages={pages} total={rows.length} from={start + 1} to={start + visible.length} onChange={setPage} />
             <DragScroll horizontal style={styles.scroll} contentContainerStyle={styles.scrollContent}>
               <View style={styles.table}>
@@ -198,7 +222,7 @@ export default function OppositeStatsAnalysisPanel() {
             </DragScroll>
             <Text style={styles.hint}>
               Each pair shows both values, their difference, and the allocation: Short = balanced (no DA),
-              Long = DA. Confirm a DA against Home/Away before acting.
+              Border = in between ({SHORT_MAX + 1}–{DA_MIN - 1}%), Long = DA (≥ {DA_MIN}%). Confirm a DA against Home/Away before acting.
             </Text>
           </>
         )
@@ -208,7 +232,16 @@ export default function OppositeStatsAnalysisPanel() {
 }
 
 function PairCell({ p }: { p: OppositePair }) {
-  const allocColor = p.allocation === 'long' ? theme.accentPurple : p.allocation === 'short' ? theme.accentGreen : theme.textMuted;
+  const allocColor =
+    p.allocation === 'long' ? theme.accentPurple
+    : p.allocation === 'borderline' ? theme.yellow
+    : p.allocation === 'short' ? theme.accentGreen
+    : theme.textMuted;
+  const allocLabel =
+    p.allocation === 'long' ? 'Long · DA'
+    : p.allocation === 'borderline' ? 'Border · ~'
+    : p.allocation === 'short' ? 'Short · no DA'
+    : '—';
   return (
     <View style={styles.cPair}>
       <Text style={styles.pairValues} numberOfLines={1}>
@@ -217,9 +250,7 @@ function PairCell({ p }: { p: OppositePair }) {
       <View style={styles.pairMeta}>
         <Text style={styles.pairDiff}>{p.difference == null ? '—' : `Δ${Math.round(p.difference)}%`}</Text>
         <View style={[styles.alloc, { borderColor: allocColor }]}>
-          <Text style={[styles.allocText, { color: allocColor }]}>
-            {p.allocation === 'long' ? 'Long · DA' : p.allocation === 'short' ? 'Short · no DA' : '—'}
-          </Text>
+          <Text style={[styles.allocText, { color: allocColor }]}>{allocLabel}</Text>
         </View>
       </View>
     </View>
@@ -244,6 +275,8 @@ const styles = StyleSheet.create({
   statusLive: { fontFamily: fonts.bodyMedium, fontSize: 12, color: theme.accentGreen, textTransform: 'capitalize' },
   statusMuted: { fontFamily: fonts.body, fontSize: 12, color: theme.textMuted },
   empty: { fontFamily: fonts.body, fontSize: 13, color: theme.textMuted, textAlign: 'center', paddingVertical: spacing.lg },
+
+  unityRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.sm },
 
   scroll: { width: '100%', maxWidth: '100%' },
   scrollContent: { minWidth: '100%' },

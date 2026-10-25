@@ -19,9 +19,11 @@ if (measureFor(50, null, true) !== null) throw new Error('A missing side has no 
 if (classify(80, 50, 30).side !== 'a' || classify(80, 50, 30).magnitude !== 'long') throw new Error('80 vs 50 → a dominant (long).');
 if (classify(50, 80, 30).side !== 'b') throw new Error('50 vs 80 → b dominant.');
 if (classify(55, 50, 5).side !== 'even' || classify(55, 50, 5).magnitude !== 'short') throw new Error('≤15 diff → even/short.');
-if (classify(70, 52, 18).magnitude !== 'mid') throw new Error('Between EVEN and LONG is mid.');
+if (classify(70, 52, 18).magnitude !== 'mid') throw new Error('Between EVEN and LONG is mid (borderline).');
+if (classify(70, 46, 24).magnitude !== 'mid') throw new Error('24 is still the borderline band.');
+if (classify(80, 55, 25).magnitude !== 'long') throw new Error('25 reaches the DA (long) band.');
 if (classify(null, 50, null).side !== 'na') throw new Error('Missing data → na.');
-if (LONG_DIFF !== 20 || EVEN_DIFF !== 15) throw new Error('Thresholds must be 20 / 15.');
+if (LONG_DIFF !== 25 || EVEN_DIFF !== 15) throw new Error('Thresholds must be 25 / 15 (DA bands).');
 
 // ---- build from an export: Home-dominant SC%, even PPG ----
 function row(team: string, fields: Record<string, number>): TeamStatRow {

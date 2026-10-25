@@ -4,8 +4,9 @@
  * Compares complementary ("opposite") stat pairs for each team:
  *   • SC%   vs FTS%  (scored vs failed to score)
  *   • Conc% vs CS%   (conceded vs clean sheet)
- * The difference is "short" (≤ 15% → no DA, balanced near 50/50) or "long"
- * (> 15% → DA). A team only qualifies when the trigger holds — it both scores
+ * The difference sits in one of the DA bands: 0–15% "short" (no DA, balanced
+ * near 50/50), 16–24% "borderline" (not DA, not none), 25–100% "long" (DA).
+ * A team only qualifies when the trigger holds — it both scores
  * and concedes: SC/m ≥ 1 and Conc/m ≥ 1 ("somewhere ↑ & somewhere ↓").
  * Teams are arranged smallest difference first. Values come from the live stat
  * tables statsBuilder already produces; nothing is recalculated here.
@@ -16,6 +17,8 @@ import type { TeamStatRow, TeamStatsExport } from '@/types/data';
 
 /** ≤ this % difference is a short difference → no DA (balanced). */
 export const SHORT_MAX = 15;
+/** ≥ this % difference is a long difference → DA. 16–24 is the borderline band. */
+export const DA_MIN = 25;
 /** Trigger: average goals scored / conceded per match must reach this. */
 export const TRIGGER_RATE = 1;
 
@@ -28,7 +31,7 @@ export const OPPOSITE_PAIRS: OppositePairDef[] = [
   { aKey: 'conc_pct', aLabel: 'Conc%', bKey: 'cs_pct', bLabel: 'CS%' },
 ];
 
-export type Allocation = 'short' | 'long' | 'na';
+export type Allocation = 'short' | 'borderline' | 'long' | 'na';
 
 export type OppositePair = {
   aLabel: string;
@@ -63,7 +66,10 @@ function numAt(row: TeamStatRow | undefined, key: string): number | null {
 
 export function allocationFor(difference: number | null): Allocation {
   if (difference == null) return 'na';
-  return Math.abs(difference) <= SHORT_MAX ? 'short' : 'long';
+  const d = Math.abs(difference);
+  if (d >= DA_MIN) return 'long';
+  if (d <= SHORT_MAX) return 'short';
+  return 'borderline';
 }
 
 function pairFor(def: OppositePairDef, row: TeamStatRow | undefined): OppositePair {

@@ -12,9 +12,9 @@
  */
 import type { TeamStatRow, TeamStatsExport } from '@/types/data';
 
-/** ≥ this % difference = a long (dominant) difference. */
-export const LONG_DIFF = 20;
-/** ≤ this % difference = a short difference → even, no dominance. */
+/** ≥ this % difference = a long (dominant / DA) difference (per the DA bands). */
+export const LONG_DIFF = 25;
+/** ≤ this % difference = a short difference → even, no DA. 16–24 is the mid band. */
 export const EVEN_DIFF = 15;
 
 export type StatFamily = 'ordinary' | 'ppg';

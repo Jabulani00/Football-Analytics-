@@ -16,6 +16,7 @@ import StatsGradingMethod2Panel from '@/components/analytics/StatsGradingMethod2
 import OmitTestPanel from '@/components/analytics/OmitTestPanel';
 import DominanceCheckerPanel from '@/components/analytics/DominanceCheckerPanel';
 import OppositeStatsAnalysisPanel from '@/components/analytics/OppositeStatsAnalysisPanel';
+import UnityFinderPanel from '@/components/analytics/UnityFinderPanel';
 import FootyStatsPanel from '@/components/analytics/FootyStatsPanel';
 import StatsTablesPanel from '@/components/analytics/StatsTablesPanel';
 import StrategiesPanel from '@/components/analytics/StrategiesPanel';
@@ -61,6 +62,8 @@ function PanelForTab({
       return <DominanceCheckerPanel />;
     case 'opposite':
       return <OppositeStatsAnalysisPanel />;
+    case 'unity':
+      return <UnityFinderPanel />;
     case 'tables':
       return <StatsTablesPanel showCatalogue={showTableCatalogue} />;
     case 'additional':

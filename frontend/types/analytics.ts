@@ -111,6 +111,7 @@ export type AnalyticsTab =
   | 'omit'
   | 'dominance'
   | 'opposite'
+  | 'unity'
   | 'tables'
   | 'additional'
   | 'footy'
