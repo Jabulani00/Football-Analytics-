@@ -344,3 +344,72 @@ export function passesColourPosition(position: number, direction: ColourDirectio
   if (direction === 'weak') return position === 2 || position === 3;
   return false;
 }
+
+export type ColourPairKey = 'red-green' | 'yellow-green' | 'red-yellow';
+
+export type ColourDifference = {
+  key: ColourPairKey;
+  left: Band;
+  right: Band;
+  /** Absolute gap between the two colour figures. Missing when either figure is missing. */
+  difference: number | null;
+  /** Largest gap among the pairs that both have a figure. Ties share DA. */
+  isDA: boolean;
+};
+
+const COLOUR_PAIRS: { key: ColourPairKey; left: Band; right: Band }[] = [
+  { key: 'red-green', left: 'red', right: 'green' },
+  { key: 'yellow-green', left: 'yellow', right: 'green' },
+  { key: 'red-yellow', left: 'red', right: 'yellow' },
+];
+
+/** Decimal places used when the gap is shown and when the largest gap is chosen. */
+export function colourDifferenceDecimals(stat: { key: string }): number {
+  return PPG_KEYS.has(stat.key) ? 2 : 1;
+}
+
+function roundGap(value: number, decimals: number): number {
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor;
+}
+
+/**
+ * Gaps between the three colour figures: Red–Green, Yellow–Green, Red–Yellow.
+ * The largest gap is DA (Double Agent). Equal largest gaps are all DA.
+ */
+export function colourPairDifferences(
+  rows: { colour: Band; value: number | null }[],
+  decimals = 1,
+): ColourDifference[] {
+  const valueOf = (colour: Band) => rows.find((row) => row.colour === colour)?.value ?? null;
+  const built: ColourDifference[] = COLOUR_PAIRS.map((pair) => {
+    const left = valueOf(pair.left);
+    const right = valueOf(pair.right);
+    return {
+      ...pair,
+      difference: left == null || right == null ? null : roundGap(Math.abs(left - right), decimals),
+      isDA: false,
+    };
+  });
+  let max: number | null = null;
+  for (const row of built) {
+    if (row.difference == null) continue;
+    if (max == null || row.difference > max) max = row.difference;
+  }
+  if (max != null) {
+    for (const row of built) row.isDA = row.difference === max;
+  }
+  return built;
+}
+
+/** The pair that matches two table colours. Same colour, or a missing colour, has no pair. */
+export function colourPairBetween(
+  differences: ColourDifference[],
+  a: Band | null,
+  b: Band | null,
+): ColourDifference | null {
+  if (a == null || b == null || a === b) return null;
+  return differences.find((row) =>
+    (row.left === a && row.right === b) || (row.left === b && row.right === a),
+  ) ?? null;
+}

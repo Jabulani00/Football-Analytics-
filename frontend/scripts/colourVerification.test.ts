@@ -4,6 +4,9 @@
  */
 import {
   COLOUR_STAT_CATALOGUE,
+  colourDifferenceDecimals,
+  colourPairBetween,
+  colourPairDifferences,
   colourStatById,
   countMatchesAgainstColour,
   passesColourPosition,
@@ -81,6 +84,49 @@ const full = stat ? rateOnFullTable(1, stat, matches) : null;
 check('full table is the win rate before colours', full?.played === 4 && full?.value === 50);
 const fullHome = stat ? rateOnFullTable(1, stat, matches, 'home') : null;
 check('full table home is both home wins', fullHome?.played === 2 && fullHome?.value === 100);
+
+const gaps = colourPairDifferences([
+  { colour: 'red', value: 50 },
+  { colour: 'yellow', value: 100 },
+  { colour: 'green', value: 0 },
+]);
+const gapOf = Object.fromEntries(gaps.map((row) => [row.key, row]));
+check('red and green differ by 50', gapOf['red-green']?.difference === 50);
+check('yellow and green differ by 100', gapOf['yellow-green']?.difference === 100);
+check('red and yellow differ by 50', gapOf['red-yellow']?.difference === 50);
+check('the largest gap is the double agent', gapOf['yellow-green']?.isDA === true && gapOf['red-green']?.isDA === false && gapOf['red-yellow']?.isDA === false);
+
+const yellowGreen = colourPairBetween(gaps, 'green', 'yellow');
+const redGreen = colourPairBetween(gaps, 'red', 'green');
+check('different colours resolve to their pair', yellowGreen?.key === 'yellow-green' && yellowGreen.isDA);
+check('a smaller colour pair is not the double agent', redGreen?.key === 'red-green' && redGreen.isDA === false);
+check('the same colour has no pair to test', colourPairBetween(gaps, 'red', 'red') == null);
+check('a missing colour has no pair to test', colourPairBetween(gaps, 'red', null) == null);
+
+const tiedGaps = colourPairDifferences([
+  { colour: 'red', value: 40 },
+  { colour: 'yellow', value: 40 },
+  { colour: 'green', value: 0 },
+]);
+check('equal largest gaps are all double agents', tiedGaps.filter((row) => row.isDA).map((row) => row.key).sort().join(',') === 'red-green,yellow-green');
+
+const partial = colourPairDifferences([
+  { colour: 'red', value: 80 },
+  { colour: 'yellow', value: 20 },
+  { colour: 'green', value: null },
+]);
+const partialOf = Object.fromEntries(partial.map((row) => [row.key, row]));
+check('a pair with a missing figure is left out of the largest gap', partialOf['red-green']?.difference == null && partialOf['yellow-green']?.difference == null && partialOf['red-yellow']?.isDA === true);
+
+const ppg = colourStatById('ppg::ppg');
+check('ppg gaps keep two decimals and percentage gaps keep one', ppg != null && colourDifferenceDecimals(ppg) === 2 && stat != null && colourDifferenceDecimals(stat) === 1);
+const rounded = colourPairDifferences([
+  { colour: 'red', value: 10.04 },
+  { colour: 'yellow', value: 0 },
+  { colour: 'green', value: 0.06 },
+], 1);
+const roundedOf = Object.fromEntries(rounded.map((row) => [row.key, row]));
+check('gaps round to the shown decimals before the largest is chosen', roundedOf['red-green']?.difference === 10 && roundedOf['red-yellow']?.difference === 10 && roundedOf['red-green']?.isDA === true && roundedOf['red-yellow']?.isDA === true && roundedOf['yellow-green']?.isDA === false);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
