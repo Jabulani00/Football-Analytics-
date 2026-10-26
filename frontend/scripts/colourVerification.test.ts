@@ -4,6 +4,7 @@
  */
 import {
   COLOUR_STAT_CATALOGUE,
+  colourDaLean,
   colourDifferenceDecimals,
   colourPairBetween,
   colourPairDifferences,
@@ -95,10 +96,25 @@ check('red and green differ by 50', gapOf['red-green']?.difference === 50);
 check('yellow and green differ by 100', gapOf['yellow-green']?.difference === 100);
 check('red and yellow differ by 50', gapOf['red-yellow']?.difference === 50);
 check('the largest gap is the double agent', gapOf['yellow-green']?.isDA === true && gapOf['red-green']?.isDA === false && gapOf['red-yellow']?.isDA === false);
+check('yellow is the higher figure on the double agent gap', gapOf['yellow-green']?.higher === 'yellow');
 
 const yellowGreen = colourPairBetween(gaps, 'green', 'yellow');
 const redGreen = colourPairBetween(gaps, 'red', 'green');
 check('different colours resolve to their pair', yellowGreen?.key === 'yellow-green' && yellowGreen.isDA);
+check('an opponent on the higher DA figure is up', colourDaLean(yellowGreen, 'yellow') === 'up');
+check('an opponent on the lower DA figure is down', colourDaLean(yellowGreen, 'green') === 'down');
+check('a colour outside the pair has no up or down', colourDaLean(yellowGreen, 'red') == null);
+check('a smaller pair still marks the higher figure up', colourDaLean(redGreen, 'red') === 'up' && colourDaLean(redGreen, 'green') === 'down');
+
+const underFifty = colourPairDifferences([
+  { colour: 'red', value: 40 },
+  { colour: 'yellow', value: 35 },
+  { colour: 'green', value: 15 },
+]);
+const underYellowGreen = underFifty.find((row) => row.key === 'yellow-green') ?? null;
+const underRedGreen = underFifty.find((row) => row.key === 'red-green') ?? null;
+check('a figure under 50 is up when it is higher than the other colour', underYellowGreen?.higher === 'yellow' && colourDaLean(underYellowGreen, 'yellow') === 'up');
+check('the lower figure is down when both colours are under 50', colourDaLean(underYellowGreen, 'green') === 'down' && colourDaLean(underRedGreen, 'red') === 'up' && colourDaLean(underRedGreen, 'green') === 'down');
 check('a smaller colour pair is not the double agent', redGreen?.key === 'red-green' && redGreen.isDA === false);
 check('the same colour has no pair to test', colourPairBetween(gaps, 'red', 'red') == null);
 check('a missing colour has no pair to test', colourPairBetween(gaps, 'red', null) == null);
@@ -109,6 +125,13 @@ const tiedGaps = colourPairDifferences([
   { colour: 'green', value: 0 },
 ]);
 check('equal largest gaps are all double agents', tiedGaps.filter((row) => row.isDA).map((row) => row.key).sort().join(',') === 'red-green,yellow-green');
+const level = colourPairDifferences([
+  { colour: 'red', value: 50 },
+  { colour: 'yellow', value: 50 },
+  { colour: 'green', value: 50 },
+]);
+const levelPair = level.find((row) => row.key === 'red-green') ?? null;
+check('equal figures on a DA pair have no up or down', levelPair?.isDA === true && levelPair.higher == null && colourDaLean(levelPair, 'red') == null);
 
 const partial = colourPairDifferences([
   { colour: 'red', value: 80 },

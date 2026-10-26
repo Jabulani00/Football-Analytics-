@@ -353,9 +353,14 @@ export type ColourDifference = {
   right: Band;
   /** Absolute gap between the two colour figures. Missing when either figure is missing. */
   difference: number | null;
+  /** Colour with the larger figure. Null when a figure is missing or the two figures tie. */
+  higher: Band | null;
   /** Largest gap among the pairs that both have a figure. Ties share DA. */
   isDA: boolean;
 };
+
+/** Higher figure in a colour pair is up. The lower figure is down. A 50% line is not required. */
+export type ColourDaLean = 'up' | 'down';
 
 const COLOUR_PAIRS: { key: ColourPairKey; left: Band; right: Band }[] = [
   { key: 'red-green', left: 'red', right: 'green' },
@@ -385,9 +390,15 @@ export function colourPairDifferences(
   const built: ColourDifference[] = COLOUR_PAIRS.map((pair) => {
     const left = valueOf(pair.left);
     const right = valueOf(pair.right);
+    const leftShown = left == null ? null : roundGap(left, decimals);
+    const rightShown = right == null ? null : roundGap(right, decimals);
+    const higher = leftShown == null || rightShown == null || leftShown === rightShown
+      ? null
+      : leftShown > rightShown ? pair.left : pair.right;
     return {
       ...pair,
-      difference: left == null || right == null ? null : roundGap(Math.abs(left - right), decimals),
+      difference: leftShown == null || rightShown == null ? null : roundGap(Math.abs(left - right), decimals),
+      higher,
       isDA: false,
     };
   });
@@ -412,4 +423,15 @@ export function colourPairBetween(
   return differences.find((row) =>
     (row.left === a && row.right === b) || (row.left === b && row.right === a),
   ) ?? null;
+}
+
+/**
+ * Up when this colour is the higher figure in the pair, Down when it is the lower one.
+ * The read is only the comparison inside the pair. A figure under 50% is still up when it is higher.
+ * Equal figures have no lean.
+ */
+export function colourDaLean(pair: ColourDifference | null, colour: Band | null): ColourDaLean | null {
+  if (pair == null || pair.higher == null || colour == null) return null;
+  if (colour !== pair.left && colour !== pair.right) return null;
+  return colour === pair.higher ? 'up' : 'down';
 }
