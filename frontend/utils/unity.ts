@@ -57,8 +57,15 @@ function valueAt(stats: TeamStatsExport, family: string, period: string, scope: 
  * The per-team difference measures for a (section, stat) in one competition —
  * the same measures the Dominance / Opposites tables show, one per team.
  */
-export function measuresForSection(stats: TeamStatsExport, section: UnitySection, statKey: string): (number | null)[] {
+/** The per-team gap (Peak − Smaller) for a (section, stat), keeping team identity. */
+export type TeamMeasure = { team: string; teamId: number | null; measure: number | null };
+
+export function teamMeasuresForSection(stats: TeamStatsExport, section: UnitySection, statKey: string): TeamMeasure[] {
   const teamRows = stats.tables['ordinary_ft_overall'] ?? [];
+  const idOf = (r: TeamStatRow): number | null => {
+    const x = r['team_id'];
+    return typeof x === 'number' && Number.isFinite(x) ? x : null;
+  };
 
   if (section === 'opposites') {
     const def = OPPOSITE_PAIRS[Number(statKey)];
@@ -66,7 +73,7 @@ export function measuresForSection(stats: TeamStatsExport, section: UnitySection
     return teamRows.map((r) => {
       const a = numAt(r, def.aKey);
       const b = numAt(r, def.bKey);
-      return a != null && b != null ? Math.abs(a - b) : null;
+      return { team: String(r.team_name), teamId: idOf(r), measure: a != null && b != null ? Math.abs(a - b) : null };
     });
   }
 
@@ -75,11 +82,16 @@ export function measuresForSection(stats: TeamStatsExport, section: UnitySection
   if (!def) return [];
   return teamRows.map((r) => {
     const team = String(r.team_name);
-    if (section === 'homeaway') {
-      return measureFor(valueAt(stats, def.family, 'ft', 'home', team, def.key), valueAt(stats, def.family, 'ft', 'away', team, def.key), def.pctBased);
-    }
-    return measureFor(valueAt(stats, def.family, 'ht', 'overall', team, def.key), valueAt(stats, def.family, '2h', 'overall', team, def.key), def.pctBased);
+    const measure =
+      section === 'homeaway'
+        ? measureFor(valueAt(stats, def.family, 'ft', 'home', team, def.key), valueAt(stats, def.family, 'ft', 'away', team, def.key), def.pctBased)
+        : measureFor(valueAt(stats, def.family, 'ht', 'overall', team, def.key), valueAt(stats, def.family, '2h', 'overall', team, def.key), def.pctBased);
+    return { team, teamId: idOf(r), measure };
   });
+}
+
+export function measuresForSection(stats: TeamStatsExport, section: UnitySection, statKey: string): (number | null)[] {
+  return teamMeasuresForSection(stats, section, statKey).map((t) => t.measure);
 }
 
 export type LeagueUnity = {
@@ -145,4 +157,62 @@ export function gradingUnity(rows: TeamGradeRow[]): GradingUnity {
   const graded = rows.filter((r) => r.grade != null);
   const da = graded.filter((r) => r.da).length;
   return { graded: graded.length, da, unity: graded.length ? da / graded.length : null };
+}
+
+/* ---- League tiers & the Super League table ----
+ * Leagues (ranked best-first by Unity) are split into three deterministic thirds:
+ * Top = green, Middle = yellow, Bottom = white. The Super League gathers every
+ * team across leagues, ranked by its gap (Peak − Smaller = the measure).
+ */
+export type LeagueTier = 'top' | 'middle' | 'bottom';
+
+/** Split already-ranked leagues into three approximately equal, deterministic tiers. */
+export function assignLeagueTiers(ranked: { competition: string }[]): Map<string, LeagueTier> {
+  const n = ranked.length;
+  const m = new Map<string, LeagueTier>();
+  ranked.forEach((l, i) => {
+    const group = n === 0 ? 0 : Math.floor((i * 3) / n); // 0 = top third, 1 = middle, 2 = bottom
+    m.set(l.competition, group <= 0 ? 'top' : group === 1 ? 'middle' : 'bottom');
+  });
+  return m;
+}
+
+export type SuperTeamRow = {
+  team: string;
+  teamId: number | null;
+  competition: string;
+  tier: LeagueTier | null;
+  /** The gap (Peak − Smaller) = the measure that is ranked. */
+  gap: number;
+  band: DaBand;
+  /** 1-based rank across all leagues (by gap). */
+  overallRank: number;
+  /** 1-based rank within its own league (by gap). */
+  leagueRank: number;
+};
+
+/** Build the Super League table: every team across leagues, ranked by gap. */
+export function buildSuperLeague(
+  perLeague: { competition: string; teams: TeamMeasure[] }[],
+  tiers: Map<string, LeagueTier>,
+): SuperTeamRow[] {
+  const rows: Omit<SuperTeamRow, 'overallRank'>[] = [];
+  for (const lg of perLeague) {
+    const valid = lg.teams
+      .filter((t): t is TeamMeasure & { measure: number } => t.measure != null)
+      .sort((a, b) => b.measure - a.measure || a.team.localeCompare(b.team));
+    valid.forEach((t, i) =>
+      rows.push({
+        team: t.team,
+        teamId: t.teamId,
+        competition: lg.competition,
+        tier: tiers.get(lg.competition) ?? null,
+        gap: t.measure,
+        band: daBand(t.measure),
+        leagueRank: i + 1,
+      }),
+    );
+  }
+  const sorted = rows.sort((a, b) => b.gap - a.gap || a.competition.localeCompare(b.competition) || a.team.localeCompare(b.team));
+  return sorted.map((r, i) => ({ ...r, overallRank: i + 1 }));
 }
