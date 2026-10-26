@@ -4,10 +4,14 @@ import {
   leagueUnityFor,
   superLeagueUnity,
   measuresForSection,
+  teamMeasuresForSection,
+  assignLeagueTiers,
+  buildSuperLeague,
   sectionStats,
   gradingUnity,
   NONE_MAX,
   DA_MIN,
+  type TeamMeasure,
 } from '../utils/unity';
 import type { TeamStatRow, TeamStatsExport } from '../types/data';
 import type { TeamGradeRow } from '../utils/statsGrading';
@@ -59,6 +63,31 @@ const opp = measuresForSection(stats, 'opposites', '0');
 if (opp[0] !== 40 || opp[1] !== 10) throw new Error(`Opposite pair measures wrong: ${JSON.stringify(opp)}`);
 
 if (sectionStats('opposites')[0].label !== 'SC% vs FTS%') throw new Error('Opposite section stats should name the pairs.');
+
+// ---- team measures keep identity; measuresForSection still returns the numbers ----
+const tm = teamMeasuresForSection(stats, 'homeaway', 'sc_pct');
+if (tm[0].team !== 'Alpha' || tm[0].measure !== 40) throw new Error(`Team measures should keep names: ${JSON.stringify(tm)}`);
+if (measuresForSection(stats, 'homeaway', 'sc_pct').join(',') !== '40,5') throw new Error('measuresForSection still returns the plain numbers.');
+
+// ---- league tiers: three deterministic thirds (top/middle/bottom) ----
+const ranked = [{ competition: 'A' }, { competition: 'B' }, { competition: 'C' }, { competition: 'D' }, { competition: 'E' }, { competition: 'F' }];
+const tiers = assignLeagueTiers(ranked);
+if (tiers.get('A') !== 'top' || tiers.get('B') !== 'top') throw new Error('First third → top.');
+if (tiers.get('C') !== 'middle' || tiers.get('D') !== 'middle') throw new Error('Middle third → middle.');
+if (tiers.get('E') !== 'bottom' || tiers.get('F') !== 'bottom') throw new Error('Last third → bottom.');
+
+// ---- super league: teams across leagues ranked by gap, with league ranks ----
+const perLeague: { competition: string; teams: TeamMeasure[] }[] = [
+  { competition: 'A', teams: [{ team: 'A1', teamId: 1, measure: 40 }, { team: 'A2', teamId: 2, measure: 10 }] },
+  { competition: 'C', teams: [{ team: 'C1', teamId: 3, measure: 55 }, { team: 'C2', teamId: 4, measure: null }] },
+];
+const sup = buildSuperLeague(perLeague, tiers);
+if (sup.length !== 3) throw new Error('Teams with no gap are dropped.');
+if (sup[0].team !== 'C1' || sup[0].overallRank !== 1 || sup[0].gap !== 55) throw new Error('Biggest gap ranks first overall.');
+if (sup[0].tier !== 'middle') throw new Error('C1 carries its league tier (C = middle).');
+if (sup[0].leagueRank !== 1) throw new Error('C1 is rank 1 in its own league.');
+const a2 = sup.find((r) => r.team === 'A2')!;
+if (a2.leagueRank !== 2 || a2.band !== 'none') throw new Error(`A2 is 2nd in league A, gap 10 = none: ${JSON.stringify(a2)}`);
 
 // ---- grading Unity: DA-graded (B / E) ÷ graded teams; ungraded excluded ----
 const gradeRows = [
