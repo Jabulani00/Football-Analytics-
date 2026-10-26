@@ -57,8 +57,24 @@ function valueAt(stats: TeamStatsExport, family: string, period: string, scope: 
  * The per-team difference measures for a (section, stat) in one competition —
  * the same measures the Dominance / Opposites tables show, one per team.
  */
-/** The per-team gap (Peak − Smaller) for a (section, stat), keeping team identity. */
-export type TeamMeasure = { team: string; teamId: number | null; measure: number | null };
+/**
+ * The per-team reading for a (section, stat), keeping team identity.
+ * `measure` is the existing classification magnitude (relative % for raw stats);
+ * `peak`/`smaller` are the two side values so the spec's Unity = Peak − Smaller
+ * and DA-to-Unity multiple can be computed.
+ */
+export type TeamMeasure = {
+  team: string;
+  teamId: number | null;
+  measure: number | null;
+  peak: number | null;
+  smaller: number | null;
+};
+
+function peakSmaller(a: number | null, b: number | null): { peak: number | null; smaller: number | null } {
+  if (a == null || b == null) return { peak: null, smaller: null };
+  return { peak: Math.max(a, b), smaller: Math.min(a, b) };
+}
 
 export function teamMeasuresForSection(stats: TeamStatsExport, section: UnitySection, statKey: string): TeamMeasure[] {
   const teamRows = stats.tables['ordinary_ft_overall'] ?? [];
@@ -73,7 +89,7 @@ export function teamMeasuresForSection(stats: TeamStatsExport, section: UnitySec
     return teamRows.map((r) => {
       const a = numAt(r, def.aKey);
       const b = numAt(r, def.bKey);
-      return { team: String(r.team_name), teamId: idOf(r), measure: a != null && b != null ? Math.abs(a - b) : null };
+      return { team: String(r.team_name), teamId: idOf(r), measure: a != null && b != null ? Math.abs(a - b) : null, ...peakSmaller(a, b) };
     });
   }
 
@@ -82,11 +98,15 @@ export function teamMeasuresForSection(stats: TeamStatsExport, section: UnitySec
   if (!def) return [];
   return teamRows.map((r) => {
     const team = String(r.team_name);
-    const measure =
+    const a =
       section === 'homeaway'
-        ? measureFor(valueAt(stats, def.family, 'ft', 'home', team, def.key), valueAt(stats, def.family, 'ft', 'away', team, def.key), def.pctBased)
-        : measureFor(valueAt(stats, def.family, 'ht', 'overall', team, def.key), valueAt(stats, def.family, '2h', 'overall', team, def.key), def.pctBased);
-    return { team, teamId: idOf(r), measure };
+        ? valueAt(stats, def.family, 'ft', 'home', team, def.key)
+        : valueAt(stats, def.family, 'ht', 'overall', team, def.key);
+    const b =
+      section === 'homeaway'
+        ? valueAt(stats, def.family, 'ft', 'away', team, def.key)
+        : valueAt(stats, def.family, '2h', 'overall', team, def.key);
+    return { team, teamId: idOf(r), measure: measureFor(a, b, def.pctBased), ...peakSmaller(a, b) };
   });
 }
 
@@ -182,37 +202,56 @@ export type SuperTeamRow = {
   teamId: number | null;
   competition: string;
   tier: LeagueTier | null;
-  /** The gap (Peak − Smaller) = the measure that is ranked. */
-  gap: number;
+  /** Peak statistic (the dominant side) — used as the numeric DA. */
+  peak: number;
+  /** Smaller statistic (the other side). */
+  smaller: number;
+  /** Spec's DA = peak statistic. */
+  da: number;
+  /** Spec's Unity = Peak − Smaller (the gap). */
+  unity: number;
+  /** DA ÷ Unity; null when Unity is 0 (no division by zero). */
+  multiple: number | null;
+  /** DA band from the existing classification magnitude (consistency with the app). */
   band: DaBand;
-  /** 1-based rank across all leagues (by gap). */
+  /** 1-based rank across all leagues (by Unity, the gap). */
   overallRank: number;
-  /** 1-based rank within its own league (by gap). */
+  /** 1-based rank within its own league (by Unity). */
   leagueRank: number;
 };
 
-/** Build the Super League table: every team across leagues, ranked by gap. */
+/**
+ * Build the Super League table: every team across leagues. Unity = Peak − Smaller,
+ * DA = peak, multiple = DA ÷ Unity (guarded). Ranked by Unity (the dominance gap);
+ * a team with no usable sides is dropped. Teams stay tied to their league + tier.
+ */
 export function buildSuperLeague(
   perLeague: { competition: string; teams: TeamMeasure[] }[],
   tiers: Map<string, LeagueTier>,
 ): SuperTeamRow[] {
+  type Valid = TeamMeasure & { peak: number; smaller: number };
   const rows: Omit<SuperTeamRow, 'overallRank'>[] = [];
   for (const lg of perLeague) {
     const valid = lg.teams
-      .filter((t): t is TeamMeasure & { measure: number } => t.measure != null)
-      .sort((a, b) => b.measure - a.measure || a.team.localeCompare(b.team));
-    valid.forEach((t, i) =>
+      .filter((t): t is Valid => t.peak != null && t.smaller != null)
+      .sort((a, b) => b.peak - b.smaller - (a.peak - a.smaller) || a.team.localeCompare(b.team));
+    valid.forEach((t, i) => {
+      const unity = t.peak - t.smaller;
       rows.push({
         team: t.team,
         teamId: t.teamId,
         competition: lg.competition,
         tier: tiers.get(lg.competition) ?? null,
-        gap: t.measure,
-        band: daBand(t.measure),
+        peak: t.peak,
+        smaller: t.smaller,
+        da: t.peak,
+        unity,
+        multiple: unity === 0 ? null : t.peak / unity,
+        band: daBand(t.measure ?? unity),
         leagueRank: i + 1,
-      }),
-    );
+      });
+    });
   }
-  const sorted = rows.sort((a, b) => b.gap - a.gap || a.competition.localeCompare(b.competition) || a.team.localeCompare(b.team));
+  const sorted = rows.sort((a, b) => b.unity - a.unity || a.competition.localeCompare(b.competition) || a.team.localeCompare(b.team));
   return sorted.map((r, i) => ({ ...r, overallRank: i + 1 }));
 }

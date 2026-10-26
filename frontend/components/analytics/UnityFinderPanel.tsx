@@ -33,7 +33,7 @@ const SECTIONS: { value: UnitySection; label: string }[] = [
 
 type UnityView = 'leagues' | 'teams';
 type TierFilter = 'all' | LeagueTier;
-type SortKey = 'rank' | 'gap' | 'team' | 'league' | 'tier' | 'lgrank';
+type SortKey = 'rank' | 'multiple' | 'unity' | 'da' | 'team' | 'league' | 'tier' | 'lgrank';
 
 function pct(v: number | null): string {
   return v == null ? '—' : `${Math.round(v * 100)}%`;
@@ -56,7 +56,9 @@ function sortSuper(rows: SuperTeamRow[], key: SortKey, dir: 'asc' | 'desc'): Sup
   return [...rows].sort((a, b) => {
     let c = 0;
     if (key === 'rank') c = a.overallRank - b.overallRank;
-    else if (key === 'gap') c = a.gap - b.gap;
+    else if (key === 'unity') c = a.unity - b.unity;
+    else if (key === 'da') c = a.da - b.da;
+    else if (key === 'multiple') c = (a.multiple ?? -Infinity) - (b.multiple ?? -Infinity);
     else if (key === 'team') c = a.team.localeCompare(b.team);
     else if (key === 'league') c = a.competition.localeCompare(b.competition);
     else if (key === 'tier') c = TIER_RANK[a.tier ?? 'bottom'] - TIER_RANK[b.tier ?? 'bottom'];
@@ -152,10 +154,11 @@ export default function UnityFinderPanel() {
       <View style={styles.header}>
         <Text style={styles.title}>DA Unity Finder</Text>
         <Text style={styles.subtitle}>
-          The super league of all active leagues. League Unity is the share of a league&apos;s teams that
+          The league amongst leagues — every active league compared. League Unity is the share of a league&apos;s teams that
           are DA on a stat (difference ≥ {DA_MIN}%); leagues are ranked and split into three tiers —
-          Top (green), Middle (yellow), Bottom (white). The Super League table ranks every team across
-          leagues by its gap (Peak − Smaller), keeping each team tied to its league and tier.
+          Top (green), Middle (yellow), Bottom (white). The League Amongst Leagues table lists every team across
+          leagues with DA (peak stat), Unity (Peak − Smaller) and the DA ÷ Unity multiple — ranked by
+          Unity, each team tied to its league and tier.
         </Text>
       </View>
 
@@ -166,7 +169,7 @@ export default function UnityFinderPanel() {
 
       {/* View switch */}
       <View style={styles.viewRow}>
-        {([['leagues', 'Leagues (LL)'], ['teams', 'Super League (teams)']] as [UnityView, string][]).map(([v, label]) => {
+        {([['leagues', 'Leagues (LL)'], ['teams', 'League Amongst Leagues']] as [UnityView, string][]).map(([v, label]) => {
           const on = view === v;
           return (
             <Pressable key={v} accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => setView(v)} style={[styles.viewBtn, on && styles.viewBtnOn]}>
@@ -180,7 +183,7 @@ export default function UnityFinderPanel() {
         {loading ? (
           <>
             <ActivityIndicator size="small" color={theme.accentGreen} />
-            <Text style={styles.statusMuted}>Building the super league · {settled}/{leagues.length} leagues…</Text>
+            <Text style={styles.statusMuted}>Building the league amongst leagues · {settled}/{leagues.length} leagues…</Text>
           </>
         ) : (
           <Text style={styles.statusLive}>● {sl.leagues.length} leagues · {sl.totalTeams} teams · {statLabel}</Text>
@@ -192,7 +195,7 @@ export default function UnityFinderPanel() {
       {!loading && sl.leagues.length > 0 && view === 'leagues' ? (
         <>
           <View style={styles.overall}>
-            <Text style={styles.overallLabel}>Super-league Unity · {statLabel}</Text>
+            <Text style={styles.overallLabel}>League-amongst-leagues Unity · {statLabel}</Text>
             <Text style={styles.overallValue}>{pct(sl.overallUnity)}</Text>
             <Text style={styles.overallSub}>{sl.totalDa} of {sl.totalTeams} teams are DA</Text>
           </View>
@@ -244,8 +247,9 @@ export default function UnityFinderPanel() {
             <View style={[styles.filterRow, narrow && styles.filterCol]}>
               <FilterDropdown label="League" value={leagueFilter} options={leagueOptions} onChange={setLeagueFilter} style={narrow ? styles.full : styles.flex} />
               <FilterDropdown label="Sort by" value={sortKey} options={[
-                { value: 'rank', label: 'Overall rank' }, { value: 'gap', label: 'Gap (Unity)' }, { value: 'team', label: 'Team name' },
-                { value: 'league', label: 'League' }, { value: 'tier', label: 'League tier' }, { value: 'lgrank', label: 'League rank' },
+                { value: 'rank', label: 'Overall rank' }, { value: 'multiple', label: 'DA ÷ Unity (×)' }, { value: 'unity', label: 'Unity (gap)' },
+                { value: 'da', label: 'DA (peak)' }, { value: 'team', label: 'Team name' }, { value: 'league', label: 'League' },
+                { value: 'tier', label: 'League tier' }, { value: 'lgrank', label: 'League rank' },
               ]} onChange={(v) => setSortKey(v as SortKey)} style={narrow ? styles.full : styles.flex} />
               <Pressable accessibilityRole="button" onPress={() => setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))} style={styles.dirBtn}>
                 <Text style={styles.dirBtnText}>{sortDir === 'asc' ? '↑ Asc' : '↓ Desc'}</Text>
@@ -281,18 +285,20 @@ export default function UnityFinderPanel() {
             <>
               <PageControls page={safe} pages={pages} total={teamRows.length} from={start + 1} to={start + visibleTeams.length} onChange={setPage} />
               <DragScroll horizontal style={styles.scroll} contentContainerStyle={styles.scrollContent}>
-                <View style={[styles.table, { minWidth: 720 }]}>
+                <View style={[styles.table, { minWidth: 800 }]}>
                   <View style={[styles.row, styles.headRow]}>
                     <Text style={[styles.cRank, styles.headText, styles.right]}>#</Text>
                     <Text style={[styles.cTeam, styles.headText]}>Team</Text>
                     <Text style={[styles.cLeagueT, styles.headText]}>League</Text>
                     <Text style={[styles.cTier, styles.headText]}>Tier</Text>
-                    <Text style={[styles.cNum, styles.headText, styles.right]}>Gap</Text>
-                    <Text style={[styles.cNum, styles.headText, styles.right]}>DA?</Text>
+                    <Text style={[styles.cNum, styles.headText, styles.right]}>DA</Text>
+                    <Text style={[styles.cNum, styles.headText, styles.right]}>Unity</Text>
+                    <Text style={[styles.cNum, styles.headText, styles.right]}>×</Text>
                     <Text style={[styles.cNum, styles.headText, styles.right]}>Lg #</Text>
                   </View>
                   {visibleTeams.map((r, i) => {
                     const tc = tierColor(r.tier);
+                    const uc = r.band === 'da' ? theme.accentGreen : r.band === 'borderline' ? theme.yellow : theme.textMuted;
                     return (
                       <View key={`${r.competition}-${r.team}`} style={[styles.row, i % 2 === 1 && styles.rowAlt]}>
                         <Text style={[styles.cRank, styles.numDa]}>{r.overallRank}</Text>
@@ -301,10 +307,9 @@ export default function UnityFinderPanel() {
                         <View style={styles.cTier}>
                           <View style={[styles.tierChip, { borderColor: tc }]}><Text style={[styles.tierChipText, { color: tc }]}>{tierName(r.tier)}</Text></View>
                         </View>
-                        <Text style={[styles.cNum, styles.numStrong]}>{Math.round(r.gap)}%</Text>
-                        <Text style={[styles.cNum, { textAlign: 'right', fontFamily: fonts.bodySemiBold, fontSize: 12, color: r.band === 'da' ? theme.accentGreen : r.band === 'borderline' ? theme.yellow : theme.textMuted }]}>
-                          {r.band === 'da' ? 'DA' : r.band === 'borderline' ? '~' : '—'}
-                        </Text>
+                        <Text style={[styles.cNum, styles.num]}>{Math.round(r.da)}%</Text>
+                        <Text style={[styles.cNum, { textAlign: 'right', fontFamily: fonts.bodySemiBold, fontSize: 12, color: uc }]}>{Math.round(r.unity)}%</Text>
+                        <Text style={[styles.cNum, styles.numStrong]}>{r.multiple == null ? '—' : `${r.multiple.toFixed(2)}×`}</Text>
                         <Text style={[styles.cNum, styles.muted]}>{r.leagueRank}</Text>
                       </View>
                     );
@@ -313,7 +318,9 @@ export default function UnityFinderPanel() {
               </DragScroll>
               <PageControls page={safe} pages={pages} total={teamRows.length} from={start + 1} to={start + visibleTeams.length} onChange={setPage} />
               <Text style={styles.hint}>
-                Gap = Peak − Smaller for {statLabel}. Rank is across all leagues; Lg # is the team&apos;s rank inside its own league. DA? flags gap ≥ {DA_MIN}%.
+                DA = peak stat · Unity = Peak − Smaller · × = DA ÷ Unity, for {statLabel}. Overall rank is
+                across all leagues (by Unity, kept under filtering); Lg # is the team&apos;s rank in its own
+                league. Unity colour: green = DA (≥ {DA_MIN}%), yellow = borderline.
               </Text>
             </>
           )}
