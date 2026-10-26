@@ -112,6 +112,7 @@ export type AnalyticsTab =
   | 'dominance'
   | 'opposite'
   | 'unity'
+  | 'skeleton'
   | 'tables'
   | 'additional'
   | 'footy'

@@ -23,6 +23,7 @@ export const ANALYTICS_TABS: { id: AnalyticsTab; label: string }[] = [
   { id: 'dominance', label: 'Dominance Checker' },
   { id: 'opposite', label: 'Opposite Stats Analysis' },
   { id: 'unity', label: 'DA Unity Finder' },
+  { id: 'skeleton', label: 'Query Skeleton' },
   { id: 'tables', label: 'Stats Tables' },
   { id: 'additional', label: 'Additional stats' },
   { id: 'footy', label: 'Footy Stats' },
