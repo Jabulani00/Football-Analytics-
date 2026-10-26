@@ -9,6 +9,9 @@ import {
   COLOUR_VENUES,
   MIN_COLOUR_OPPONENT_MATCHES,
   bandForTeam,
+  colourDifferenceDecimals,
+  colourPairBetween,
+  colourPairDifferences,
   colourPeriodLabel,
   colourStatById,
   colourVenueLabel,
@@ -17,6 +20,7 @@ import {
   passesColourPosition,
   rateOnFullTable,
   ratesAgainstColours,
+  type ColourDifference,
   type ColourDirection,
   type ColourFixture,
   type ColourPeriodId,
@@ -80,6 +84,7 @@ export default function ColourVerificationPanel({
         The ranking is your own figure against the green, yellow and red tables.
         Strong numbers position 1 as your highest figure. Weak numbers position 1 as your smallest figure, then up to the highest.
         The read opens after 3 matches against the opponent’s colour in that split.
+        See difference compares Red with Green, Yellow with Green, and Red with Yellow. The largest gap is DA (Double Agent), read from the colours T1 and T2 sit on.
       </Text>
       <View style={styles.rules}>
         <Rule title="Strong" body="Position 1 is your highest figure. Successful at position 1 or 2." />
@@ -151,6 +156,8 @@ function SideVerify({
   statOptions: { value: string; label: string }[];
 }) {
   const colour = bandForTeam(opponent.teamId, standings) ?? opponent.colour;
+  const ownColour = bandForTeam(snap.teamId, standings) ?? snap.colour;
+  const [seeDifference, setSeeDifference] = useState(false);
   const venue = pick.venue || 'overall';
   const played = colour != null && snap.teamId != null
     ? countMatchesAgainstColour(snap.teamId, colour, standings, matches, venue)
@@ -288,6 +295,26 @@ function SideVerify({
             opponentColour={colour}
             direction={enough ? pick.direction : ''}
           />
+          <Pressable
+            onPress={() => setSeeDifference((on) => !on)}
+            style={[styles.seeDiff, seeDifference && styles.seeDiffOn]}
+            accessibilityRole="button"
+            accessibilityState={{ selected: seeDifference }}>
+            <Text style={[styles.seeDiffLabel, seeDifference && styles.seeDiffLabelOn]}>See difference</Text>
+            <Text style={[styles.seeDiffHint, seeDifference && styles.seeDiffHintOn]}>
+              Red, yellow and green. The largest gap is DA.
+            </Text>
+          </Pressable>
+          {seeDifference ? (
+            <ColourDifferences
+              stat={stat}
+              rows={rates}
+              ownColour={ownColour}
+              opponentColour={colour}
+              ownLabel={snap.label}
+              opponentLabel={opponent.label}
+            />
+          ) : null}
         </>
       ) : (
         <Text style={styles.prompt}>
@@ -447,6 +474,88 @@ function Banner({ tone, title, body }: { tone: 'good' | 'bad' | 'wait'; title: s
       <Text style={styles.bannerBody}>{body}</Text>
     </View>
   );
+}
+
+function ColourDifferences({
+  stat,
+  rows,
+  ownColour,
+  opponentColour,
+  ownLabel,
+  opponentLabel,
+}: {
+  stat: ColourStat;
+  rows: ColourRateRow[];
+  ownColour: TableColour | null;
+  opponentColour: TableColour | null;
+  ownLabel: string;
+  opponentLabel: string;
+}) {
+  const differences = colourPairDifferences(rows, colourDifferenceDecimals(stat));
+  const pair = colourPairBetween(differences, ownColour, opponentColour);
+  const daPairs = differences.filter((row) => row.isDA);
+  const agents = pair?.isDA === true;
+  return (
+    <View style={styles.diffBlock}>
+      <Text style={styles.ladderTitle}>Difference between colours</Text>
+      {differences.map((row) => (
+        <View key={row.key} style={[styles.diffRow, row.isDA && styles.diffDA]}>
+          <View style={styles.colourCell}>
+            <View style={[styles.swatch, { backgroundColor: COLOUR_HEX[row.left] }]} />
+            <View style={[styles.swatch, { backgroundColor: COLOUR_HEX[row.right] }]} />
+            <Text style={[styles.ladderName, row.isDA && styles.diffNameDA]} numberOfLines={1}>
+              {colourWord(row.left)} vs {colourWord(row.right)}
+            </Text>
+          </View>
+          <Text style={styles.diffValue}>
+            {row.difference == null ? '—' : formatColourStatValue(stat, row.difference)}
+          </Text>
+          <Text style={[styles.diffBadge, row.isDA && styles.diffBadgeOn]}>{row.isDA ? 'DA' : ''}</Text>
+        </View>
+      ))}
+      <View style={[styles.daCallout, agents && styles.daCalloutOn]}>
+        <Text style={[styles.daTitle, agents && styles.daTitleOn]}>{agents ? 'Double Agent' : 'Double Agent check'}</Text>
+        <Text style={styles.daBody}>
+          {doubleAgentCopy(ownLabel, opponentLabel, ownColour, opponentColour, pair, daPairs, stat)}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function pairGapLabel(row: ColourDifference, stat: ColourStat): string {
+  const gap = row.difference == null ? '—' : formatColourStatValue(stat, row.difference);
+  return `${colourWord(row.left)} vs ${colourWord(row.right)} (${gap})`;
+}
+
+function doubleAgentCopy(
+  ownLabel: string,
+  opponentLabel: string,
+  ownColour: TableColour | null,
+  opponentColour: TableColour | null,
+  pair: ColourDifference | null,
+  daPairs: ColourDifference[],
+  stat: ColourStat,
+): string {
+  if (ownColour == null || opponentColour == null) {
+    return 'Both sides need a table colour before this gap can be read.';
+  }
+  if (ownColour === opponentColour) {
+    return `${ownLabel} and ${opponentLabel} are both ${colourWord(ownColour)}. Double Agent needs the two sides on different colours.`;
+  }
+  const sides = `${ownLabel} (${colourWord(ownColour)}) and ${opponentLabel} (${colourWord(opponentColour)})`;
+  if (pair == null || pair.difference == null) {
+    return `${sides} are different colours. One of those figures is missing, so their gap cannot be read.`;
+  }
+  const gap = formatColourStatValue(stat, pair.difference);
+  const between = `${colourWord(pair.left)} vs ${colourWord(pair.right)}`;
+  if (pair.isDA) {
+    return daPairs.length > 1
+      ? `${sides} are Double Agents. ${between} ties for the largest gap (${gap}).`
+      : `${sides} are Double Agents. ${between} is the largest gap (${gap}).`;
+  }
+  const largest = daPairs.map((row) => pairGapLabel(row, stat)).join(', ');
+  return `${sides} differ by ${gap}. The Double Agent gap is ${largest || 'still open'}.`;
 }
 
 function ColourRates({
@@ -683,4 +792,55 @@ const styles = StyleSheet.create({
   playedCol: { width: 64, fontFamily: fonts.bodyMedium, fontSize: 13, color: theme.textPrimary, textAlign: 'center' },
   ladderValue: { width: 72, fontFamily: fonts.display, fontSize: 16, color: theme.textPrimary, textAlign: 'right' },
   valueHead: { textAlign: 'right' },
+  seeDiff: {
+    borderWidth: layout.borderWidth,
+    borderColor: theme.border,
+    borderRadius: layout.borderRadius,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    alignItems: 'center',
+    backgroundColor: theme.bg,
+    marginTop: spacing.sm,
+  },
+  seeDiffOn: { backgroundColor: theme.textPrimary, borderColor: theme.textPrimary },
+  seeDiffLabel: { fontFamily: fonts.bodySemiBold, fontSize: 14, color: theme.textPrimary },
+  seeDiffLabelOn: { color: theme.surface },
+  seeDiffHint: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted, marginTop: 1, textAlign: 'center' },
+  seeDiffHintOn: { color: '#E2E8F0' },
+  diffBlock: {
+    marginTop: spacing.sm,
+    borderWidth: layout.borderWidth,
+    borderColor: theme.border,
+    borderRadius: layout.borderRadius,
+    overflow: 'hidden',
+  },
+  diffRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: 8,
+    paddingHorizontal: spacing.sm,
+    borderTopWidth: layout.borderWidth,
+    borderTopColor: theme.border,
+  },
+  diffDA: { backgroundColor: 'rgba(124, 58, 237, 0.12)' },
+  diffNameDA: { fontFamily: fonts.bodySemiBold },
+  diffValue: { width: 72, fontFamily: fonts.display, fontSize: 16, color: theme.textPrimary, textAlign: 'right' },
+  diffBadge: { width: 28, fontFamily: fonts.bodySemiBold, fontSize: 12, color: 'transparent', textAlign: 'right' },
+  diffBadgeOn: { color: theme.accentPurple },
+  daCallout: {
+    borderTopWidth: layout.borderWidth,
+    borderTopColor: theme.border,
+    padding: spacing.sm,
+    backgroundColor: theme.bg,
+  },
+  daCalloutOn: { backgroundColor: 'rgba(124, 58, 237, 0.12)' },
+  daTitle: {
+    fontFamily: fonts.display,
+    fontSize: 15,
+    letterSpacing: 0.4,
+    color: theme.textPrimary,
+  },
+  daTitleOn: { color: theme.accentPurple },
+  daBody: { fontFamily: fonts.body, fontSize: 12, lineHeight: 16, color: theme.textMuted, marginTop: 2 },
 });
