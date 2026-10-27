@@ -35,7 +35,7 @@ const SECTIONS: { value: UnitySection; label: string }[] = [
 
 type UnityView = 'leagues' | 'teams';
 type TierFilter = 'all' | LeagueTier;
-type SortKey = 'rank' | 'strength' | 'indiv' | 'multiple' | 'unity' | 'gap' | 'da' | 'team' | 'league' | 'tier' | 'lgrank';
+const TEAM_LIMIT = 200;
 
 /** A Super-League team row joined with its universal (range-based) Unity. */
 type MergedTeam = SuperTeamRow & {
@@ -61,28 +61,6 @@ function tierName(t: LeagueTier | null): string {
   if (t === 'bottom') return 'Bottom';
   return '—';
 }
-const TIER_RANK: Record<LeagueTier, number> = { top: 0, middle: 1, bottom: 2 };
-
-function sortTeams(rows: MergedTeam[], key: SortKey, dir: 'asc' | 'desc'): MergedTeam[] {
-  const mul = dir === 'asc' ? 1 : -1;
-  return [...rows].sort((a, b) => {
-    let c = 0;
-    if (key === 'rank') c = a.overallRank - b.overallRank;
-    else if (key === 'strength') c = (a.strengthRank ?? Infinity) - (b.strengthRank ?? Infinity);
-    else if (key === 'indiv') c = (a.indivUnity ?? -Infinity) - (b.indivUnity ?? -Infinity);
-    else if (key === 'unity') c = (a.aUnity ?? -Infinity) - (b.aUnity ?? -Infinity);
-    else if (key === 'gap') c = a.unity - b.unity;
-    else if (key === 'da') c = a.da - b.da;
-    else if (key === 'multiple') c = (a.multiple ?? -Infinity) - (b.multiple ?? -Infinity);
-    else if (key === 'team') c = a.team.localeCompare(b.team);
-    else if (key === 'league') c = a.competition.localeCompare(b.competition);
-    else if (key === 'tier') c = TIER_RANK[a.tier ?? 'bottom'] - TIER_RANK[b.tier ?? 'bottom'];
-    else if (key === 'lgrank') c = a.leagueRank - b.leagueRank;
-    if (c === 0) c = a.overallRank - b.overallRank;
-    return c * mul;
-  });
-}
-
 export default function UnityFinderPanel() {
   const { width, height } = useWindowDimensions();
   const narrow = width < 720;
@@ -103,8 +81,6 @@ export default function UnityFinderPanel() {
   const [leagueFilter, setLeagueFilter] = useState<string>('all');
   const [tierFilter, setTierFilter] = useState<TierFilter>('all');
   const [query, setQuery] = useState('');
-  const [sortKey, setSortKey] = useState<SortKey>('rank');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [page, setPage] = useState(1);
 
   const results = useQueries({
@@ -168,19 +144,35 @@ export default function UnityFinderPanel() {
 
   // Teams view: gap rows joined with universal strength, then filtered + sorted.
   const teamRows = useMemo<MergedTeam[]>(() => {
-    let rows: MergedTeam[] = superRows.map((r) => {
+    const rows: MergedTeam[] = superRows.map((r) => {
       const u = uniTeamByKey.get(`${r.competition}::${r.team}`);
       const aUnity = uniLeagueByComp.get(r.competition)?.aUnity ?? null;
-      return { ...r, aUnity, multiple: aUnity == null || aUnity === 0 ? null : r.da / aUnity, indivUnity: u?.indivUnity ?? null, strength: u?.strength ?? null, strengthRank: u?.strengthRank ?? null };
+      return { ...r, aUnity, multiple: aUnity == null || aUnity === 0 ? null : r.unity / aUnity, indivUnity: u?.indivUnity ?? null, strength: u?.strength ?? null, strengthRank: u?.strengthRank ?? null };
     });
-    if (leagueFilter !== 'all') rows = rows.filter((r) => r.competition === leagueFilter);
-    if (tierFilter !== 'all') rows = rows.filter((r) => r.tier === tierFilter);
-    const q = query.trim().toLowerCase();
-    if (q) rows = rows.filter((r) => r.team.toLowerCase().includes(q) || r.competition.toLowerCase().includes(q));
-    return sortTeams(rows, sortKey, sortDir);
-  }, [superRows, uniTeamByKey, uniLeagueByComp, leagueFilter, tierFilter, query, sortKey, sortDir]);
 
-  useEffect(() => setPage(1), [section, statKey, view, leagueFilter, tierFilter, query, sortKey, sortDir]);
+    // Rank all teams by how many times their team gap represents league Unity.
+    const ranked = [...rows].sort((a, b) => (b.multiple ?? -Infinity) - (a.multiple ?? -Infinity) || b.unity - a.unity || a.team.localeCompare(b.team));
+    const leagueRanks = new Map<string, number>();
+    const ranks = new Map<string, { overallRank: number; leagueRank: number }>();
+    ranked.forEach((r, i) => {
+      const key = `${r.competition}::${r.team}`;
+      const leagueRank = (leagueRanks.get(r.competition) ?? 0) + 1;
+      leagueRanks.set(r.competition, leagueRank);
+      ranks.set(key, { overallRank: i + 1, leagueRank });
+    });
+    const rankedRows = rows.map((r) => ({ ...r, ...ranks.get(`${r.competition}::${r.team}`)! }));
+
+    let filtered = rankedRows;
+    if (leagueFilter !== 'all') filtered = filtered.filter((r) => r.competition === leagueFilter);
+    if (tierFilter !== 'all') filtered = filtered.filter((r) => r.tier === tierFilter);
+    const q = query.trim().toLowerCase();
+    if (q) filtered = filtered.filter((r) => r.team.toLowerCase().includes(q) || r.competition.toLowerCase().includes(q));
+    return filtered
+      .sort((a, b) => (b.multiple ?? -Infinity) - (a.multiple ?? -Infinity) || b.unity - a.unity || a.team.localeCompare(b.team))
+      .slice(0, TEAM_LIMIT);
+  }, [superRows, uniTeamByKey, uniLeagueByComp, leagueFilter, tierFilter, query]);
+
+  useEffect(() => setPage(1), [section, statKey, view, leagueFilter, tierFilter, query]);
 
   const loading = feed.loading || settled < leagues.length;
   const statLabel = stats.find((s) => s.key === statKey)?.label ?? statKey;
@@ -295,17 +287,8 @@ export default function UnityFinderPanel() {
         <>
           {/* Filters */}
           <View style={styles.filterCard}>
-            <View style={[styles.filterRow, narrow && styles.filterCol]}>
-              <FilterDropdown label="League" value={leagueFilter} options={leagueOptions} onChange={setLeagueFilter} style={narrow ? styles.full : styles.flex} />
-              <FilterDropdown label="Sort by" value={sortKey} options={[
-                { value: 'rank', label: 'Overall rank (gap)' }, { value: 'strength', label: 'Strength (0–1)' }, { value: 'indiv', label: 'Individual Unity position' },
-                { value: 'multiple', label: 'Peak ÷ league Unity (×)' }, { value: 'unity', label: 'League Unity' }, { value: 'gap', label: 'Team gap' }, { value: 'da', label: 'Peak value' },
-                { value: 'team', label: 'Team name' }, { value: 'league', label: 'League' }, { value: 'tier', label: 'League tier' }, { value: 'lgrank', label: 'League rank' },
-              ]} onChange={(v) => setSortKey(v as SortKey)} style={narrow ? styles.full : styles.flex} />
-              <Pressable accessibilityRole="button" onPress={() => setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))} style={styles.dirBtn}>
-                <Text style={styles.dirBtnText}>{sortDir === 'asc' ? '↑ Asc' : '↓ Desc'}</Text>
-              </Pressable>
-            </View>
+            <FilterDropdown label="League" value={leagueFilter} options={leagueOptions} onChange={setLeagueFilter} style={narrow ? styles.full : styles.flex} />
+            <Text style={styles.topListNote}>Ranked by team Gap ÷ league Unity, biggest first. Showing up to {TEAM_LIMIT} teams.</Text>
             <View style={styles.tierBtnRow}>
               {(['all', 'top', 'middle', 'bottom'] as TierFilter[]).map((t) => {
                 const on = tierFilter === t;
@@ -327,7 +310,7 @@ export default function UnityFinderPanel() {
           </View>
 
           <View style={styles.statusRow}>
-            <Text style={styles.statusMuted}>{teamRows.length} teams{leagueFilter !== 'all' || tierFilter !== 'all' || query.trim() ? ' (filtered)' : ''} · overall ranks kept</Text>
+              <Text style={styles.statusMuted}>Top {teamRows.length} teams by Gap ÷ league Unity{leagueFilter !== 'all' || tierFilter !== 'all' || query.trim() ? ' (filtered)' : ''} · overall ranks kept</Text>
           </View>
 
           {teamRows.length === 0 ? (
@@ -344,12 +327,12 @@ export default function UnityFinderPanel() {
                     <Text style={[styles.cTier, styles.headText]}>Tier</Text>
                     <Text style={[styles.cNum, styles.headText, styles.right]}>Peak</Text>
                     <Text style={[styles.cNum, styles.headText, styles.right]}>Gap</Text>
-                    <Text style={[styles.cNum, styles.headText, styles.right]}>×</Text>
                     <Text style={[styles.cNum, styles.headText, styles.right]}>Unity</Text>
                     <Text style={[styles.cNum, styles.headText, styles.right]}>Indiv</Text>
                     <Text style={[styles.cNum, styles.headText, styles.right]}>Str</Text>
                     <Text style={[styles.cNum, styles.headText, styles.right]}>Str#</Text>
                     <Text style={[styles.cNum, styles.headText, styles.right]}>Lg #</Text>
+                    <Text style={[styles.cMultiple, styles.headText]}>× Unity</Text>
                   </View>
                   {visibleTeams.map((r, i) => {
                     const tc = tierColor(r.tier);
@@ -364,12 +347,14 @@ export default function UnityFinderPanel() {
                         </View>
                         <Text style={[styles.cNum, styles.num]}>{r.da.toFixed(1)}</Text>
                         <Text style={[styles.cNum, { textAlign: 'right', fontFamily: fonts.bodySemiBold, fontSize: 12, color: uc }]}>{r.unity.toFixed(1)}</Text>
-                        <Text style={[styles.cNum, styles.num]}>{r.multiple == null ? '—' : `${r.multiple.toFixed(2)}×`}</Text>
                         <Text style={[styles.cNum, styles.num]}>{r.aUnity == null ? '—' : r.aUnity.toFixed(1)}</Text>
                         <Text style={[styles.cNum, styles.num]}>{r.indivUnity == null ? '—' : r.indivUnity.toFixed(1)}</Text>
                         <Text style={[styles.cNum, styles.numStrong]}>{r.strength == null ? '—' : `${Math.round(r.strength * 100)}%`}</Text>
                         <Text style={[styles.cNum, styles.muted]}>{r.strengthRank ?? '—'}</Text>
                         <Text style={[styles.cNum, styles.muted]}>{r.leagueRank}</Text>
+                        <View style={styles.multipleCell}>
+                          <Text style={styles.multipleValue}>{r.multiple == null ? '—' : `${Number.isInteger(r.multiple) ? r.multiple : r.multiple.toFixed(2)}×`}</Text>
+                        </View>
                       </View>
                     );
                   })}
@@ -378,10 +363,10 @@ export default function UnityFinderPanel() {
               <PageControls page={safe} pages={pages} total={teamRows.length} from={start + 1} to={start + visibleTeams.length} onChange={setPage} />
               <Text style={styles.hint}>
                 Peak is this team&apos;s higher value for {statLabel}; Gap is the difference between its higher and lower values.
-                Unity is the league-wide value: (league high − league low) ÷ teams with data. × = Peak ÷ Unity.
+                Unity is the league-wide value: (league high − league low) ÷ teams with data. The final × Unity column shows Gap ÷ Unity; for example, 8× means the team&apos;s Gap is eight times its league Unity.
                 Indiv is this team&apos;s position-based allocation within the league range; Str is its
-                normalized position 0–100% within its league (the fair cross-league basis); Str# = its strength rank
-                across all leagues. Overall # keeps the gap ranking; Lg # is the rank in its own league.
+                normalized position 0–100% within its league; Str# = its strength rank across all leagues.
+                Overall # and Lg # rank teams by Gap ÷ Unity overall and within their league.
               </Text>
             </>
           )}
@@ -419,8 +404,8 @@ export default function UnityFinderPanel() {
               <Text style={styles.helpText}>Top, Mid, and Bottom are relative groups based on Strength. They split the leagues being compared into roughly three groups; they are not permanent labels of league quality.</Text>
 
               <Text style={styles.helpSectionTitle}>League Amongst Leagues view</Text>
-              <Text style={styles.helpText}>This view lists individual teams from the included leagues. Peak is the team’s higher value in the selected comparison. Gap is the difference between that team’s higher and lower values. Unity is the league-wide formula above. The × column is Peak divided by league Unity. Indiv is a position-based allocation within the league range; Strength shows where the team sits between its league’s lowest and highest value.</Text>
-              <Text style={styles.helpText}>Overall rank orders teams by Gap. League rank orders them by Gap within their own league. Strength rank orders them across leagues by Strength. Use the league and tier filters, search, sort menu, direction button, and page controls to narrow or rearrange the list.</Text>
+              <Text style={styles.helpText}>This view ranks up to 200 teams by Gap ÷ league Unity, biggest first. Peak is the team’s higher value in the selected comparison. Gap is the difference between that team’s higher and lower values. Unity is the league-wide formula above. The final × Unity column says how many times the team’s Gap equals its league Unity. For example, 8× means eight times.</Text>
+              <Text style={styles.helpText}>Overall rank orders teams by this ratio across the included leagues; League rank orders them by the same ratio within their own league. Strength rank orders them by Strength. Use the league and tier filters, search, and page controls to narrow the list; the ranking remains biggest ratio first.</Text>
 
               <Text style={styles.helpSectionTitle}>Reading the results</Text>
               <Text style={styles.helpText}>These figures summarize season patterns for comparison. They do not predict a specific match. A dash means a value could not be calculated from the available data. Percentages describe a share; Unity, Range, Peak, and Gap use the selected stat’s own scale.</Text>
@@ -488,6 +473,7 @@ const styles = StyleSheet.create({
   },
   filterRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end', gap: spacing.sm },
   filterCol: { flexDirection: 'column', alignItems: 'stretch' },
+  topListNote: { fontFamily: fonts.body, fontSize: 12, lineHeight: 18, color: theme.textMuted },
   dirBtn: { borderWidth: 1.5, borderColor: theme.border, borderRadius: layout.borderRadius, paddingHorizontal: spacing.md, paddingVertical: 10, backgroundColor: theme.surfaceHover },
   dirBtnText: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: theme.textPrimary },
   tierBtnRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
@@ -515,6 +501,9 @@ const styles = StyleSheet.create({
   cTeam: { flex: 1, minWidth: 140, paddingHorizontal: 4 },
   cTier: { width: 64, paddingHorizontal: 4 },
   cNum: { width: 52, paddingHorizontal: 4 },
+  cMultiple: { width: 92, paddingHorizontal: 8, textAlign: 'center', color: theme.accentGreen },
+  multipleCell: { width: 92, alignItems: 'center', justifyContent: 'center', paddingVertical: 5, paddingHorizontal: 7, marginLeft: 4, borderRadius: layout.borderRadius, backgroundColor: 'rgba(5,150,105,0.12)' },
+  multipleValue: { fontFamily: fonts.display, fontSize: 16, color: theme.accentGreen },
   cUnity: { width: 150, paddingHorizontal: 4, flexDirection: 'row', alignItems: 'center', gap: 6 },
   muted: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted, textAlign: 'right' },
   league: { fontFamily: fonts.bodyMedium, fontSize: 13, color: theme.textPrimary },
