@@ -162,7 +162,11 @@ function AllMarkets({
     try {
       const detail = await fetchEventDetail(event.id);
       setFull(detail);
-      if (!detail) setError('No extra markets returned for this fixture.');
+      if (!detail) {
+        setError(
+          'Full market detail is no longer available. Hollywoodbets may have suspended, repriced, or removed this fixture.',
+        );
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load all markets.');
     } finally {
@@ -383,13 +387,15 @@ export default function HollywoodOddsPanel({ onAddLeg }: { onAddLeg?: (leg: BetS
             <View key={event.event_id} style={styles.removedRow}>
               <View style={styles.removedBody}>
                 <Text style={styles.removedName}>Hollywoodbets · {event.name}</Text>
-                <Text style={styles.removedMeta}>{lifecycleExplanation(event.lifecycle_state)}</Text>
+                <Text style={styles.removedMeta}>{lifecycleExplanation(event.lifecycle_state ?? 'unclassified')}</Text>
                 <Text style={styles.removedMeta}>
                   Kickoff {new Date(event.start_time).toLocaleString()}
                   {event.verification_source_status ? ` · source ${event.verification_source_status}` : ''}
                 </Text>
               </View>
-              <Text style={styles.lifecycleTag}>{event.lifecycle_state.replaceAll('_', ' ').toUpperCase()}</Text>
+              <Text style={styles.lifecycleTag}>
+                {(event.lifecycle_state ?? 'unclassified').replaceAll('_', ' ').toUpperCase()}
+              </Text>
             </View>
           ))}
         </View>

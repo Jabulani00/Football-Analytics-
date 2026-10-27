@@ -4,6 +4,7 @@ import {
   BET_TYPE,
   bookingUrl,
   CORE_BET_TYPE_IDS,
+  hollywoodEventDetailPath,
   SPORT_SOCCER,
   type HbCategory,
   type HbEvent,
@@ -43,6 +44,16 @@ const DIRECT_HOSTS: Record<HostKey, string> = {
 
 type HostKey = 'events' | 'settings' | 'live' | 'bet';
 
+export class HollywoodbetsRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = 'HollywoodbetsRequestError';
+  }
+}
+
 // ---- Transport --------------------------------------------------------------
 function buildUrl(host: HostKey, path: string, params: Record<string, string | number | undefined>): string {
   const search = new URLSearchParams();
@@ -60,7 +71,12 @@ function buildUrl(host: HostKey, path: string, params: Record<string, string | n
 
 async function getJson<T>(host: HostKey, path: string, params: Record<string, string | number | undefined> = {}, signal?: AbortSignal): Promise<T> {
   const res = await fetch(buildUrl(host, path, params), { headers: { Accept: 'application/json' }, signal });
-  if (!res.ok) throw new Error(`Hollywoodbets ${host}/${path} → HTTP ${res.status}`);
+  if (!res.ok) {
+    throw new HollywoodbetsRequestError(
+      `Hollywoodbets ${host}/${path} → HTTP ${res.status}`,
+      res.status,
+    );
+  }
   return (await res.json()) as T;
 }
 
@@ -165,13 +181,24 @@ export async function fetchEventDetail(
   eventId: number,
   signal?: AbortSignal,
 ): Promise<HbEvent | null> {
-  const j = await getJson<{ event?: HbEvent }>(
-    'events',
-    `api/events/eps/events/${eventId}`,
-    { lang: 'en' },
-    signal,
-  );
-  return j.event ?? null;
+  try {
+    // Hollywoodbets retired the unversioned EPS detail route in October 2026.
+    // The tournament listing still uses /api/events/eps/..., while full event
+    // detail now lives under /api/v2/events/eps/... and retains the same
+    // { event: HbEvent } response contract.
+    const j = await getJson<{ event?: HbEvent }>(
+      'events',
+      hollywoodEventDetailPath(eventId),
+      { lang: 'en' },
+      signal,
+    );
+    return j.event ?? null;
+  } catch (error) {
+    // A fixture can genuinely disappear after its tournament list was loaded.
+    // Treat that race as unavailable detail, not as a broken application.
+    if (error instanceof HollywoodbetsRequestError && error.status === 404) return null;
+    throw error;
+  }
 }
 
 // ---- Share A Bet (booking code + deep link) ---------------------------------

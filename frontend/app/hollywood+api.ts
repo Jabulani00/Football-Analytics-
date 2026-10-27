@@ -22,7 +22,7 @@ const HOSTS: Record<string, string> = {
 // Path prefixes we permit per host, so the proxy can't be turned into an open
 // relay. Matched against the start of the (cleaned) path.
 const ALLOWED: Record<string, string[]> = {
-  events: ['api/events', 'api/sports'],
+  events: ['api/events', 'api/v2/events', 'api/sports'],
   settings: ['api/'],
   live: ['live-or-upcoming/'],
   bet: ['api/punters/ShareABet'],
