@@ -2,6 +2,7 @@ import type {
   BetwayChange,
   BetwayCrawlRun,
   BetwayEvent,
+  BetwayMarket,
   BetwayRemovalEpisode,
   BetwayVerifiedRemoval,
 } from '@/services/betwayHunt';
@@ -65,12 +66,59 @@ function isEsports(event: Row): boolean {
 function betwayApiUrl(skip: number): string {
   const url = new URL('https://www.betway.co.za/sportsapi/br/v1/BetBook/Upcoming/');
   const values: [string, string][] = [
-    ['countryCode', 'ZA'], ['sportId', 'soccer'], ['Skip', String(skip)], ['Take', '100'],
+    ['countryCode', 'ZA'], ['sportId', 'soccer'], ['Skip', String(skip)], ['Take', '50'],
     ['cultureCode', 'en-US'], ['isEsport', 'false'], ['boostedOnly', 'false'],
     ['marketTypes', '[Win/Draw/Win]'],
+    ['marketTypes', 'Total Goals'],
+    ['marketTypes', '[Both Teams To Score]'],
+    ['marketTypes', '[Draw No Bet]'],
+    ['marketTypes', 'Correct Score'],
   ];
   for (const [key, value] of values) url.searchParams.append(key, value);
   return url.toString();
+}
+
+function eventMarkets(
+  eventId: string,
+  markets: Row[],
+  outcomes: Row[],
+  priceByOutcome: Map<string, unknown>,
+): BetwayMarket[] {
+  return markets
+    .filter((market) => String(market.eventId) === eventId && market.isSquashedMarket !== true)
+    .flatMap((market): BetwayMarket[] => {
+      const marketId = String(market.marketId ?? '').trim();
+      if (!marketId) return [];
+      const seen = new Set<string>();
+      const selections = outcomes
+        .filter((outcome) => String(outcome.marketId) === marketId)
+        .sort((left, right) => Number(left.index ?? 0) - Number(right.index ?? 0))
+        .flatMap((outcome) => {
+          const outcomeId = String(outcome.outcomeId ?? '').trim();
+          if (!outcomeId || seen.has(outcomeId)) return [];
+          seen.add(outcomeId);
+          const baseName = String(outcome.displayName ?? outcome.name ?? '').trim();
+          const qualifier = String(outcome.sbv ?? '').trim();
+          const name = `${baseName}${qualifier ? ` ${qualifier}` : ''}`.replace(/\s+/g, ' ').trim();
+          if (!name) return [];
+          const price = numberOrNull(priceByOutcome.get(outcomeId));
+          const available = outcome.isTradingActive === true && outcome.shouldDisplay === true && price != null;
+          return [{ outcome_id: outcomeId, name, odds: available ? price : null, available }];
+        });
+      if (selections.length === 0) return [];
+      const suspended = market.isSuspended === true || market.isActive !== true || market.shouldDisplay !== true;
+      const lineValue = Number(market.handicap);
+      return [{
+        market_id: marketId,
+        market_type: String(market.marketTypeCName ?? market.name ?? '').trim(),
+        name: String(market.displayName ?? market.name ?? market.marketTypeCName ?? 'Market').trim(),
+        line: Number.isFinite(lineValue) && lineValue !== 0 ? lineValue : null,
+        open: !suspended && selections.some((selection) => selection.available),
+        suspended,
+        selections,
+      }];
+    })
+    .sort((left, right) => left.name.localeCompare(right.name));
 }
 
 async function captureLiveBetway(): Promise<LiveCapture> {
@@ -114,13 +162,13 @@ async function captureLiveBetway(): Promise<LiveCapture> {
         continue;
       }
 
-      const eventMarkets = markets.filter((market) =>
+      const winDrawMarkets = markets.filter((market) =>
         String(market.eventId) === eventId &&
         String(market.marketTypeCName ?? '').toLowerCase() === 'win-draw-win'
       );
-      const market = eventMarkets.find((row) =>
+      const market = winDrawMarkets.find((row) =>
         row.isActive === true && row.isSuspended !== true && row.shouldDisplay === true
-      ) ?? eventMarkets[0];
+      ) ?? winDrawMarkets[0];
       const marketId = String(market?.marketId ?? '');
       const selections = outcomes
         .filter((outcome) => String(outcome.marketId) === marketId)
@@ -160,6 +208,7 @@ async function captureLiveBetway(): Promise<LiveCapture> {
         last_seen_at: capturedAt.toISOString(),
         removed_at: null,
         updated_at: capturedAt.toISOString(),
+        markets: eventMarkets(eventId, markets, outcomes, priceByOutcome),
       });
     }
     pages += 1;
@@ -210,6 +259,7 @@ async function liveFallback(): Promise<Response> {
       verifiedRemovals: [],
       pendingRemovals: [],
       changes: [],
+      classifiedEvents: [],
     });
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : String(error) }, 502);
@@ -246,15 +296,35 @@ export async function GET(): Promise<Response> {
     order: 'observed_at.desc',
     limit: '200',
   });
+  const marketQuery = new URLSearchParams({
+    order: 'observed_at.desc',
+    limit: '5000',
+  });
+  const classifiedQuery = new URLSearchParams({
+    lifecycle_state: 'in.(started,expired,cancelled,postponed,rescheduled,abandoned)',
+    updated_at: `gte.${new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()}`,
+    order: 'updated_at.desc',
+    limit: '100',
+  });
 
   try {
-    const [runs, currentEvents, removedEvents, removalEpisodes, changes] = await Promise.all([
+    const [runs, currentEventsRaw, removedEventsRaw, removalEpisodes, changes, marketRows, classifiedEventsRaw] = await Promise.all([
       read<BetwayCrawlRun[]>(`/bw_public_crawl_run?${runsQuery}`),
       read<BetwayEvent[]>(`/bw_public_event?${currentQuery}`),
       read<BetwayEvent[]>(`/bw_public_event?${removedQuery}`),
       read<BetwayRemovalEpisode[]>(`/bw_public_removal_episode?${episodesQuery}`),
       read<BetwayChange[]>(`/bw_public_change?${changesQuery}`),
+      read<{ provider_event_id: string; markets: BetwayMarket[] }[]>(`/bw_public_event_market?${marketQuery}`),
+      read<BetwayEvent[]>(`/bw_public_event?${classifiedQuery}`),
     ]);
+    const marketsByEvent = new Map(marketRows.map((row) => [row.provider_event_id, row.markets]));
+    const withMarkets = (event: BetwayEvent): BetwayEvent => ({
+      ...event,
+      markets: marketsByEvent.get(event.provider_event_id) ?? [],
+    });
+    const currentEvents = currentEventsRaw.map(withMarkets);
+    const removedEvents = removedEventsRaw.map(withMarkets);
+    const classifiedEvents = classifiedEventsRaw.map(withMarkets);
     const removedById = new Map(removedEvents.map((event) => [event.provider_event_id, event]));
     const verifiedRemovals = removalEpisodes
       .filter((episode) => episode.state === 'confirmed' && episode.verification_status === 'verified')
@@ -267,7 +337,7 @@ export async function GET(): Promise<Response> {
       episode.state === 'pending' ||
       (episode.state === 'confirmed' && episode.verification_status === 'unverified')
     );
-    return json({ bookmaker: 'Betway', historyAvailable: true, runs, currentEvents, verifiedRemovals, pendingRemovals, changes });
+    return json({ bookmaker: 'Betway', historyAvailable: true, runs, currentEvents, verifiedRemovals, pendingRemovals, changes, classifiedEvents });
   } catch (error) {
     console.warn('Betway history read unavailable; using the live public feed.', error);
     return liveFallback();

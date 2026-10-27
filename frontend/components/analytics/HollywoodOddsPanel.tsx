@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import FilterDropdown from '@/components/shared/FilterDropdown';
-import SectionLabel from '@/components/shared/SectionLabel';
 import { useHollywoodExport } from '@/hooks/useHollywoodExport';
 import { useHollywoodHunt } from '@/hooks/useHollywoodHunt';
 import { useHollywoodNav } from '@/hooks/useHollywoodNav';
@@ -322,9 +321,32 @@ export default function HollywoodOddsPanel({ onAddLeg }: { onAddLeg?: (leg: BetS
         <Text style={styles.coverageNote}>Coverage comparison is temporarily unavailable; crawler history still refreshes every minute.</Text>
       ) : null}
 
+      {hunt.pendingEvents.length > 0 ? (
+        <View style={styles.huntDetail}>
+          <Text style={styles.huntDetailTitle}>AWAITING INDEPENDENT STATUS CHECK</Text>
+          <Text style={styles.huntDetailText}>
+            Repeatedly absent from Hollywoodbets, but not counted as removed until the official fixture status is checked.
+          </Text>
+          {hunt.pendingEvents.slice(0, 8).map((event) => (
+            <View key={event.event_id} style={styles.removedRow}>
+              <View style={styles.removedBody}>
+                <Text style={styles.removedName}>Hollywoodbets · {event.name}</Text>
+                <Text style={styles.removedMeta}>
+                  {event.missing_count ?? 0} complete crawl misses · kickoff {new Date(event.start_time).toLocaleString()}
+                </Text>
+                {event.verification_reason ? (
+                  <Text style={styles.removedMeta}>Last check: {event.verification_reason}</Text>
+                ) : null}
+              </View>
+              <Text style={styles.pendingTag}>PENDING</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
       {hunt.removedEvents.length > 0 ? (
         <View style={styles.huntDetail}>
-          <Text style={styles.huntDetailTitle}>REMOVED BEFORE KICKOFF</Text>
+          <Text style={styles.huntDetailTitle}>VERIFIED BOOKMAKER REMOVALS</Text>
           {hunt.removedEvents.slice(0, 8).map((event) => (
             <View key={event.event_id} style={styles.removedRow}>
               <View style={styles.removedBody}>
@@ -345,7 +367,29 @@ export default function HollywoodOddsPanel({ onAddLeg }: { onAddLeg?: (leg: BetS
                   {event.missing_count ? ` · ${event.missing_count} complete crawl confirmations` : ''}
                 </Text>
               </View>
-              <Text style={styles.removedTag}>CONFIRMED</Text>
+              <Text style={styles.removedTag}>VERIFIED</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
+      {hunt.classifiedEvents.length > 0 ? (
+        <View style={styles.huntDetail}>
+          <Text style={styles.huntDetailTitle}>RECENT NON-REMOVAL CLASSIFICATIONS</Text>
+          <Text style={styles.huntDetailText}>
+            These fixtures are excluded from bookmaker-removal signals because kickoff or an independent match status explains the disappearance.
+          </Text>
+          {hunt.classifiedEvents.slice(0, 10).map((event) => (
+            <View key={event.event_id} style={styles.removedRow}>
+              <View style={styles.removedBody}>
+                <Text style={styles.removedName}>Hollywoodbets · {event.name}</Text>
+                <Text style={styles.removedMeta}>{lifecycleExplanation(event.lifecycle_state)}</Text>
+                <Text style={styles.removedMeta}>
+                  Kickoff {new Date(event.start_time).toLocaleString()}
+                  {event.verification_source_status ? ` · source ${event.verification_source_status}` : ''}
+                </Text>
+              </View>
+              <Text style={styles.lifecycleTag}>{event.lifecycle_state.replaceAll('_', ' ').toUpperCase()}</Text>
             </View>
           ))}
         </View>
@@ -493,6 +537,19 @@ function formatTimeBeforeKickoff(milliseconds: number): string {
   ].filter((part): part is string => part != null).join(' ');
 }
 
+function lifecycleExplanation(state: string): string {
+  switch (state) {
+    case 'started': return 'Scheduled kickoff was reached; this is not a bookmaker removal.';
+    case 'expired': return 'The match finished or aged past kickoff; this is not a bookmaker removal.';
+    case 'suspended': return 'The bookmaker market or the match itself is suspended.';
+    case 'postponed': return 'The independent fixture source reports the match as postponed.';
+    case 'cancelled': return 'The independent fixture source reports the match as cancelled.';
+    case 'abandoned': return 'The independent fixture source reports the match as abandoned.';
+    case 'rescheduled': return 'The same fixture moved to a different kickoff time.';
+    default: return 'The disappearance has a non-removal lifecycle explanation.';
+  }
+}
+
 const styles = StyleSheet.create({
   container: { width: '100%' },
   filters: { width: '100%', flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.sm },
@@ -532,6 +589,8 @@ const styles = StyleSheet.create({
   removedMeta: { fontFamily: fonts.body, fontSize: 10, color: theme.textMuted, marginTop: 2 },
   removedOdds: { fontFamily: fonts.bodySemiBold, fontSize: 11, color: theme.accentGreen, marginTop: 3 },
   removedTag: { fontFamily: fonts.bodySemiBold, fontSize: 8, color: theme.loss, backgroundColor: 'rgba(255, 92, 92, 0.12)', paddingHorizontal: spacing.xs, paddingVertical: 2, borderRadius: layout.borderRadius },
+  pendingTag: { fontFamily: fonts.bodySemiBold, fontSize: 8, color: theme.yellow, backgroundColor: 'rgba(255, 204, 0, 0.12)', paddingHorizontal: spacing.xs, paddingVertical: 2, borderRadius: layout.borderRadius },
+  lifecycleTag: { maxWidth: 110, fontFamily: fonts.bodySemiBold, fontSize: 8, color: theme.accentBlue, backgroundColor: 'rgba(72, 145, 255, 0.12)', paddingHorizontal: spacing.xs, paddingVertical: 2, borderRadius: layout.borderRadius, textAlign: 'center' },
   label: { alignSelf: 'flex-start', marginTop: spacing.md, marginBottom: spacing.sm },
   search: {
     fontFamily: fonts.body,

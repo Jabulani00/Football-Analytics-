@@ -386,6 +386,9 @@ deno_version = 2
 [functions.hollywood-hunt]
 verify_jwt = false
 
+[functions.hollywood-verify]
+verify_jwt = false
+
 # Private scheduled workers authenticate with BETWAY_CRON_SECRET.
 [functions.betway-hunt]
 verify_jwt = false

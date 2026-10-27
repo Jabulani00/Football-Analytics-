@@ -32,6 +32,16 @@ function page(events: ReturnType<typeof event>[], final: boolean) {
         index: offset + 6, isTradingActive: true, shouldDisplay: true });
       prices.push({ outcomeId, priceDecimal: price });
     });
+    const totalsId = `totals-${fixture.eventId}`;
+    markets.push({ marketId: totalsId, eventId: fixture.eventId, marketTypeCName: 'Total',
+      displayName: 'Total Goals', handicap: 2.5, isActive: true, isSuspended: false,
+      shouldDisplay: true });
+    [['Over', 1.8], ['Under', 2.0]].forEach(([name, price], offset) => {
+      const outcomeId = `${fixture.eventId}-totals-${offset}`;
+      outcomes.push({ outcomeId, eventId: fixture.eventId, marketId: totalsId, name,
+        displayName: name, sbv: '(2.5)', index: offset, isTradingActive: true, shouldDisplay: true });
+      prices.push({ outcomeId, priceDecimal: price });
+    });
   }
   return { events, markets, outcomes, prices, isFinalPage: final };
 }
@@ -58,8 +68,13 @@ assert.deepEqual(
   [snapshot.fixtures[0].odds_home, snapshot.fixtures[0].odds_draw, snapshot.fixtures[0].odds_away],
   [2.1, 3.2, 3.4],
 );
+assert.equal(snapshot.fixtures[0].markets.length, 2);
+assert.equal(snapshot.fixtures[0].markets.find((market) => market.market_type === 'Total')?.selections[0].name, 'Over (2.5)');
 assert.equal(new URL(complete.urls[1]).searchParams.get('Skip'), '2');
 assert.ok(complete.urls[0].startsWith(BETWAY_UPCOMING_API_URL));
+assert.deepEqual(new URL(complete.urls[0]).searchParams.getAll('marketTypes'), [
+  '[Win/Draw/Win]', 'Total Goals', '[Both Teams To Score]', '[Draw No Bet]', 'Correct Score',
+]);
 
 const preferredMarketPage = page([event(4)], true);
 preferredMarketPage.markets.unshift({

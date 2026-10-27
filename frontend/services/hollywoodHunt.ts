@@ -345,9 +345,17 @@ export type HwEventRow = {
     | 'rescheduled'
     | 'started'
     | 'expired'
+    | 'cancelled'
+    | 'postponed'
+    | 'abandoned'
     | 'reopened';
   /** Consecutive complete crawls that did not contain this event. */
   missing_count?: number;
+  verification_status?: 'not_required' | 'pending' | 'verified' | 'rejected';
+  verification_reason?: string | null;
+  verification_source_status?: string | null;
+  verification_source_fixture_id?: string | null;
+  verification_source_kickoff?: string | null;
 };
 
 export function isUpcomingPreKickoffRemoval(event: HwEventRow, now = Date.now()): boolean {

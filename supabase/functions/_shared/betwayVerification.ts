@@ -15,7 +15,7 @@ export type ApiFootballFixture = {
 
 export type BetwayVerificationDecision =
   | 'verified' | 'cancelled' | 'postponed' | 'rescheduled'
-  | 'started' | 'finished' | 'unverified';
+  | 'suspended' | 'abandoned' | 'started' | 'finished' | 'unverified';
 
 export type BetwayVerificationResult = {
   episode_id: string;
@@ -27,9 +27,8 @@ export type BetwayVerificationResult = {
   reason: string | null;
 };
 
-const LIVE_STATUSES = new Set(['1H', 'HT', '2H', 'ET', 'BT', 'P', 'LIVE', 'INT', 'SUSP']);
-const FINISHED_STATUSES = new Set(['FT', 'AET', 'PEN', 'AWD', 'WO', 'ABD']);
-const UPCOMING_STATUSES = new Set(['NS', 'TBD']);
+const LIVE_STATUSES = new Set(['1H', 'HT', '2H', 'ET', 'BT', 'P', 'LIVE']);
+const FINISHED_STATUSES = new Set(['FT', 'AET', 'PEN', 'AWD', 'WO']);
 const MATCH_WINDOW_MS = 36 * 60 * 60 * 1000;
 const KICKOFF_MATCH_TOLERANCE_MS = 15 * 60 * 1000;
 
@@ -43,7 +42,12 @@ function namesMatch(left: string, right: string): boolean {
   const a = normalizeFixtureName(left);
   const b = normalizeFixtureName(right);
   if (!a || !b) return false;
-  return a === b || (Math.min(a.length, b.length) >= 5 && (a.includes(b) || b.includes(a)));
+  if (a === b) return true;
+  // Allow harmless affixes only when most of both names overlap. A generic
+  // "United" must never verify a different club such as "Manchester United".
+  const overlap = Math.min(a.length, b.length) / Math.max(a.length, b.length);
+  return Math.min(a.length, b.length) >= 5 && overlap >= 0.75 &&
+    (a.includes(b) || b.includes(a));
 }
 
 function competitionMatches(candidate: BetwayVerificationCandidate, fixture: ApiFootballFixture): boolean {
@@ -98,9 +102,14 @@ export function decideBetwayRemoval(
   const sourceKickoff = Date.parse(fixture.fixture.date);
   if (status === 'CANC') return result(candidate, 'cancelled', fixture, null);
   if (status === 'PST' || status === 'POST') return result(candidate, 'postponed', fixture, null);
+  if (status === 'SUSP' || status === 'INT') return result(candidate, 'suspended', fixture, null);
+  if (status === 'ABD') return result(candidate, 'abandoned', fixture, null);
   if (LIVE_STATUSES.has(status)) return result(candidate, 'started', fixture, null);
   if (FINISHED_STATUSES.has(status)) return result(candidate, 'finished', fixture, null);
-  if (!UPCOMING_STATUSES.has(status)) return result(candidate, 'unverified', fixture, 'unsupported_source_status');
+  // API-Football explicitly says TBD has no reliable kickoff date/time. It
+  // cannot prove that a book removed a still-scheduled fixture.
+  if (status === 'TBD') return result(candidate, 'unverified', fixture, 'source_kickoff_not_defined');
+  if (status !== 'NS') return result(candidate, 'unverified', fixture, 'unsupported_source_status');
   if (Math.abs(sourceKickoff - candidateKickoff) > KICKOFF_MATCH_TOLERANCE_MS) {
     return result(candidate, 'rescheduled', fixture, null);
   }

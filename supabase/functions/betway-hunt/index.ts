@@ -66,14 +66,36 @@ async function publicSnapshot(url: string, key: string) {
     order: 'observed_at.desc',
     limit: '200',
   });
+  const classifiedQuery = new URLSearchParams({
+    select: 'provider_event_id,home_team,away_team,competition,start_time,fixture_status,lifecycle_state,odds_home,odds_draw,odds_away,market_open,market_suspended,missing_count,missing_since,last_seen_at,removed_at,updated_at',
+    lifecycle_state: 'in.(started,expired,cancelled,postponed,rescheduled,abandoned)',
+    updated_at: `gte.${new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()}`,
+    order: 'updated_at.desc',
+    limit: '100',
+  });
+  const marketQuery = new URLSearchParams({
+    select: 'provider_event_id,markets',
+    order: 'observed_at.desc',
+    limit: '5000',
+  });
 
-  const [runs, currentEvents, removedEvents, removalEpisodes, changes] = await Promise.all([
+  const [runs, currentEventsRaw, removedEventsRaw, removalEpisodes, changes, marketRows, classifiedEventsRaw] = await Promise.all([
     read<Record<string, unknown>[]>(`/bw_crawl_run?${runsQuery}`),
     read<Record<string, unknown>[]>(`/bw_event?${currentQuery}`),
     read<Record<string, unknown>[]>(`/bw_event?${removedQuery}`),
     read<Record<string, unknown>[]>(`/bw_removal_episode?${episodesQuery}`),
     read<Record<string, unknown>[]>(`/bw_change?${changesQuery}`),
+    read<{ provider_event_id: string; markets: unknown[] }[]>(`/bw_event_market_snapshot?${marketQuery}`),
+    read<Record<string, unknown>[]>(`/bw_event?${classifiedQuery}`),
   ]);
+  const marketsByEvent = new Map(marketRows.map((row) => [row.provider_event_id, row.markets]));
+  const withMarkets = (event: Record<string, unknown>) => ({
+    ...event,
+    markets: marketsByEvent.get(String(event.provider_event_id)) ?? [],
+  });
+  const currentEvents = currentEventsRaw.map(withMarkets);
+  const removedEvents = removedEventsRaw.map(withMarkets);
+  const classifiedEvents = classifiedEventsRaw.map(withMarkets);
 
   const removedById = new Map(
     removedEvents.map((event) => [String(event.provider_event_id), event]),
@@ -100,6 +122,7 @@ async function publicSnapshot(url: string, key: string) {
     verifiedRemovals,
     pendingRemovals,
     changes,
+    classifiedEvents,
   };
 }
 

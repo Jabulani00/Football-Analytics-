@@ -229,7 +229,7 @@ async function publicSnapshot(url: string, key: string) {
   });
   const stateQuery = new URLSearchParams({ select: '*' });
   const currentQuery = new URLSearchParams({
-    select: 'event_id,source_id,name,start_time,country_id,country,tournament_id,tournament,home_team,away_team,odds_home,odds_draw,odds_away,market_open,last_seen,removed_at,lifecycle_state,missing_count',
+    select: 'event_id,source_id,name,start_time,country_id,country,tournament_id,tournament,home_team,away_team,odds_home,odds_draw,odds_away,market_open,last_seen,removed_at,lifecycle_state,missing_count,verification_status,verification_reason,verification_source_status,verification_source_fixture_id,verification_source_kickoff',
     removed_at: 'is.null',
     start_time: `gt.${new Date().toISOString()}`,
     order: 'start_time.asc',
@@ -238,6 +238,20 @@ async function publicSnapshot(url: string, key: string) {
     select: '*',
     removed_at: 'not.is.null',
     lifecycle_state: 'eq.removed_pre_kickoff',
+    start_time: `gt.${new Date().toISOString()}`,
+    order: 'removed_at.desc',
+    limit: '100',
+  });
+  const classifiedQuery = new URLSearchParams({
+    select: 'event_id,source_id,name,start_time,country_id,country,tournament_id,tournament,home_team,away_team,odds_home,odds_draw,odds_away,market_open,last_seen,removed_at,lifecycle_state,missing_count,verification_status,verification_reason,verification_source_status,verification_source_fixture_id,verification_source_kickoff',
+    lifecycle_state: 'in.(suspended,postponed,cancelled,rescheduled,started,expired,abandoned)',
+    start_time: `gte.${new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()}`,
+    order: 'start_time.desc',
+    limit: '100',
+  });
+  const pendingQuery = new URLSearchParams({
+    select: 'event_id,source_id,name,start_time,country_id,country,tournament_id,tournament,home_team,away_team,odds_home,odds_draw,odds_away,market_open,last_seen,removed_at,lifecycle_state,missing_count,verification_status,verification_reason,verification_source_status,verification_source_fixture_id,verification_source_kickoff',
+    lifecycle_state: 'eq.pending_removal',
     start_time: `gt.${new Date().toISOString()}`,
     order: 'removed_at.desc',
     limit: '100',
@@ -266,13 +280,15 @@ async function publicSnapshot(url: string, key: string) {
     throw new Error(`Public hunt current listing exceeded ${maxPages * pageSize} upcoming events`);
   };
 
-  const [changes, crawlState, currentEvents, removedEvents] = await Promise.all([
+  const [changes, crawlState, currentEvents, removedEvents, classifiedEvents, pendingEvents] = await Promise.all([
     read(`/hw_change?${changesQuery}`),
     read(`/hw_crawl_state?${stateQuery}`),
     readUpcomingEvents(),
     read(`/hw_event?${removedQuery}`),
+    read(`/hw_event?${classifiedQuery}`),
+    read(`/hw_event?${pendingQuery}`),
   ]);
-  return { bookmaker: 'Hollywoodbets', changes, crawlState, currentEvents, removedEvents };
+  return { bookmaker: 'Hollywoodbets', changes, crawlState, currentEvents, removedEvents, classifiedEvents, pendingEvents };
 }
 
 function crawlRow(event: HbEvent, category: Category): CrawlEvent {
