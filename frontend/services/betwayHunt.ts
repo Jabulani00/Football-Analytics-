@@ -37,6 +37,24 @@ export type BetwayEvent = {
   last_seen_at: string;
   removed_at: string | null;
   updated_at: string;
+  markets: BetwayMarket[];
+};
+
+export type BetwayMarketSelection = {
+  outcome_id: string;
+  name: string;
+  odds: number | null;
+  available: boolean;
+};
+
+export type BetwayMarket = {
+  market_id: string;
+  market_type: string;
+  name: string;
+  line: number | null;
+  open: boolean;
+  suspended: boolean;
+  selections: BetwayMarketSelection[];
 };
 
 export type BetwayRemovalEpisode = {

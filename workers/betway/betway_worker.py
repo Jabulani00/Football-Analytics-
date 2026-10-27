@@ -22,8 +22,16 @@ API_HEADERS = {
     "Accept": "application/json",
     "Referer": BETWAY_UPCOMING_URL,
 }
-MARKET_TYPES = ("[Win/Draw/Win]", "Total Goals", "[Both Teams To Score]")
-PAGE_SIZE = 500
+MARKET_TYPES = (
+    "[Win/Draw/Win]",
+    "Total Goals",
+    "[Both Teams To Score]",
+    "[Draw No Bet]",
+    "Correct Score",
+)
+# Full-market pages are several MB at 100 events. Pagination keeps each worker
+# response bounded without sacrificing complete-crawl removal detection.
+PAGE_SIZE = 100
 PAGE_LIMIT = 40
 SOUTH_AFRICA = ZoneInfo("Africa/Johannesburg")
 
@@ -56,6 +64,7 @@ class BetwayFixture:
     odds_away: float | None
     market_open: bool
     market_suspended: bool
+    markets: tuple[dict[str, Any], ...]
 
 
 @dataclass(frozen=True)
@@ -216,6 +225,76 @@ def _selection_prices(
     ), suspended
 
 
+def _market_groups(
+    *,
+    event_id: str,
+    markets: list[dict[str, Any]],
+    outcomes: list[dict[str, Any]],
+    prices: list[dict[str, Any]],
+) -> tuple[dict[str, Any], ...]:
+    price_by_outcome = {
+        str(price["outcomeId"]): price.get("priceDecimal")
+        for price in prices
+        if price.get("outcomeId") is not None
+    }
+    groups: list[dict[str, Any]] = []
+    for market in markets:
+        if str(market.get("eventId")) != event_id or market.get("isSquashedMarket") is True:
+            continue
+        market_id = str(market.get("marketId") or "").strip()
+        if not market_id:
+            continue
+        seen: set[str] = set()
+        selections: list[dict[str, Any]] = []
+        market_outcomes = sorted(
+            (row for row in outcomes if str(row.get("marketId")) == market_id),
+            key=lambda row: int(row.get("index") or 0),
+        )
+        for outcome in market_outcomes:
+            outcome_id = str(outcome.get("outcomeId") or "").strip()
+            if not outcome_id or outcome_id in seen:
+                continue
+            seen.add(outcome_id)
+            base_name = str(outcome.get("displayName") or outcome.get("name") or "").strip()
+            qualifier = str(outcome.get("sbv") or "").strip()
+            name = " ".join(part for part in (base_name, qualifier) if part)
+            if not name:
+                continue
+            price = _decimal_price(price_by_outcome.get(outcome_id))
+            available = (
+                outcome.get("isTradingActive") is True
+                and outcome.get("shouldDisplay") is True
+                and price is not None
+            )
+            selections.append({
+                "outcome_id": outcome_id,
+                "name": name,
+                "odds": price if available else None,
+                "available": available,
+            })
+        if not selections:
+            continue
+        suspended = (
+            market.get("isSuspended") is True
+            or market.get("isActive") is not True
+            or market.get("shouldDisplay") is not True
+        )
+        try:
+            handicap = float(market.get("handicap") or 0)
+        except (TypeError, ValueError):
+            handicap = 0
+        groups.append({
+            "market_id": market_id,
+            "market_type": str(market.get("marketTypeCName") or market.get("name") or "").strip(),
+            "name": str(market.get("displayName") or market.get("name") or "Market").strip(),
+            "line": handicap if math.isfinite(handicap) and handicap != 0 else None,
+            "open": not suspended and any(selection["available"] for selection in selections),
+            "suspended": suspended,
+            "selections": selections,
+        })
+    return tuple(sorted(groups, key=lambda group: group["name"]))
+
+
 def _parse_fixture(
     event: dict[str, Any],
     *,
@@ -264,6 +343,12 @@ def _parse_fixture(
         outcomes=outcomes,
         prices=prices,
     )
+    market_groups = _market_groups(
+        event_id=event_id,
+        markets=markets,
+        outcomes=outcomes,
+        prices=prices,
+    )
     local_kickoff = kickoff.astimezone(SOUTH_AFRICA)
     league = str(event.get("league") or "").strip()
     region = str(event.get("region") or "").strip()
@@ -286,6 +371,7 @@ def _parse_fixture(
         odds_away=odds[2],
         market_open=market_open,
         market_suspended=market_suspended,
+        markets=market_groups,
     )
 
 

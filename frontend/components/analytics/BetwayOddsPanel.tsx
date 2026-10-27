@@ -1,7 +1,8 @@
+import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import { useBetwayHunt } from '@/hooks/useBetwayHunt';
-import type { BetwayEvent } from '@/services/betwayHunt';
+import type { BetwayEvent, BetwayMarket, BetwayMarketSelection } from '@/services/betwayHunt';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 import type { BetSlipLeg } from '@/types/analytics';
 
@@ -80,6 +81,93 @@ function PriceButton({
   );
 }
 
+function MarketSelectionButton({
+  event,
+  market,
+  selection,
+  onAddLeg,
+}: {
+  event: BetwayEvent;
+  market: BetwayMarket;
+  selection: BetwayMarketSelection;
+  onAddLeg?: (leg: BetSlipLeg) => void;
+}) {
+  const available = event.fixture_status === 'active' && market.open && selection.available && selection.odds != null;
+  const marketName = market.line == null || market.name.includes(String(market.line))
+    ? market.name
+    : `${market.name} ${market.line}`;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Add ${event.home_team} versus ${event.away_team}, ${marketName}, ${selection.name} at ${odds(selection.odds)} to bet slip`}
+      accessibilityState={{ disabled: !available }}
+      disabled={!available}
+      onPress={() => {
+        if (!available || !onAddLeg || selection.odds == null) return;
+        onAddLeg({
+          id: `betway-${event.provider_event_id}-${market.market_id}-${selection.outcome_id}`,
+          fixture: `${event.home_team} vs ${event.away_team}`,
+          market: marketName,
+          selection: selection.name,
+          odds: selection.odds,
+          bookmaker: 'Betway',
+          kickoff: event.start_time,
+        });
+      }}
+      style={({ pressed }) => [
+        styles.marketSelection,
+        !available && styles.priceDisabled,
+        pressed && styles.pricePressed,
+      ]}>
+      <Text style={styles.marketSelectionName}>{selection.name}</Text>
+      <Text style={styles.priceValue}>{odds(selection.odds)}</Text>
+    </Pressable>
+  );
+}
+
+function MoreMarkets({ event, onAddLeg }: { event: BetwayEvent; onAddLeg?: (leg: BetSlipLeg) => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const markets = event.markets.filter((market) => market.market_type.toLowerCase() !== 'win-draw-win');
+  if (markets.length === 0) return null;
+  const selectionCount = markets.reduce((total, market) => total + market.selections.length, 0);
+  return (
+    <View style={styles.moreMarkets}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+        onPress={() => setExpanded((current) => !current)}
+        style={styles.moreButton}>
+        <Text style={styles.moreButtonText}>
+          {expanded ? '▾ Hide markets' : `▸ More markets (${selectionCount})`}
+        </Text>
+      </Pressable>
+      {expanded ? markets.map((market) => (
+        <View key={market.market_id} style={styles.marketGroup}>
+          <View style={styles.marketHeading}>
+            <Text style={styles.marketName}>
+              {market.line == null || market.name.includes(String(market.line))
+                ? market.name
+                : `${market.name} ${market.line}`}
+            </Text>
+            {!market.open ? <Text style={styles.marketClosed}>SUSPENDED</Text> : null}
+          </View>
+          <View style={styles.marketSelections}>
+            {market.selections.map((selection) => (
+              <MarketSelectionButton
+                key={selection.outcome_id}
+                event={event}
+                market={market}
+                selection={selection}
+                onAddLeg={onAddLeg}
+              />
+            ))}
+          </View>
+        </View>
+      )) : null}
+    </View>
+  );
+}
+
 export default function BetwayOddsPanel({ onAddLeg }: { onAddLeg?: (leg: BetSlipLeg) => void }) {
   const narrow = useWindowDimensions().width < 720;
   const hunt = useBetwayHunt();
@@ -89,7 +177,7 @@ export default function BetwayOddsPanel({ onAddLeg }: { onAddLeg?: (leg: BetSlip
   return (
     <View style={styles.container}>
       <Text style={styles.intro}>
-        Betway pre-match soccer monitoring. Current 1X2 prices can be added to the shared bet slip;
+        Betway pre-match soccer monitoring. Current 1X2 and additional market prices can be added to the shared bet slip;
         disappearances are shown as removals only after independent fixture-status verification.
       </Text>
 
@@ -178,9 +266,9 @@ export default function BetwayOddsPanel({ onAddLeg }: { onAddLeg?: (leg: BetSlip
       ) : null}
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>CURRENT BETWAY 1X2</Text>
+        <Text style={styles.sectionTitle}>CURRENT BETWAY MARKETS</Text>
         <Text style={styles.sectionHint}>
-          Prices are labelled Betway and remain separate from Hollywoodbets and other bookmaker feeds.
+          1X2 is shown first. Expand each fixture for totals, BTTS, Draw No Bet and Correct Score when Betway offers them.
         </Text>
         {!snapshot && !hunt.loading ? <Text style={styles.empty}>Current Betway fixtures are unavailable.</Text> : null}
         {snapshot && snapshot.currentEvents.length === 0 ? <Text style={styles.empty}>No upcoming Betway fixtures were returned.</Text> : null}
@@ -200,6 +288,7 @@ export default function BetwayOddsPanel({ onAddLeg }: { onAddLeg?: (leg: BetSlip
               <PriceButton event={event} label="X" selection="Draw" price={event.odds_draw} onAddLeg={onAddLeg} />
               <PriceButton event={event} label="2" selection={event.away_team} price={event.odds_away} onAddLeg={onAddLeg} />
             </View>
+            <MoreMarkets event={event} onAddLeg={onAddLeg} />
           </View>
         ))}
         {snapshot && snapshot.currentEvents.length > MAX_VISIBLE_FIXTURES ? (
@@ -250,6 +339,16 @@ const styles = StyleSheet.create({
   pricePressed: { opacity: 0.72 },
   priceLabel: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: theme.textMuted },
   priceValue: { fontFamily: fonts.display, fontSize: 15, color: theme.textPrimary },
+  moreMarkets: { marginTop: spacing.sm, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: spacing.sm },
+  moreButton: { alignSelf: 'flex-start', paddingHorizontal: spacing.sm, paddingVertical: 5, borderWidth: 1, borderColor: theme.border, borderRadius: layout.borderRadius },
+  moreButtonText: { fontFamily: fonts.bodySemiBold, fontSize: 11, color: theme.accentBlue },
+  marketGroup: { marginTop: spacing.sm },
+  marketHeading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: spacing.sm },
+  marketName: { fontFamily: fonts.bodySemiBold, fontSize: 11, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
+  marketClosed: { fontFamily: fonts.bodySemiBold, fontSize: 8, color: theme.loss },
+  marketSelections: { marginTop: spacing.xs, flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  marketSelection: { minWidth: 120, flexGrow: 1, flexBasis: 150, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, paddingHorizontal: spacing.sm, paddingVertical: 7, borderWidth: 1, borderColor: theme.border, borderRadius: layout.borderRadius, backgroundColor: theme.bg },
+  marketSelectionName: { flexShrink: 1, fontFamily: fonts.body, fontSize: 11, color: theme.textMuted },
   empty: { paddingVertical: spacing.md, fontFamily: fonts.body, fontSize: 12, color: theme.textMuted, textAlign: 'center' },
 });
 
