@@ -13,14 +13,16 @@ import {
   leagueUnityFor,
   superLeagueUnity,
   teamMeasuresForSection,
-  assignLeagueTiers,
   buildSuperLeague,
+  buildUniversalUnity,
   sectionStats,
   DA_MIN,
   type LeagueUnity,
   type LeagueTier,
   type SuperTeamRow,
   type TeamMeasure,
+  type UniversalLeague,
+  type UniversalTeamRow,
   type UnitySection,
 } from '@/utils/unity';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
@@ -33,7 +35,17 @@ const SECTIONS: { value: UnitySection; label: string }[] = [
 
 type UnityView = 'leagues' | 'teams';
 type TierFilter = 'all' | LeagueTier;
-type SortKey = 'rank' | 'multiple' | 'unity' | 'da' | 'team' | 'league' | 'tier' | 'lgrank';
+type SortKey = 'rank' | 'strength' | 'indiv' | 'multiple' | 'unity' | 'da' | 'team' | 'league' | 'tier' | 'lgrank';
+
+/** A Super-League team row joined with its universal (range-based) Unity. */
+type MergedTeam = SuperTeamRow & {
+  aUnity: number | null;
+  indivUnity: number | null;
+  strength: number | null;
+  strengthRank: number | null;
+};
+/** A universal league row joined with its DA-fraction Unity, for the Leagues view. */
+type MergedLeague = UniversalLeague & { daUnity: number | null; daCount: number };
 
 function pct(v: number | null): string {
   return v == null ? '—' : `${Math.round(v * 100)}%`;
@@ -51,11 +63,13 @@ function tierName(t: LeagueTier | null): string {
 }
 const TIER_RANK: Record<LeagueTier, number> = { top: 0, middle: 1, bottom: 2 };
 
-function sortSuper(rows: SuperTeamRow[], key: SortKey, dir: 'asc' | 'desc'): SuperTeamRow[] {
+function sortTeams(rows: MergedTeam[], key: SortKey, dir: 'asc' | 'desc'): MergedTeam[] {
   const mul = dir === 'asc' ? 1 : -1;
   return [...rows].sort((a, b) => {
     let c = 0;
     if (key === 'rank') c = a.overallRank - b.overallRank;
+    else if (key === 'strength') c = (a.strengthRank ?? Infinity) - (b.strengthRank ?? Infinity);
+    else if (key === 'indiv') c = (a.indivUnity ?? -Infinity) - (b.indivUnity ?? -Infinity);
     else if (key === 'unity') c = a.unity - b.unity;
     else if (key === 'da') c = a.da - b.da;
     else if (key === 'multiple') c = (a.multiple ?? -Infinity) - (b.multiple ?? -Infinity);
@@ -103,62 +117,88 @@ export default function UnityFinderPanel() {
   const sig = results.map((r, i) => (r.data ? `${leagues[i]?.id}:${r.dataUpdatedAt}` : '')).join('|');
   const settled = results.filter((r) => r.isSuccess || r.isError).length;
 
-  // League-level Unity (today's logic) → ranking + tiers.
+  // Per-team side values per league — shared by the gap table and universal Unity.
+  // Labels must be unique: league names repeat across countries.
+  const perLeagueTeams = useMemo(() => {
+    const out: { competition: string; teams: TeamMeasure[] }[] = [];
+    results.forEach((r, i) => {
+      if (r.data && leagues[i]) out.push({ competition: `${leagues[i].name} · ${leagues[i].country}`, teams: teamMeasuresForSection(r.data, section, statKey) });
+    });
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sig, section, statKey]);
+
+  // DA-fraction Unity (headline + the DA% column).
   const sl = useMemo(() => {
     const perLeague: LeagueUnity[] = [];
     results.forEach((r, i) => {
-      // Labels must be unique — league names repeat across countries.
       if (r.data && leagues[i]) perLeague.push(leagueUnityFor(r.data, `${leagues[i].name} · ${leagues[i].country}`, section, statKey));
     });
     return superLeagueUnity(perLeague);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sig, section, statKey]);
 
-  const tierMap = useMemo(() => assignLeagueTiers(sl.leagues), [sl]);
+  // Universal (range-based) Unity: A Unity = (H−L)/N, per-team allocation + normalized strength.
+  const universal = useMemo(() => buildUniversalUnity(perLeagueTeams), [perLeagueTeams]);
+  // Tiers now follow the chosen fairness basis (normalized strength).
+  const tierMap = useMemo(
+    () => new Map(universal.leagues.map((l) => [l.competition, (l.tier ?? 'bottom') as LeagueTier] as const)),
+    [universal],
+  );
+  const uniLeagueByComp = useMemo(() => new Map(universal.leagues.map((l) => [l.competition, l] as const)), [universal]);
+  const uniTeamByKey = useMemo(() => {
+    const m = new Map<string, UniversalTeamRow>();
+    for (const t of universal.teams) m.set(`${t.competition}::${t.team}`, t);
+    return m;
+  }, [universal]);
 
-  // Team-level gaps across leagues → the Super League table.
-  const superRows = useMemo(() => {
-    const perLeague: { competition: string; teams: TeamMeasure[] }[] = [];
-    results.forEach((r, i) => {
-      if (r.data && leagues[i]) perLeague.push({ competition: `${leagues[i].name} · ${leagues[i].country}`, teams: teamMeasuresForSection(r.data, section, statKey) });
+  const superRows = useMemo(() => buildSuperLeague(perLeagueTeams, tierMap), [perLeagueTeams, tierMap]);
+
+  // Leagues view: universal leagues (ranked by strength) joined with DA-fraction Unity.
+  const mergedLeagues = useMemo<MergedLeague[]>(() => {
+    const slByComp = new Map(sl.leagues.map((l) => [l.competition, l] as const));
+    return universal.leagues.map((ul) => {
+      const su = slByComp.get(ul.competition);
+      return { ...ul, daUnity: su?.unity ?? null, daCount: su?.da ?? 0 };
     });
-    return buildSuperLeague(perLeague, tierMap);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sig, section, statKey, tierMap]);
+  }, [universal, sl]);
 
-  const teamRows = useMemo(() => {
-    let rows = superRows;
+  // Teams view: gap rows joined with universal strength, then filtered + sorted.
+  const teamRows = useMemo<MergedTeam[]>(() => {
+    let rows: MergedTeam[] = superRows.map((r) => {
+      const u = uniTeamByKey.get(`${r.competition}::${r.team}`);
+      return { ...r, aUnity: uniLeagueByComp.get(r.competition)?.aUnity ?? null, indivUnity: u?.indivUnity ?? null, strength: u?.strength ?? null, strengthRank: u?.strengthRank ?? null };
+    });
     if (leagueFilter !== 'all') rows = rows.filter((r) => r.competition === leagueFilter);
     if (tierFilter !== 'all') rows = rows.filter((r) => r.tier === tierFilter);
     const q = query.trim().toLowerCase();
     if (q) rows = rows.filter((r) => r.team.toLowerCase().includes(q) || r.competition.toLowerCase().includes(q));
-    return sortSuper(rows, sortKey, sortDir);
-  }, [superRows, leagueFilter, tierFilter, query, sortKey, sortDir]);
+    return sortTeams(rows, sortKey, sortDir);
+  }, [superRows, uniTeamByKey, uniLeagueByComp, leagueFilter, tierFilter, query, sortKey, sortDir]);
 
   useEffect(() => setPage(1), [section, statKey, view, leagueFilter, tierFilter, query, sortKey, sortDir]);
 
   const loading = feed.loading || settled < leagues.length;
   const statLabel = stats.find((s) => s.key === statKey)?.label ?? statKey;
 
-  const listLen = view === 'leagues' ? sl.leagues.length : teamRows.length;
+  const listLen = view === 'leagues' ? mergedLeagues.length : teamRows.length;
   const pages = Math.max(1, Math.ceil(listLen / PAGE_SIZE));
   const safe = Math.min(page, pages);
   const start = (safe - 1) * PAGE_SIZE;
-  const visibleLeagues = sl.leagues.slice(start, start + PAGE_SIZE);
+  const visibleLeagues = mergedLeagues.slice(start, start + PAGE_SIZE);
   const visibleTeams = teamRows.slice(start, start + PAGE_SIZE);
 
-  const leagueOptions = [{ value: 'all', label: `All leagues (${sl.leagues.length})` }, ...sl.leagues.map((l) => ({ value: l.competition, label: l.competition }))];
+  const leagueOptions = [{ value: 'all', label: `All leagues (${mergedLeagues.length})` }, ...mergedLeagues.map((l) => ({ value: l.competition, label: l.competition }))];
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>DA Unity Finder</Text>
         <Text style={styles.subtitle}>
-          The league amongst leagues — every active league compared. League Unity is the share of a league&apos;s teams that
-          are DA on a stat (difference ≥ {DA_MIN}%); leagues are ranked and split into three tiers —
-          Top (green), Middle (yellow), Bottom (white). The League Amongst Leagues table lists every team across
-          leagues with DA (peak stat), Unity (Peak − Smaller) and the DA ÷ Unity multiple — ranked by
-          Unity, each team tied to its league and tier.
+          The league amongst leagues — every active league compared. Universal Unity ranks each stat&apos;s values:
+          per league A Unity = (H − L) ÷ N, and each team gets an allocated Unity and a normalized strength
+          (0–1) so leagues of any size compare fairly. Leagues split into three tiers (Top/Mid/Bottom) by that
+          strength. The DA share (difference ≥ {DA_MIN}%) and the per-team DA ÷ Unity are kept alongside.
         </Text>
       </View>
 
@@ -202,41 +242,45 @@ export default function UnityFinderPanel() {
 
           <PageControls page={safe} pages={pages} total={sl.leagues.length} from={start + 1} to={start + visibleLeagues.length} onChange={setPage} />
           <DragScroll horizontal style={styles.scroll} contentContainerStyle={styles.scrollContent}>
-            <View style={[styles.table, { minWidth: 640 }]}>
+            <View style={[styles.table, { minWidth: 720 }]}>
               <View style={[styles.row, styles.headRow]}>
                 <Text style={[styles.cRank, styles.headText, styles.right]}>#</Text>
                 <Text style={[styles.cLeague, styles.headText]}>League (LL)</Text>
                 <Text style={[styles.cTier, styles.headText]}>Tier</Text>
-                <Text style={[styles.cNum, styles.headText, styles.right]}>Teams</Text>
-                <Text style={[styles.cNum, styles.headText, styles.right]}>DA</Text>
-                <Text style={[styles.cNum, styles.headText, styles.right]}>Bord.</Text>
-                <Text style={[styles.cNum, styles.headText, styles.right]}>None</Text>
-                <Text style={[styles.cUnity, styles.headText]}>Unity</Text>
+                <Text style={[styles.cNum, styles.headText, styles.right]}>N</Text>
+                <Text style={[styles.cNum, styles.headText, styles.right]}>Range</Text>
+                <Text style={[styles.cNum, styles.headText, styles.right]}>A Unity</Text>
+                <Text style={[styles.cUnity, styles.headText]}>Strength</Text>
+                <Text style={[styles.cNum, styles.headText, styles.right]}>DA%</Text>
               </View>
               {visibleLeagues.map((l, i) => {
-                const tier = tierMap.get(l.competition) ?? null;
-                const tc = tierColor(tier);
+                const tc = tierColor(l.tier);
                 return (
                   <View key={l.competition} style={[styles.row, i % 2 === 1 && styles.rowAlt]}>
-                    <Text style={[styles.cRank, styles.muted]}>{start + i + 1}</Text>
+                    <Text style={[styles.cRank, styles.numDa]}>{start + i + 1}</Text>
                     <Text style={[styles.cLeague, styles.league]} numberOfLines={1}>{l.competition}</Text>
                     <View style={styles.cTier}>
-                      <View style={[styles.tierChip, { borderColor: tc }]}><Text style={[styles.tierChipText, { color: tc }]}>{tierName(tier)}</Text></View>
+                      <View style={[styles.tierChip, { borderColor: tc }]}><Text style={[styles.tierChipText, { color: tc }]}>{tierName(l.tier)}</Text></View>
                     </View>
-                    <Text style={[styles.cNum, styles.num]}>{l.total}</Text>
-                    <Text style={[styles.cNum, styles.numDa]}>{l.da}</Text>
-                    <Text style={[styles.cNum, styles.muted]}>{l.borderline}</Text>
-                    <Text style={[styles.cNum, styles.muted]}>{l.none}</Text>
+                    <Text style={[styles.cNum, styles.num]}>{l.n}</Text>
+                    <Text style={[styles.cNum, styles.num]}>{Math.round(l.range)}</Text>
+                    <Text style={[styles.cNum, styles.numStrong]}>{l.aUnity.toFixed(1)}</Text>
                     <View style={styles.cUnity}>
-                      <View style={styles.bar}><View style={[styles.barFill, { width: `${Math.round((l.unity ?? 0) * 100)}%` }]} /></View>
-                      <Text style={styles.unityPct}>{pct(l.unity)}</Text>
+                      <View style={styles.bar}><View style={[styles.barFill, { width: `${Math.round(l.avgStrength * 100)}%` }]} /></View>
+                      <Text style={styles.unityPct}>{Math.round(l.avgStrength * 100)}%</Text>
                     </View>
+                    <Text style={[styles.cNum, styles.muted]}>{pct(l.daUnity)}</Text>
                   </View>
                 );
               })}
             </View>
           </DragScroll>
-          <Text style={styles.hint}>Tiers split the ranked leagues into three equal thirds — Top (green), Middle (yellow), Bottom (white).</Text>
+          <Text style={styles.hint}>
+            A Unity = (H − L) ÷ N per league for {statLabel}; Strength is the mean normalized position
+            (0–100%) of the league&apos;s teams, the fair cross-league basis that ranks leagues into three
+            tiers — Top (green), Middle (yellow), Bottom (white). DA% is the share of teams that are DA.
+            Note: normalized strength clusters leagues near the middle, so Range and A Unity are kept to show magnitude.
+          </Text>
         </>
       ) : null}
 
@@ -247,9 +291,9 @@ export default function UnityFinderPanel() {
             <View style={[styles.filterRow, narrow && styles.filterCol]}>
               <FilterDropdown label="League" value={leagueFilter} options={leagueOptions} onChange={setLeagueFilter} style={narrow ? styles.full : styles.flex} />
               <FilterDropdown label="Sort by" value={sortKey} options={[
-                { value: 'rank', label: 'Overall rank' }, { value: 'multiple', label: 'DA ÷ Unity (×)' }, { value: 'unity', label: 'Unity (gap)' },
-                { value: 'da', label: 'DA (peak)' }, { value: 'team', label: 'Team name' }, { value: 'league', label: 'League' },
-                { value: 'tier', label: 'League tier' }, { value: 'lgrank', label: 'League rank' },
+                { value: 'rank', label: 'Overall rank (gap)' }, { value: 'strength', label: 'Strength (0–1)' }, { value: 'indiv', label: 'Individual Unity' },
+                { value: 'multiple', label: 'DA ÷ Unity (×)' }, { value: 'unity', label: 'Unity (gap)' }, { value: 'da', label: 'DA (peak)' },
+                { value: 'team', label: 'Team name' }, { value: 'league', label: 'League' }, { value: 'tier', label: 'League tier' }, { value: 'lgrank', label: 'League rank' },
               ]} onChange={(v) => setSortKey(v as SortKey)} style={narrow ? styles.full : styles.flex} />
               <Pressable accessibilityRole="button" onPress={() => setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))} style={styles.dirBtn}>
                 <Text style={styles.dirBtnText}>{sortDir === 'asc' ? '↑ Asc' : '↓ Desc'}</Text>
@@ -285,7 +329,7 @@ export default function UnityFinderPanel() {
             <>
               <PageControls page={safe} pages={pages} total={teamRows.length} from={start + 1} to={start + visibleTeams.length} onChange={setPage} />
               <DragScroll horizontal style={styles.scroll} contentContainerStyle={styles.scrollContent}>
-                <View style={[styles.table, { minWidth: 800 }]}>
+                <View style={[styles.table, { minWidth: 1060 }]}>
                   <View style={[styles.row, styles.headRow]}>
                     <Text style={[styles.cRank, styles.headText, styles.right]}>#</Text>
                     <Text style={[styles.cTeam, styles.headText]}>Team</Text>
@@ -294,6 +338,10 @@ export default function UnityFinderPanel() {
                     <Text style={[styles.cNum, styles.headText, styles.right]}>DA</Text>
                     <Text style={[styles.cNum, styles.headText, styles.right]}>Unity</Text>
                     <Text style={[styles.cNum, styles.headText, styles.right]}>×</Text>
+                    <Text style={[styles.cNum, styles.headText, styles.right]}>A Uty</Text>
+                    <Text style={[styles.cNum, styles.headText, styles.right]}>Indiv</Text>
+                    <Text style={[styles.cNum, styles.headText, styles.right]}>Str</Text>
+                    <Text style={[styles.cNum, styles.headText, styles.right]}>Str#</Text>
                     <Text style={[styles.cNum, styles.headText, styles.right]}>Lg #</Text>
                   </View>
                   {visibleTeams.map((r, i) => {
@@ -309,7 +357,11 @@ export default function UnityFinderPanel() {
                         </View>
                         <Text style={[styles.cNum, styles.num]}>{Math.round(r.da)}%</Text>
                         <Text style={[styles.cNum, { textAlign: 'right', fontFamily: fonts.bodySemiBold, fontSize: 12, color: uc }]}>{Math.round(r.unity)}%</Text>
-                        <Text style={[styles.cNum, styles.numStrong]}>{r.multiple == null ? '—' : `${r.multiple.toFixed(2)}×`}</Text>
+                        <Text style={[styles.cNum, styles.num]}>{r.multiple == null ? '—' : `${r.multiple.toFixed(2)}×`}</Text>
+                        <Text style={[styles.cNum, styles.num]}>{r.aUnity == null ? '—' : r.aUnity.toFixed(1)}</Text>
+                        <Text style={[styles.cNum, styles.num]}>{r.indivUnity == null ? '—' : r.indivUnity.toFixed(1)}</Text>
+                        <Text style={[styles.cNum, styles.numStrong]}>{r.strength == null ? '—' : `${Math.round(r.strength * 100)}%`}</Text>
+                        <Text style={[styles.cNum, styles.muted]}>{r.strengthRank ?? '—'}</Text>
                         <Text style={[styles.cNum, styles.muted]}>{r.leagueRank}</Text>
                       </View>
                     );
@@ -318,9 +370,10 @@ export default function UnityFinderPanel() {
               </DragScroll>
               <PageControls page={safe} pages={pages} total={teamRows.length} from={start + 1} to={start + visibleTeams.length} onChange={setPage} />
               <Text style={styles.hint}>
-                DA = peak stat · Unity = Peak − Smaller · × = DA ÷ Unity, for {statLabel}. Overall rank is
-                across all leagues (by Unity, kept under filtering); Lg # is the team&apos;s rank in its own
-                league. Unity colour: green = DA (≥ {DA_MIN}%), yellow = borderline.
+                DA = peak stat · Unity = Peak − Smaller · × = DA ÷ Unity, for {statLabel}. A Uty = the league&apos;s
+                A Unity ((H − L) ÷ N); Indiv = this team&apos;s allocated Unity ((N − league rank) × A Unity); Str = its
+                normalized position 0–100% within its league (the fair cross-league basis); Str# = its strength rank
+                across all leagues. Overall # keeps the gap ranking; Lg # is the rank in its own league.
               </Text>
             </>
           )}
