@@ -169,7 +169,9 @@ export default function UnityFinderPanel() {
     const q = query.trim().toLowerCase();
     if (q) filtered = filtered.filter((r) => r.team.toLowerCase().includes(q) || r.competition.toLowerCase().includes(q));
     return filtered
-      .sort((a, b) => (b.multiple ?? -Infinity) - (a.multiple ?? -Infinity) || b.unity - a.unity || a.team.localeCompare(b.team))
+      .sort((a, b) => leagueFilter !== 'all'
+        ? (b.indivUnity ?? -Infinity) - (a.indivUnity ?? -Infinity) || (b.multiple ?? -Infinity) - (a.multiple ?? -Infinity) || a.team.localeCompare(b.team)
+        : (b.multiple ?? -Infinity) - (a.multiple ?? -Infinity) || b.unity - a.unity || a.team.localeCompare(b.team))
       .slice(0, TEAM_LIMIT);
   }, [superRows, uniTeamByKey, uniLeagueByComp, leagueFilter, tierFilter, query]);
 
@@ -294,7 +296,9 @@ export default function UnityFinderPanel() {
           {/* Filters */}
           <View style={styles.filterCard}>
             <FilterDropdown label="League" value={leagueFilter} options={leagueOptions} onChange={setLeagueFilter} style={narrow ? styles.full : styles.flex} />
-            <Text style={styles.topListNote}>Ranked by team Gap ÷ league Unity, biggest first. Showing up to {TEAM_LIMIT} teams.</Text>
+            <Text style={styles.topListNote}>
+              {leagueFilter === 'all' ? `Ranked by Gap ÷ league Unity, biggest first. Showing up to ${TEAM_LIMIT} teams.` : `This league is ranked by Indiv (allocated Unity), biggest share first. × Unity is shown alongside; up to ${TEAM_LIMIT} teams.`}
+            </Text>
             <View style={styles.tierBtnRow}>
               {(['all', 'top', 'middle', 'bottom'] as TierFilter[]).map((t) => {
                 const on = tierFilter === t;
@@ -321,12 +325,14 @@ export default function UnityFinderPanel() {
               <Text style={styles.selectedLeagueText}>
                 League Unity: {selectedLeague.aUnity.toFixed(2)} · Range: {selectedLeague.range.toFixed(1)} · {selectedLeague.n} teams with data · Average Strength: {Math.round(selectedLeague.avgStrength * 100)}%
               </Text>
-              <Text style={styles.selectedLeagueText}>Teams below are ranked by × Unity within this league. The league Unity value is shared by every team in the league.</Text>
+              <Text style={styles.selectedLeagueText}>Teams below are ranked by Indiv (allocated Unity). The league Unity value is shared by every team in the league; × Unity remains visible for comparison.</Text>
             </View>
           ) : null}
 
           <View style={styles.statusRow}>
-              <Text style={styles.statusMuted}>Top {teamRows.length} teams by Gap ÷ league Unity{leagueFilter !== 'all' || tierFilter !== 'all' || query.trim() ? ' (filtered)' : ''} · overall ranks kept</Text>
+              <Text style={styles.statusMuted}>
+                {leagueFilter === 'all' ? `Top ${teamRows.length} teams by Gap ÷ league Unity` : `Top ${teamRows.length} teams in league by Indiv`}{leagueFilter !== 'all' || tierFilter !== 'all' || query.trim() ? ' (filtered)' : ''} · rank shown at left
+              </Text>
           </View>
 
           {teamRows.length === 0 ? (
@@ -337,7 +343,7 @@ export default function UnityFinderPanel() {
               <DragScroll horizontal style={styles.scroll} contentContainerStyle={styles.scrollContent}>
                 <View style={[styles.table, { minWidth: 1060 }]}>
                   <View style={[styles.row, styles.headRow]}>
-                    <Text style={[styles.cRank, styles.headText, styles.right]}>#</Text>
+                    <Text style={[styles.cRank, styles.headText, styles.right]}>{leagueFilter === 'all' ? '#' : 'Indiv #'}</Text>
                     <Text style={[styles.cTeam, styles.headText]}>Team</Text>
                     <Text style={[styles.cLeagueT, styles.headText]}>League</Text>
                     <Text style={[styles.cTier, styles.headText]}>Tier</Text>
@@ -355,7 +361,7 @@ export default function UnityFinderPanel() {
                     const uc = r.band === 'da' ? theme.accentGreen : r.band === 'borderline' ? theme.yellow : theme.textMuted;
                     return (
                       <View key={`${r.competition}-${r.team}`} style={[styles.row, i % 2 === 1 && styles.rowAlt]}>
-                        <Text style={[styles.cRank, styles.numDa]}>{r.overallRank}</Text>
+                        <Text style={[styles.cRank, styles.numDa]}>{leagueFilter === 'all' ? r.overallRank : start + i + 1}</Text>
                         <Text style={[styles.cTeam, styles.team]} numberOfLines={1}>{r.team}</Text>
                         <Text style={[styles.cLeagueT, styles.compText]} numberOfLines={1}>{r.competition}</Text>
                         <View style={styles.cTier}>
@@ -420,10 +426,10 @@ export default function UnityFinderPanel() {
               <Text style={styles.helpText}>League rows are ordered by average Strength and split into roughly equal Top, Mid, and Bottom groups. Click any league row to open its teams. The league Unity, range, and team count then appear above that league’s team table.</Text>
 
               <Text style={styles.helpSectionTitle}>League Amongst Leagues view</Text>
-              <Text style={styles.helpText}>The team table shows up to 200 teams, ranked by Gap ÷ league Unity, biggest first. Peak is the higher of the team’s two values; Gap is the difference between them. The final × Unity column is Gap ÷ Unity: 8× means the team’s Gap is eight times its league’s Unity.</Text>
-              <Text style={styles.helpText}>A small Unity can still produce a high × Unity score because Unity is the number being divided by. For example, a Gap of 8 ÷ Unity of 1 gives 8×, while a Gap of 20 ÷ Unity of 10 gives 2×. Read both Gap and Unity alongside the ratio. Overall # ranks by this ratio across leagues; Lg # ranks by it within the league.</Text>
-              <Text style={styles.helpText}>Indiv is the team’s allocated share of the league range: (number of teams − its rank by Peak) × Unity. The highest Peak gets the largest allocation and the lowest gets zero. This is separate from × Unity, which determines the table order. Str is the team’s position between its league’s lowest and highest value (0–100%); Str# ranks teams across leagues by Strength.</Text>
-              <Text style={styles.helpText}>Choose a league or tier, search for a team, and use the page controls to narrow or browse the top list. The ratio order stays highest first.</Text>
+              <Text style={styles.helpText}>The all-leagues table shows up to 200 teams, ranked by Gap ÷ league Unity, biggest first. Peak is the higher of the team’s two values; Gap is the difference between them. The final × Unity column is Gap ÷ Unity: 8× means the team’s Gap is eight times its league’s Unity.</Text>
+              <Text style={styles.helpText}>A small Unity can still produce a high × Unity score because Unity is the number being divided by. For example, Gap 8 ÷ Unity 1 gives 8×, while Gap 20 ÷ Unity 10 gives 2×. Indiv is a different measure, so a team can have a small Indiv value and still rank near the top by × Unity.</Text>
+              <Text style={styles.helpText}>Indiv is the team’s allocated share of the league range: (number of teams − its rank by Peak) × Unity. The highest Peak gets the largest allocation and the lowest gets zero. Click a league to view its teams ranked by Indiv, largest share first; the league’s Unity is shown above the table. In that view, Indiv # is the within-league Indiv order and Lg # remains the team’s rank by × Unity. Str is the team’s position between its league’s lowest and highest value (0–100%); Str# ranks teams across leagues by Strength.</Text>
+              <Text style={styles.helpText}>Choose a league or tier, search for a team, and use the page controls to narrow or browse the list.</Text>
 
               <Text style={styles.helpSectionTitle}>Reading the results</Text>
               <Text style={styles.helpText}>These figures summarize season patterns for comparison, not a prediction for a specific match. A dash means a value could not be calculated. Percentages describe a share; Unity, Range, Peak, and Gap use the selected stat’s scale.</Text>
@@ -517,7 +523,7 @@ const styles = StyleSheet.create({
   rowPressed: { backgroundColor: 'rgba(5,150,105,0.10)' },
   headText: { fontFamily: fonts.bodySemiBold, fontSize: 10, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, paddingHorizontal: 4 },
   right: { textAlign: 'right' },
-  cRank: { width: 38, paddingHorizontal: 4, textAlign: 'right' },
+  cRank: { width: 52, paddingHorizontal: 4, textAlign: 'right' },
   cLeague: { flex: 1, minWidth: 150, paddingHorizontal: 4 },
   cLeagueT: { width: 150, paddingHorizontal: 4 },
   cTeam: { flex: 1, minWidth: 140, paddingHorizontal: 4 },
