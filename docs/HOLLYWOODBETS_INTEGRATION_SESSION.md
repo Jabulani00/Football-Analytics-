@@ -54,8 +54,13 @@ GET /api/events/eps/sports                                                   →
 GET /api/events/eps/sports/1/categories                                      → countries (2=South Africa, 61=France, 65=Germany, 83=Italy…)
 GET /api/events/eps/sports/1/categories/{categoryId}/tournaments             → leagues
 GET /api/events/eps/sports/1/categories/{categoryId}/tournaments/{id}/events?withBetTypeId=15&lang=en   → EVENTS + ODDS
+GET /api/v2/events/eps/events/{eventId}?lang=en                              → FULL EVENT + ALL MARKETS
 GET /api/sports?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD&eventStatusIDs=1      → date-scoped sports
 ```
+
+> The full-event endpoint moved from the unversioned
+> `/api/events/eps/events/{eventId}` route to `/api/v2/events/eps/events/{eventId}`
+> in October 2026. The old route now returns HTTP 404 for current fixtures.
 
 ### 2.3 Event / odds payload shape
 

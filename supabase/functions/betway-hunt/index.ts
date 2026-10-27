@@ -95,7 +95,7 @@ async function publicSnapshot(url: string, key: string) {
   });
   const currentEvents = currentEventsRaw.map(withMarkets);
   const removedEvents = removedEventsRaw.map(withMarkets);
-  const classifiedEvents = classifiedEventsRaw.map(withMarkets);
+  const classifiedEvents = classifiedEventsRaw;
 
   const removedById = new Map(
     removedEvents.map((event) => [String(event.provider_event_id), event]),
