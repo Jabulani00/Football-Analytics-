@@ -1,8 +1,13 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import { useBetwayHunt } from '@/hooks/useBetwayHunt';
 import type { BetwayEvent, BetwayMarket, BetwayMarketSelection } from '@/services/betwayHunt';
+import {
+  betwayGroupLabel,
+  fetchBetwayEventMarkets,
+  type BetwayEventMarkets,
+} from '@/services/betwayMarkets';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 import type { BetSlipLeg } from '@/types/analytics';
 
@@ -127,43 +132,101 @@ function MarketSelectionButton({
 
 function MoreMarkets({ event, onAddLeg }: { event: BetwayEvent; onAddLeg?: (leg: BetSlipLeg) => void }) {
   const [expanded, setExpanded] = useState(false);
-  const markets = event.markets.filter((market) => market.market_type.toLowerCase() !== 'win-draw-win');
-  if (markets.length === 0) return null;
-  const selectionCount = markets.reduce((total, market) => total + market.selections.length, 0);
+  const [selectedGroup, setSelectedGroup] = useState('Main');
+  const [responses, setResponses] = useState<Record<string, BetwayEventMarkets>>({});
+  const [loadingGroup, setLoadingGroup] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const response = responses[selectedGroup];
+  const markets = response?.markets ?? [];
+  const selectionCount = response?.outcomeCount ?? null;
+
+  const load = async (group: string) => {
+    setSelectedGroup(group);
+    setExpanded(true);
+    if (responses[group] || loadingGroup === group) return;
+    setLoadingGroup(group);
+    setError(null);
+    try {
+      const result = await fetchBetwayEventMarkets(event.provider_event_id, group);
+      setResponses((current) => ({ ...current, [group]: result }));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not load Betway markets.');
+    } finally {
+      setLoadingGroup((current) => current === group ? null : current);
+    }
+  };
+
+  const toggle = () => {
+    if (expanded) {
+      setExpanded(false);
+      return;
+    }
+    void load(selectedGroup);
+  };
+
+  const groups = response ? ['All', ...response.groups] : ['Main'];
   return (
     <View style={styles.moreMarkets}>
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ expanded }}
-        onPress={() => setExpanded((current) => !current)}
+        onPress={toggle}
         style={styles.moreButton}>
         <Text style={styles.moreButtonText}>
-          {expanded ? '▾ Hide markets' : `▸ More markets (${selectionCount})`}
+          {loadingGroup && expanded
+            ? 'Loading Betway markets…'
+            : expanded
+              ? `▾ Hide markets${selectionCount == null ? '' : ` (${selectionCount} selections)`}`
+              : '▸ More Betway markets'}
         </Text>
       </Pressable>
-      {expanded ? markets.map((market) => (
-        <View key={market.market_id} style={styles.marketGroup}>
-          <View style={styles.marketHeading}>
-            <Text style={styles.marketName}>
-              {market.line == null || market.name.includes(String(market.line))
-                ? market.name
-                : `${market.name} ${market.line}`}
-            </Text>
-            {!market.open ? <Text style={styles.marketClosed}>SUSPENDED</Text> : null}
+      {expanded && response ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.marketTabs}>
+          {groups.map((group) => (
+            <Pressable
+              key={group}
+              accessibilityRole="button"
+              accessibilityLabel={`Betway market group: ${betwayGroupLabel(group)}`}
+              accessibilityState={{ selected: selectedGroup === group }}
+              onPress={() => void load(group)}
+              style={[styles.marketTab, selectedGroup === group && styles.marketTabActive]}>
+              <Text style={[styles.marketTabText, selectedGroup === group && styles.marketTabTextActive]}>
+                {betwayGroupLabel(group)}
+              </Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      ) : null}
+      {expanded && error ? <Text style={styles.marketError}>{error}</Text> : null}
+      {expanded && !loadingGroup && response && markets.length === 0 ? (
+        <Text style={styles.empty}>Betway currently has no available markets in this group.</Text>
+      ) : null}
+      {expanded && !loadingGroup ? markets.map((market) => (
+          <View key={market.market_id} style={styles.marketGroup}>
+            <View style={styles.marketHeading}>
+              <Text style={styles.marketName}>
+                {market.line == null || market.name.includes(String(market.line))
+                  ? market.name
+                  : `${market.name} ${market.line}`}
+              </Text>
+              {!market.open ? <Text style={styles.marketClosed}>SUSPENDED</Text> : null}
+            </View>
+            <View style={styles.marketSelections}>
+              {market.selections.map((selection) => (
+                <MarketSelectionButton
+                  key={selection.outcome_id}
+                  event={event}
+                  market={market}
+                  selection={selection}
+                  onAddLeg={onAddLeg}
+                />
+              ))}
+            </View>
           </View>
-          <View style={styles.marketSelections}>
-            {market.selections.map((selection) => (
-              <MarketSelectionButton
-                key={selection.outcome_id}
-                event={event}
-                market={market}
-                selection={selection}
-                onAddLeg={onAddLeg}
-              />
-            ))}
-          </View>
-        </View>
-      )) : null}
+        )) : null}
     </View>
   );
 }
@@ -268,7 +331,8 @@ export default function BetwayOddsPanel({ onAddLeg }: { onAddLeg?: (leg: BetSlip
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>CURRENT BETWAY MARKETS</Text>
         <Text style={styles.sectionHint}>
-          1X2 is shown first. Expand each fixture for totals, BTTS, Draw No Bet and Correct Score when Betway offers them.
+          1X2 is shown first. Open a fixture to load Betway&apos;s live Popular, Goals, Teams, Winner, Halves, Scores,
+          Handicaps, Scorers, Combos and Build A Bet groups on demand.
         </Text>
         {!snapshot && !hunt.loading ? <Text style={styles.empty}>Current Betway fixtures are unavailable.</Text> : null}
         {snapshot && snapshot.currentEvents.length === 0 ? <Text style={styles.empty}>No upcoming Betway fixtures were returned.</Text> : null}
@@ -342,6 +406,12 @@ const styles = StyleSheet.create({
   moreMarkets: { marginTop: spacing.sm, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: spacing.sm },
   moreButton: { alignSelf: 'flex-start', paddingHorizontal: spacing.sm, paddingVertical: 5, borderWidth: 1, borderColor: theme.border, borderRadius: layout.borderRadius },
   moreButtonText: { fontFamily: fonts.bodySemiBold, fontSize: 11, color: theme.accentBlue },
+  marketTabs: { gap: spacing.xs, paddingVertical: spacing.sm },
+  marketTab: { paddingHorizontal: spacing.sm, paddingVertical: 6, borderWidth: 1, borderColor: theme.border, borderRadius: 999, backgroundColor: theme.bg },
+  marketTabActive: { borderColor: theme.accentBlue, backgroundColor: theme.accentBlue },
+  marketTabText: { fontFamily: fonts.bodySemiBold, fontSize: 10, color: theme.textMuted },
+  marketTabTextActive: { color: theme.bg },
+  marketError: { marginTop: spacing.sm, fontFamily: fonts.body, fontSize: 11, color: theme.loss },
   marketGroup: { marginTop: spacing.sm },
   marketHeading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: spacing.sm },
   marketName: { fontFamily: fonts.bodySemiBold, fontSize: 11, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
