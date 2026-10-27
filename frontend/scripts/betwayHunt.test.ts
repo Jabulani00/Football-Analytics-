@@ -26,6 +26,7 @@ const snapshot: BetwayHuntSnapshot = {
   verifiedRemovals: [],
   pendingRemovals: [],
   changes: [],
+  classifiedEvents: [],
 };
 
 async function main() {

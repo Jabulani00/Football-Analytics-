@@ -51,6 +51,7 @@ async function main() {
     const body = await response.json();
     assert.equal(body.bookmaker, 'Betway');
     assert.equal(body.historyAvailable, false);
+    assert.deepEqual(body.classifiedEvents, []);
     assert.equal(body.currentEvents.length, 1);
     assert.deepEqual(
       [body.currentEvents[0].odds_home, body.currentEvents[0].odds_draw, body.currentEvents[0].odds_away],

@@ -14,11 +14,16 @@ is no longer required in production.
   a fixed 120-second budget, below Supabase's 150-second free-plan limit.
 - `betway-verify` runs at minutes 2, 17, 32, and 47. It claims at most five
   confirmed pre-kickoff absences, checks their status with API-Football, and
-  records verified, cancelled, postponed, rescheduled, started, finished, or
-  unverified decisions.
+  records verified, cancelled, postponed, rescheduled, suspended/interrupted,
+  abandoned, started, finished, or unverified decisions.
 - The database continues to require two complete misses for a normal removal
   and three for an empty or unusually large drop. It preserves the bookmaker
   name and the last Betway 1X2 prices.
+- Only a unique API-Football match that remains `NS` within 15 minutes of the
+  Betway kickoff can verify a bookmaker removal. `SUSP` and `INT` are
+  suspension states, `ABD` is abandoned, `PST` is postponed, and `TBD` remains
+  unverified because its kickoff is not reliable. Missing or ambiguous matches
+  also stay unverified rather than being guessed.
 
 ## One-time secret setup
 

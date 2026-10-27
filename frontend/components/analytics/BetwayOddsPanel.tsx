@@ -328,6 +328,25 @@ export default function BetwayOddsPanel({ onAddLeg }: { onAddLeg?: (leg: BetSlip
         </View>
       ) : null}
 
+      {snapshot?.classifiedEvents.length ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>RECENT NON-REMOVAL CLASSIFICATIONS</Text>
+          <Text style={styles.sectionHint}>
+            These fixtures are excluded from Betway removal signals because kickoff or an independently verified match status explains the disappearance.
+          </Text>
+          {snapshot.classifiedEvents.slice(0, 10).map((event) => (
+            <View key={event.provider_event_id} style={[styles.removalRow, narrow && styles.stack]}>
+              <View style={styles.grow}>
+                <Text style={styles.fixtureName}>Betway · {event.home_team} vs {event.away_team}</Text>
+                <Text style={styles.meta}>{betwayLifecycleExplanation(event.lifecycle_state)}</Text>
+                <Text style={styles.meta}>{event.competition ?? 'Competition'} · Kickoff {localTime(event.start_time)}</Text>
+              </View>
+              <Text style={styles.lifecycleTag}>{event.lifecycle_state.replaceAll('_', ' ').toUpperCase()}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>CURRENT BETWAY MARKETS</Text>
         <Text style={styles.sectionHint}>
@@ -365,6 +384,18 @@ export default function BetwayOddsPanel({ onAddLeg }: { onAddLeg?: (leg: BetSlip
   );
 }
 
+function betwayLifecycleExplanation(state: string): string {
+  switch (state) {
+    case 'started': return 'Scheduled kickoff was reached; this is not a bookmaker removal.';
+    case 'expired': return 'The match finished or aged past kickoff; this is not a bookmaker removal.';
+    case 'postponed': return 'The independent fixture source reports the match as postponed.';
+    case 'cancelled': return 'The independent fixture source reports the match as cancelled.';
+    case 'abandoned': return 'The independent fixture source reports the match as abandoned.';
+    case 'rescheduled': return 'The same fixture moved to a different kickoff time.';
+    default: return 'The disappearance has a non-removal lifecycle explanation.';
+  }
+}
+
 const styles = StyleSheet.create({
   container: { width: '100%', gap: spacing.lg },
   intro: { fontFamily: fonts.body, fontSize: 14, lineHeight: 21, color: theme.textMuted },
@@ -395,6 +426,7 @@ const styles = StyleSheet.create({
   meta: { marginTop: 3, fontFamily: fonts.body, fontSize: 11, lineHeight: 16, color: theme.textMuted },
   removedOdds: { marginTop: spacing.xs, fontFamily: fonts.bodySemiBold, fontSize: 12, color: theme.accentBlue },
   verifiedTag: { fontFamily: fonts.bodySemiBold, fontSize: 10, color: theme.accentGreen, borderWidth: 1, borderColor: theme.accentGreen, borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: 4 },
+  lifecycleTag: { maxWidth: 120, fontFamily: fonts.bodySemiBold, fontSize: 9, color: theme.accentBlue, borderWidth: 1, borderColor: theme.accentBlue, borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: 4, textAlign: 'center' },
   openTag: { fontFamily: fonts.bodySemiBold, fontSize: 9, color: theme.accentGreen },
   suspendedTag: { fontFamily: fonts.bodySemiBold, fontSize: 9, color: theme.loss },
   prices: { marginTop: spacing.sm, flexDirection: 'row', gap: spacing.sm },

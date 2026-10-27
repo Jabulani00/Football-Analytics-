@@ -209,6 +209,7 @@ test.describe('Stream C production acceptance', () => {
     expect(Array.isArray(payload.currentEvents)).toBeTruthy();
     expect(Array.isArray(payload.verifiedRemovals)).toBeTruthy();
     expect(Array.isArray(payload.pendingRemovals)).toBeTruthy();
+    expect(Array.isArray(payload.classifiedEvents)).toBeTruthy();
     expect(payload.currentEvents.some((event: { markets?: unknown[] }) =>
       Array.isArray(event.markets) && event.markets.length > 1
     )).toBeTruthy();

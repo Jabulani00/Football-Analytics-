@@ -259,6 +259,7 @@ async function liveFallback(): Promise<Response> {
       verifiedRemovals: [],
       pendingRemovals: [],
       changes: [],
+      classifiedEvents: [],
     });
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : String(error) }, 502);
@@ -299,15 +300,22 @@ export async function GET(): Promise<Response> {
     order: 'observed_at.desc',
     limit: '5000',
   });
+  const classifiedQuery = new URLSearchParams({
+    lifecycle_state: 'in.(started,expired,cancelled,postponed,rescheduled,abandoned)',
+    updated_at: `gte.${new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()}`,
+    order: 'updated_at.desc',
+    limit: '100',
+  });
 
   try {
-    const [runs, currentEventsRaw, removedEventsRaw, removalEpisodes, changes, marketRows] = await Promise.all([
+    const [runs, currentEventsRaw, removedEventsRaw, removalEpisodes, changes, marketRows, classifiedEventsRaw] = await Promise.all([
       read<BetwayCrawlRun[]>(`/bw_public_crawl_run?${runsQuery}`),
       read<BetwayEvent[]>(`/bw_public_event?${currentQuery}`),
       read<BetwayEvent[]>(`/bw_public_event?${removedQuery}`),
       read<BetwayRemovalEpisode[]>(`/bw_public_removal_episode?${episodesQuery}`),
       read<BetwayChange[]>(`/bw_public_change?${changesQuery}`),
       read<{ provider_event_id: string; markets: BetwayMarket[] }[]>(`/bw_public_event_market?${marketQuery}`),
+      read<BetwayEvent[]>(`/bw_public_event?${classifiedQuery}`),
     ]);
     const marketsByEvent = new Map(marketRows.map((row) => [row.provider_event_id, row.markets]));
     const withMarkets = (event: BetwayEvent): BetwayEvent => ({
@@ -316,6 +324,7 @@ export async function GET(): Promise<Response> {
     });
     const currentEvents = currentEventsRaw.map(withMarkets);
     const removedEvents = removedEventsRaw.map(withMarkets);
+    const classifiedEvents = classifiedEventsRaw.map(withMarkets);
     const removedById = new Map(removedEvents.map((event) => [event.provider_event_id, event]));
     const verifiedRemovals = removalEpisodes
       .filter((episode) => episode.state === 'confirmed' && episode.verification_status === 'verified')
@@ -328,7 +337,7 @@ export async function GET(): Promise<Response> {
       episode.state === 'pending' ||
       (episode.state === 'confirmed' && episode.verification_status === 'unverified')
     );
-    return json({ bookmaker: 'Betway', historyAvailable: true, runs, currentEvents, verifiedRemovals, pendingRemovals, changes });
+    return json({ bookmaker: 'Betway', historyAvailable: true, runs, currentEvents, verifiedRemovals, pendingRemovals, changes, classifiedEvents });
   } catch (error) {
     console.warn('Betway history read unavailable; using the live public feed.', error);
     return liveFallback();

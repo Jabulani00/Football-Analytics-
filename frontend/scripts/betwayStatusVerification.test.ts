@@ -68,6 +68,22 @@ check(
   decideBetwayRemoval(candidate, [fixture({ status: 'PST' })]).decision === 'postponed',
 );
 check(
+  'a referee-suspended match is classified as suspended, not started or removed',
+  decideBetwayRemoval(candidate, [fixture({ status: 'SUSP' })]).decision === 'suspended',
+);
+check(
+  'an interrupted match is classified as suspended',
+  decideBetwayRemoval(candidate, [fixture({ status: 'INT' })]).decision === 'suspended',
+);
+check(
+  'an abandoned match is classified separately from a completed fixture',
+  decideBetwayRemoval(candidate, [fixture({ status: 'ABD' })]).decision === 'abandoned',
+);
+check(
+  'a fixture with an undefined kickoff cannot verify bookmaker removal',
+  decideBetwayRemoval(candidate, [fixture({ status: 'TBD' })]).reason === 'source_kickoff_not_defined',
+);
+check(
   'live fixtures are classified as started',
   decideBetwayRemoval(candidate, [fixture({ status: '1H' })]).decision === 'started',
 );
@@ -90,6 +106,13 @@ check(
 check(
   'reversed teams do not match',
   decideBetwayRemoval(candidate, [fixture({ home: 'Bravo United', away: 'Alpha FC' })]).decision === 'unverified',
+);
+check(
+  'a generic club name cannot verify a longer different club name',
+  decideBetwayRemoval(
+    { ...candidate, home_team: 'United' },
+    [fixture({ home: 'Manchester United' })],
+  ).decision === 'unverified',
 );
 check(
   'different competition does not match',

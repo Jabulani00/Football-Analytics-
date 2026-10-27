@@ -20,6 +20,8 @@ type HuntState = {
   crawlState: CrawlStateRow[];
   currentEvents: HwEventRow[];
   removedEvents: HwEventRow[];
+  classifiedEvents: HwEventRow[];
+  pendingEvents: HwEventRow[];
   coverage: CoverageReport | null;
   coverageError: string | null;
 };
@@ -32,6 +34,8 @@ const EMPTY: HuntState = {
   crawlState: [],
   currentEvents: [],
   removedEvents: [],
+  classifiedEvents: [],
+  pendingEvents: [],
   coverage: null,
   coverageError: null,
 };
@@ -54,11 +58,13 @@ export function useHollywoodHunt(): HuntState & {
       }
       const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
       try {
-        const [changes, crawlState, currentEvents, removedEvents] = await Promise.all([
+        const [changes, crawlState, currentEvents, removedEvents, classifiedEvents, pendingEvents] = await Promise.all([
           store.recentChanges(since),
           store.crawlState(),
           store.currentListing({ limit: 20_000 }),
           store.removedEvents(100),
+          store.classifiedEvents(100),
+          store.pendingEvents(100),
         ]);
 
         let coverage: CoverageReport | null = null;
@@ -90,6 +96,8 @@ export function useHollywoodHunt(): HuntState & {
             crawlState,
             currentEvents,
             removedEvents: excludeCurrentlyListedRemovals(removedEvents, currentEvents),
+            classifiedEvents,
+            pendingEvents,
             coverage,
             coverageError,
           });

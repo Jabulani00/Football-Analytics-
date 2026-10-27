@@ -26,7 +26,8 @@ export type BetwayEvent = {
     | 'started'
     | 'expired'
     | 'cancelled'
-    | 'postponed';
+    | 'postponed'
+    | 'abandoned';
   odds_home: number | null;
   odds_draw: number | null;
   odds_away: number | null;
@@ -99,6 +100,7 @@ export type BetwayHuntSnapshot = {
   verifiedRemovals: BetwayVerifiedRemoval[];
   pendingRemovals: BetwayRemovalEpisode[];
   changes: BetwayChange[];
+  classifiedEvents: BetwayEvent[];
 };
 
 export class BetwayHuntError extends Error {
@@ -130,7 +132,8 @@ export async function fetchBetwayHunt(
     !Array.isArray(snapshot.currentEvents) ||
     !Array.isArray(snapshot.verifiedRemovals) ||
     !Array.isArray(snapshot.pendingRemovals) ||
-    !Array.isArray(snapshot.changes)
+    !Array.isArray(snapshot.changes) ||
+    !Array.isArray(snapshot.classifiedEvents)
   ) {
     throw new BetwayHuntError('Betway Hunt endpoint returned an invalid snapshot', 502, '');
   }
