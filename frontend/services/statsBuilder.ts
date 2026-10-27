@@ -748,13 +748,17 @@ export function buildStatsTables(opts: BuildOptions): TeamStatsExport {
           ensure(`${winPrefix}_${period}_${scope}`).push(
             withGames(
               makeRow(name, league, season, {
+                // Series must come first: it reuses rate-stat keys (conceding_05,
+                // over25, btts_yes, …) as consecutive-run counts, so the ordinary
+                // rate values below must win on those keys. Non-overlapping series
+                // stats (streaks, w/d/l, cs, fts, without_*) still survive.
+                ...computeSeries(windowed, period),
                 ...ordinaryValues(windowed, period),
                 ppg: recentPpg,
                 avg_pts: recentPpg,
                 ppg_vs_green: recentTierPpg('green'),
                 ppg_vs_yellow: recentTierPpg('yellow'),
                 ppg_vs_red: recentTierPpg('red'),
-                ...computeSeries(windowed, period),
                 ...recentFtOnly,
                 ...recentHalf,
               }, windowed.length),
