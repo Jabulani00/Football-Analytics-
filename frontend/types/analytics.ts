@@ -108,6 +108,7 @@ export type AnalyticsTab =
   | 'overview'
   | 'grading'
   | 'grading2'
+  | 'grading3'
   | 'omit'
   | 'dominance'
   | 'opposite'
