@@ -324,7 +324,9 @@ export async function GET(): Promise<Response> {
     });
     const currentEvents = currentEventsRaw.map(withMarkets);
     const removedEvents = removedEventsRaw.map(withMarkets);
-    const classifiedEvents = classifiedEventsRaw.map(withMarkets);
+    // Lifecycle explanations do not render market trees. Keeping them lean
+    // prevents up to 100 historical market snapshots from bloating this API.
+    const classifiedEvents = classifiedEventsRaw;
     const removedById = new Map(removedEvents.map((event) => [event.provider_event_id, event]));
     const verifiedRemovals = removalEpisodes
       .filter((episode) => episode.state === 'confirmed' && episode.verification_status === 'verified')
