@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { useQueries } from '@tanstack/react-query';
 
 import DragScroll from '@/components/shared/DragScroll';
@@ -35,7 +35,7 @@ const SECTIONS: { value: UnitySection; label: string }[] = [
 
 type UnityView = 'leagues' | 'teams';
 type TierFilter = 'all' | LeagueTier;
-type SortKey = 'rank' | 'strength' | 'indiv' | 'multiple' | 'unity' | 'da' | 'team' | 'league' | 'tier' | 'lgrank';
+type SortKey = 'rank' | 'strength' | 'indiv' | 'multiple' | 'unity' | 'gap' | 'da' | 'team' | 'league' | 'tier' | 'lgrank';
 
 /** A Super-League team row joined with its universal (range-based) Unity. */
 type MergedTeam = SuperTeamRow & {
@@ -70,7 +70,8 @@ function sortTeams(rows: MergedTeam[], key: SortKey, dir: 'asc' | 'desc'): Merge
     if (key === 'rank') c = a.overallRank - b.overallRank;
     else if (key === 'strength') c = (a.strengthRank ?? Infinity) - (b.strengthRank ?? Infinity);
     else if (key === 'indiv') c = (a.indivUnity ?? -Infinity) - (b.indivUnity ?? -Infinity);
-    else if (key === 'unity') c = a.unity - b.unity;
+    else if (key === 'unity') c = (a.aUnity ?? -Infinity) - (b.aUnity ?? -Infinity);
+    else if (key === 'gap') c = a.unity - b.unity;
     else if (key === 'da') c = a.da - b.da;
     else if (key === 'multiple') c = (a.multiple ?? -Infinity) - (b.multiple ?? -Infinity);
     else if (key === 'team') c = a.team.localeCompare(b.team);
@@ -83,7 +84,9 @@ function sortTeams(rows: MergedTeam[], key: SortKey, dir: 'asc' | 'desc'): Merge
 }
 
 export default function UnityFinderPanel() {
-  const narrow = useWindowDimensions().width < 720;
+  const { width, height } = useWindowDimensions();
+  const narrow = width < 720;
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const feed = useLiveCompetitionFeed(3);
   const leagues = useMemo(() => feed.competitions.filter((c) => c.rank === 0), [feed.competitions]);
@@ -138,7 +141,7 @@ export default function UnityFinderPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sig, section, statKey]);
 
-  // Universal (range-based) Unity: A Unity = (H−L)/N, per-team allocation + normalized strength.
+  // League Unity = (highest team value − lowest team value) / eligible team count.
   const universal = useMemo(() => buildUniversalUnity(perLeagueTeams), [perLeagueTeams]);
   // Tiers now follow the chosen fairness basis (normalized strength).
   const tierMap = useMemo(
@@ -167,7 +170,8 @@ export default function UnityFinderPanel() {
   const teamRows = useMemo<MergedTeam[]>(() => {
     let rows: MergedTeam[] = superRows.map((r) => {
       const u = uniTeamByKey.get(`${r.competition}::${r.team}`);
-      return { ...r, aUnity: uniLeagueByComp.get(r.competition)?.aUnity ?? null, indivUnity: u?.indivUnity ?? null, strength: u?.strength ?? null, strengthRank: u?.strengthRank ?? null };
+      const aUnity = uniLeagueByComp.get(r.competition)?.aUnity ?? null;
+      return { ...r, aUnity, multiple: aUnity == null || aUnity === 0 ? null : r.da / aUnity, indivUnity: u?.indivUnity ?? null, strength: u?.strength ?? null, strengthRank: u?.strengthRank ?? null };
     });
     if (leagueFilter !== 'all') rows = rows.filter((r) => r.competition === leagueFilter);
     if (tierFilter !== 'all') rows = rows.filter((r) => r.tier === tierFilter);
@@ -193,12 +197,16 @@ export default function UnityFinderPanel() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>DA Unity Finder</Text>
+        <View style={styles.titleRow}>
+          <Text style={styles.title}>DA Unity Finder</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel="Explain the DA Unity Finder" onPress={() => setHelpOpen(true)} style={styles.helpButton}>
+            <Text style={styles.helpButtonText}>ⓘ How this page works</Text>
+          </Pressable>
+        </View>
         <Text style={styles.subtitle}>
-          The league amongst leagues — every active league compared. Universal Unity ranks each stat&apos;s values:
-          per league A Unity = (H − L) ÷ N, and each team gets an allocated Unity and a normalized strength
-          (0–1) so leagues of any size compare fairly. Leagues split into three tiers (Top/Mid/Bottom) by that
-          strength. The DA share (difference ≥ {DA_MIN}%) and the per-team DA ÷ Unity are kept alongside.
+          Compare teams and leagues for the selected stat. Unity is calculated for each league as
+          (highest team value − lowest team value) ÷ number of teams with data. Team gaps, DA status,
+          and each league&apos;s average team position within its range are shown alongside Unity.
         </Text>
       </View>
 
@@ -249,7 +257,7 @@ export default function UnityFinderPanel() {
                 <Text style={[styles.cTier, styles.headText]}>Tier</Text>
                 <Text style={[styles.cNum, styles.headText, styles.right]}>N</Text>
                 <Text style={[styles.cNum, styles.headText, styles.right]}>Range</Text>
-                <Text style={[styles.cNum, styles.headText, styles.right]}>A Unity</Text>
+                <Text style={[styles.cNum, styles.headText, styles.right]}>Unity</Text>
                 <Text style={[styles.cUnity, styles.headText]}>Strength</Text>
                 <Text style={[styles.cNum, styles.headText, styles.right]}>DA%</Text>
               </View>
@@ -276,10 +284,9 @@ export default function UnityFinderPanel() {
             </View>
           </DragScroll>
           <Text style={styles.hint}>
-            A Unity = (H − L) ÷ N per league for {statLabel}; Strength is the mean normalized position
-            (0–100%) of the league&apos;s teams, the fair cross-league basis that ranks leagues into three
-            tiers — Top (green), Middle (yellow), Bottom (white). DA% is the share of teams that are DA.
-            Note: normalized strength clusters leagues near the middle, so Range and A Unity are kept to show magnitude.
+            Unity = (highest team value − lowest team value) ÷ number of teams with data. Strength is the
+            league&apos;s average team position within its own range; it ranks leagues into three relative tiers.
+            DA% is the share of eligible teams whose comparison difference is at least {DA_MIN}%.
           </Text>
         </>
       ) : null}
@@ -291,8 +298,8 @@ export default function UnityFinderPanel() {
             <View style={[styles.filterRow, narrow && styles.filterCol]}>
               <FilterDropdown label="League" value={leagueFilter} options={leagueOptions} onChange={setLeagueFilter} style={narrow ? styles.full : styles.flex} />
               <FilterDropdown label="Sort by" value={sortKey} options={[
-                { value: 'rank', label: 'Overall rank (gap)' }, { value: 'strength', label: 'Strength (0–1)' }, { value: 'indiv', label: 'Individual Unity' },
-                { value: 'multiple', label: 'DA ÷ Unity (×)' }, { value: 'unity', label: 'Unity (gap)' }, { value: 'da', label: 'DA (peak)' },
+                { value: 'rank', label: 'Overall rank (gap)' }, { value: 'strength', label: 'Strength (0–1)' }, { value: 'indiv', label: 'Individual Unity position' },
+                { value: 'multiple', label: 'Peak ÷ league Unity (×)' }, { value: 'unity', label: 'League Unity' }, { value: 'gap', label: 'Team gap' }, { value: 'da', label: 'Peak value' },
                 { value: 'team', label: 'Team name' }, { value: 'league', label: 'League' }, { value: 'tier', label: 'League tier' }, { value: 'lgrank', label: 'League rank' },
               ]} onChange={(v) => setSortKey(v as SortKey)} style={narrow ? styles.full : styles.flex} />
               <Pressable accessibilityRole="button" onPress={() => setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))} style={styles.dirBtn}>
@@ -335,10 +342,10 @@ export default function UnityFinderPanel() {
                     <Text style={[styles.cTeam, styles.headText]}>Team</Text>
                     <Text style={[styles.cLeagueT, styles.headText]}>League</Text>
                     <Text style={[styles.cTier, styles.headText]}>Tier</Text>
-                    <Text style={[styles.cNum, styles.headText, styles.right]}>DA</Text>
-                    <Text style={[styles.cNum, styles.headText, styles.right]}>Unity</Text>
+                    <Text style={[styles.cNum, styles.headText, styles.right]}>Peak</Text>
+                    <Text style={[styles.cNum, styles.headText, styles.right]}>Gap</Text>
                     <Text style={[styles.cNum, styles.headText, styles.right]}>×</Text>
-                    <Text style={[styles.cNum, styles.headText, styles.right]}>A Uty</Text>
+                    <Text style={[styles.cNum, styles.headText, styles.right]}>Unity</Text>
                     <Text style={[styles.cNum, styles.headText, styles.right]}>Indiv</Text>
                     <Text style={[styles.cNum, styles.headText, styles.right]}>Str</Text>
                     <Text style={[styles.cNum, styles.headText, styles.right]}>Str#</Text>
@@ -355,8 +362,8 @@ export default function UnityFinderPanel() {
                         <View style={styles.cTier}>
                           <View style={[styles.tierChip, { borderColor: tc }]}><Text style={[styles.tierChipText, { color: tc }]}>{tierName(r.tier)}</Text></View>
                         </View>
-                        <Text style={[styles.cNum, styles.num]}>{Math.round(r.da)}%</Text>
-                        <Text style={[styles.cNum, { textAlign: 'right', fontFamily: fonts.bodySemiBold, fontSize: 12, color: uc }]}>{Math.round(r.unity)}%</Text>
+                        <Text style={[styles.cNum, styles.num]}>{r.da.toFixed(1)}</Text>
+                        <Text style={[styles.cNum, { textAlign: 'right', fontFamily: fonts.bodySemiBold, fontSize: 12, color: uc }]}>{r.unity.toFixed(1)}</Text>
                         <Text style={[styles.cNum, styles.num]}>{r.multiple == null ? '—' : `${r.multiple.toFixed(2)}×`}</Text>
                         <Text style={[styles.cNum, styles.num]}>{r.aUnity == null ? '—' : r.aUnity.toFixed(1)}</Text>
                         <Text style={[styles.cNum, styles.num]}>{r.indivUnity == null ? '—' : r.indivUnity.toFixed(1)}</Text>
@@ -370,8 +377,9 @@ export default function UnityFinderPanel() {
               </DragScroll>
               <PageControls page={safe} pages={pages} total={teamRows.length} from={start + 1} to={start + visibleTeams.length} onChange={setPage} />
               <Text style={styles.hint}>
-                DA = peak stat · Unity = Peak − Smaller · × = DA ÷ Unity, for {statLabel}. A Uty = the league&apos;s
-                A Unity ((H − L) ÷ N); Indiv = this team&apos;s allocated Unity ((N − league rank) × A Unity); Str = its
+                Peak is this team&apos;s higher value for {statLabel}; Gap is the difference between its higher and lower values.
+                Unity is the league-wide value: (league high − league low) ÷ teams with data. × = Peak ÷ Unity.
+                Indiv is this team&apos;s position-based allocation within the league range; Str is its
                 normalized position 0–100% within its league (the fair cross-league basis); Str# = its strength rank
                 across all leagues. Overall # keeps the gap ranking; Lg # is the rank in its own league.
               </Text>
@@ -379,6 +387,47 @@ export default function UnityFinderPanel() {
           )}
         </>
       ) : null}
+
+      <Modal visible={helpOpen} transparent animationType="fade" onRequestClose={() => setHelpOpen(false)}>
+        <View style={styles.helpModal}>
+          <Pressable style={styles.helpBackdrop} onPress={() => setHelpOpen(false)} accessibilityLabel="Close explanation" />
+          <View style={[styles.helpSheet, { maxHeight: Math.max(300, Math.round(height * 0.82)) }]}>
+            <View style={styles.helpHeader}>
+              <View style={styles.helpHeaderCopy}>
+                <Text style={styles.helpTitle}>How the DA Unity Finder works</Text>
+                <Text style={styles.helpIntro}>A plain-language guide to the numbers and controls on this page.</Text>
+              </View>
+              <Pressable accessibilityRole="button" accessibilityLabel="Close explanation" onPress={() => setHelpOpen(false)} style={styles.helpClose}>
+                <Text style={styles.helpCloseText}>Close</Text>
+              </Pressable>
+            </View>
+            <ScrollView style={styles.helpScroll} contentContainerStyle={styles.helpContent}>
+              <Text style={styles.helpSectionTitle}>Unity: the league formula</Text>
+              <Text style={styles.helpText}>Find the highest value and the lowest value for the selected stat among teams in a league. Subtract the lowest from the highest, then divide by the number of teams with data.</Text>
+              <Text style={styles.helpFormula}>(Highest team stat − Lowest team stat) ÷ Number of teams = Unity</Text>
+              <Text style={styles.helpText}>Example: highest is 80, lowest is 20, and 10 teams have data. The range is 60, so Unity is 60 ÷ 10 = 6. Unity is the same league-wide figure for every team in that league.</Text>
+
+              <Text style={styles.helpSectionTitle}>What DA means</Text>
+              <Text style={styles.helpText}>DA means “Double Agent” in this app. It marks a large difference between the two sides being compared. A difference of 25% or more counts as DA; 16–24% is borderline; 0–15% is treated as a small or even difference. Teams without enough figures for a comparison are left out of that count.</Text>
+
+              <Text style={styles.helpSectionTitle}>Choose what to compare</Text>
+              <Text style={styles.helpText}>DA place chooses the comparison: Home / Away looks at home versus away performance; 1st / 2nd Half compares first-half and second-half performance; Opposites compares paired measures such as scoring versus failing to score. Stat chooses the particular measure, such as wins, goals, or clean sheets.</Text>
+              <Text style={styles.helpText}>Quick stat guide: PPG = points per game; SC% = scored; Conc% = conceded; AVG = average goals; BTTS Yes = both teams scored; CS% = clean sheets; FTS% = failed to score; Win, Draw, and Loss = match result; Over / Under 1.5, 2.5, or 3.5 = total goals above or below that number; Scoring 1.5+ / Conceding 1.5+ = scored or conceded at least two goals.</Text>
+
+              <Text style={styles.helpSectionTitle}>Leagues view</Text>
+              <Text style={styles.helpText}>The headline percentage is the share of eligible teams across all listed leagues that count as DA for the selected comparison. In each league row, N is the number of teams with data, Range is highest minus lowest, Unity is Range divided by N, Strength is the league’s average team position within its own range, and DA% is that league’s DA share.</Text>
+              <Text style={styles.helpText}>Top, Mid, and Bottom are relative groups based on Strength. They split the leagues being compared into roughly three groups; they are not permanent labels of league quality.</Text>
+
+              <Text style={styles.helpSectionTitle}>League Amongst Leagues view</Text>
+              <Text style={styles.helpText}>This view lists individual teams from the included leagues. Peak is the team’s higher value in the selected comparison. Gap is the difference between that team’s higher and lower values. Unity is the league-wide formula above. The × column is Peak divided by league Unity. Indiv is a position-based allocation within the league range; Strength shows where the team sits between its league’s lowest and highest value.</Text>
+              <Text style={styles.helpText}>Overall rank orders teams by Gap. League rank orders them by Gap within their own league. Strength rank orders them across leagues by Strength. Use the league and tier filters, search, sort menu, direction button, and page controls to narrow or rearrange the list.</Text>
+
+              <Text style={styles.helpSectionTitle}>Reading the results</Text>
+              <Text style={styles.helpText}>These figures summarize season patterns for comparison. They do not predict a specific match. A dash means a value could not be calculated from the available data. Percentages describe a share; Unity, Range, Peak, and Gap use the selected stat’s own scale.</Text>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -386,8 +435,25 @@ export default function UnityFinderPanel() {
 const styles = StyleSheet.create({
   container: { width: '100%', alignSelf: 'stretch' },
   header: { marginBottom: spacing.md },
+  titleRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, marginBottom: spacing.xs },
   title: { fontFamily: fonts.display, fontSize: 24, color: theme.textPrimary, marginBottom: spacing.xs },
   subtitle: { fontFamily: fonts.body, fontSize: 13, lineHeight: 20, color: theme.textMuted },
+  helpButton: { borderWidth: layout.borderWidth, borderColor: theme.accentGreen, borderRadius: 999, paddingHorizontal: spacing.md, paddingVertical: 7, backgroundColor: 'rgba(5,150,105,0.06)' },
+  helpButtonText: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: theme.accentGreen },
+  helpModal: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.md },
+  helpBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(15, 23, 42, 0.55)' },
+  helpSheet: { width: '100%', maxWidth: 680, borderWidth: layout.borderWidth, borderColor: theme.border, borderRadius: 16, backgroundColor: theme.surface, padding: spacing.md, gap: spacing.sm },
+  helpHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
+  helpHeaderCopy: { flex: 1, gap: 3 },
+  helpTitle: { fontFamily: fonts.display, fontSize: 20, color: theme.textPrimary },
+  helpIntro: { fontFamily: fonts.body, fontSize: 12, lineHeight: 18, color: theme.textMuted },
+  helpClose: { borderWidth: layout.borderWidth, borderColor: theme.border, borderRadius: layout.borderRadius, paddingHorizontal: spacing.md, paddingVertical: 7 },
+  helpCloseText: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: theme.textPrimary },
+  helpScroll: { flexGrow: 0 },
+  helpContent: { gap: spacing.sm, paddingBottom: spacing.sm },
+  helpSectionTitle: { fontFamily: fonts.bodySemiBold, fontSize: 14, color: theme.accentGreen, marginTop: spacing.xs },
+  helpText: { fontFamily: fonts.body, fontSize: 13, lineHeight: 19, color: theme.textPrimary },
+  helpFormula: { fontFamily: fonts.bodySemiBold, fontSize: 14, lineHeight: 21, color: theme.textPrimary, backgroundColor: theme.surfaceMuted, borderRadius: layout.borderRadius, padding: spacing.md },
 
   toolbar: {
     flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm,
