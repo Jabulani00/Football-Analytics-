@@ -209,11 +209,19 @@ test.describe('Stream C production acceptance', () => {
     expect(Array.isArray(payload.currentEvents)).toBeTruthy();
     expect(Array.isArray(payload.verifiedRemovals)).toBeTruthy();
     expect(Array.isArray(payload.pendingRemovals)).toBeTruthy();
+    expect(payload.currentEvents.some((event: { markets?: unknown[] }) =>
+      Array.isArray(event.markets) && event.markets.length > 1
+    )).toBeTruthy();
 
     await openAnalytics(page);
     await openTab(page, 'Betway');
     await expect(page.getByText('BETWAY HUNT', { exact: true })).toBeVisible();
-    await expect(page.getByText('CURRENT BETWAY 1X2', { exact: true })).toBeVisible();
+    await expect(page.getByText('CURRENT BETWAY MARKETS', { exact: true })).toBeVisible();
+    const moreMarkets = page.getByText(/^▸ More markets/).first();
+    await expect(moreMarkets).toBeVisible();
+    await moreMarkets.click();
+    await expect(page.getByText('▾ Hide markets', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText(/Total Goals|BTTS \(GG\/NG\)|Draw No Bet|Correct Score/, { exact: true }).first()).toBeVisible();
   });
 
   test('mobile viewport keeps core Stream C controls reachable', async ({ page }) => {
