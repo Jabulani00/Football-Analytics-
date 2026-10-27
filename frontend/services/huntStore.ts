@@ -362,9 +362,19 @@ export function createPublicHuntStore(endpoint: string, fetchImpl: typeof fetch 
 export function huntStoreFromEnv(): HuntReadStore {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
   const key = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-  if (url && key) return createHuntStore({ url, key });
   const endpoint =
     process.env.EXPO_PUBLIC_HOLLYWOOD_HUNT_URL ??
     'https://zymspnykcnqczqdnernb.supabase.co/functions/v1/hollywood-hunt';
-  return createPublicHuntStore(endpoint);
+  const publicStore = createPublicHuntStore(endpoint);
+  if (!url || !key) return publicStore;
+
+  // The public snapshot loads the large current listing in one request. Keep
+  // the two lifecycle enrichments on direct, RLS-protected PostgREST reads so
+  // they can go live independently of a hollywood-hunt function redeploy.
+  const directStore = createHuntStore({ url, key });
+  return {
+    ...publicStore,
+    classifiedEvents: directStore.classifiedEvents,
+    pendingEvents: directStore.pendingEvents,
+  };
 }

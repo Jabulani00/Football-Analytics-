@@ -63,8 +63,8 @@ export function useHollywoodHunt(): HuntState & {
           store.crawlState(),
           store.currentListing({ limit: 20_000 }),
           store.removedEvents(100),
-          store.classifiedEvents(100),
-          store.pendingEvents(100),
+          store.classifiedEvents(100).catch(() => []),
+          store.pendingEvents(100).catch(() => []),
         ]);
 
         let coverage: CoverageReport | null = null;
