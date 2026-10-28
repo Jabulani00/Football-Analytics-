@@ -69,6 +69,9 @@ export type TeamMeasure = {
   measure: number | null;
   peak: number | null;
   smaller: number | null;
+  /** Original home and away values for the Home/Away Finder view. */
+  home?: number | null;
+  away?: number | null;
 };
 
 function peakSmaller(a: number | null, b: number | null): { peak: number | null; smaller: number | null } {
@@ -106,7 +109,7 @@ export function teamMeasuresForSection(stats: TeamStatsExport, section: UnitySec
       section === 'homeaway'
         ? valueAt(stats, def.family, 'ft', 'away', team, def.key)
         : valueAt(stats, def.family, '2h', 'overall', team, def.key);
-    return { team, teamId: idOf(r), measure: measureFor(a, b, def.pctBased), ...peakSmaller(a, b) };
+    return { team, teamId: idOf(r), measure: measureFor(a, b, def.pctBased), ...peakSmaller(a, b), ...(section === 'homeaway' ? { home: a, away: b } : {}) };
   });
 }
 
