@@ -19,6 +19,7 @@ export const ANALYTICS_TABS: { id: AnalyticsTab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'grading', label: 'Stats Grading' },
   { id: 'grading2', label: 'Stats Grading · Method 2' },
+  { id: 'grading3', label: 'Stats Grading · Method 3' },
   { id: 'omit', label: 'Omit Test' },
   { id: 'dominance', label: 'Dominance Checker' },
   { id: 'opposite', label: 'Opposite Stats Analysis' },

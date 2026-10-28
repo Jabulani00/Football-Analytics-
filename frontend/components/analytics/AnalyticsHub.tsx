@@ -13,6 +13,7 @@ import PredictionsPanel from '@/components/analytics/PredictionsPanel';
 import SmartFinderPanel from '@/components/analytics/SmartFinderPanel';
 import StatsGradingPanel from '@/components/analytics/StatsGradingPanel';
 import StatsGradingMethod2Panel from '@/components/analytics/StatsGradingMethod2Panel';
+import StatsGradingMethod3Panel from '@/components/analytics/StatsGradingMethod3Panel';
 import OmitTestPanel from '@/components/analytics/OmitTestPanel';
 import DominanceCheckerPanel from '@/components/analytics/DominanceCheckerPanel';
 import OppositeStatsAnalysisPanel from '@/components/analytics/OppositeStatsAnalysisPanel';
@@ -57,6 +58,8 @@ function PanelForTab({
       return <StatsGradingPanel />;
     case 'grading2':
       return <StatsGradingMethod2Panel />;
+    case 'grading3':
+      return <StatsGradingMethod3Panel />;
     case 'omit':
       return <OmitTestPanel />;
     case 'dominance':

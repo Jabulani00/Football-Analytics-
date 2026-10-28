@@ -9,6 +9,7 @@ import {
   bttsDecimal,
   CORE_BET_TYPE_IDS,
   correctScoreDecimal,
+  hollywoodEventDetailPath,
   marketGroups,
   marketOdds,
   totalsDecimal,
@@ -758,6 +759,11 @@ console.log('\nSection 11 — model vs book (p80/p82/p85)');
 
 console.log('\nSection 11 — all markets');
 {
+  check(
+    'full-event detail uses Hollywoodbets current v2 route',
+    hollywoodEventDetailPath(9505210) === 'api/v2/events/eps/events/9505210',
+    hollywoodEventDetailPath(9505210),
+  );
   // The bug this catches: TOTALS used to be 27, which returns no events at all.
   check('TOTALS points at Additional Totals (60), not 27', BET_TYPE.TOTALS === 60, `${BET_TYPE.TOTALS}`);
   check('core set covers the notes’ markets', CORE_BET_TYPE_IDS.includes(BET_TYPE.BTTS) && CORE_BET_TYPE_IDS.includes(BET_TYPE.TOTALS));

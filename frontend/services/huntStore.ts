@@ -193,6 +193,29 @@ export function createHuntStore(config: HuntStoreConfig) {
         .filter((event) => isUpcomingPreKickoffRemoval(event, now));
     },
 
+    /** Recent non-removal explanations: kickoff, suspension or source status. */
+    async classifiedEvents(limit = 100): Promise<HwEventRow[]> {
+      const qs = new URLSearchParams({
+        select: '*',
+        lifecycle_state: 'in.(suspended,postponed,cancelled,rescheduled,started,expired,abandoned)',
+        start_time: `gte.${new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()}`,
+        order: 'start_time.desc',
+        limit: String(limit),
+      });
+      return request<HwEventRow[]>(`/hw_event?${qs}`, { method: 'GET', headers: headers() });
+    },
+
+    async pendingEvents(limit = 100): Promise<HwEventRow[]> {
+      const qs = new URLSearchParams({
+        select: '*',
+        lifecycle_state: 'eq.pending_removal',
+        start_time: `gt.${new Date().toISOString()}`,
+        order: 'removed_at.desc',
+        limit: String(limit),
+      });
+      return request<HwEventRow[]>(`/hw_event?${qs}`, { method: 'GET', headers: headers() });
+    },
+
     /** Upcoming listing; includeRemoved also returns pre-kickoff tombstones. */
     async currentListing(opts: { includeRemoved?: boolean; limit?: number } = {}): Promise<HwEventRow[]> {
       const limit = opts.limit ?? 500;
@@ -261,7 +284,7 @@ export function createHuntStore(config: HuntStoreConfig) {
 export type HuntStore = ReturnType<typeof createHuntStore>;
 export type HuntReadStore = Pick<
   HuntStore,
-  'recentChanges' | 'removedEvents' | 'currentListing' | 'crawlState'
+  'recentChanges' | 'removedEvents' | 'classifiedEvents' | 'pendingEvents' | 'currentListing' | 'crawlState'
 >;
 
 type PublicHuntSnapshot = {
@@ -269,6 +292,8 @@ type PublicHuntSnapshot = {
   crawlState: CrawlStateRow[];
   currentEvents: HwEventRow[];
   removedEvents: HwEventRow[];
+  classifiedEvents?: HwEventRow[];
+  pendingEvents?: HwEventRow[];
 };
 
 export function createPublicHuntStore(endpoint: string, fetchImpl: typeof fetch = fetch): HuntReadStore {
@@ -304,6 +329,12 @@ export function createPublicHuntStore(endpoint: string, fetchImpl: typeof fetch 
         .filter((event) => isUpcomingPreKickoffRemoval(event, now))
         .slice(0, limit);
     },
+    async classifiedEvents(limit = 100) {
+      return ((await load()).classifiedEvents ?? []).slice(0, limit);
+    },
+    async pendingEvents(limit = 100) {
+      return ((await load()).pendingEvents ?? []).slice(0, limit);
+    },
     async currentListing(opts: { includeRemoved?: boolean; limit?: number } = {}) {
       const snapshot = await load();
       const now = Date.now();
@@ -331,9 +362,19 @@ export function createPublicHuntStore(endpoint: string, fetchImpl: typeof fetch 
 export function huntStoreFromEnv(): HuntReadStore {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
   const key = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-  if (url && key) return createHuntStore({ url, key });
   const endpoint =
     process.env.EXPO_PUBLIC_HOLLYWOOD_HUNT_URL ??
     'https://zymspnykcnqczqdnernb.supabase.co/functions/v1/hollywood-hunt';
-  return createPublicHuntStore(endpoint);
+  const publicStore = createPublicHuntStore(endpoint);
+  if (!url || !key) return publicStore;
+
+  // The public snapshot loads the large current listing in one request. Keep
+  // the two lifecycle enrichments on direct, RLS-protected PostgREST reads so
+  // they can go live independently of a hollywood-hunt function redeploy.
+  const directStore = createHuntStore({ url, key });
+  return {
+    ...publicStore,
+    classifiedEvents: directStore.classifiedEvents,
+    pendingEvents: directStore.pendingEvents,
+  };
 }

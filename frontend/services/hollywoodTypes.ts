@@ -18,6 +18,11 @@
 
 export const SPORT_SOCCER = 1;
 
+/** Current full-event route used by Hollywoodbets' own web client. */
+export function hollywoodEventDetailPath(eventId: number): string {
+  return `api/v2/events/eps/events/${eventId}`;
+}
+
 /**
  * Bet-type ids (soccer). Swap into `withBetTypeId` to fetch a given market.
  *

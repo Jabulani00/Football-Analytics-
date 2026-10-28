@@ -7,6 +7,7 @@ import {
   teamMeasuresForSection,
   assignLeagueTiers,
   buildSuperLeague,
+  buildUniversalUnity,
   sectionStats,
   gradingUnity,
   NONE_MAX,
@@ -114,4 +115,33 @@ if (gu.graded !== 3 || gu.da !== 2 || Math.round((gu.unity ?? 0) * 100) !== 67) 
 }
 if (gradingUnity([]).unity !== null) throw new Error('No graded teams → Unity null.');
 
-console.log('✓ Unity: bands, league/super-league fraction, section measures, grading DA share.');
+// ---- universal Unity: A Unity = (H−L)/N, rank allocation, normalized strength, tiers ----
+const um = (team: string, peak: number): TeamMeasure => ({ team, teamId: null, measure: peak, peak, smaller: 0 });
+const uni = buildUniversalUnity([
+  { competition: 'A', teams: [um('A1', 90), um('A2', 60), um('A3', 30)] }, // H90 L30 range60 aUnity20
+  { competition: 'B', teams: [um('B1', 80), um('B2', 20)] },               // H80 L20 range60 aUnity30
+  { competition: 'C', teams: [um('C1', 50)] },                             // range0 aUnity0
+  { competition: 'D', teams: [] },                                         // skipped
+]);
+const ula = uni.leagues.find((l) => l.competition === 'A')!;
+if (ula.n !== 3 || ula.range !== 60 || ula.aUnity !== 20) throw new Error(`A: N3 range60 aUnity20: ${JSON.stringify(ula)}`);
+const ulb = uni.leagues.find((l) => l.competition === 'B')!;
+if (ulb.aUnity !== 30) throw new Error('B aUnity = 60/2 = 30.');
+const ulc = uni.leagues.find((l) => l.competition === 'C')!;
+if (ulc.range !== 0 || ulc.aUnity !== 0) throw new Error('Single-team league → range 0, aUnity 0 (no divide issue).');
+if (uni.leagues.length !== 3) throw new Error('Empty league D is dropped.');
+// A & B tie on avgStrength 0.5; A leads on more teams. Tiers over 3 leagues = one each.
+if (uni.leagues[0].competition !== 'A' || uni.leagues[0].tier !== 'top') throw new Error('A tops (tie broken by team count) and is top tier.');
+if (ulc.tier !== 'bottom') throw new Error('C is bottom tier.');
+
+const ua1 = uni.teams.find((t) => t.team === 'A1')!;
+if (ua1.value !== 90 || ua1.leagueValueRank !== 1 || ua1.indivUnity !== 40 || ua1.strength !== 1) {
+  throw new Error(`A1: value90 rank1 indiv (3-1)*20=40 strength1: ${JSON.stringify(ua1)}`);
+}
+const ua3 = uni.teams.find((t) => t.team === 'A3')!;
+if (ua3.indivUnity !== 0 || ua3.strength !== 0) throw new Error('Lowest team → indivUnity 0, strength 0.');
+const ua2 = uni.teams.find((t) => t.team === 'A2')!;
+if (ua2.strength !== 0.5) throw new Error('A2 (60) strength = (60-30)/60 = 0.5.');
+if (uni.teams[0].strength !== 1) throw new Error('Strongest team leads the cross-league ranking.');
+
+console.log('✓ Unity: bands, fraction, section measures, grading share, universal A-Unity/strength/tiers.');

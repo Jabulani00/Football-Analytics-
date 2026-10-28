@@ -30,7 +30,9 @@ for this secret or for the service-role key.
 
 ```powershell
 npx supabase secrets set HUNT_CRON_SECRET=<long-random-secret>
+npx supabase secrets set API_FOOTBALL_KEY=<existing-api-football-key>
 npx supabase functions deploy hollywood-hunt --no-verify-jwt
+npx supabase functions deploy hollywood-verify --no-verify-jwt
 ```
 
 `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are supplied automatically to a
@@ -53,6 +55,15 @@ is retained as a warning state, but cannot remove fixtures until it repeats on
 three complete crawls. Each tournament is applied by one transactional,
 idempotent RPC, so a retry cannot split current state from change history or
 increment removal confirmation twice.
+
+A repeated pre-kickoff absence is first stored as `pending_removal`. The
+separate `hollywood-verify` worker checks API-Football before it can become
+`removed_pre_kickoff`. A unique matching fixture that is still `NS` at the
+same kickoff verifies a bookmaker removal. Kickoff elapsed, live, suspended,
+interrupted, postponed, cancelled, abandoned, finished, and rescheduled
+fixtures receive distinct lifecycle states and are excluded from removal
+signals. Missing, ambiguous, or unsupported source data stays pending rather
+than being guessed.
 
 ## 3. Schedule it
 
@@ -96,6 +107,11 @@ select cron.schedule(
 );
 ```
 
+Migration `20261027120617_bookmaker_lifecycle_verification.sql` also schedules
+`hollywood-verify-every-fifteen-minutes` at minutes 7, 22, 37, and 52. It uses
+the same project URL and `hollywood_hunt_cron_secret` Vault values and shares a
+bounded daily API-Football request budget with Betway verification.
+
 ## 4. Connect the web application
 
 Set these in Vercel for Production and Preview, then redeploy. If you do not
@@ -125,9 +141,19 @@ After two or more runs, confirm:
 select count(*) from public.hw_event;
 select * from public.hw_crawl_state order by last_crawled desc limit 10;
 select * from public.hw_change order by observed_at desc limit 20;
+select event_id, name, start_time, lifecycle_state, verification_status,
+       verification_source_status, verification_reason
+from public.hw_event
+where lifecycle_state <> 'active'
+order by last_seen desc
+limit 50;
 ```
 
 The Analytics → Hollywoodbets tab should change from “Database not connected”
 to crawler health, the last successful crawl, current/removed counts, the
 previous hour's change signals, and Scoreline-v-Hollywood coverage gaps. It
 refreshes every 60 seconds without requiring a page reload.
+
+The panel presents three separate groups: pending independent checks, verified
+bookmaker removals, and non-removal classifications. It never presents a
+pending or kickoff-expired fixture as a verified removal.

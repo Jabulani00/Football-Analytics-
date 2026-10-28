@@ -2,8 +2,16 @@ export const BETWAY_UPCOMING_URL = 'https://www.betway.co.za/sport/soccer/upcomi
 export const BETWAY_UPCOMING_API_URL =
   'https://www.betway.co.za/sportsapi/br/v1/BetBook/Upcoming/';
 
-const MARKET_TYPES = ['[Win/Draw/Win]', 'Total Goals', '[Both Teams To Score]'];
-const PAGE_SIZE = 500;
+export const BETWAY_MARKET_TYPES = [
+  '[Win/Draw/Win]',
+  'Total Goals',
+  '[Both Teams To Score]',
+  '[Draw No Bet]',
+  'Correct Score',
+] as const;
+// Five market families are materially larger than the original 1X2 payload.
+// Keep each edge response bounded while exhaustive pagination still captures all events.
+const PAGE_SIZE = 100;
 const PAGE_LIMIT = 40;
 
 type Row = Record<string, unknown>;
@@ -23,6 +31,24 @@ export type BetwayFixture = {
   odds_away: number | null;
   market_open: boolean;
   market_suspended: boolean;
+  markets: BetwayMarket[];
+};
+
+export type BetwayMarketSelection = {
+  outcome_id: string;
+  name: string;
+  odds: number | null;
+  available: boolean;
+};
+
+export type BetwayMarket = {
+  market_id: string;
+  market_type: string;
+  name: string;
+  line: number | null;
+  open: boolean;
+  suspended: boolean;
+  selections: BetwayMarketSelection[];
 };
 
 export type BetwaySnapshot = {
@@ -133,6 +159,51 @@ function selectionPrices(
   return { odds, suspended };
 }
 
+function marketGroups(
+  markets: Row[],
+  outcomesByMarket: Map<string, Row[]>,
+  priceByOutcome: Map<string, unknown>,
+): BetwayMarket[] {
+  const result: BetwayMarket[] = [];
+  for (const market of markets) {
+    const marketId = String(market.marketId ?? '').trim();
+    if (!marketId || market.isSquashedMarket === true) continue;
+    const outcomes = outcomesByMarket.get(marketId) ?? [];
+    if (outcomes.length === 0) continue;
+
+    const seen = new Set<string>();
+    const selections = [...outcomes]
+      .sort((left, right) => Number(left.index ?? 0) - Number(right.index ?? 0))
+      .flatMap((outcome): BetwayMarketSelection[] => {
+        const outcomeId = String(outcome.outcomeId ?? '').trim();
+        if (!outcomeId || seen.has(outcomeId)) return [];
+        seen.add(outcomeId);
+        const baseName = String(outcome.displayName ?? outcome.name ?? '').trim();
+        const qualifier = String(outcome.sbv ?? '').trim();
+        const name = `${baseName}${qualifier ? ` ${qualifier}` : ''}`.replace(/\s+/g, ' ').trim();
+        if (!name) return [];
+        const price = decimalPrice(priceByOutcome.get(outcomeId));
+        const available = outcome.isTradingActive === true && outcome.shouldDisplay === true && price != null;
+        return [{ outcome_id: outcomeId, name, odds: available ? price : null, available }];
+      });
+    if (selections.length === 0) continue;
+
+    const suspended = market.isSuspended === true || market.isActive !== true ||
+      market.shouldDisplay !== true;
+    const lineValue = Number(market.handicap);
+    result.push({
+      market_id: marketId,
+      market_type: String(market.marketTypeCName ?? market.name ?? '').trim(),
+      name: String(market.displayName ?? market.name ?? market.marketTypeCName ?? 'Market').trim(),
+      line: Number.isFinite(lineValue) && lineValue !== 0 ? lineValue : null,
+      open: !suspended && selections.some((selection) => selection.available),
+      suspended,
+      selections,
+    });
+  }
+  return result.sort((left, right) => left.name.localeCompare(right.name));
+}
+
 function johannesburgLabel(kickoff: Date): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Africa/Johannesburg', year: 'numeric', month: '2-digit', day: '2-digit',
@@ -197,6 +268,11 @@ function parseFixture(
     pageIndex.outcomesByMarket,
     pageIndex.priceByOutcome,
   );
+  const markets = marketGroups(
+    eventMarkets,
+    pageIndex.outcomesByMarket,
+    pageIndex.priceByOutcome,
+  );
   const league = String(event.league ?? '').trim();
   const region = String(event.region ?? '').trim();
   const competition = [league, region].filter(Boolean).join(', ') || null;
@@ -207,6 +283,7 @@ function parseFixture(
     odds_home: selection.odds[0], odds_draw: selection.odds[1], odds_away: selection.odds[2],
     market_open: fixtureStatus === 'active' && !selection.suspended && selection.odds.every((odd) => odd != null),
     market_suspended: selection.suspended,
+    markets,
   };
 }
 
@@ -250,7 +327,7 @@ function requestUrl(baseUrl: string, skip: number, take: number): string {
   const params: [string, string][] = [
     ['countryCode', 'ZA'], ['sportId', 'soccer'], ['Skip', String(skip)], ['Take', String(take)],
     ['cultureCode', 'en-US'], ['isEsport', 'false'], ['boostedOnly', 'false'],
-    ...MARKET_TYPES.map((market): [string, string] => ['marketTypes', market]),
+    ...BETWAY_MARKET_TYPES.map((market): [string, string] => ['marketTypes', market]),
   ];
   for (const [key, value] of params) url.searchParams.append(key, value);
   return url.toString();

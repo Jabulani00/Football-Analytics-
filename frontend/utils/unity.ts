@@ -255,3 +255,104 @@ export function buildSuperLeague(
   const sorted = rows.sort((a, b) => b.unity - a.unity || a.competition.localeCompare(b.competition) || a.team.localeCompare(b.team));
   return sorted.map((r, i) => ({ ...r, overallRank: i + 1 }));
 }
+
+/* ---- Universal Unity & cross-league strength (range-based) ----
+ * A second, spec-defined Unity that applies to any stat's VALUES (not the DA
+ * gap). Per league, per stat:
+ *   H = highest value · L = lowest · N = eligible teams · Range = H − L
+ *   A Unity = Range / N          (the per-league Unity interval)
+ *   Individual team Unity (rank r, 1 = highest value) = (N − r) × A Unity
+ *       → top team (N−1)×A Unity, bottom team 0; evenly stepped by the interval.
+ *   Normalized strength = (value − L) / Range  (0–1; 0 when Range = 0)
+ *       → a league-size/range-independent position used for the fair cross-league
+ *         comparison. Teams rank across leagues by strength; leagues rank by the
+ *         MEAN of their teams' strength, then split into the three tiers.
+ *
+ * Documented assumptions (no existing rule defined these):
+ *   • The per-team "value" is the team's PEAK side value for the selected
+ *     (section, stat) — a single value in the stat's own units, reusing the
+ *     data the League-Amongst-Leagues table already holds.
+ *   • The rank-allocation formula above is this system's convention.
+ *   • Caveat of the normalized-position basis: every league's leader scores ~1
+ *     and the mean clusters near 0.5, so league strength discriminates weakly —
+ *     the raw value and A Unity are kept alongside so size/magnitude stay visible.
+ */
+export type UniversalLeague = {
+  competition: string;
+  n: number;
+  high: number;
+  low: number;
+  range: number;
+  aUnity: number;
+  /** Mean of the league's teams' normalized strength (0–1). */
+  avgStrength: number;
+  tier: LeagueTier | null;
+  /** 1-based rank across leagues by avgStrength. */
+  leagueRank: number;
+};
+
+export type UniversalTeamRow = {
+  team: string;
+  teamId: number | null;
+  competition: string;
+  tier: LeagueTier | null;
+  /** The statistic value (peak side) ranked within the league. */
+  value: number;
+  /** 1-based rank within its league by value (desc). */
+  leagueValueRank: number;
+  /** (N − rank) × A Unity. */
+  indivUnity: number;
+  /** (value − L) / Range, 0–1 — the normalized cross-league strength. */
+  strength: number;
+  /** 1-based rank across all leagues by strength (desc). */
+  strengthRank: number;
+};
+
+export type Universal = { leagues: UniversalLeague[]; teams: UniversalTeamRow[] };
+
+export function buildUniversalUnity(perLeague: { competition: string; teams: TeamMeasure[] }[]): Universal {
+  type RawLeague = { competition: string; n: number; high: number; low: number; range: number; aUnity: number; avgStrength: number };
+  const rawLeagues: RawLeague[] = [];
+  const teamRows: Omit<UniversalTeamRow, 'strengthRank' | 'tier'>[] = [];
+
+  for (const lg of perLeague) {
+    const vals = lg.teams
+      .filter((t): t is TeamMeasure & { peak: number } => t.peak != null)
+      .map((t) => ({ team: t.team, teamId: t.teamId, value: t.peak }))
+      .sort((a, b) => b.value - a.value || a.team.localeCompare(b.team));
+    const n = vals.length;
+    if (n === 0) continue;
+    const high = vals[0].value;
+    const low = vals[n - 1].value;
+    const range = high - low;
+    const aUnity = range / n;
+    let strengthSum = 0;
+    vals.forEach((v, i) => {
+      const rank = i + 1;
+      const strength = range > 0 ? (v.value - low) / range : 0;
+      strengthSum += strength;
+      teamRows.push({
+        team: v.team,
+        teamId: v.teamId,
+        competition: lg.competition,
+        value: v.value,
+        leagueValueRank: rank,
+        indivUnity: (n - rank) * aUnity,
+        strength,
+      });
+    });
+    rawLeagues.push({ competition: lg.competition, n, high, low, range, aUnity, avgStrength: strengthSum / n });
+  }
+
+  const leaguesSorted = [...rawLeagues].sort(
+    (a, b) => b.avgStrength - a.avgStrength || b.n - a.n || a.competition.localeCompare(b.competition),
+  );
+  const tiers = assignLeagueTiers(leaguesSorted);
+  const leagues: UniversalLeague[] = leaguesSorted.map((l, i) => ({ ...l, tier: tiers.get(l.competition) ?? null, leagueRank: i + 1 }));
+  const tierByComp = new Map(leagues.map((l) => [l.competition, l.tier] as const));
+
+  const teamsSorted = [...teamRows].sort((a, b) => b.strength - a.strength || b.value - a.value || a.team.localeCompare(b.team));
+  const teams: UniversalTeamRow[] = teamsSorted.map((t, i) => ({ ...t, tier: tierByComp.get(t.competition) ?? null, strengthRank: i + 1 }));
+
+  return { leagues, teams };
+}
