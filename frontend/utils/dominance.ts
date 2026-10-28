@@ -65,6 +65,13 @@ export type DominanceRow = {
   magnitude: DominanceMagnitude;
 };
 
+export type TeamHomeAwayValues = {
+  team: string;
+  teamId: number | null;
+  home: number | null;
+  away: number | null;
+};
+
 function numAt(row: TeamStatRow | undefined, key: string): number | null {
   if (!row) return null;
   const cell = row[key];
@@ -101,6 +108,31 @@ function dominanceRow(def: StatDef, a: number | null, b: number | null): Dominan
   const measure = measureFor(a, b, def.pctBased);
   const { side, magnitude } = classify(a, b, measure);
   return { statKey: def.key, statLabel: def.label, pctBased: def.pctBased, decimals: def.decimals, a, b, difference, measure, side, magnitude };
+}
+
+/** Read only the selected stat's full-time home and away values for each team. */
+export function homeAwayValuesForStat(stats: TeamStatsExport, statKey: string): TeamHomeAwayValues[] {
+  const def = DOMINANCE_STATS.find((item) => item.key === statKey);
+  if (!def) return [];
+  const rows = stats.tables['ordinary_ft_overall'] ?? [];
+  const sideValues = (scope: 'home' | 'away') => new Map<string, number | null>(
+    (stats.tables[`${def.family}_ft_${scope}`] ?? []).map((row) => [
+      teamKey(String(row.team_name)),
+      numAt(row, def.key),
+    ] as const),
+  );
+  const homeValues = sideValues('home');
+  const awayValues = sideValues('away');
+  return rows.map((row) => {
+    const team = String(row.team_name);
+    const teamId = numAt(row, 'team_id');
+    return {
+      team,
+      teamId,
+      home: homeValues.get(teamKey(team)) ?? null,
+      away: awayValues.get(teamKey(team)) ?? null,
+    };
+  });
 }
 
 /** Home vs Away, full time, for one team — a row per stat. */

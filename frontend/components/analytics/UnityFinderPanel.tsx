@@ -9,15 +9,10 @@ import { useLiveCompetitionFeed } from '@/hooks/useLiveCompetitions';
 import { fetchAllFixturesBetween, seasonWindowUnix } from '@/services/oddAlerts';
 import { clientStaleTime } from '@/services/oddAlertsCachePolicy';
 import { buildLeagueStatsLive } from '@/services/statsBuilder';
-import {
-  teamMeasuresForSection,
-  sectionStats,
-  type TeamMeasure,
-} from '@/utils/unity';
-import { DOMINANCE_STATS } from '@/utils/dominance';
+import { DOMINANCE_STATS, homeAwayValuesForStat, type TeamHomeAwayValues } from '@/utils/dominance';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
-type UnityView = 'leagues' | 'teams';
+type FinderView = 'leagues' | 'teams';
 const TEAM_LIMIT = 200;
 
 type TeamGapRow = {
@@ -32,7 +27,6 @@ type LeagueGapRow = {
   home: number;
   away: number;
   gap: number;
-  teams: number;
 };
 
 function valueText(value: number, statKey: string): string {
@@ -53,7 +47,7 @@ export default function UnityFinderPanel() {
     if (!stats.some((s) => s.key === statKey)) setStatKey(stats[0]?.key ?? '');
   }, [stats, statKey]);
 
-  const [view, setView] = useState<UnityView>('leagues');
+  const [view, setView] = useState<FinderView>('leagues');
   const [leagueFilter, setLeagueFilter] = useState<string>('all');
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
@@ -62,7 +56,7 @@ export default function UnityFinderPanel() {
     queries: leagues.map((comp) => {
       const { fromUnix, toUnix } = seasonWindowUnix(comp.season ?? '');
       return {
-        queryKey: ['unity-league', comp.id, comp.season] as const,
+        queryKey: ['home-away-gap', comp.id, comp.season] as const,
         queryFn: () => buildLeagueStatsLive((o) => fetchAllFixturesBetween(o), { competitionId: comp.id, fromUnix, toUnix, season: comp.season }),
         staleTime: clientStaleTime('stats/season'),
       };
@@ -77,14 +71,14 @@ export default function UnityFinderPanel() {
     results.forEach((r, i) => {
       if (!r.data || !leagues[i]) return;
       const competition = `${leagues[i].name} · ${leagues[i].country}`;
-      const measured: TeamMeasure[] = teamMeasuresForSection(r.data, 'homeaway', statKey);
-      const rows = measured.filter((t): t is TeamMeasure & { home: number; away: number } => t.home != null && t.away != null);
+      const measured = homeAwayValuesForStat(r.data, statKey);
+      const rows = measured.filter((t): t is TeamHomeAwayValues & { home: number; away: number } => t.home != null && t.away != null);
       if (!rows.length) return;
       const teams = rows.map((t) => ({ team: t.team, competition, home: t.home, away: t.away, gap: Math.abs(t.home - t.away) }));
       allTeams.push(...teams);
       const home = teams.reduce((sum, t) => sum + t.home, 0) / teams.length;
       const away = teams.reduce((sum, t) => sum + t.away, 0) / teams.length;
-      leagueRows.push({ competition, home, away, gap: Math.abs(home - away), teams: teams.length });
+      leagueRows.push({ competition, home, away, gap: Math.abs(home - away) });
     });
     return {
       leagues: leagueRows.sort((a, b) => b.gap - a.gap || a.competition.localeCompare(b.competition)),
@@ -118,7 +112,7 @@ export default function UnityFinderPanel() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Unity Finder · Home/Away Gap</Text>
+        <Text style={styles.title}>Gap Analytics</Text>
         <Text style={styles.subtitle}>Compare each selected stat at home and away. Both tables show the two values and their difference.</Text>
       </View>
       <View style={styles.toolbar}>
@@ -126,7 +120,7 @@ export default function UnityFinderPanel() {
       </View>
 
       <View style={styles.viewRow}>
-        {([['leagues', 'Leagues (LL)'], ['teams', 'League Amongst Leagues']] as [UnityView, string][]).map(([v, label]) => {
+        {([['leagues', 'Leagues (LL)'], ['teams', 'League Amongst Leagues']] as [FinderView, string][]).map(([v, label]) => {
           const on = view === v;
           return <Pressable key={v} accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => setView(v)} style={[styles.viewBtn, on && styles.viewBtnOn]}><Text style={[styles.viewBtnText, on && styles.viewBtnTextOn]}>{label}</Text></Pressable>;
         })}
@@ -143,19 +137,17 @@ export default function UnityFinderPanel() {
         <>
           <PageControls page={safe} pages={pages} total={mergedLeagues.length} from={start + 1} to={start + visibleLeagues.length} onChange={setPage} />
           <DragScroll horizontal style={styles.scroll} contentContainerStyle={styles.scrollContent}>
-            <View style={[styles.table, { minWidth: 680 }]}>
+            <View style={[styles.table, { minWidth: 640 }]}>
               <View style={[styles.row, styles.headRow]}>
                 <Text style={[styles.cRank, styles.headText, styles.right]}>#</Text>
                 <Text style={[styles.cLeague, styles.headText]}>League (LL)</Text>
-                <Text style={[styles.cNum, styles.headText, styles.right]}>Teams</Text>
-                <Text style={[styles.cNum, styles.headText, styles.right]}>Home avg</Text>
-                <Text style={[styles.cNum, styles.headText, styles.right]}>Away avg</Text>
+                <Text style={[styles.cNum, styles.headText, styles.right]}>Home games</Text>
+                <Text style={[styles.cNum, styles.headText, styles.right]}>Away games</Text>
                 <Text style={[styles.cNum, styles.headText, styles.right]}>Gap</Text>
               </View>
               {visibleLeagues.map((l, i) => <Pressable key={l.competition} accessibilityRole="button" accessibilityLabel={`View ${l.competition} team home and away gaps`} onPress={() => { setLeagueFilter(l.competition); setQuery(''); setView('teams'); setPage(1); }} style={({ pressed }) => [styles.row, i % 2 === 1 && styles.rowAlt, pressed && styles.rowPressed]}>
                 <Text style={[styles.cRank, styles.numDa]}>{start + i + 1}</Text>
                 <Text style={[styles.cLeague, styles.league]} numberOfLines={1}>{l.competition}</Text>
-                <Text style={[styles.cNum, styles.num]}>{l.teams}</Text>
                 <Text style={[styles.cNum, styles.num]}>{valueText(l.home, statKey)}</Text>
                 <Text style={[styles.cNum, styles.num]}>{valueText(l.away, statKey)}</Text>
                 <Text style={[styles.cNum, styles.numStrong]}>{valueText(l.gap, statKey)}</Text>
@@ -183,8 +175,8 @@ export default function UnityFinderPanel() {
                   <Text style={[styles.cRank, styles.headText, styles.right]}>#</Text>
                   <Text style={[styles.cTeam, styles.headText]}>Team</Text>
                   <Text style={[styles.cLeagueT, styles.headText]}>League</Text>
-                  <Text style={[styles.cNum, styles.headText, styles.right]}>Home</Text>
-                  <Text style={[styles.cNum, styles.headText, styles.right]}>Away</Text>
+                  <Text style={[styles.cNum, styles.headText, styles.right]}>Home games</Text>
+                  <Text style={[styles.cNum, styles.headText, styles.right]}>Away games</Text>
                   <Text style={[styles.cNum, styles.headText, styles.right]}>Gap</Text>
                 </View>
                 {visibleTeams.map((r, i) => <View key={`${r.competition}-${r.team}`} style={[styles.row, i % 2 === 1 && styles.rowAlt]}>
@@ -213,7 +205,7 @@ export default function UnityFinderPanel() {
               <Text style={styles.helpSectionTitle}>League Amongst Leagues</Text>
               <Text style={styles.helpText}>Each row shows one team’s season Home value and Away value. Team Gap is the absolute difference between them. Teams are ordered by largest Gap; selecting a league row opens that league’s teams. The list shows up to {TEAM_LIMIT} teams.</Text>
               <Text style={styles.helpSectionTitle}>Data used</Text>
-              <Text style={styles.helpText}>The selected stat comes from the current season’s full-time home and away team tables. Teams without both values are excluded. Percentage stats show a percentage-point gap; count and average stats use their own units. No Unity ratio, Indiv allocation, or half-time comparison is used in these tables.</Text>
+              <Text style={styles.helpText}>The selected stat comes from the current season’s full-time Home and Away team tables. Teams without both values are excluded. Percentage stats show a percentage-point Gap; count and average stats keep the selected stat’s scale.</Text>
             </ScrollView>
           </View>
         </View>
@@ -289,7 +281,7 @@ const styles = StyleSheet.create({
   cLeague: { flex: 1, minWidth: 150, paddingHorizontal: 4 },
   cLeagueT: { width: 160, paddingHorizontal: 4 },
   cTeam: { flex: 1, minWidth: 140, paddingHorizontal: 4 },
-  cNum: { width: 88, paddingHorizontal: 4 },
+  cNum: { width: 102, paddingHorizontal: 4 },
   muted: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted, textAlign: 'right' },
   league: { fontFamily: fonts.bodyMedium, fontSize: 13, color: theme.textPrimary },
   team: { fontFamily: fonts.bodyMedium, fontSize: 13, color: theme.textPrimary },
