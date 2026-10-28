@@ -16,7 +16,7 @@ export default function PowerDynamicsScreen() {
           <Text style={styles.kicker}>All leagues</Text>
           <Text style={[styles.title, narrow && styles.titleNarrow]}>Power dynamics</Text>
           <Text style={styles.blurb}>
-            Pick a sector, an option, and an in-option, then a day. Fixtures that day are listed from the closest fit.
+            Leagues, tables, and season games are kept in this browser after the first load. A refresh opens that copy. Pick a sector, an option, and any number of in-options. Changing an in-option uses the saved copy.
           </Text>
         </View>
         <PowerDynamicCallSearch heading={false} />
