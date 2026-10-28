@@ -57,6 +57,12 @@ function PriceButton({
   onAddLeg?: (leg: BetSlipLeg) => void;
 }) {
   const available = event.market_open && price != null;
+  const market = event.markets.find((candidate) =>
+    candidate.market_type.trim().toLowerCase() === 'win-draw-win',
+  );
+  const outcome = market?.selections.find((candidate) =>
+    candidate.name.trim().toLowerCase() === selection.trim().toLowerCase(),
+  );
   return (
     <Pressable
       accessibilityRole="button"
@@ -73,6 +79,17 @@ function PriceButton({
           odds: price,
           bookmaker: 'Betway',
           kickoff: event.start_time,
+          betwayLeg: market && outcome ? {
+            eventId: event.provider_event_id,
+            marketId: market.market_id,
+            outcomeId: outcome.outcome_id,
+            group: 'Main',
+            fixture: `${event.home_team} vs ${event.away_team}`,
+            marketName: '1X2',
+            selectionName: selection,
+            offeredOdds: price,
+            kickoff: event.start_time,
+          } : undefined,
         });
       }}
       style={({ pressed }) => [
@@ -90,11 +107,13 @@ function MarketSelectionButton({
   event,
   market,
   selection,
+  group,
   onAddLeg,
 }: {
   event: BetwayEvent;
   market: BetwayMarket;
   selection: BetwayMarketSelection;
+  group: string;
   onAddLeg?: (leg: BetSlipLeg) => void;
 }) {
   const available = event.fixture_status === 'active' && market.open && selection.available && selection.odds != null;
@@ -117,6 +136,17 @@ function MarketSelectionButton({
           odds: selection.odds,
           bookmaker: 'Betway',
           kickoff: event.start_time,
+          betwayLeg: {
+            eventId: event.provider_event_id,
+            marketId: market.market_id,
+            outcomeId: selection.outcome_id,
+            group,
+            fixture: `${event.home_team} vs ${event.away_team}`,
+            marketName,
+            selectionName: selection.name,
+            offeredOdds: selection.odds,
+            kickoff: event.start_time,
+          },
         });
       }}
       style={({ pressed }) => [
@@ -221,6 +251,7 @@ function MoreMarkets({ event, onAddLeg }: { event: BetwayEvent; onAddLeg?: (leg:
                   event={event}
                   market={market}
                   selection={selection}
+                  group={selectedGroup}
                   onAddLeg={onAddLeg}
                 />
               ))}
