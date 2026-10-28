@@ -16,6 +16,7 @@ import {
 } from '../utils/unity';
 import type { TeamStatRow, TeamStatsExport } from '../types/data';
 import type { TeamGradeRow } from '../utils/statsGrading';
+import { homeAwayValuesForStat } from '../utils/dominance';
 
 // ---- DA bands: 0–15 none · 16–24 borderline · 25–100 DA ----
 if (NONE_MAX !== 15 || DA_MIN !== 25) throw new Error('Bands must be 0-15 / 16-24 / 25-100.');
@@ -53,6 +54,14 @@ const stats: TeamStatsExport = {
     ordinary_ft_away: [row('Alpha', { sc_pct: 50 }), row('Beta', { sc_pct: 55 })],
   },
 };
+
+// Gap Analytics reads only paired home/away figures and uses their absolute difference.
+const gapRows = homeAwayValuesForStat(stats, 'sc_pct');
+if (gapRows.length !== 2 || gapRows[0].team !== 'Alpha' || gapRows[0].home !== 90 || gapRows[0].away !== 50) {
+  throw new Error(`Home/Away values should come from the selected side tables: ${JSON.stringify(gapRows)}`);
+}
+const alphaGap = Math.abs((gapRows[0].home ?? 0) - (gapRows[0].away ?? 0));
+if (alphaGap !== 40) throw new Error(`Alpha's Home/Away Gap should be 40: ${alphaGap}`);
 
 // Home/Away SC%: Alpha |90-50|=40 → DA, Beta |60-55|=5 → none. Unity = 1/2 = 0.5.
 const haSc = measuresForSection(stats, 'homeaway', 'sc_pct');

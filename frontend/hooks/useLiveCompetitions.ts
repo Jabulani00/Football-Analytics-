@@ -10,6 +10,8 @@ export type LiveCompetition = {
   name: string;
   season: string;
   seasonId: number | null;
+  /** API-reported games played in the selected current season, when available. */
+  seasonPlayed?: number | null;
   country: string;
   /** Number of upcoming fixtures — a proxy for how active the competition is. */
   upcoming: number;
@@ -112,6 +114,7 @@ export function useAllGradingLeagues(): { leagues: LiveCompetition[]; loading: b
         name: c.name,
         season: current.seasonName,
         seasonId: current.seasonId,
+        seasonPlayed: current.played,
         country: c.country,
         upcoming: 0,
         rank: 0,
