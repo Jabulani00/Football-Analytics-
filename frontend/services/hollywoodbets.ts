@@ -5,6 +5,7 @@ import {
   bookingUrl,
   CORE_BET_TYPE_IDS,
   hollywoodEventDetailPath,
+  isMarketOpenStatus,
   SPORT_SOCCER,
   type HbCategory,
   type HbEvent,
@@ -211,6 +212,49 @@ export type ShareABetResult = {
   raw: unknown;
 };
 
+type EventDetailLoader = (eventId: number) => Promise<HbEvent | null>;
+
+/**
+ * Resolve every stored provider id against Hollywoodbets again. A fixture can
+ * disappear, a market can suspend, or a price can move while the slip is open.
+ */
+export async function refreshShareABetLegs(
+  legs: ShareLeg[],
+  loadEvent: EventDetailLoader = fetchEventDetail,
+): Promise<ShareLeg[]> {
+  const events = new Map<number, Promise<HbEvent | null>>();
+  const load = (eventId: number) => {
+    const existing = events.get(eventId);
+    if (existing) return existing;
+    const request = loadEvent(eventId);
+    events.set(eventId, request);
+    return request;
+  };
+
+  return Promise.all(legs.map(async (leg) => {
+    const event = await load(leg.eventID);
+    if (!event) throw new Error(`${leg.eventName}: fixture is no longer offered by Hollywoodbets.`);
+    const betType = event.betTypes.find((candidate) =>
+      candidate.eventBetTypeMapID === leg.eventBetTypeMapID,
+    );
+    if (!betType || !isMarketOpenStatus(betType.status)) {
+      throw new Error(`${leg.eventName}: ${leg.betTypeName} is no longer available.`);
+    }
+    const market = betType.markets.find((candidate) => candidate.eventDetailId === leg.eventDetailId);
+    if (!market || !isMarketOpenStatus(market.status)) {
+      throw new Error(`${leg.eventName}: the selected outcome is suspended or unavailable.`);
+    }
+    return {
+      ...leg,
+      eventName: event.name,
+      eventDate: event.startTime,
+      eventDetailOfferedOdd: market.odds,
+      betTypeID: betType.id,
+      betTypeName: betType.name,
+    };
+  }));
+}
+
 /**
  * Create a Hollywoodbets booking code from a set of legs. Returns the code and
  * a deep link that opens the pre-loaded betslip. This is a RESERVATION only —
@@ -221,9 +265,10 @@ export type ShareABetResult = {
  */
 export async function createShareABet(legs: ShareLeg[], punterId = 0): Promise<ShareABetResult> {
   if (legs.length === 0) throw new Error('createShareABet: at least one leg required');
+  const currentLegs = await refreshShareABetLegs(legs);
   const body = JSON.stringify({
     punterId,
-    shareABetDetails: legs.map((l) => ({
+    shareABetDetails: currentLegs.map((l) => ({
       eventBetTypeDetailMapId: 0,
       marketStatusId: 0,
       eventNumber: 0,

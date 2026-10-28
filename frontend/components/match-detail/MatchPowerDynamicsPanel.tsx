@@ -43,6 +43,10 @@ import { useFixtureBook1x2 } from '@/hooks/useFixtureBook1x2';
 import { useFixtureFormAnalysis } from '@/hooks/useFixtureFormAnalysis';
 import { useSeasonFixtures } from '@/hooks/useSeasonFixtures';
 import type { Competition, H2HMatch, OddsByMarket, Probability, StandingRow } from '@/services/oddAlerts';
+import type { SeasonMatch } from '@/utils/bhozomaEngine';
+import type { ImbangiScheduleMatch } from '@/utils/imbangiEngine';
+import type { FormChildGroup } from '@/utils/formChildBeater';
+import type { H2HSplit } from '@/utils/h2hDisplay';
 import { fonts, spacing, theme } from '@/styles/theme';
 import { buildInitialState, findUkulumbana } from '@/utils/last5Analysis';
 import { resultsFromSeasonMatches } from '@/utils/last6Form';
@@ -106,6 +110,11 @@ type BaselineSubId = (typeof BASELINE_SUBS)[number]['id'];
 type StreamlineSubId = (typeof STREAMLINE_SUBS)[number]['id'];
 type BatetemeSubId = (typeof BATETEME_SUBS)[number]['id'];
 
+export type PowerDynamicsFocus = {
+  tabId: string;
+  functionId: string;
+};
+
 type Props = {
   standings: StandingRow[];
   competitionId: number;
@@ -124,7 +133,25 @@ type Props = {
   probability?: Probability;
   kickoffUnix?: number;
   fixtureId?: number | null;
+  /** Show only this in-option’s sector from the original page. */
+  focus?: PowerDynamicsFocus | null;
+  /** Season games already on hand, so this view does not fetch them again. */
+  suppliedSeason?: { matches: SeasonMatch[]; schedule: ImbangiScheduleMatch[] } | null;
 };
+
+function isPowerTab(id: string | undefined): id is PowerDynamicsTabId {
+  return POWER_DYNAMICS_TABS.some((tab) => tab.id === id);
+}
+
+function childGroup(id: string | undefined): FormChildGroup | undefined {
+  if (id === 'table' || id === 'ft' || id === '1h' || id === '2h') return id;
+  return undefined;
+}
+
+function h2hSplit(id: string | undefined): H2HSplit {
+  if (id === 'home' || id === 'away') return id;
+  return 'overall';
+}
 
 function toStandingLike(rows: StandingRow[]): StandingLike[] {
   return rows.map((r) => ({
@@ -163,9 +190,11 @@ export default function MatchPowerDynamicsPanel({
   probability,
   kickoffUnix,
   fixtureId,
+  focus = null,
+  suppliedSeason = null,
 }: Props) {
   const [page, setPage] = useState<'original' | 'calculations'>('original');
-  const [view, setView] = useState<PowerDynamicsTabId>('baseline');
+  const [view, setView] = useState<PowerDynamicsTabId>(isPowerTab(focus?.tabId) ? focus.tabId : 'baseline');
   const [baselineSub, setBaselineSub] = useState<BaselineSubId>('original');
   const [streamlineSub, setStreamlineSub] = useState<StreamlineSubId>('bateteme');
   const [batetemeSub, setBatetemeSub] = useState<BatetemeSubId>('1');
@@ -230,7 +259,10 @@ export default function MatchPowerDynamicsPanel({
     view === 'sudden_drop' ||
     view === 'sudden_pickup' ||
     view === 'colour_verification';
-  const seasonFx = useSeasonFixtures(competition, season, needSeasonFx);
+  const fetchedSeason = useSeasonFixtures(competition, season, suppliedSeason == null && needSeasonFx);
+  const seasonFx = suppliedSeason
+    ? { matches: suppliedSeason.matches, schedule: suppliedSeason.schedule, loading: false, error: null as string | null }
+    : fetchedSeason;
 
   const form = useFixtureFormAnalysis({
     homeId,
@@ -402,6 +434,25 @@ export default function MatchPowerDynamicsPanel({
       case 'call':
         return <PowerDynamicCallSearch />;
       case 'baseline':
+        if (focus?.functionId === 'original') return <BaselineCards pd={pd} />;
+        if (focus?.functionId === 'gap') return <GapAnalysisCards pd={pd} />;
+        if (focus?.functionId === 'bateteme_1' || focus?.functionId === 'bateteme_2') {
+          return (
+            <StreamlineCards
+              pd={pd}
+              focus="bateteme"
+              batetemeFocus={focus.functionId === 'bateteme_1' ? 1 : 2}
+            />
+          );
+        }
+        if (
+          focus?.functionId === 'compliant' ||
+          focus?.functionId === 'zidane_law' ||
+          focus?.functionId === 'bookie' ||
+          focus?.functionId === 'bookie2'
+        ) {
+          return <StreamlineCards pd={pd} focus={focus.functionId} />;
+        }
         return (
           <View>
             <SubTabBar
@@ -458,6 +509,96 @@ export default function MatchPowerDynamicsPanel({
           />
         );
       case 'last5':
+        if (focus?.functionId === 'initial_state') {
+          return formGate(
+            <InitialStateCards
+              pd={pd}
+              home={initialState.home}
+              away={initialState.away}
+              overallHome={initialState.overallHome}
+              overallAway={initialState.overallAway}
+              standings={like}
+              matches={seasonFx.matches}
+              tableLoading={seasonFx.loading}
+            />,
+          );
+        }
+        if (focus?.functionId === 'league') {
+          return formGate(
+            <Last5LeagueCards
+              pd={pd}
+              standings={like}
+              matches={seasonFx.matches}
+              loading={seasonFx.loading}
+              error={seasonFx.error}
+              highlightIds={highlightIds}
+              teamLabels={teamLabels}
+            />,
+          );
+        }
+        if (focus?.functionId === 'form_matchup') {
+          return formGate(
+            <View>
+              <Last5Cards pd={pd} home={form.last5?.home} away={form.last5?.away} />
+            </View>,
+          );
+        }
+        if (focus?.functionId === 'diff') {
+          return formGate(
+            <Last5DiffCards
+              pd={pd}
+              standings={like}
+              matches={seasonFx.matches}
+              loading={seasonFx.loading}
+              error={seasonFx.error}
+            />,
+          );
+        }
+        if (focus?.functionId === 'two_goal') {
+          return formGate(
+            <TwoGoalBandCards
+              pd={pd}
+              standings={like}
+              t1Results={pd.t1.venue === 'home' ? form.homeResults : form.awayResults}
+              t2Results={pd.t2.venue === 'home' ? form.homeResults : form.awayResults}
+              excludeFixtureId={fixtureId}
+              loading={form.loading}
+              error={form.error}
+            />,
+          );
+        }
+        if (focus?.functionId === 'label_change') {
+          return formGate(
+            <LabelChangeCards
+              pd={pd}
+              standings={like}
+              t1Results={pd.t1.venue === 'home' ? form.homeResults : form.awayResults}
+              t2Results={pd.t2.venue === 'home' ? form.homeResults : form.awayResults}
+              excludeFixtureId={fixtureId}
+            />,
+          );
+        }
+        if (focus?.functionId === 'death_trap') {
+          return formGate(
+            <DeathTrapCards
+              pd={pd}
+              t1Results={pd.t1.venue === 'home' ? form.homeResults : form.awayResults}
+              t2Results={pd.t2.venue === 'home' ? form.homeResults : form.awayResults}
+              excludeFixtureId={fixtureId}
+            />,
+          );
+        }
+        if (focus?.functionId === 'reverse') {
+          return formGate(
+            <ReverseEngineeringCards
+              pd={pd}
+              standings={like}
+              matches={seasonFx.matches}
+              loading={seasonFx.loading}
+              error={seasonFx.error}
+            />,
+          );
+        }
         return formGate(
           <View>
             <SectorIntro
@@ -579,6 +720,7 @@ export default function MatchPowerDynamicsPanel({
               t1Name={pd.t1.name}
               t2Name={pd.t2.name}
               competitionName={competitionName}
+              initialSplit={h2hSplit(focus?.functionId)}
             />
           </View>
         );
@@ -592,6 +734,7 @@ export default function MatchPowerDynamicsPanel({
             error={seasonFx.error}
             competitionId={competitionId}
             seasonLinked={seasonId != null}
+            initialGroup={childGroup(focus?.functionId)}
             exclude={
               kickoffUnix != null && homeId != null && awayId != null
                 ? { unix: kickoffUnix, homeId, awayId }
@@ -602,6 +745,19 @@ export default function MatchPowerDynamicsPanel({
       case 'home_away_strong':
         return formGate(<VenueCards pd={pd} />);
       case 'colour_verification':
+        if (focus?.functionId === 'ppg_colour') return formGate(<ColourCards pd={pd} />);
+        if (focus?.functionId === 'verify') {
+          return formGate(
+            <ColourVerificationPanel
+              pd={pd}
+              standings={standings}
+              matches={seasonFx.matches}
+              matchesLoading={seasonId != null && seasonFx.loading && seasonFx.matches.length === 0}
+              matchesError={seasonFx.error}
+              seasonLinked={seasonId != null}
+            />,
+          );
+        }
         return formGate(
           <View>
             <ColourVerificationPanel
@@ -753,6 +909,8 @@ export default function MatchPowerDynamicsPanel({
 
   const calculationsLoading =
     page === 'calculations' && seasonId != null && seasonFx.loading && seasonFx.matches.length === 0;
+
+  if (focus) return <View>{body}</View>;
 
   return (
     <View>
