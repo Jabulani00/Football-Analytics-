@@ -1,13 +1,13 @@
 /**
  * Query Skeleton engine — makes the strategy skeleton callable against the live
  * stats we already pull. For one stat call (a stat + a split) it returns every
- * team's two side-values, their difference and its DA tier, ranked biggest
+ * team's two side-values, their difference and its DA status, ranked biggest
  * difference first ("biggest at the top, smallest at the bottom"). It also
  * indexes the upcoming value-odds feed so a team's next fixture can show a price.
  *
  * Nothing is recomputed from scratch: side values come from the same live stat
  * tables statsBuilder produces, the measure reuses dominance.measureFor, and the
- * DA bands reuse unity.daBand (0–15 none · 16–24 borderline · 25+ DA).
+ * DA bands reuse the shared None DA / Lean DA / DA cutoffs.
  *
  * Pure: no network, no React.
  */
@@ -32,11 +32,12 @@ export function callStats(split: SplitMode): { key: string; label: string }[] {
 
 export type Tier = 'top' | 'middle' | 'bottom' | 'na';
 
-export function tierOf(band: DaBand): Tier {
-  if (band === 'da') return 'top';
-  if (band === 'borderline') return 'middle';
-  if (band === 'none') return 'bottom';
-  return 'na';
+export function tierOf(difference: number | null): Tier {
+  if (difference == null || !Number.isFinite(difference)) return 'na';
+  const magnitude = Math.abs(difference);
+  if (magnitude >= 60) return 'top';
+  if (magnitude >= 40) return 'middle';
+  return 'bottom';
 }
 
 export type SkeletonRow = {
@@ -124,7 +125,7 @@ export function buildStatCall(
       difference,
       measure,
       band,
-      tier: tierOf(band),
+      tier: tierOf(measure),
       sample,
       pctBased: def.pctBased,
       decimals: def.decimals,

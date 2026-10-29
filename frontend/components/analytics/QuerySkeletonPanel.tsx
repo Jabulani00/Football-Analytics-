@@ -181,9 +181,9 @@ export default function QuerySkeletonPanel() {
   ];
   const tierButtons: { id: TierFilter; label: string; n: number }[] = [
     { id: 'all', label: 'All', n: built.length },
-    { id: 'top', label: 'Top · DA', n: tiers.top },
-    { id: 'middle', label: 'Mid', n: tiers.middle },
-    { id: 'bottom', label: 'Bottom', n: tiers.bottom },
+    { id: 'top', label: 'Top · 60+', n: tiers.top },
+    { id: 'middle', label: 'Middle · 40–59', n: tiers.middle },
+    { id: 'bottom', label: 'Bottom · 0–39', n: tiers.bottom },
   ];
 
   return (
@@ -192,8 +192,9 @@ export default function QuerySkeletonPanel() {
         <Text style={styles.title}>Query Skeleton</Text>
         <Text style={styles.subtitle}>
           A live call against every ongoing competition. Pick a stat and a split — the difference
-          (Home − Away or 1st − 2nd half) is graded into tiers: Top (DA ≥ {DA_MIN}%), Middle
-          ({NONE_MAX + 1}–{DA_MIN - 1}%), Bottom (0–{NONE_MAX}%). Biggest difference first, with each
+          (Home − Away or 1st − 2nd half) is graded into difference tiers: Top (60–100), Middle
+          (40–59), Bottom (0–39). The separate DA label uses 0–15 None DA, 16–24 Lean DA, and DA at 25+.
+          Biggest difference first, with each
           team&apos;s next fixture and its best value odds.
         </Text>
       </View>
@@ -334,8 +335,8 @@ export default function QuerySkeletonPanel() {
               );
             })}
             <Text style={styles.logicCaption}>
-              Tiers rank DA by difference, by the unit of that league and amongst all leagues: Top = DA
-              (≥ {DA_MIN}%), Middle = borderline ({NONE_MAX + 1}–{DA_MIN - 1}%), Bottom = none (0–{NONE_MAX}%).
+              Difference tiers: Top = 60–100, Middle = 40–59, Bottom = 0–39. DA status is separate:
+              None DA = 0–{NONE_MAX}%, Lean DA = {NONE_MAX + 1}–{DA_MIN - 1}%, DA = {DA_MIN}% or more.
               Value odds are the best price on each team&apos;s next fixture, where the feed prices it.
             </Text>
           </View>

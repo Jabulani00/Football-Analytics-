@@ -4,8 +4,8 @@
  * Compares complementary ("opposite") stat pairs for each team:
  *   • SC%   vs FTS%  (scored vs failed to score)
  *   • Conc% vs CS%   (conceded vs clean sheet)
- * The difference sits in one of the DA bands: 0–15% "short" (no DA, balanced
- * near 50/50), 16–24% "borderline" (not DA, not none), 25–100% "long" (DA).
+ * The difference sits in one of the DA bands: 0–15% "None DA", 16–24%
+ * "Lean DA", 25–100% "DA".
  * A team only qualifies when the trigger holds — it both scores
  * and concedes: SC/m ≥ 1 and Conc/m ≥ 1 ("somewhere ↑ & somewhere ↓").
  * Teams are arranged smallest difference first. Values come from the live stat
@@ -14,11 +14,12 @@
  * Pure: no network, no React.
  */
 import type { TeamStatRow, TeamStatsExport } from '@/types/data';
+import { DA_MIN, NONE_DA_MAX, differenceDaBand } from '@/utils/daBands';
 
 /** ≤ this % difference is a short difference → no DA (balanced). */
-export const SHORT_MAX = 15;
+export const SHORT_MAX = NONE_DA_MAX;
 /** ≥ this % difference is a long difference → DA. 16–24 is the borderline band. */
-export const DA_MIN = 25;
+export { DA_MIN };
 /** Trigger: average goals scored / conceded per match must reach this. */
 export const TRIGGER_RATE = 1;
 
@@ -65,11 +66,8 @@ function numAt(row: TeamStatRow | undefined, key: string): number | null {
 }
 
 export function allocationFor(difference: number | null): Allocation {
-  if (difference == null) return 'na';
-  const d = Math.abs(difference);
-  if (d >= DA_MIN) return 'long';
-  if (d <= SHORT_MAX) return 'short';
-  return 'borderline';
+  const band = differenceDaBand(difference);
+  return band === 'da' ? 'long' : band === 'lean' ? 'borderline' : band === 'none' ? 'short' : 'na';
 }
 
 function pairFor(def: OppositePairDef, row: TeamStatRow | undefined): OppositePair {

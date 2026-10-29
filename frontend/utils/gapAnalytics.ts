@@ -6,14 +6,40 @@ const COMPLETED_STATUSES = new Set(['FT', 'AET', 'PEN', 'FT_PEN', 'AWD', 'AWARDE
 
 export type GapPeriod = 'fulltime' | 'firsthalf' | 'secondhalf';
 export type GapMarket = 'scored' | 'conceded' | 'win' | 'draw' | 'loss' | 'btts' | 'over15' | 'over25' | 'over35';
+export type DominanceVenue = 'balanced' | 'home' | 'away';
 export type GapRate = { games: number; hits: number; percent: number | null };
-export type GapTeamAnalysis = { team: string; home: GapRate; away: GapRate; overall: GapRate; gap: number | null };
+export type GapTeamAnalysis = { team: string; teamId: number | null; home: GapRate; away: GapRate; overall: GapRate; gap: number | null };
+export const MIN_RANK_GAMES_OVERALL = 8;
+export const MIN_RANK_GAMES_PER_VENUE = 4;
 export const GAP_MARKETS: { key: GapMarket; label: string }[] = [
   { key: 'scored', label: 'Team scored' }, { key: 'conceded', label: 'Team conceded' },
   { key: 'win', label: 'Team win' }, { key: 'draw', label: 'Draw' }, { key: 'loss', label: 'Team loss' },
   { key: 'btts', label: 'Both teams scored' }, { key: 'over15', label: 'Over 1.5 total goals' },
   { key: 'over25', label: 'Over 2.5 total goals' }, { key: 'over35', label: 'Over 3.5 total goals' },
 ];
+
+/** Equal venue weighting prevents an uneven home/away schedule from dominating a team's index. */
+function favorablePercent(market: GapMarket, percent: number): number {
+  return market === 'loss' || market === 'conceded' ? 100 - percent : percent;
+}
+
+export function dominanceIndex(market: GapMarket, home: GapRate, away: GapRate, venue: DominanceVenue = 'balanced'): number | null {
+  const overallGames = home.games + away.games;
+  if (home.percent == null || away.percent == null || overallGames < MIN_RANK_GAMES_OVERALL ||
+      home.games < MIN_RANK_GAMES_PER_VENUE || away.games < MIN_RANK_GAMES_PER_VENUE) return null;
+  const homeScore = favorablePercent(market, home.percent);
+  const awayScore = favorablePercent(market, away.percent);
+  if (venue === 'home') return homeScore;
+  if (venue === 'away') return awayScore;
+  return (homeScore + awayScore) / 2;
+}
+
+/** Which venue has the better rate for this stat (lower Loss/Conceded is better). */
+export function dominantVenue(market: GapMarket, home: GapRate, away: GapRate): 'Home' | 'Away' | 'Balanced' | null {
+  if (home.percent == null || away.percent == null) return null;
+  const h = favorablePercent(market, home.percent); const a = favorablePercent(market, away.percent);
+  return Math.abs(h - a) < 0.000001 ? 'Balanced' : h > a ? 'Home' : 'Away';
+}
 
 function qualifies(market: GapMarket, gf: number, ga: number): boolean {
   const total = gf + ga;
@@ -32,13 +58,13 @@ function qualifies(market: GapMarket, gf: number, ga: number): boolean {
 
 /** Match counts and qualifying-game rates by team, venue, market and scoring period. */
 export function analyzeTeamGames(fixtures: RawFixture[], period: GapPeriod, market: GapMarket): GapTeamAnalysis[] {
-  type Acc = { team: string; home: { games: number; hits: number }; away: { games: number; hits: number } };
+  type Acc = { team: string; teamId: number | null; home: { games: number; hits: number }; away: { games: number; hits: number } };
   const teams = new Map<string, Acc>();
   const seen = new Set<number>();
   const ensure = (id: number | null, name: string): Acc => {
     const key = id == null ? `name:${name.trim().toLowerCase()}` : `id:${id}`;
     let row = teams.get(key);
-    if (!row) { row = { team: name, home: { games: 0, hits: 0 }, away: { games: 0, hits: 0 } }; teams.set(key, row); }
+    if (!row) { row = { team: name, teamId: id, home: { games: 0, hits: 0 }, away: { games: 0, hits: 0 } }; teams.set(key, row); }
     return row;
   };
   for (const fixture of fixtures) {
@@ -58,7 +84,7 @@ export function analyzeTeamGames(fixtures: RawFixture[], period: GapPeriod, mark
   return [...teams.values()].map((t) => {
     const overall = rate(t.home.games + t.away.games, t.home.hits + t.away.hits);
     const home = rate(t.home.games, t.home.hits); const away = rate(t.away.games, t.away.hits);
-    return { team: t.team, home, away, overall, gap: home.percent == null || away.percent == null ? null : Math.abs(home.percent - away.percent) };
+    return { team: t.team, teamId: t.teamId, home, away, overall, gap: home.percent == null || away.percent == null ? null : Math.abs(home.percent - away.percent) };
   }).sort((a, b) => (b.gap ?? -1) - (a.gap ?? -1) || a.team.localeCompare(b.team));
 }
 

@@ -1,4 +1,4 @@
-import { analyzeTeamGames, countTeamHomeAwayGames } from '../utils/gapAnalytics';
+import { analyzeTeamGames, countTeamHomeAwayGames, dominanceIndex } from '../utils/gapAnalytics';
 import type { RawFixture } from '../services/oddAlerts';
 
 function fixture(id: number, home: string, away: string, status: string, homeId: number, awayId: number): RawFixture {
@@ -64,3 +64,14 @@ if (firstHalf?.home.games !== 1 || firstHalf.home.hits !== 1 || secondHalf?.home
   throw new Error(`Half stats should count only matches with valid HT scores: ${JSON.stringify({ firstHalf, secondHalf })}`);
 }
 console.log('✓ Gap Analytics calculates selected-stat counts, percentages and valid half samples.');
+
+const allWinsHome = { games: 4, hits: 4, percent: 100 };
+const noAwayWins = { games: 4, hits: 0, percent: 0 };
+const fewGames = { games: 3, hits: 3, percent: 100 };
+const noLosses = { games: 4, hits: 0, percent: 0 };
+const insufficientHome = { games: 3, hits: 3, percent: 100 };
+const awayFive = { games: 5, hits: 5, percent: 100 };
+if (dominanceIndex('win', allWinsHome, allWinsHome) !== 100 || dominanceIndex('win', allWinsHome, noAwayWins) !== 50 || dominanceIndex('win', allWinsHome, noAwayWins, 'home') !== 100 || dominanceIndex('win', allWinsHome, noAwayWins, 'away') !== 0 || dominanceIndex('loss', noLosses, noLosses) !== 100 || dominanceIndex('win', fewGames, allWinsHome) !== null || dominanceIndex('win', insufficientHome, awayFive) !== null) {
+  throw new Error('Dominance Index should equally weight home/away rates, invert losses and require at least 8 total and 4 per venue.');
+}
+console.log('✓ Dominance Index weights both venues equally, rewards fewer losses and enforces the game minimums.');

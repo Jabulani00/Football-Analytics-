@@ -2,7 +2,7 @@
  * DA Unity Finder — the authoritative "DA FOUND IN 4 PLACES" definition.
  *
  * DA is read from a difference in three bands:
- *   0–15  = none DA · 16–24 = borderline (in-between) · 25–100 = DA.
+ *   0–15  = None DA · 16–24 = Lean DA · 25–100 = DA.
  * Unity for a stat in a league is the share of that league's teams that are DA
  * on it: (# DA teams) ÷ (total teams). Across the "super league" of all leagues,
  * every stat has its own Unity, and leagues are ranked against each other (LL).
@@ -16,22 +16,20 @@ import type { TeamStatRow, TeamStatsExport } from '@/types/data';
 import { DOMINANCE_STATS, HALF_STATS, measureFor } from '@/utils/dominance';
 import { OPPOSITE_PAIRS } from '@/utils/oppositeStats';
 import type { TeamGradeRow } from '@/utils/statsGrading';
+import { DA_MIN, NONE_DA_MAX, differenceDaBand } from '@/utils/daBands';
 
-/** 0–15 = none · 16–24 = borderline · 25–100 = DA. */
-export const NONE_MAX = 15;
-export const DA_MIN = 25;
+/** 0–15 = None DA · 16–24 = Lean DA · 25+ = DA. */
+export const NONE_MAX = NONE_DA_MAX;
+export { DA_MIN };
 
 export type DaBand = 'da' | 'borderline' | 'none' | 'na';
 
 export function daBand(measure: number | null): DaBand {
-  if (measure == null) return 'na';
-  const m = Math.abs(measure);
-  if (m >= DA_MIN) return 'da';
-  if (m <= NONE_MAX) return 'none';
-  return 'borderline';
+  const band = differenceDaBand(measure);
+  return band === 'da' ? 'da' : band === 'lean' ? 'borderline' : band === 'none' ? 'none' : 'na';
 }
 
-/** The four places DA is found; Colors has no data source in the app yet. */
+/** DA comparisons available in the league summary. Color comparisons are in the match detail panel. */
 export type UnitySection = 'homeaway' | 'halves' | 'opposites';
 
 export function sectionStats(section: UnitySection): { key: string; label: string }[] {
