@@ -15,6 +15,7 @@ type FinderView = 'leagues' | 'teams' | 'allTeams';
 const PERIODS: { value: GapPeriod; label: string }[] = [{ value: 'fulltime', label: 'Full time' }, { value: 'firsthalf', label: 'First half' }, { value: 'secondhalf', label: 'Second half' }];
 const VENUE_FILTERS: { value: DominanceVenue; label: string }[] = [{ value: 'balanced', label: 'Balanced' }, { value: 'home', label: 'Home' }, { value: 'away', label: 'Away' }];
 const TABLE_BANDS = ['Top', 'Middle', 'Bottom'] as const;
+const DA_BANDS = ['DA', 'Lean DA', 'None DA'] as const;
 const TEAM_LIMIT = 200;
 const MAX_GAP_LEAGUES = 200;
 const MAX_PARALLEL_GAP_FETCHES = 4;
@@ -45,14 +46,24 @@ type TeamGapRow = {
   dominant: 'Home' | 'Away' | 'Balanced' | null;
   leaguePosition: number | null;
   tableBand: 'Top' | 'Middle' | 'Bottom' | null;
-  rankTier: RankTier | null;
+  played: number | null;
+  won: number | null;
+  drawn: number | null;
+  lost: number | null;
+  goalsFor: number | null;
+  goalsAgainst: number | null;
+  goalDiff: number | null;
+  points: number | null;
+  daBand: DaBand | null;
   gapRankInLeague: number | null;
   gapRankTotal: number;
   statRankInLeague: number | null;
   statRankTotal: number;
   worldRank: number | null;
 };
-type RankTier = 'Top' | 'Middle' | 'Bottom';
+/** Dominance from the home–away gap: 0–15 None DA, 16–24 Lean DA, 25+ DA. */
+type DaBand = 'DA' | 'Lean DA' | 'None DA';
+type TableThird = 'Top' | 'Middle' | 'Bottom';
 type LeagueGapRow = {
   competition: string;
   home: GapRate | null;
@@ -61,7 +72,7 @@ type LeagueGapRow = {
   gap: number | null;
   index: number | null;
   dominant: 'Home' | 'Away' | 'Balanced' | null;
-  rankTier: RankTier | null;
+  daBand: DaBand | null;
 };
 
 function valueText(value: number | null): string {
@@ -75,15 +86,22 @@ function venueText(side: 'Home' | 'Away' | 'Balanced' | null, gap: number | null
   if (!side) return '—';
   return side === 'Balanced' ? side : `${side} dominant · ${valueText(gap)}pp`;
 }
-function tierColor(tier: RankTier | null): string {
+function tierColor(tier: TableThird | null): string {
   return tier === 'Top' ? theme.accentGreen : tier === 'Middle' ? theme.yellow : tier === 'Bottom' ? theme.loss : theme.textMuted;
 }
-function tierBackground(tier: RankTier | null): string {
+function tierBackground(tier: TableThird | null): string {
   return tier === 'Top' ? 'rgba(5,150,105,0.10)' : tier === 'Middle' ? 'rgba(234,179,8,0.12)' : tier === 'Bottom' ? 'rgba(220,38,38,0.08)' : theme.surfaceMuted;
 }
-function tierForScore(score: number | null): RankTier | null {
-  if (score == null) return null;
-  return score >= 60 ? 'Top' : score >= 40 ? 'Middle' : 'Bottom';
+function daColor(band: DaBand | null): string {
+  return band === 'DA' ? theme.accentGreen : band === 'Lean DA' ? theme.yellow : band === 'None DA' ? theme.loss : theme.textMuted;
+}
+function daBackground(band: DaBand | null): string {
+  return band === 'DA' ? 'rgba(5,150,105,0.10)' : band === 'Lean DA' ? 'rgba(234,179,8,0.12)' : band === 'None DA' ? 'rgba(220,38,38,0.08)' : theme.surfaceMuted;
+}
+/** None DA 0–15, Lean DA 16–24, DA 25+ — measured on the home–away gap (pp). */
+function daBandForGap(gap: number | null): DaBand | null {
+  if (gap == null) return null;
+  return gap < 16 ? 'None DA' : gap < 25 ? 'Lean DA' : 'DA';
 }
 export default function UnityFinderPanel() {
   const { width, height } = useWindowDimensions();
@@ -93,7 +111,7 @@ export default function UnityFinderPanel() {
   const [market, setMarket] = useState<GapMarket>('scored');
   const [venueFilter, setVenueFilter] = useState<DominanceVenue>('balanced');
   const [tierFilter, setTierFilter] = useState<'all' | (typeof TABLE_BANDS)[number]>('all');
-  const [daTierFilter, setDaTierFilter] = useState<'all' | RankTier>('all');
+  const [daTierFilter, setDaTierFilter] = useState<'all' | DaBand>('all');
   const [dominanceSideFilter, setDominanceSideFilter] = useState<'all' | 'Home' | 'Away' | 'Balanced'>('all');
 
   const leagueFeed = useAllGradingLeagues();
@@ -112,7 +130,9 @@ export default function UnityFinderPanel() {
       return {
         queryKey: ['home-away-game-gap', comp.id, comp.season] as const,
         queryFn: ({ signal }: { signal: AbortSignal }) => withGapFetchSlot(async () => {
-          const fixtures = await fetchAllFixturesBetween({ fromUnix, toUnix, competitions: String(comp.id), maxPages: 6 }, signal);
+          // Pull the whole season: a large page size plus a high page cap so even
+          // a 20–24 team league (380–552 matches) loads in full, not the first 6 pages.
+          const fixtures = await fetchAllFixturesBetween({ fromUnix, toUnix, competitions: String(comp.id), perPage: 250, maxPages: 12 }, signal);
           return fixtures;
         }),
         staleTime: clientStaleTime('stats/season'),
@@ -149,7 +169,7 @@ export default function UnityFinderPanel() {
         const standing = t.teamId == null ? undefined : standingById.get(t.teamId);
         const tableBand: TeamGapRow['tableBand'] = standing?.zone === 'top' ? 'Top' : standing?.zone === 'mid' ? 'Middle' : standing?.zone === 'bottom' ? 'Bottom' : null;
         const index = dominanceIndex(market, t.home, t.away, venueFilter);
-        return { ...t, competition, index, dominant: dominantVenue(market, t.home, t.away), leaguePosition: standing?.rank ?? null, tableBand, rankTier: tierForScore(index), gapRankInLeague: null as number | null, gapRankTotal: 0, statRankInLeague: null as number | null, statRankTotal: 0, worldRank: null as number | null };
+        return { ...t, competition, index, dominant: dominantVenue(market, t.home, t.away), leaguePosition: standing?.rank ?? null, tableBand, played: standing?.played ?? null, won: standing?.won ?? null, drawn: standing?.drawn ?? null, lost: standing?.lost ?? null, goalsFor: standing?.goalsFor ?? null, goalsAgainst: standing?.goalsAgainst ?? null, goalDiff: standing?.goalDiff ?? null, points: standing?.points ?? null, daBand: index == null ? null : daBandForGap(t.gap), gapRankInLeague: null as number | null, gapRankTotal: 0, statRankInLeague: null as number | null, statRankTotal: 0, worldRank: null as number | null };
       });
       const rankableByGap = baseTeams.filter((t) => t.index != null && t.gap != null).sort((a, b) => (b.gap ?? -1) - (a.gap ?? -1) || a.team.localeCompare(b.team));
       rankableByGap.forEach((t, rank) => { t.gapRankInLeague = rank + 1; t.gapRankTotal = rankableByGap.length; });
@@ -157,7 +177,9 @@ export default function UnityFinderPanel() {
       rankableByStat.forEach((t, rank) => { t.statRankInLeague = rank + 1; t.statRankTotal = rankableByStat.length; });
       const teams = baseTeams;
       allTeams.push(...teams);
-      const qualified = teams.filter((t) => t.index != null);
+      // League rankings only summarize teams with an official table row, so leagues
+      // OddAlerts has no standings for don't rank across leagues.
+      const qualified = teams.filter((t) => t.index != null && t.leaguePosition != null);
       if (!qualified.length) return;
       const combine = (key: 'home' | 'away' | 'overall'): GapRate => {
         const games = qualified.reduce((s, t) => s + t[key].games, 0); const hits = qualified.reduce((s, t) => s + t[key].hits, 0);
@@ -166,18 +188,21 @@ export default function UnityFinderPanel() {
       const home = combine('home'); const away = combine('away');
       const overall = combine('overall');
       const index = dominanceIndex(market, home, away, venueFilter);
-      leagueRows.push({ competition, home, away, overall, gap: home.percent == null || away.percent == null ? null : Math.abs(home.percent - away.percent), index, dominant: dominantVenue(market, home, away), rankTier: tierForScore(index) });
+      const leagueGap = home.percent == null || away.percent == null ? null : Math.abs(home.percent - away.percent);
+      leagueRows.push({ competition, home, away, overall, gap: leagueGap, index, dominant: dominantVenue(market, home, away), daBand: index == null ? null : daBandForGap(leagueGap) });
     });
     const calculated = new Set(leagueRows.map((row) => row.competition));
     for (const league of leagues) {
       const competition = `${league.name} · ${league.country}`;
-      if (!calculated.has(competition)) leagueRows.push({ competition, home: null, away: null, overall: null, gap: null, index: null, dominant: null, rankTier: null });
+      if (!calculated.has(competition)) leagueRows.push({ competition, home: null, away: null, overall: null, gap: null, index: null, dominant: null, daBand: null });
     }
     const teamOrder = (a: TeamGapRow, b: TeamGapRow) => (b.index ?? -1) - (a.index ?? -1) || b.overall.games - a.overall.games || a.team.localeCompare(b.team);
     const leagueOrder = (a: LeagueGapRow, b: LeagueGapRow) => (b.index ?? -1) - (a.index ?? -1) || (b.overall?.games ?? 0) - (a.overall?.games ?? 0) || a.competition.localeCompare(b.competition);
     const sortedLeagues = leagueRows.sort(leagueOrder);
     const globallyRanked = allTeams.sort(teamOrder);
-    globallyRanked.filter((t) => t.index != null).slice(0, TEAM_LIMIT).forEach((t, rank) => { t.worldRank = rank + 1; });
+    // The cross-league World ranking requires an official table row, so teams from
+    // leagues without standings are left out of "Teams amongst leagues".
+    globallyRanked.filter((t) => t.index != null && t.leaguePosition != null).slice(0, TEAM_LIMIT).forEach((t, rank) => { t.worldRank = rank + 1; });
     return {
       leagues: sortedLeagues,
       teams: globallyRanked,
@@ -189,7 +214,7 @@ export default function UnityFinderPanel() {
   const allLeagues = comparisons.leagues;
   const mergedLeagues = useMemo(() => comparisons.leagues.filter((row) => {
     if (q && !row.competition.toLowerCase().includes(q)) return false;
-    if (daTierFilter !== 'all' && row.rankTier !== daTierFilter) return false;
+    if (daTierFilter !== 'all' && row.daBand !== daTierFilter) return false;
     if (dominanceSideFilter !== 'all' && row.dominant !== dominanceSideFilter) return false;
     return true;
   }), [comparisons, q, daTierFilter, dominanceSideFilter]);
@@ -198,7 +223,7 @@ export default function UnityFinderPanel() {
     if (leagueFilter !== 'all') rows = rows.filter((r) => r.competition === leagueFilter);
     if (view === 'allTeams') rows = rows.filter((r) => r.worldRank != null);
     if (tierFilter !== 'all') rows = rows.filter((r) => r.tableBand === tierFilter);
-    if (daTierFilter !== 'all') rows = rows.filter((r) => r.rankTier === daTierFilter);
+    if (daTierFilter !== 'all') rows = rows.filter((r) => r.daBand === daTierFilter);
     if (q) rows = rows.filter((r) => r.team.toLowerCase().includes(q) || r.competition.toLowerCase().includes(q));
     if (dominanceSideFilter !== 'all') rows = rows.filter((r) => r.dominant === dominanceSideFilter);
     return rows.sort((a, b) => (b.index ?? -1) - (a.index ?? -1) || b.overall.games - a.overall.games || a.team.localeCompare(b.team)).slice(0, TEAM_LIMIT);
@@ -264,8 +289,8 @@ export default function UnityFinderPanel() {
           <View style={styles.filterCard}>
             <Text style={styles.topListNote}>Search leagues</Text>
             <TextInput value={query} onChangeText={setQuery} placeholder="Search league or country…" placeholderTextColor={theme.textFaint} style={styles.search} />
-            <Text style={styles.topListNote}>DA tier · Top 60–100 · Middle 40–59 · Bottom 0–39</Text>
-            <View style={styles.choiceRow}>{(['all', ...TABLE_BANDS] as const).map((tier) => <Pressable key={tier} onPress={() => setDaTierFilter(tier)} style={[styles.choice, daTierFilter === tier && { borderColor: tier === 'all' ? theme.accentGreen : tierColor(tier), backgroundColor: tier === 'all' ? 'rgba(5,150,105,0.08)' : tierBackground(tier) }]}><Text style={[styles.choiceText, daTierFilter === tier && { color: tier === 'all' ? theme.accentGreen : tierColor(tier) }]}>{tier === 'all' ? 'All DA tiers' : tier}</Text></Pressable>)}</View>
+            <Text style={styles.topListNote}>DA · None DA 0–15 · Lean DA 16–24 · DA 25+ gap (pp)</Text>
+            <View style={styles.choiceRow}>{(['all', ...DA_BANDS] as const).map((band) => <Pressable key={band} onPress={() => setDaTierFilter(band)} style={[styles.choice, daTierFilter === band && { borderColor: band === 'all' ? theme.accentGreen : daColor(band), backgroundColor: band === 'all' ? 'rgba(5,150,105,0.08)' : daBackground(band) }]}><Text style={[styles.choiceText, daTierFilter === band && { color: band === 'all' ? theme.accentGreen : daColor(band) }]}>{band === 'all' ? 'All DA' : band}</Text></Pressable>)}</View>
             <Text style={styles.topListNote}>Dominant venue</Text>
             <View style={styles.choiceRow}>{(['all', 'Home', 'Away', 'Balanced'] as const).map((side) => <Pressable key={side} onPress={() => setDominanceSideFilter(side)} style={[styles.choice, dominanceSideFilter === side && styles.choiceOn]}><Text style={[styles.choiceText, dominanceSideFilter === side && styles.choiceTextOn]}>{side === 'all' ? 'All venues' : side}</Text></Pressable>)}</View>
           </View>
@@ -275,23 +300,23 @@ export default function UnityFinderPanel() {
               <View style={[styles.row, styles.headRow]}>
                 <Text style={[styles.cRank, styles.headText, styles.right]}>DA #</Text>
                 <Text style={[styles.cLeague, styles.headText]}>League</Text>
-                <Text style={[styles.cNum, styles.headText]}>DA tier</Text>
+                <Text style={[styles.cNum, styles.headText]}>DA</Text>
                 <Text style={[styles.cNum, styles.headText, styles.right]}>Home hits/games</Text><Text style={[styles.cNum, styles.headText, styles.right]}>Home %</Text>
                 <Text style={[styles.cNum, styles.headText, styles.right]}>Away hits/games</Text><Text style={[styles.cNum, styles.headText, styles.right]}>Away %</Text>
                 <Text style={[styles.cNum, styles.headText, styles.right]}>Overall hits/games</Text><Text style={[styles.cNum, styles.headText, styles.right]}>Overall %</Text>
-                <Text style={[styles.cNum, styles.headText, styles.right]}>Gap (pp)</Text><Text style={[styles.cNum, styles.headText]}>Dominant venue</Text><Text style={[styles.cNum, styles.headText, styles.right]}>DA</Text>
+                <Text style={[styles.cNum, styles.headText, styles.right]}>Gap (pp)</Text><Text style={[styles.cNum, styles.headText]}>Dominant venue</Text><Text style={[styles.cNum, styles.headText, styles.right]}>DA score</Text>
               </View>
-              {(['Top', 'Middle', 'Bottom', null] as const).map((tier) => {
-                const group = visibleLeagues.filter((row) => row.rankTier === tier);
+              {([...DA_BANDS, null] as const).map((band) => {
+                const group = visibleLeagues.filter((row) => row.daBand === band);
                 if (!group.length) return null;
-                return <View key={tier ?? 'unranked-leagues'}>
-                  <View style={[styles.sectionRow, { backgroundColor: tierBackground(tier) }]}><Text style={[styles.sectionTitle, { color: tierColor(tier) }]}>{tier ? `${tier} DA · ${tier === 'Top' ? '60–100' : tier === 'Middle' ? '40–59' : '0–39'}` : 'Not ranked · sample unavailable'}</Text></View>
+                return <View key={band ?? 'unranked-leagues'}>
+                  <View style={[styles.sectionRow, { backgroundColor: daBackground(band) }]}><Text style={[styles.sectionTitle, { color: daColor(band) }]}>{band ? `${band} · ${band === 'DA' ? '25+' : band === 'Lean DA' ? '16–24' : '0–15'} gap` : 'Not ranked · sample unavailable'}</Text></View>
                   {group.map((l) => {
                     const rank = comparisons.leagues.findIndex((row) => row.competition === l.competition) + 1;
-                    return <Pressable key={l.competition} accessibilityRole="button" accessibilityLabel={`View ${l.competition} team home and away gaps`} onPress={() => { setLeagueFilter(l.competition); setQuery(''); setView('teams'); setPage(1); }} style={({ pressed }) => [styles.row, { backgroundColor: tierBackground(tier) }, pressed && styles.rowPressed]}>
+                    return <Pressable key={l.competition} accessibilityRole="button" accessibilityLabel={`View ${l.competition} team home and away gaps`} onPress={() => { setLeagueFilter(l.competition); setQuery(''); setView('teams'); setPage(1); }} style={({ pressed }) => [styles.row, { backgroundColor: daBackground(band) }, pressed && styles.rowPressed]}>
                       <Text style={[styles.cRank, styles.numDa]}>{l.index == null ? '—' : `#${rank}`}</Text>
                       <Text style={[styles.cLeague, styles.league]} numberOfLines={1}>{l.competition}</Text>
-                      <Text style={[styles.cNum, styles.numStrong, { color: tierColor(tier) }]}>{tier ?? '—'}</Text>
+                      <Text style={[styles.cNum, styles.numStrong, { color: daColor(band) }]}>{band ?? '—'}</Text>
                       <Text style={[styles.cNum, styles.num]}>{rateDetail(l.home)}</Text><Text style={[styles.cNum, styles.num]}>{rateText(l.home)}</Text>
                       <Text style={[styles.cNum, styles.num]}>{rateDetail(l.away)}</Text><Text style={[styles.cNum, styles.num]}>{rateText(l.away)}</Text>
                       <Text style={[styles.cNum, styles.num]}>{rateDetail(l.overall)}</Text><Text style={[styles.cNum, styles.num]}>{rateText(l.overall)}</Text>
@@ -310,47 +335,63 @@ export default function UnityFinderPanel() {
         <>
           <View style={styles.filterCard}>
             <FilterDropdown label="League" value={leagueFilter} options={leagueOptions} onChange={setLeagueFilter} style={narrow ? styles.full : styles.flex} />
-            <View><Text style={styles.topListNote}>DA tier · Top 60–100 · Middle 40–59 · Bottom 0–39</Text><View style={styles.choiceRow}>{(['all', ...TABLE_BANDS] as const).map((tier) => <Pressable key={tier} onPress={() => setDaTierFilter(tier)} style={[styles.choice, daTierFilter === tier && { borderColor: tier === 'all' ? theme.accentGreen : tierColor(tier), backgroundColor: tier === 'all' ? 'rgba(5,150,105,0.08)' : tierBackground(tier) }]}><Text style={[styles.choiceText, daTierFilter === tier && { color: tier === 'all' ? theme.accentGreen : tierColor(tier) }]}>{tier === 'all' ? 'All DA tiers' : tier}</Text></Pressable>)}</View></View>
-            <View><Text style={styles.topListNote}>Official league table third</Text><View style={styles.choiceRow}>{(['all', ...TABLE_BANDS] as const).map((band) => <Pressable key={band} onPress={() => setTierFilter(band)} style={[styles.choice, tierFilter === band && styles.choiceOn]}><Text style={[styles.choiceText, tierFilter === band && styles.choiceTextOn]}>{band === 'all' ? 'All thirds' : band}</Text></Pressable>)}</View></View>
+            <View><Text style={styles.topListNote}>DA · None DA 0–15 · Lean DA 16–24 · DA 25+ gap (pp)</Text><View style={styles.choiceRow}>{(['all', ...DA_BANDS] as const).map((band) => <Pressable key={band} onPress={() => setDaTierFilter(band)} style={[styles.choice, daTierFilter === band && styles.choiceOn]}><Text style={[styles.choiceText, daTierFilter === band && styles.choiceTextOn]}>{band === 'all' ? 'All DA' : band}</Text></Pressable>)}</View></View>
+            <View><Text style={styles.topListNote}>Official league table third</Text><View style={styles.choiceRow}>{(['all', ...TABLE_BANDS] as const).map((band) => <Pressable key={band} onPress={() => setTierFilter(band)} style={[styles.choice, tierFilter === band && { borderColor: band === 'all' ? theme.accentGreen : tierColor(band), backgroundColor: band === 'all' ? 'rgba(5,150,105,0.08)' : tierBackground(band) }]}><Text style={[styles.choiceText, tierFilter === band && { color: band === 'all' ? theme.accentGreen : tierColor(band) }]}>{band === 'all' ? 'All thirds' : band}</Text></Pressable>)}</View></View>
             <View><Text style={styles.topListNote}>Dominant venue</Text><View style={styles.choiceRow}>{(['all', 'Home', 'Away', 'Balanced'] as const).map((side) => <Pressable key={side} onPress={() => setDominanceSideFilter(side)} style={[styles.choice, dominanceSideFilter === side && styles.choiceOn]}><Text style={[styles.choiceText, dominanceSideFilter === side && styles.choiceTextOn]}>{side === 'all' ? 'All venues' : side}</Text></Pressable>)}</View></View>
-            <Text style={styles.topListNote}>{view === 'allTeams' ? `Top ${TEAM_LIMIT} eligible teams across leagues, ranked by DA; World # stays fixed when filters narrow the list.` : 'Teams in the selected league, ranked by DA.'} A rank needs 8+ total games, including 4+ home and 4+ away. Official table position is shown separately from DA tier.</Text>
+            <Text style={styles.topListNote}>{view === 'allTeams' ? `Top ${TEAM_LIMIT} eligible teams across leagues, ranked by DA; World # stays fixed when filters narrow the list.` : 'Teams in the selected league, ranked by DA.'} A rank needs 8+ total games, including 4+ home and 4+ away. The cross-league World # additionally needs an official league table, so leagues without standings don't appear in Teams amongst leagues. DA (None DA / Lean DA / DA) comes from the home–away gap and is shown separately from the official table position.</Text>
             <TextInput value={query} onChangeText={setQuery} placeholder="Search team or league…" placeholderTextColor={theme.textFaint} style={styles.search} />
           </View>
           {leagueFilter !== 'all' ? <Text style={styles.selectedLeagueTitle}>{leagueFilter} · team home/away figures</Text> : null}
-          <View style={styles.statusRow}><Text style={styles.statusMuted}>{teamRows.filter((r) => r.index != null).length} ranked of {teamRows.length} teams shown · grouped Top, Middle, Bottom by DA</Text></View>
+          <View style={styles.statusRow}><Text style={styles.statusMuted}>{teamRows.filter((r) => r.index != null).length} ranked of {teamRows.length} teams shown · grouped Top, Middle, Bottom by official league table</Text></View>
           {teamRows.length === 0 ? <Text style={styles.empty}>{loading ? `Team results are loading · ${settled}/${leagues.length} leagues checked.` : 'No teams match this selection.'}</Text> : <>
             <PageControls page={safe} pages={pages} total={teamRows.length} from={start + 1} to={start + visibleTeams.length} onChange={setPage} />
             <DragScroll horizontal style={styles.scroll} contentContainerStyle={styles.scrollContent}>
-              <View style={[styles.table, { minWidth: 1900 }]}>
+              <View style={[styles.table, { minWidth: 2320 }]}>
                 <View style={[styles.row, styles.headRow]}>
                   <Text style={[styles.cRank, styles.headText, styles.right]}>DA #</Text>
                   <Text style={[styles.cTeam, styles.headText]}>Team</Text>
                   <Text style={[styles.cLeagueT, styles.headText]}>League</Text>
                   <Text style={[styles.cNum, styles.headText, styles.right]}>League pos</Text>
-                  <Text style={[styles.cNum, styles.headText]}>DA tier</Text>
+                  <Text style={[styles.cNum, styles.headText]}>DA</Text>
                   <Text style={[styles.cNum, styles.headText]}>Table third</Text>
+                  <Text style={[styles.cStat, styles.headText, styles.right]}>P</Text>
+                  <Text style={[styles.cStat, styles.headText, styles.right]}>W</Text>
+                  <Text style={[styles.cStat, styles.headText, styles.right]}>D</Text>
+                  <Text style={[styles.cStat, styles.headText, styles.right]}>L</Text>
+                  <Text style={[styles.cStat, styles.headText, styles.right]}>GF</Text>
+                  <Text style={[styles.cStat, styles.headText, styles.right]}>GA</Text>
+                  <Text style={[styles.cStat, styles.headText, styles.right]}>GD</Text>
+                  <Text style={[styles.cStat, styles.headText, styles.right]}>Pts</Text>
                   <Text style={[styles.cNum, styles.headText, styles.right]}>Gap rank (L)</Text>
                   <Text style={[styles.cNum, styles.headText, styles.right]}>Stat rank (L)</Text>
                   <Text style={[styles.cNum, styles.headText, styles.right]}>World #</Text>
                   <Text style={[styles.cNum, styles.headText, styles.right]}>Home hits/games</Text><Text style={[styles.cNum, styles.headText, styles.right]}>Home %</Text>
                   <Text style={[styles.cNum, styles.headText, styles.right]}>Away hits/games</Text><Text style={[styles.cNum, styles.headText, styles.right]}>Away %</Text>
                   <Text style={[styles.cNum, styles.headText, styles.right]}>Overall hits/games</Text><Text style={[styles.cNum, styles.headText, styles.right]}>Overall %</Text>
-                  <Text style={[styles.cNum, styles.headText, styles.right]}>Gap (pp)</Text><Text style={[styles.cNum, styles.headText]}>Dominant venue</Text><Text style={[styles.cNum, styles.headText, styles.right]}>DA</Text>
+                  <Text style={[styles.cNum, styles.headText, styles.right]}>Gap (pp)</Text><Text style={[styles.cNum, styles.headText]}>Dominant venue</Text><Text style={[styles.cNum, styles.headText, styles.right]}>DA score</Text>
                 </View>
                 {(['Top', 'Middle', 'Bottom', null] as const).map((band) => {
-                  const groupRows = visibleTeams.filter((r) => r.rankTier === band);
+                  const groupRows = visibleTeams.filter((r) => r.tableBand === band);
                   if (!groupRows.length) return null;
                   return <View key={band ?? 'no-table-position'}>
-                    <View style={[styles.sectionRow, { backgroundColor: tierBackground(band) }]}><Text style={[styles.sectionTitle, { color: tierColor(band) }]}>{band ? `${band} DA · ${band === 'Top' ? '60–100' : band === 'Middle' ? '40–59' : '0–39'}` : 'Not ranked · sample unavailable'}</Text></View>
+                    <View style={[styles.sectionRow, { backgroundColor: tierBackground(band) }]}><Text style={[styles.sectionTitle, { color: tierColor(band) }]}>{band ? `${band} of the league table` : 'No league table position'}</Text></View>
                     {groupRows.map((r) => {
                       const rank = teamRows.findIndex((row) => row.competition === r.competition && row.team === r.team) + 1;
-                      return <View key={`${r.competition}-${r.team}`} style={[styles.row, rank % 2 === 0 && styles.rowAlt, { backgroundColor: tierBackground(r.rankTier) }]}>
+                      return <View key={`${r.competition}-${r.team}`} style={[styles.row, rank % 2 === 0 && styles.rowAlt, { backgroundColor: tierBackground(r.tableBand) }]}>
                         <Text style={[styles.cRank, styles.numDa]}>{r.index == null ? '—' : rank}</Text>
                         <Text style={[styles.cTeam, styles.team]} numberOfLines={1}>{r.team}</Text>
                         <Text style={[styles.cLeagueT, styles.compText]} numberOfLines={1}>{r.competition}</Text>
                         <Text style={[styles.cNum, styles.num]}>{r.leaguePosition == null ? '—' : `#${r.leaguePosition}`}</Text>
-                        <Text style={[styles.cNum, styles.numStrong, { color: tierColor(r.rankTier) }]}>{r.rankTier ?? '—'}</Text>
-                        <Text style={[styles.cNum, styles.num]}>{r.tableBand ?? '—'}</Text>
+                        <Text style={[styles.cNum, styles.num]}>{r.daBand ?? '—'}</Text>
+                        <Text style={[styles.cNum, styles.numStrong, { color: tierColor(r.tableBand) }]}>{r.tableBand ?? '—'}</Text>
+                        <Text style={[styles.cStat, styles.num]}>{valueText(r.played)}</Text>
+                        <Text style={[styles.cStat, styles.num]}>{valueText(r.won)}</Text>
+                        <Text style={[styles.cStat, styles.num]}>{valueText(r.drawn)}</Text>
+                        <Text style={[styles.cStat, styles.num]}>{valueText(r.lost)}</Text>
+                        <Text style={[styles.cStat, styles.num]}>{valueText(r.goalsFor)}</Text>
+                        <Text style={[styles.cStat, styles.num]}>{valueText(r.goalsAgainst)}</Text>
+                        <Text style={[styles.cStat, styles.num]}>{r.goalDiff == null ? '—' : r.goalDiff > 0 ? `+${r.goalDiff}` : String(r.goalDiff)}</Text>
+                        <Text style={[styles.cStat, styles.numStrong]}>{valueText(r.points)}</Text>
                         <Text style={[styles.cNum, styles.num]}>{r.gapRankInLeague == null ? '—' : `#${r.gapRankInLeague}/${r.gapRankTotal}`}</Text>
                         <Text style={[styles.cNum, styles.num]}>{r.statRankInLeague == null ? '—' : `#${r.statRankInLeague}/${r.statRankTotal}`}</Text>
                         <Text style={[styles.cNum, styles.numStrong]}>{r.worldRank == null ? '—' : `#${r.worldRank}`}</Text>
@@ -378,21 +419,21 @@ export default function UnityFinderPanel() {
               <Text style={styles.helpSectionTitle}>The selected stat and period</Text>
               <Text style={styles.helpText}>Pick a result (such as Team scored, Win, Both teams scored, or Over 2.5 goals) and Full time, First half or Second half. The same definition is used for every league and team, so comparisons are like-for-like.</Text>
               <Text style={styles.helpSectionTitle}>Minimum games for a rank</Text>
-              <Text style={styles.helpText}>A team needs at least 8 counted matches overall, at least 4 at home and at least 4 away before it receives a DA ranking or league Gap rank. The table still shows its available counts and rates while it builds a sample.</Text>
+              <Text style={styles.helpText}>A team needs at least 8 counted matches overall — at least 4 at home and at least 4 away — before it receives a DA ranking or league Gap rank. Within a single selected league, teams rank on this sample alone. The cross-league World # and League rankings additionally need an official league table, so leagues OddAlerts has no standings for (many youth, reserve and lower-tier competitions) don't appear across leagues. The table still shows available counts and rates while a team builds its sample.</Text>
               <Text style={styles.helpSectionTitle}>Counts, percentages and Gap</Text>
               <Text style={styles.helpText}>“n” shows qualifying games / games counted. Overall combines a team’s home and away games. Gap (pp) is the absolute difference between Home % and Away %, in percentage points. The dominant venue says which side has the more favorable rate; Loss and Conceded are inverted for that comparison.</Text>
-              <Text style={styles.helpSectionTitle}>How DA is calculated</Text>
-              <Text style={styles.helpText}>For each team, take the selected result’s Home % and Away %, then average them equally: DA = (Home % + Away %) ÷ 2. The two venues count the same even if the team has played more games at one venue. For “Team loss” and “Team conceded,” lower is better, so those rates are reversed before the average. The score is from 0 to 100 and measures only the selected result.</Text>
-              <Text style={styles.helpSectionTitle}>Gap and DA tiers</Text>
-              <Text style={styles.helpText}>Gap = the absolute difference between Home % and Away %, shown in percentage points. A gap of 0–15 is None DA, 16–24 is Lean DA, and 25 or more is DA. Ranking tiers use the DA score: Top = 60–100, Middle = 40–59, Bottom = 0–39. The same score tiers group league rankings and teams; official league-table thirds are shown separately.</Text>
+              <Text style={styles.helpSectionTitle}>DA score (ranking order)</Text>
+              <Text style={styles.helpText}>For each team, take the selected result’s Home % and Away %, then average them equally: DA score = (Home % + Away %) ÷ 2. The two venues count the same even if the team has played more games at one venue. For “Team loss” and “Team conceded,” lower is better, so those rates are reversed before the average. The DA score runs 0–100 and sets the ranking order.</Text>
+              <Text style={styles.helpSectionTitle}>DA (from the Gap)</Text>
+              <Text style={styles.helpText}>Gap = the absolute difference between Home % and Away %, shown in percentage points. DA classifies that gap: 0–15 is None DA, 16–24 is Lean DA, and 25 or more is DA. The League rankings group and colour by DA; the team tables show DA as a plain column and group by the official league-table third instead.</Text>
               <Text style={styles.helpSectionTitle}>Dominance check filter</Text>
               <Text style={styles.helpText}>Balanced ranks by the equally weighted Home and Away rates. Home ranks by the Home rate only; Away ranks by the Away rate only. The 8 overall / 4 home / 4 away sample minimum still applies in every mode. Gap continues to show the home-away difference.</Text>
               <Text style={styles.helpSectionTitle}>League rankings</Text>
               <Text style={styles.helpText}>Compares individual league summaries. Select a league row to open its teams in S over L.</Text>
               <Text style={styles.helpSectionTitle}>Teams in one league</Text>
-              <Text style={styles.helpText}>Shows teams within one selected league, grouped by DA score tier (Top, Middle, Bottom). Filter by DA tier or by the separate official league-table third. Each team shows its official table position, Stat rank (L) for the selected dominance check, and Gap rank among eligible teams in that league.</Text>
+              <Text style={styles.helpText}>Shows teams within one selected league, grouped and coloured by the official league-table third (Top, Middle, Bottom of the standings). Filter by that third or by the separate DA (None DA / Lean DA / DA, from the gap). Each team shows its official table position and full standings stats — P (played), W, D, L, GF, GA, GD and Pts — alongside its DA, Stat rank (L) for the selected dominance check and Gap rank among eligible teams in that league.</Text>
               <Text style={styles.helpSectionTitle}>Teams amongst leagues · S over L</Text>
-              <Text style={styles.helpText}>Shows only the top {TEAM_LIMIT} teams worldwide across the selected league set, ranked by the current dominance check. All Top DA scores are grouped first, then Middle, then Bottom; each group is colored green, yellow and red. World # is their position in the full Top 200. Filtering by league or tier keeps that worldwide position visible. Each team also shows its position and stat/Gap rank within its own league.</Text>
+              <Text style={styles.helpText}>Shows only the top {TEAM_LIMIT} teams worldwide across the selected league set, ranked by the current dominance check. Rows are grouped and coloured by the official league-table third (Top green, Middle yellow, Bottom red); DA (None DA / Lean DA / DA) is a plain column. World # is their position in the full Top 200. Filtering by league or tier keeps that worldwide position visible. Each team also shows its position and stat/Gap rank within its own league.</Text>
               <Text style={styles.helpSectionTitle}>Data used</Text>
               <Text style={styles.helpText}>Only completed fixtures in the current season count. Half-time and second-half calculations exclude matches without a valid half-time score. A postponed, upcoming or live game does not count. Rates use only games with the scores needed for that stat.</Text>
             </ScrollView>
@@ -478,6 +519,7 @@ const styles = StyleSheet.create({
   cLeagueT: { width: 160, paddingHorizontal: 4 },
   cTeam: { flex: 1, minWidth: 140, paddingHorizontal: 4 },
   cNum: { width: 102, paddingHorizontal: 4 },
+  cStat: { width: 46, paddingHorizontal: 4 },
   muted: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted, textAlign: 'right' },
   league: { fontFamily: fonts.bodyMedium, fontSize: 13, color: theme.textPrimary },
   team: { fontFamily: fonts.bodyMedium, fontSize: 13, color: theme.textPrimary },

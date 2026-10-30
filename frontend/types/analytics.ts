@@ -108,6 +108,7 @@ export type OddsFusionRow = {
 
 export type AnalyticsTab =
   | 'overview'
+  | 'characters'
   | 'grading'
   | 'grading2'
   | 'grading3'

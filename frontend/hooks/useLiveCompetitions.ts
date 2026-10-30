@@ -5,6 +5,9 @@ import { oddAlertsKeys } from '@/services/oddAlertsKeys';
 import { clientStaleTime } from '@/services/oddAlertsCachePolicy';
 import { detectKind, fetchAllCompetitions, fetchUpcomingFixtures, type RawFixture } from '@/services/oddAlerts';
 
+/** Friendly competitions (e.g. "Club Friendlies") are not gradeable domestic leagues. */
+const FRIENDLY_RE = /friendl/i;
+
 export type LiveCompetition = {
   id: number;
   name: string;
@@ -103,7 +106,9 @@ export function useAllGradingLeagues(): { leagues: LiveCompetition[]; loading: b
   const leagues = useMemo<LiveCompetition[]>(() => {
     const out: LiveCompetition[] = [];
     for (const c of query.data ?? []) {
-      if (c.isCup || detectKind(c.name) !== 'club') continue;
+      // "Club Friendlies" matches /club/i so detectKind keeps it; drop friendlies
+      // explicitly — they are not gradeable domestic leagues.
+      if (c.isCup || detectKind(c.name) !== 'club' || FRIENDLY_RE.test(`${c.type} ${c.name}`)) continue;
       // Use the current season (or newest) for the stat window. The API's `played`
       // count is unreliable (often null even for major leagues), so it isn't gated
       // on here — a league with no finished results simply grades empty when picked.

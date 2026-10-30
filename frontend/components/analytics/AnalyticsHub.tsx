@@ -9,6 +9,7 @@ import BetSlipPanel from '@/components/analytics/BetSlipPanel';
 import HollywoodOddsPanel from '@/components/analytics/HollywoodOddsPanel';
 import OddsFusionPanel from '@/components/analytics/OddsFusionPanel';
 import OverviewPanel from '@/components/analytics/OverviewPanel';
+import StatsCharactersPanel from '@/components/analytics/StatsCharactersPanel';
 import PredictionsPanel from '@/components/analytics/PredictionsPanel';
 import SmartFinderPanel from '@/components/analytics/SmartFinderPanel';
 import StatsGradingPanel from '@/components/analytics/StatsGradingPanel';
@@ -54,6 +55,8 @@ function PanelForTab({
   switch (tab) {
     case 'overview':
       return <OverviewPanel />;
+    case 'characters':
+      return <StatsCharactersPanel />;
     case 'grading':
       return <StatsGradingPanel />;
     case 'grading2':

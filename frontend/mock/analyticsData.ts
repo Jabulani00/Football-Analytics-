@@ -17,6 +17,7 @@ import { sampleRowsForFamily } from '@/utils/statsTableAdapter';
 
 export const ANALYTICS_TABS: { id: AnalyticsTab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
+  { id: 'characters', label: 'Stats Characters' },
   { id: 'grading', label: 'Stats Grading' },
   { id: 'grading2', label: 'Stats Grading · Method 2' },
   { id: 'grading3', label: 'Stats Grading · Method 3' },
