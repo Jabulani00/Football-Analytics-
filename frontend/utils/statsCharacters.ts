@@ -3,10 +3,10 @@ import { theme } from '@/styles/theme';
 /**
  * Stats Characters model (from notes_transcription.txt).
  *
- * A team's "character" is read from two per-match rates:
- *   Sc   = % of its matches in which it SCORED      (scoring per match)
- *   Conc = % of its matches in which it CONCEDED    (conceding per match)
- * Each rate is graded ↑ (high) / (M) (middle) / ↓ (low), giving 9 possible
+ * A team's "character" is read from two per-match goal averages:
+ *   Sc   = goals SCORED per match    (goals-for average, not a percentage)
+ *   Conc = goals CONCEDED per match  (goals-against average, not a percentage)
+ * Each average is graded ↑ (high) / (M) (middle) / ↓ (low), giving 9 possible
  * characters — "the true character of a side". Page references below point at
  * the source notes.
  */
@@ -59,10 +59,15 @@ export function levelGlyph(level: CharLevel): string {
   return level === 'up' ? '↑' : level === 'down' ? '↓' : '(M)';
 }
 
-/** Method 1 fixed bands (Page 15): 60–100 = ↑, 40–59 = (M), 0–39 = ↓. */
-export function levelForPercentM1(pct: number | null): CharLevel | null {
-  if (pct == null) return null;
-  return pct >= 60 ? 'up' : pct >= 40 ? 'mid' : 'down';
+/**
+ * Method 1 fixed bands (Page 15) on goals per match: 1.50+ = ↑, 1.00–1.49 = (M),
+ * under 1.00 = ↓.
+ */
+export const M1_UP = 1.5;
+export const M1_MID = 1.0;
+export function levelForAvgM1(avg: number | null): CharLevel | null {
+  if (avg == null) return null;
+  return avg >= M1_UP ? 'up' : avg >= M1_MID ? 'mid' : 'down';
 }
 
 /**

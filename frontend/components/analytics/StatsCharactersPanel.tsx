@@ -8,10 +8,10 @@ import PageControls, { PAGE_SIZE } from '@/components/shared/PageControls';
 import { useAllGradingLeagues } from '@/hooks/useLiveCompetitions';
 import { fetchAllFixturesBetween, fetchAllUpcomingFixtures, seasonWindowUnix, type RawFixture } from '@/services/oddAlerts';
 import { clientStaleTime } from '@/services/oddAlertsCachePolicy';
-import { analyzeTeamGames, type GapPeriod, type GapRate } from '@/utils/gapAnalytics';
+import { analyzeTeamGoals, type GapPeriod, type GoalRate } from '@/utils/gapAnalytics';
 import {
   bttsBandBackground, bttsBandTint, bttsMix, characterByNumber, characterFor, colourBackground, colourTint, COLOUR_MEANINGS,
-  dominatorMix, levelForPercentM1, levelForRankM2, levelGlyph, MIN_GAMES_OVERALL, MIN_GAMES_PER_VENUE,
+  dominatorMix, levelForAvgM1, levelForRankM2, levelGlyph, M1_MID, M1_UP, MIN_GAMES_OVERALL, MIN_GAMES_PER_VENUE,
   STATS_CHARACTERS, STRATEGY_COLOUR, STRATEGY_INFO, strategyBackground, strategyFor,
   type BttsMix, type CharColour, type CharLevel, type CharMethod, type DominatorMix, type StatsCharacter, type StrategyLetter,
 } from '@/utils/statsCharacters';
@@ -51,8 +51,8 @@ const STRATEGY_LETTERS: StrategyLetter[] = ['A', 'B', 'C', 'D', 'E', 'F'];
 type TeamChar = {
   team: string;
   teamId: number | null;
-  scPercent: number | null;
-  concPercent: number | null;
+  scAvg: number | null;
+  concAvg: number | null;
   scLevel: CharLevel | null;
   concLevel: CharLevel | null;
   character: StatsCharacter | null;
@@ -77,11 +77,12 @@ type FixtureRow = {
 };
 
 const teamKey = (id: number | null, name: string) => (id == null ? `name:${name.trim().toLowerCase()}` : `id:${id}`);
-function rateForScope(rate: { home: GapRate; away: GapRate; overall: GapRate }, scope: Scope): GapRate {
+function goalForScope(rate: { home: GoalRate; away: GoalRate; overall: GoalRate }, scope: Scope): GoalRate {
   return scope === 'home' ? rate.home : scope === 'away' ? rate.away : rate.overall;
 }
-function pctText(pct: number | null): string { return pct == null ? '—' : `${pct.toFixed(0)}%`; }
-function marginText(m: number | null): string { return m == null ? '—' : m > 0 ? `+${m.toFixed(0)}` : m.toFixed(0); }
+/** Goals per match, e.g. 1.73 — no percent sign. */
+function avgText(avg: number | null): string { return avg == null ? '—' : avg.toFixed(2); }
+function marginText(m: number | null): string { return m == null ? '—' : m > 0 ? `+${m.toFixed(2)}` : m.toFixed(2); }
 
 /** Build a full fixture result row (characters, strategy, mixes, top dog) from a raw fixture. */
 function buildFixtureRow(f: RawFixture, charByKey: Map<string, TeamChar>): FixtureRow {
@@ -172,34 +173,32 @@ export default function StatsCharactersPanel() {
   /** Classify every team in the selected league into its character. */
   const teamChars = useMemo<TeamChar[]>(() => {
     if (!fixtures.length) return [];
-    const scored = analyzeTeamGames(fixtures, period, 'scored');
-    const conceded = analyzeTeamGames(fixtures, period, 'conceded');
-    const concByKey = new Map(conceded.map((t) => [teamKey(t.teamId, t.team), t]));
+    const goals = analyzeTeamGoals(fixtures, period);
 
-    const base = scored.map((s) => {
-      const c = concByKey.get(teamKey(s.teamId, s.team));
-      const scRate = rateForScope(s, scope);
-      const concRate = c ? rateForScope(c, scope) : { games: 0, hits: 0, percent: null };
-      const qualifies = s.overall.games >= MIN_GAMES_OVERALL
-        && s.home.games >= MIN_GAMES_PER_VENUE && s.away.games >= MIN_GAMES_PER_VENUE
-        && scRate.percent != null && concRate.percent != null;
+    const base = goals.map((g) => {
+      const venue = goalForScope(g, scope);
+      const scAvg = venue.avgFor;
+      const concAvg = venue.avgAgainst;
+      const qualifies = g.overall.games >= MIN_GAMES_OVERALL
+        && g.home.games >= MIN_GAMES_PER_VENUE && g.away.games >= MIN_GAMES_PER_VENUE
+        && scAvg != null && concAvg != null;
       return {
-        team: s.team, teamId: s.teamId,
-        scPercent: scRate.percent, concPercent: concRate.percent,
-        games: rateForScope(s, scope).games,
-        margin: scRate.percent != null && concRate.percent != null ? scRate.percent - concRate.percent : null,
+        team: g.team, teamId: g.teamId,
+        scAvg, concAvg,
+        games: venue.games,
+        margin: scAvg != null && concAvg != null ? scAvg - concAvg : null,
         qualifies,
       };
     });
 
-    // Method 2 bands relative to this league's spread.
-    const scSorted = base.filter((t) => t.qualifies).map((t) => t.scPercent!).sort((a, b) => b - a);
-    const concSorted = base.filter((t) => t.qualifies).map((t) => t.concPercent!).sort((a, b) => b - a);
+    // Method 2 bands relative to this league's spread of each average.
+    const scSorted = base.filter((t) => t.qualifies).map((t) => t.scAvg!).sort((a, b) => b - a);
+    const concSorted = base.filter((t) => t.qualifies).map((t) => t.concAvg!).sort((a, b) => b - a);
 
     return base.map((t) => {
       if (!t.qualifies) return { ...t, scLevel: null, concLevel: null, character: null };
-      const scLevel = method === 'method1' ? levelForPercentM1(t.scPercent) : levelForRankM2(t.scPercent, scSorted);
-      const concLevel = method === 'method1' ? levelForPercentM1(t.concPercent) : levelForRankM2(t.concPercent, concSorted);
+      const scLevel = method === 'method1' ? levelForAvgM1(t.scAvg) : levelForRankM2(t.scAvg, scSorted);
+      const concLevel = method === 'method1' ? levelForAvgM1(t.concAvg) : levelForRankM2(t.concAvg, concSorted);
       const character = scLevel && concLevel ? characterFor(scLevel, concLevel) : null;
       return { ...t, scLevel, concLevel, character };
     });
@@ -344,7 +343,7 @@ export default function StatsCharactersPanel() {
               </>
             )}
             <Text style={styles.topListNote}>
-              {method === 'method1' ? 'Method 1: Sc / Conc graded ↑ 60–100% · (M) 40–59% · ↓ 0–39%.' : 'Method 2: graded against this league — top third ↑, middle third (M), bottom third ↓.'} A character needs {MIN_GAMES_OVERALL}+ games overall, with {MIN_GAMES_PER_VENUE}+ home and {MIN_GAMES_PER_VENUE}+ away.
+              {method === 'method1' ? `Method 1: Sc / Conc graded on goals per match — ↑ ${M1_UP.toFixed(2)}+ · (M) ${M1_MID.toFixed(2)}–${(M1_UP - 0.01).toFixed(2)} · ↓ under ${M1_MID.toFixed(2)}.` : 'Method 2: graded against this league — top third ↑, middle third (M), bottom third ↓.'} A character needs {MIN_GAMES_OVERALL}+ games overall, with {MIN_GAMES_PER_VENUE}+ home and {MIN_GAMES_PER_VENUE}+ away.
             </Text>
           </View>
 
@@ -366,8 +365,8 @@ export default function StatsCharactersPanel() {
                   <View style={[styles.row, styles.headRow]}>
                     <Text style={[styles.cRank, styles.headText, styles.right]}>#</Text>
                     <Text style={[styles.cTeam, styles.headText]}>Team</Text>
-                    <Text style={[styles.cNum, styles.headText, styles.right]}>Sc %</Text>
-                    <Text style={[styles.cNum, styles.headText, styles.right]}>Conc %</Text>
+                    <Text style={[styles.cNum, styles.headText, styles.right]}>Sc /game</Text>
+                    <Text style={[styles.cNum, styles.headText, styles.right]}>Conc /game</Text>
                     <Text style={[styles.cNum, styles.headText, styles.right]}>Margin</Text>
                     <Text style={[styles.cNum, styles.headText, styles.right]}>Games</Text>
                     <Text style={[styles.cChar, styles.headText]}>Character</Text>
@@ -383,8 +382,8 @@ export default function StatsCharactersPanel() {
                         return <View key={teamKey(t.teamId, t.team)} style={[styles.row, { backgroundColor: colourBackground(colour) }]}>
                           <Text style={[styles.cRank, styles.numDa]}>{rank}</Text>
                           <Text style={[styles.cTeam, styles.team]} numberOfLines={1}>{t.team}</Text>
-                          <Text style={[styles.cNum, styles.num]}>{pctText(t.scPercent)}</Text>
-                          <Text style={[styles.cNum, styles.num]}>{pctText(t.concPercent)}</Text>
+                          <Text style={[styles.cNum, styles.num]}>{avgText(t.scAvg)}</Text>
+                          <Text style={[styles.cNum, styles.num]}>{avgText(t.concAvg)}</Text>
                           <Text style={[styles.cNum, styles.numStrong, { color: (t.margin ?? 0) >= 0 ? theme.accentGreen : theme.loss }]}>{marginText(t.margin)}</Text>
                           <Text style={[styles.cNum, styles.num]}>{t.games}</Text>
                           <View style={styles.cChar}><CharTag character={t.character} /></View>
@@ -395,7 +394,7 @@ export default function StatsCharactersPanel() {
                   })}
                 </View>
               </DragScroll>
-              <Text style={styles.hint}>Sorted by margin (Sc % − Conc %) within each colour. Margin is the difference between scoring and conceding — the dominator / goal-abundance read.</Text>
+              <Text style={styles.hint}>Sorted by margin (Sc − Conc per match) within each colour. Margin is the goal difference per game between scoring and conceding — the dominator / goal-abundance read.</Text>
             </>
           ) : null}
 
@@ -408,7 +407,7 @@ export default function StatsCharactersPanel() {
                   <FixtureCard key={f.id} f={f} lens={lens} expanded={expandedId === f.id} onToggle={() => setExpandedId((id) => (id === f.id ? null : f.id))} />
                 ))}
               </View>
-              <Text style={styles.hint}>Tap a fixture to open its calculated result. {lens === 'matching' ? 'Matching blends the two characters into a strategy letter (Page 3).' : lens === 'dominator' ? 'Dorminator mix grades a strong-vs-weak pairing by desirability (Page 7).' : 'BTTS mix grades the pairing 1–20, safes to riskies (Page 8).'} Top dog is the higher margin (Sc % − Conc %).</Text>
+              <Text style={styles.hint}>Tap a fixture to open its calculated result. {lens === 'matching' ? 'Matching blends the two characters into a strategy letter (Page 3).' : lens === 'dominator' ? 'Dorminator mix grades a strong-vs-weak pairing by desirability (Page 7).' : 'BTTS mix grades the pairing 1–20, safes to riskies (Page 8).'} Top dog is the higher margin (Sc − Conc per match).</Text>
             </>
           ) : null}
         </>
@@ -540,7 +539,7 @@ function CharacterDetail({ character, league, teams, fixtures, loading, fixtures
             {teams.map((t) => (
               <View key={teamKey(t.teamId, t.team)} style={styles.detailTeamRow}>
                 <Text style={styles.detailTeamName} numberOfLines={1}>{t.team}</Text>
-                <Text style={styles.detailTeamStat}>Sc {pctText(t.scPercent)} · Conc {pctText(t.concPercent)} · <Text style={{ color: (t.margin ?? 0) >= 0 ? theme.accentGreen : theme.loss, fontFamily: fonts.bodySemiBold }}>margin {marginText(t.margin)}</Text> · {t.games} games</Text>
+                <Text style={styles.detailTeamStat}>Sc {avgText(t.scAvg)} · Conc {avgText(t.concAvg)} /game · <Text style={{ color: (t.margin ?? 0) >= 0 ? theme.accentGreen : theme.loss, fontFamily: fonts.bodySemiBold }}>margin {marginText(t.margin)}</Text> · {t.games} games</Text>
               </View>
             ))}
           </View>}

@@ -88,6 +88,49 @@ export function analyzeTeamGames(fixtures: RawFixture[], period: GapPeriod, mark
   }).sort((a, b) => (b.gap ?? -1) - (a.gap ?? -1) || a.team.localeCompare(b.team));
 }
 
+export type GoalRate = { games: number; goalsFor: number; goalsAgainst: number; avgFor: number | null; avgAgainst: number | null };
+export type GoalTeamAnalysis = { team: string; teamId: number | null; home: GoalRate; away: GoalRate; overall: GoalRate };
+
+/**
+ * Per-match goal averages by team and venue for a scoring period — goals-for
+ * per game (scoring per match) and goals-against per game (conceding per match),
+ * not the share of matches a team scored/conceded in.
+ */
+export function analyzeTeamGoals(fixtures: RawFixture[], period: GapPeriod): GoalTeamAnalysis[] {
+  type Side = { games: number; gf: number; ga: number };
+  type Acc = { team: string; teamId: number | null; home: Side; away: Side };
+  const teams = new Map<string, Acc>();
+  const seen = new Set<number>();
+  const ensure = (id: number | null, name: string): Acc => {
+    const key = id == null ? `name:${name.trim().toLowerCase()}` : `id:${id}`;
+    let row = teams.get(key);
+    if (!row) { row = { team: name, teamId: id, home: { games: 0, gf: 0, ga: 0 }, away: { games: 0, gf: 0, ga: 0 } }; teams.set(key, row); }
+    return row;
+  };
+  for (const fixture of fixtures) {
+    if (seen.has(fixture.id) || !COMPLETED_STATUSES.has(String(fixture.status).toUpperCase()) || fixture.home_goals == null || fixture.away_goals == null) continue;
+    let home = fixture.home_goals; let away = fixture.away_goals;
+    if (period !== 'fulltime') {
+      const ht = parseScorePair(fixture.ht_score);
+      if (!ht) continue; // Half averages use only games with a reliable HT score.
+      if (period === 'firsthalf') { home = ht.home; away = ht.away; }
+      else { home = Math.max(0, fixture.home_goals - ht.home); away = Math.max(0, fixture.away_goals - ht.away); }
+    }
+    seen.add(fixture.id);
+    const h = ensure(fixture.home_id, fixture.home_name); h.home.games++; h.home.gf += home; h.home.ga += away;
+    const a = ensure(fixture.away_id, fixture.away_name); a.away.games++; a.away.gf += away; a.away.ga += home;
+  }
+  const rate = (s: Side): GoalRate => ({
+    games: s.games, goalsFor: s.gf, goalsAgainst: s.ga,
+    avgFor: s.games ? s.gf / s.games : null, avgAgainst: s.games ? s.ga / s.games : null,
+  });
+  return [...teams.values()].map((t) => ({
+    team: t.team, teamId: t.teamId,
+    home: rate(t.home), away: rate(t.away),
+    overall: rate({ games: t.home.games + t.away.games, gf: t.home.gf + t.away.gf, ga: t.home.ga + t.away.ga }),
+  })).sort((a, b) => a.team.localeCompare(b.team));
+}
+
 /** Count completed league fixtures for every team's home and away side. */
 export function countTeamHomeAwayGames(fixtures: RawFixture[]): TeamGameCount[] {
   const teams = new Map<string, TeamGameCount>();
