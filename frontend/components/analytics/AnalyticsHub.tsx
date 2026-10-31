@@ -19,7 +19,7 @@ import OmitTestPanel from '@/components/analytics/OmitTestPanel';
 import DominanceCheckerPanel from '@/components/analytics/DominanceCheckerPanel';
 import OppositeStatsAnalysisPanel from '@/components/analytics/OppositeStatsAnalysisPanel';
 import UnityFinderPanel from '@/components/analytics/UnityFinderPanel';
-import QuerySkeletonPanel from '@/components/analytics/QuerySkeletonPanel';
+import StrategyBuilderPanel from '@/components/analytics/StrategyBuilderPanel';
 import FootyStatsPanel from '@/components/analytics/FootyStatsPanel';
 import StatsTablesPanel from '@/components/analytics/StatsTablesPanel';
 import StrategiesPanel from '@/components/analytics/StrategiesPanel';
@@ -72,7 +72,7 @@ function PanelForTab({
     case 'unity':
       return <UnityFinderPanel />;
     case 'skeleton':
-      return <QuerySkeletonPanel />;
+      return <StrategyBuilderPanel />;
     case 'tables':
       return <StatsTablesPanel showCatalogue={showTableCatalogue} />;
     case 'additional':
