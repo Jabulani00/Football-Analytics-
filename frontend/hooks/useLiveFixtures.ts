@@ -32,6 +32,14 @@ type State = {
   lastUpdated: number | null;
 };
 
+/**
+ * Stable empty fallback. Returning a fresh `[]` while the query is pending gives
+ * `fixtures` a new identity every render, which cascades through consumers'
+ * memos (e.g. LiveScoresFeed → groupByCompetition → a setCompetitions effect)
+ * into an update loop. One shared reference keeps it referentially stable.
+ */
+const EMPTY_FIXTURES: Fixture[] = [];
+
 const LIVE_POLL_MS = 25_000;
 
 async function loadFixtures(
@@ -125,7 +133,7 @@ export function useLiveFixtures(
   }, [query]);
 
   return {
-    fixtures: query.data ?? [],
+    fixtures: query.data ?? EMPTY_FIXTURES,
     loading: query.isPending || query.isPlaceholderData,
     refreshing: refreshing && query.isFetching,
     error: query.error instanceof Error ? query.error.message : query.error ? 'Failed to load fixtures' : null,
