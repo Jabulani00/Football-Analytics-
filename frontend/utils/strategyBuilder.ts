@@ -25,6 +25,7 @@ import {
   GAP_MARKETS, analyzeTeamGames, analyzeTeamGoals,
   type GapMarket, type GapPeriod, type GoalTeamAnalysis,
 } from '@/utils/gapAnalytics';
+import { SERIES_DEFS } from '@/utils/fixtureSeries';
 import {
   STATS_CHARACTERS, characterFor, levelForAvgM1, levelForRankM2,
   levelGlyph, MIN_GAMES_OVERALL, MIN_GAMES_PER_VENUE, type CharColour, type CharLevel,
@@ -86,6 +87,12 @@ export type Dimension = {
   periods: StrategyPeriod[];
   /** Feature list for the chosen period (includes an "All" entry where it applies). */
   methods: (period: StrategyPeriod) => MethodOpt[];
+  /**
+   * Feature list when it depends on the chosen options (e.g. the Stat filter's
+   * family drives which stats are offered). When present the panel uses this
+   * instead of `methods`, and resets the method if the option changes it away.
+   */
+  methodsFor?: (period: StrategyPeriod, options: Record<string, string>) => MethodOpt[];
   /** Extra selectors (method, direction, grade, band…) beyond the feature. */
   options?: OptionDef[];
   /** Teams that QUALIFY for this condition, with their exact reading. */
@@ -456,9 +463,157 @@ const gap: Dimension = {
   },
 };
 
+/* ----------------------------------------------------------------- 8 · Stat filter (every family / all 81 tables) */
+
+type StatKind = 'pct' | 'avg' | 'run';
+type StatItem = { key: string; label: string; kind: StatKind };
+type StatFamilyDef = { value: string; label: string; prefix: string; windowed: boolean; items: StatItem[] };
+
+/** Ordinary season stats (the % + per-match averages). The five timing stats the
+ *  feed can't derive (handicap / early / late goals) are left out — they are null. */
+const ORD_FILTER: StatItem[] = [
+  { key: 'sc_pct', label: 'Scored %', kind: 'pct' }, { key: 'conc_pct', label: 'Conceded %', kind: 'pct' },
+  { key: 'sc_avg', label: 'Goals for / game', kind: 'avg' }, { key: 'conc_avg', label: 'Goals against / game', kind: 'avg' },
+  { key: 'avg_goals', label: 'Total goals / game', kind: 'avg' },
+  { key: 'btts_yes', label: 'BTTS Yes %', kind: 'pct' }, { key: 'btts_no', label: 'BTTS No %', kind: 'pct' },
+  { key: 'cs_pct', label: 'Clean sheet %', kind: 'pct' }, { key: 'fts_pct', label: 'Failed to score %', kind: 'pct' },
+  { key: 'w_pct', label: 'Win %', kind: 'pct' }, { key: 'd_pct', label: 'Draw %', kind: 'pct' }, { key: 'l_pct', label: 'Loss %', kind: 'pct' },
+  { key: 'over05', label: 'Over 0.5 %', kind: 'pct' }, { key: 'over15', label: 'Over 1.5 %', kind: 'pct' },
+  { key: 'over25', label: 'Over 2.5 %', kind: 'pct' }, { key: 'over35', label: 'Over 3.5 %', kind: 'pct' }, { key: 'over45', label: 'Over 4.5 %', kind: 'pct' },
+  { key: 'under05', label: 'Under 0.5 %', kind: 'pct' }, { key: 'under15', label: 'Under 1.5 %', kind: 'pct' },
+  { key: 'under25', label: 'Under 2.5 %', kind: 'pct' }, { key: 'under35', label: 'Under 3.5 %', kind: 'pct' }, { key: 'under45', label: 'Under 4.5 %', kind: 'pct' },
+  { key: 'scoring_05', label: 'Scoring 0.5+ %', kind: 'pct' }, { key: 'scoring_15', label: 'Scoring 1.5+ %', kind: 'pct' }, { key: 'scoring_25', label: 'Scoring 2.5+ %', kind: 'pct' },
+  { key: 'conceding_05', label: 'Conceding 0.5+ %', kind: 'pct' }, { key: 'conceding_15', label: 'Conceding 1.5+ %', kind: 'pct' }, { key: 'conceding_25', label: 'Conceding 2.5+ %', kind: 'pct' },
+  { key: 'scored_first', label: 'Scored first %', kind: 'pct' }, { key: 'conceded_first', label: 'Conceded first %', kind: 'pct' },
+];
+
+/** The 29 series (current consecutive-run lengths), reusing the catalogue defs. */
+const SERIES_FILTER: StatItem[] = SERIES_DEFS.map((d) => ({ key: d.key, label: d.label, kind: 'run' as const }));
+
+/** Full-time-only outcome patterns. Percentages, plus two situational point averages. */
+const FT_ONLY_FILTER: StatItem[] = [
+  { key: 'btts_both_halves', label: 'BTTS both halves %', kind: 'pct' }, { key: 'scored_both_halves', label: 'Scored both halves %', kind: 'pct' },
+  { key: 'btts_over25', label: 'BTTS & Over 2.5 %', kind: 'pct' }, { key: 'conceded_both_halves', label: 'Conceded both halves %', kind: 'pct' },
+  { key: 'won_both_halves', label: 'Won both halves %', kind: 'pct' }, { key: 'win_to_nil', label: 'Win to nil %', kind: 'pct' }, { key: 'lost_to_nil', label: 'Lost to nil %', kind: 'pct' },
+  { key: 'led_ht', label: 'Led at half-time %', kind: 'pct' },
+  { key: 'rescued_points', label: 'Rescued points / game (trailing HT)', kind: 'avg' }, { key: 'blown_points', label: 'Blown points / game (leading HT)', kind: 'avg' },
+  { key: 'htft_ww', label: 'HT/FT Win→Win %', kind: 'pct' }, { key: 'htft_wd', label: 'HT/FT Win→Draw %', kind: 'pct' }, { key: 'htft_wl', label: 'HT/FT Win→Lose %', kind: 'pct' },
+  { key: 'htft_dw', label: 'HT/FT Draw→Win %', kind: 'pct' }, { key: 'htft_dd', label: 'HT/FT Draw→Draw %', kind: 'pct' }, { key: 'htft_dl', label: 'HT/FT Draw→Lose %', kind: 'pct' },
+  { key: 'htft_lw', label: 'HT/FT Lose→Win %', kind: 'pct' }, { key: 'htft_ld', label: 'HT/FT Lose→Draw %', kind: 'pct' }, { key: 'htft_ll', label: 'HT/FT Lose→Lose %', kind: 'pct' },
+];
+
+/** Points-per-game family, including PPG against each table third. */
+const PPG_FILTER: StatItem[] = [
+  { key: 'ppg', label: 'Points per game', kind: 'avg' },
+  { key: 'ppg_vs_green', label: 'PPG vs top (green) third', kind: 'avg' },
+  { key: 'ppg_vs_yellow', label: 'PPG vs middle (yellow) third', kind: 'avg' },
+  { key: 'ppg_vs_red', label: 'PPG vs bottom (red) third', kind: 'avg' },
+];
+
+const STAT_FAMILIES: StatFamilyDef[] = [
+  { value: 'ordinary', label: 'Ordinary', prefix: 'ordinary', windowed: true, items: ORD_FILTER },
+  { value: 'series', label: 'Series run', prefix: 'series', windowed: false, items: SERIES_FILTER },
+  { value: 'ftonly', label: 'FT-only patterns', prefix: 'ft_only', windowed: true, items: FT_ONLY_FILTER },
+  { value: 'ppg', label: 'Points per game', prefix: 'ppg', windowed: true, items: PPG_FILTER },
+];
+function statFamily(value: string | undefined): StatFamilyDef {
+  return STAT_FAMILIES.find((f) => f.value === value) ?? STAT_FAMILIES[0];
+}
+
+const STAT_WINDOWS: MethodOpt[] = [
+  { value: 'season', label: 'All games (season)' },
+  { value: 'last10', label: 'Last 10' }, { value: 'last8', label: 'Last 8' },
+  { value: 'last6', label: 'Last 6' }, { value: 'last5', label: 'Last 5' },
+];
+const STAT_LEVELS: MethodOpt[] = [
+  { value: ALL, label: 'Any level' },
+  { value: 'strong', label: 'Strong' }, { value: 'middle', label: 'Middle' }, { value: 'low', label: 'Low' },
+];
+
+/**
+ * Stat filter — the unifying dimension. It reads ANY stat column from ANY of the
+ * 81 live tables (Ordinary / Series / FT-only / PPG × FT·HT·2H × Overall·Home·Away,
+ * plus the Last-10/8/6/5 windows) that statsBuilder already produced, so every
+ * metric the app computes is selectable here without adding a single new
+ * calculation. Series run on their own season tables; Last-N windows apply to the
+ * other families. Percentage stats band green/yellow/red via the shared
+ * directionOf; run lengths band by streak; raw averages carry their value.
+ */
+const statFilter: Dimension = {
+  id: 'statfilter',
+  label: 'Stat filter · all tables',
+  source: 'export',
+  periods: ['overall', 'home', 'away', 'firsthalf', 'secondhalf'],
+  methods: () => STAT_FAMILIES[0].items.map((i) => ({ value: i.key, label: i.label })),
+  methodsFor: (_p, opts) => statFamily(opts.family).items.map((i) => ({ value: i.key, label: i.label })),
+  options: [
+    { key: 'family', label: 'Family', options: STAT_FAMILIES.map((f) => ({ value: f.value, label: f.label })), default: 'ordinary' },
+    { key: 'window', label: 'Window', options: STAT_WINDOWS, default: 'season' },
+    { key: 'level', label: 'Level', options: STAT_LEVELS, default: ALL },
+  ],
+  evaluate: (b, sel) => {
+    const stats = b.stats;
+    if (!stats) return [];
+    const fam = statFamily(sel.options.family);
+    const item = fam.items.find((i) => i.key === sel.methodId);
+    if (!item) return [];
+    const loc = exportLoc(sel.period);
+    const window = sel.options.window ?? 'season';
+    const usesWindow = fam.windowed && window !== 'season';
+    const prefix = usesWindow ? window : fam.prefix;
+    const rows = stats.tables[`${prefix}_${loc.periodKey}_${loc.scope}`] ?? [];
+    const level = sel.options.level ?? ALL;
+    const winLabel = STAT_WINDOWS.find((w) => w.value === window)?.label ?? '';
+    const windowPart = usesWindow ? ` · ${winLabel}` : '';
+    const levelLabel = STAT_LEVELS.find((l) => l.value === level)?.label ?? '';
+    const out: TeamEval[] = [];
+    for (const row of rows) {
+      const raw = row[item.key];
+      if (typeof raw !== 'number' || !Number.isFinite(raw)) continue;
+      let color: ResultColor;
+      let valueText: string;
+      let grade: string | null;
+      let qualifies: boolean;
+      if (item.kind === 'pct') {
+        const dir = directionOf(raw);
+        color = dir === 'up' ? 'green' : dir === 'mid' ? 'yellow' : 'red';
+        grade = dir.toUpperCase();
+        valueText = pctText(raw);
+        qualifies = level === ALL ? true : level === 'strong' ? dir === 'up' : level === 'middle' ? dir === 'mid' : dir === 'down';
+      } else if (item.kind === 'run') {
+        if (raw < 1) continue;
+        color = raw >= 4 ? 'green' : raw >= 2 ? 'yellow' : 'red';
+        grade = `${raw}×`;
+        valueText = `${raw} in a row`;
+        qualifies = level === ALL ? true : level === 'strong' ? raw >= 4 : level === 'middle' ? raw >= 2 && raw < 4 : raw >= 1;
+      } else {
+        // Raw averages carry no band; the Level selector doesn't apply.
+        color = 'none';
+        grade = null;
+        valueText = raw.toFixed(2);
+        qualifies = true;
+      }
+      if (!qualifies) continue;
+      const sampleRaw = row['sample_size'];
+      const sample = typeof sampleRaw === 'number' && Number.isFinite(sampleRaw) ? sampleRaw : null;
+      out.push({
+        teamId: numTeamId(row), team: String(row.team_name), competition: b.competition, qualifies: true,
+        value: raw, valueText, grade, color,
+        dimensionId: 'statfilter', dimensionLabel: 'Stat filter',
+        feature: `${fam.label} · ${item.label}`,
+        method: `${fam.label}${windowPart}${level !== ALL && item.kind !== 'avg' ? ` · ${levelLabel}` : ''}`,
+        period: sel.period,
+        reason: `${item.label}${windowPart}: ${valueText} (${periodLabel(sel.period)})`,
+        sample,
+      });
+    }
+    return out;
+  },
+};
+
 /* ----------------------------------------------------------------- registry */
 
-export const DIMENSIONS: Dimension[] = [statsCall, characters, grading1, grading2, dominance, opposite, gap];
+export const DIMENSIONS: Dimension[] = [statFilter, statsCall, characters, grading1, grading2, dominance, opposite, gap];
 export function getDimension(id: string): Dimension | undefined {
   return DIMENSIONS.find((d) => d.id === id);
 }
@@ -506,7 +661,8 @@ export type StrategyLogic = 'and' | 'or';
 export function conditionLabel(cond: Condition): string {
   const dim = getDimension(cond.dimensionId);
   if (!dim) return '—';
-  const method = dim.methods(cond.period).find((m) => m.value === cond.methodId)?.label ?? cond.methodId;
+  const methodList = dim.methodsFor ? dim.methodsFor(cond.period, cond.options) : dim.methods(cond.period);
+  const method = methodList.find((m) => m.value === cond.methodId)?.label ?? cond.methodId;
   const opts = (dim.options ?? [])
     .map((o) => o.options.find((x) => x.value === (cond.options[o.key] ?? o.default))?.label)
     .filter(Boolean);
@@ -514,10 +670,72 @@ export function conditionLabel(cond: Condition): string {
   return `${cond.not ? 'NOT · ' : ''}${periodPart}${dim.label} → ${method}${opts.length ? ` · ${opts.join(' · ')}` : ''}`;
 }
 
+/* ----------------------------------------------------------------- saved strategies */
+
+const MARKET_LABELS: Record<MarketModule, string> = { result: 'Result', goals: 'Goals', btts: 'BTTS' };
+
+/**
+ * The portable shape of a strategy — HOW teams/fixtures are pulled, never the
+ * teams or fixtures themselves. Saving this and replaying it recomputes
+ * everything live against the latest data.
+ */
+export type SavedStrategyConfig = {
+  conditions: Condition[];
+  logic: StrategyLogic;
+  resultMode: 'teams' | 'fixtures';
+  matchScope: MatchScope;
+  markets: MarketModule[];
+  minConf: number;
+  fxSort: 'best' | 'kickoff';
+};
+
+export type SavedStrategy = {
+  id: string;
+  name: string;
+  /** Auto-written from the chosen methods/terminology — see describeStrategy. */
+  description: string;
+  createdAt: string;
+  config: SavedStrategyConfig;
+};
+
+/**
+ * A plain-language description built from exactly what the user clicked — each
+ * condition in the app's own terminology, combined by the strategy's AND / OR
+ * logic, plus how it is viewed (teams, or fixtures with which markets / scope).
+ */
+export function describeStrategy(cfg: SavedStrategyConfig): string {
+  const conds = cfg.conditions.map((c) => conditionLabel(c));
+  const joiner = cfg.logic === 'and' ? ' AND ' : ' OR ';
+  const body = conds.length
+    ? `${cfg.logic.toUpperCase()} of ${conds.length}: ${conds.join(joiner)}`
+    : 'No conditions yet';
+  if (cfg.resultMode === 'fixtures') {
+    const markets = cfg.markets.length ? cfg.markets.map((m) => MARKET_LABELS[m]).join(' · ') : 'all markets';
+    const scope = MATCH_SCOPES.find((s) => s.value === cfg.matchScope)?.label ?? cfg.matchScope;
+    const conf = cfg.minConf > 0 ? ` · best pick ${cfg.minConf}%+` : '';
+    return `Fixtures · best / 2nd / 3rd bets (${markets}) · ${scope}${conf}. ${body}`;
+  }
+  return `Qualifying teams. ${body}`;
+}
+
+/** The parts of the panel's live state that make up a saved strategy. */
+export function buildStrategyConfig(s: SavedStrategyConfig): SavedStrategyConfig {
+  return {
+    conditions: s.conditions.map((c) => ({ ...c, options: { ...c.options } })),
+    logic: s.logic,
+    resultMode: s.resultMode,
+    matchScope: s.matchScope,
+    markets: [...s.markets],
+    minConf: s.minConf,
+    fxSort: s.fxSort,
+  };
+}
+
 /** A synthesised eval for a NOT condition a team matches by exclusion. */
 function notEval(cond: Condition, info: { team: string; teamId: number | null; competition: string }): TeamEval {
   const dim = getDimension(cond.dimensionId);
-  const method = dim?.methods(cond.period).find((m) => m.value === cond.methodId)?.label ?? cond.methodId;
+  const methodList = dim ? (dim.methodsFor ? dim.methodsFor(cond.period, cond.options) : dim.methods(cond.period)) : [];
+  const method = methodList.find((m) => m.value === cond.methodId)?.label ?? cond.methodId;
   return {
     teamId: info.teamId, team: info.team, competition: info.competition, qualifies: true,
     value: null, valueText: '—', grade: null, color: 'none',

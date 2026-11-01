@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import type { StyleProp, ViewStyle } from 'react-native';
 import { useQueries } from '@tanstack/react-query';
 
 import DragScroll from '@/components/shared/DragScroll';
@@ -8,17 +9,18 @@ import PageControls, { PAGE_SIZE } from '@/components/shared/PageControls';
 import RecommendationCard from '@/components/analytics/RecommendationCard';
 import { useLiveCompetitionFeed } from '@/hooks/useLiveCompetitions';
 import { useLiveFixtures } from '@/hooks/useLiveFixtures';
+import { useSavedBuilderStrategies } from '@/hooks/useSavedBuilderStrategies';
 import { fetchAllFixturesBetween, seasonWindowUnix, type Fixture } from '@/services/oddAlerts';
 import { clientStaleTime } from '@/services/oddAlertsCachePolicy';
 import { buildLeagueStatsLive } from '@/services/statsBuilder';
 import { MARKET_MODULES, type MarketModule, type RecCandidate, type RiskLevel } from '@/utils/fixtureRecommendation';
 import { nextFixtureFor, type UpcomingLite } from '@/utils/statsGrading';
 import {
-  DIMENSIONS, MATCH_SCOPES, conditionLabel, evaluateStrategy, filterResults, getDimension, needsExport,
-  needsFixtures, periodLabel, prepareLeague, recommendFixture, resultBackground, resultColour, resultsByTeam, summarize,
-  teamKeyOf,
-  type Condition, type FixtureRec, type LeagueBundle, type LeaguePrep, type MatchScope, type ResultColor,
-  type StrategyLogic, type StrategyPeriod, type StrategyResult,
+  DIMENSIONS, MATCH_SCOPES, buildStrategyConfig, conditionLabel, evaluateStrategy, filterResults, getDimension,
+  needsExport, needsFixtures, periodLabel, prepareLeague, recommendFixture, resultBackground, resultColour,
+  resultsByTeam, summarize, teamKeyOf,
+  type Condition, type Dimension, type FixtureRec, type LeagueBundle, type LeaguePrep, type MatchScope,
+  type ResultColor, type SavedStrategy, type StrategyLogic, type StrategyPeriod, type StrategyResult,
 } from '@/utils/strategyBuilder';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
@@ -30,6 +32,10 @@ function defaultOptions(dimensionId: string): Record<string, string> {
   const out: Record<string, string> = {};
   for (const o of dim?.options ?? []) out[o.key] = o.default;
   return out;
+}
+/** Feature list for a dimension, honouring an options-driven list when present. */
+function methodsOf(dim: Dimension, period: StrategyPeriod, options: Record<string, string>) {
+  return dim.methodsFor ? dim.methodsFor(period, options) : dim.methods(period);
 }
 function kickoffLabel(unix: number, fallback: string): string {
   if (!Number.isFinite(unix) || unix <= 0) return fallback;
@@ -60,6 +66,7 @@ const pct = (n: number) => `${Math.round(n * 100)}%`;
 export default function StrategyBuilderPanel() {
   const { width } = useWindowDimensions();
   const narrow = width < 720;
+  const wide = width >= 1024;
 
   const feed = useLiveCompetitionFeed(3);
   const liveLeagues = useMemo(() => feed.competitions.filter((c) => c.rank === 0), [feed.competitions]);
@@ -74,6 +81,12 @@ export default function StrategyBuilderPanel() {
   const [markets, setMarkets] = useState<MarketModule[]>([...MARKET_MODULES]);
   const [minConf, setMinConf] = useState(0);
   const [fxSort, setFxSort] = useState<'best' | 'kickoff'>('best');
+
+  // ---- saved strategies (the HOW only — recomputed live on load) ----
+  const { saved, save, remove } = useSavedBuilderStrategies();
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [draftName, setDraftName] = useState('');
 
   const wantExport = conditions.length > 0 && needsExport(conditions);
   const teamsNeedFixtures = conditions.length > 0 && needsFixtures(conditions);
@@ -220,20 +233,56 @@ export default function StrategyBuilderPanel() {
   }, [resultMode, fixtureRows, results]);
   const dimensionOptions = useMemo(() => [{ value: ALL, label: 'All categories' }, ...[...new Set(conditions.map((c) => c.dimensionId))].map((id) => ({ value: id, label: getDimension(id)?.label ?? id }))], [conditions]);
 
-  const addCondition = (c: Condition) => setConditions((cur) => [...cur, c]);
-  const removeCondition = (id: string) => setConditions((cur) => cur.filter((c) => c.id !== id));
-  const toggleNot = (id: string) => setConditions((cur) => cur.map((c) => (c.id === id ? { ...c, not: !c.not } : c)));
+  const addCondition = (c: Condition) => { setConditions((cur) => [...cur, c]); setActiveId(null); };
+  const removeCondition = (id: string) => { setConditions((cur) => cur.filter((c) => c.id !== id)); setActiveId(null); };
+  const toggleNot = (id: string) => { setConditions((cur) => cur.map((c) => (c.id === id ? { ...c, not: !c.not } : c))); setActiveId(null); };
   const toggleMarket = (m: MarketModule) => setMarkets((cur) => (cur.includes(m) ? cur.filter((x) => x !== m) : [...cur, m]));
-  const clearAll = () => { setConditions([]); setFLeague(ALL); setFDimension(ALL); setFColor(ALL); setFMinGames(0); };
+  const clearAll = () => { setConditions([]); setFLeague(ALL); setFDimension(ALL); setFColor(ALL); setFMinGames(0); setActiveId(null); };
+
+  // Save the current build (conditions + logic + view), never its results.
+  const commitSave = () => {
+    if (!conditions.length) return;
+    const entry = save(draftName, buildStrategyConfig({ conditions, logic, resultMode, matchScope, markets, minConf, fxSort }));
+    setActiveId(entry.id);
+    setDraftName('');
+    setSaving(false);
+  };
+  // Replay a saved strategy: restore the build and let the live engines recompute.
+  const loadStrategy = (s: SavedStrategy) => {
+    const cfg = s.config;
+    setConditions(cfg.conditions.map((c) => ({ ...c, id: `c${(CONDITION_SEQ += 1)}`, options: { ...c.options } })));
+    setLogic(cfg.logic);
+    setResultMode(cfg.resultMode);
+    setMatchScope(cfg.matchScope);
+    setMarkets([...cfg.markets]);
+    setMinConf(cfg.minConf);
+    setFxSort(cfg.fxSort);
+    setFLeague(ALL); setFDimension(ALL); setFColor(ALL); setFMinGames(0);
+    setActiveId(s.id);
+    setSaving(false);
+  };
+  const removeStrategy = (id: string) => { remove(id); setActiveId((cur) => (cur === id ? null : cur)); };
 
   const MARKET_LABEL: Record<MarketModule, string> = { result: 'Result', goals: 'Goals', btts: 'BTTS' };
 
+  const aside = (
+    <SavedStrategiesPanel
+      saved={saved}
+      activeId={activeId}
+      onLoad={loadStrategy}
+      onRemove={removeStrategy}
+      style={wide ? styles.asideWide : styles.asideStacked}
+    />
+  );
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.layout, wide && styles.layoutRow]}>
+      {!wide ? aside : null}
+      <View style={styles.main}>
       <View style={styles.header}>
         <Text style={styles.title}>Strategy Builder</Text>
         <Text style={styles.subtitle}>
-          Build a strategy from the analytics you already have. Combine conditions with AND / OR across every ongoing league. View it as the qualifying teams, or as fixtures — each fixture carrying its best, 2nd-best and 3rd-best betting recommendation.
+          Build a strategy from the analytics you already have. Combine conditions with AND / OR across every ongoing league. View it as the qualifying teams, or as fixtures — each fixture carrying its best, 2nd-best and 3rd-best betting recommendation. Save a build to re-run it live anytime.
         </Text>
       </View>
 
@@ -263,6 +312,9 @@ export default function StrategyBuilderPanel() {
                   <Text style={[styles.logicBtnText, logic === l && styles.logicBtnTextOn]}>{l.toUpperCase()}</Text>
                 </Pressable>
               ))}
+              <Pressable onPress={() => { setSaving((s) => !s); setDraftName(''); }} style={[styles.saveBtn, saving && styles.saveBtnOn]}>
+                <Text style={[styles.saveBtnText, saving && styles.saveBtnTextOn]}>{saving ? 'Cancel' : '★ Save'}</Text>
+              </Pressable>
               <Pressable onPress={clearAll} style={styles.clearBtn}><Text style={styles.clearBtnText}>Clear</Text></Pressable>
             </View>
           </View>
@@ -278,6 +330,23 @@ export default function StrategyBuilderPanel() {
               </View>
             ))}
           </View>
+          {saving ? (
+            <View style={styles.saveRow}>
+              <TextInput
+                value={draftName}
+                onChangeText={setDraftName}
+                placeholder="Name this strategy — e.g. Away goal suppressors"
+                placeholderTextColor={theme.textFaint}
+                style={styles.saveInput}
+                onSubmitEditing={commitSave}
+                returnKeyType="done"
+                autoFocus
+              />
+              <Pressable accessibilityRole="button" onPress={commitSave} style={({ pressed }) => [styles.saveConfirm, pressed && styles.addBtnPressed]}>
+                <Text style={styles.saveConfirmText}>Save strategy</Text>
+              </Pressable>
+            </View>
+          ) : null}
         </View>
       ) : (
         <Text style={styles.empty}>Add a condition above to build your strategy.</Text>
@@ -365,6 +434,8 @@ export default function StrategyBuilderPanel() {
           )}
         </>
       ) : null}
+      </View>
+      {wide ? aside : null}
     </View>
   );
 }
@@ -380,29 +451,40 @@ function SummaryTile({ label, value, color }: { label: string; value: number; co
 
 /** A. Progressive selection: category → period → method → options → Add. */
 function ConditionBuilder({ narrow, onAdd }: { narrow: boolean; onAdd: (c: Condition) => void }) {
-  const [dimId, setDimId] = useState(DIMENSIONS[1].id); // default: Stats Characters
-  const first = getDimension(DIMENSIONS[1].id)!;
+  const DEFAULT_DIM = DIMENSIONS[0].id; // Stat filter · all tables — the unified entry
+  const first = getDimension(DEFAULT_DIM)!;
+  const [dimId, setDimId] = useState(DEFAULT_DIM);
+  const [opts, setOpts] = useState<Record<string, string>>(defaultOptions(DEFAULT_DIM));
   const [period, setPeriod] = useState<StrategyPeriod>(first.periods[0]);
-  const [methodId, setMethodId] = useState<string>(first.methods(first.periods[0])[0]?.value ?? '');
-  const [opts, setOpts] = useState<Record<string, string>>(defaultOptions(DIMENSIONS[1].id));
+  const [methodId, setMethodId] = useState<string>(methodsOf(first, first.periods[0], defaultOptions(DEFAULT_DIM))[0]?.value ?? '');
   const dim = getDimension(dimId)!;
-  const methods = dim.methods(period);
+  const methods = methodsOf(dim, period, opts);
 
   // Reset downstream selections in the change handlers (never in an effect, to
   // avoid render-loop churn): a new category resets period/method/options; a new
-  // period keeps the method only if it is still offered.
+  // period or an option that drives the feature list keeps the method only if it
+  // is still offered.
   const changeDim = (v: string) => {
     const d = getDimension(v)!;
+    const o = defaultOptions(v);
     setDimId(v);
     setPeriod(d.periods[0]);
-    setMethodId(d.methods(d.periods[0])[0]?.value ?? '');
-    setOpts(defaultOptions(v));
+    setOpts(o);
+    setMethodId(methodsOf(d, d.periods[0], o)[0]?.value ?? '');
   };
   const changePeriod = (v: string) => {
     const p = v as StrategyPeriod;
     setPeriod(p);
-    const ms = dim.methods(p);
+    const ms = methodsOf(dim, p, opts);
     if (!ms.some((m) => m.value === methodId)) setMethodId(ms[0]?.value ?? '');
+  };
+  const changeOpt = (key: string, v: string) => {
+    const next = { ...opts, [key]: v };
+    setOpts(next);
+    if (dim.methodsFor) {
+      const ms = dim.methodsFor(period, next);
+      if (!ms.some((m) => m.value === methodId)) setMethodId(ms[0]?.value ?? '');
+    }
   };
 
   const add = () => onAdd({ id: `c${(CONDITION_SEQ += 1)}`, dimensionId: dimId, period, methodId, options: { ...opts } });
@@ -420,7 +502,7 @@ function ConditionBuilder({ narrow, onAdd }: { narrow: boolean; onAdd: (c: Condi
       {dim.options && dim.options.length > 0 ? (
         <View style={[styles.filterRow, narrow && styles.filterCol]}>
           {dim.options.map((o) => (
-            <FilterDropdown key={o.key} label={o.label} value={opts[o.key] ?? o.default} options={o.options} onChange={(v) => setOpts((cur) => ({ ...cur, [o.key]: v }))} style={narrow ? styles.full : styles.flex} />
+            <FilterDropdown key={o.key} label={o.label} value={opts[o.key] ?? o.default} options={o.options} onChange={(v) => changeOpt(o.key, v)} style={narrow ? styles.full : styles.flex} />
           ))}
         </View>
       ) : null}
@@ -566,8 +648,59 @@ function AltCell({ c }: { c?: RecCandidate }) {
   );
 }
 
+/** Side panel: the user's saved strategies. Each opens a build (not its results)
+ *  and the live engines recompute the latest qualifying teams / fixtures. */
+function SavedStrategiesPanel({ saved, activeId, onLoad, onRemove, style }: {
+  saved: SavedStrategy[];
+  activeId: string | null;
+  onLoad: (s: SavedStrategy) => void;
+  onRemove: (id: string) => void;
+  style?: StyleProp<ViewStyle>;
+}) {
+  return (
+    <View style={[styles.aside, style]}>
+      <View style={styles.asideHead}>
+        <Text style={styles.asideTitle}>★ Saved strategies</Text>
+        <View style={styles.asideCount}><Text style={styles.asideCountText}>{saved.length}</Text></View>
+      </View>
+      <Text style={styles.asideHint}>Only the build is saved — open one to recompute the latest teams & fixtures.</Text>
+      {saved.length === 0 ? (
+        <Text style={styles.asideEmpty}>No saved strategies yet. Build your conditions, then tap ★ Save to keep the recipe.</Text>
+      ) : (
+        <View style={styles.asideList}>
+          {saved.map((s) => {
+            const active = s.id === activeId;
+            return (
+              <View key={s.id} style={[styles.savedItem, active && styles.savedItemActive]}>
+                <Pressable accessibilityRole="button" accessibilityLabel={`Open ${s.name}`} onPress={() => onLoad(s)} style={styles.savedMain}>
+                  <View style={styles.savedNameRow}>
+                    <View style={[styles.savedDot, { backgroundColor: active ? theme.accentGreen : theme.accentPurple }]} />
+                    <Text style={styles.savedName} numberOfLines={1}>{s.name}</Text>
+                  </View>
+                  <Text style={styles.savedDesc} numberOfLines={4}>{s.description}</Text>
+                </Pressable>
+                <View style={styles.savedActions}>
+                  <Pressable accessibilityRole="button" onPress={() => onLoad(s)} style={[styles.savedLoad, active && styles.savedLoadOn]}>
+                    <Text style={[styles.savedLoadText, active && styles.savedLoadTextOn]}>{active ? '● Loaded' : 'Open'}</Text>
+                  </Pressable>
+                  <Pressable accessibilityRole="button" accessibilityLabel="Delete strategy" onPress={() => onRemove(s.id)} style={styles.savedDel}>
+                    <Text style={styles.savedDelText}>Delete</Text>
+                  </Pressable>
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      )}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { width: '100%', alignSelf: 'stretch' },
+  layout: { width: '100%', alignSelf: 'stretch', gap: spacing.md },
+  layoutRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.lg },
+  main: { flex: 1, minWidth: 0 },
   header: { marginBottom: spacing.md },
   title: { fontFamily: fonts.display, fontSize: 24, color: theme.textPrimary, marginBottom: spacing.xs },
   subtitle: { fontFamily: fonts.body, fontSize: 13, lineHeight: 20, color: theme.textMuted },
@@ -684,4 +817,40 @@ const styles = StyleSheet.create({
   matchedLine: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted },
   matchedSide: { fontFamily: fonts.bodySemiBold, color: theme.accentGreen },
   hint: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted, textAlign: 'center', marginTop: spacing.sm },
+
+  // Save control (in the conditions card)
+  saveBtn: { borderWidth: 1.5, borderColor: theme.accentPurple, borderRadius: 999, paddingHorizontal: spacing.md, paddingVertical: 5, backgroundColor: 'rgba(124,58,237,0.08)' },
+  saveBtnOn: { backgroundColor: 'rgba(124,58,237,0.16)' },
+  saveBtnText: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: theme.accentPurple },
+  saveBtnTextOn: { color: theme.accentPurple },
+  saveRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.xs, flexWrap: 'wrap' },
+  saveInput: { flexGrow: 1, flexBasis: 220, minWidth: 160, borderWidth: layout.borderWidth, borderColor: theme.borderStrong, borderRadius: layout.borderRadius, paddingHorizontal: spacing.sm, paddingVertical: 8, fontFamily: fonts.body, fontSize: 13, color: theme.textPrimary, backgroundColor: theme.surface },
+  saveConfirm: { borderRadius: 999, paddingHorizontal: spacing.lg, paddingVertical: 9, backgroundColor: theme.accentPurple },
+  saveConfirmText: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: '#FFFFFF' },
+
+  // Saved-strategies side panel
+  aside: { borderWidth: layout.borderWidth, borderColor: theme.border, borderRadius: layout.borderRadius, backgroundColor: theme.surface, padding: spacing.md, gap: spacing.sm },
+  asideWide: { width: 320, flexShrink: 0, position: 'sticky' as 'relative', top: spacing.md },
+  asideStacked: { width: '100%' },
+  asideHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+  asideTitle: { fontFamily: fonts.bodySemiBold, fontSize: 14, color: theme.accentPurple },
+  asideCount: { minWidth: 24, height: 22, paddingHorizontal: 7, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(124,58,237,0.12)' },
+  asideCountText: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: theme.accentPurple },
+  asideHint: { fontFamily: fonts.body, fontSize: 11, lineHeight: 16, color: theme.textMuted },
+  asideEmpty: { fontFamily: fonts.body, fontSize: 12, lineHeight: 18, color: theme.textFaint, paddingVertical: spacing.md, textAlign: 'center' },
+  asideList: { gap: spacing.sm },
+  savedItem: { borderWidth: layout.borderWidth, borderColor: theme.border, borderLeftWidth: 3, borderLeftColor: theme.accentPurple, borderRadius: layout.borderRadius, backgroundColor: theme.surfaceHover, padding: spacing.sm, gap: 6 },
+  savedItemActive: { borderColor: theme.accentGreen, borderLeftColor: theme.accentGreen, backgroundColor: 'rgba(5,150,105,0.06)' },
+  savedMain: { gap: 4 },
+  savedNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  savedDot: { width: 8, height: 8, borderRadius: 4 },
+  savedName: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: theme.textPrimary, flexShrink: 1 },
+  savedDesc: { fontFamily: fonts.body, fontSize: 11, lineHeight: 16, color: theme.textMuted },
+  savedActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginTop: 2 },
+  savedLoad: { flexGrow: 1, borderWidth: 1.5, borderColor: theme.accentBlue, borderRadius: 999, paddingVertical: 6, alignItems: 'center', backgroundColor: 'rgba(37,99,235,0.08)' },
+  savedLoadOn: { borderColor: theme.accentGreen, backgroundColor: 'rgba(5,150,105,0.10)' },
+  savedLoadText: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: theme.accentBlue },
+  savedLoadTextOn: { color: theme.accentGreen },
+  savedDel: { borderWidth: layout.borderWidth, borderColor: theme.border, borderRadius: 999, paddingHorizontal: spacing.md, paddingVertical: 6, backgroundColor: theme.surface },
+  savedDelText: { fontFamily: fonts.bodyMedium, fontSize: 11, color: theme.loss },
 });
