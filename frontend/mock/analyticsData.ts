@@ -17,14 +17,15 @@ import { sampleRowsForFamily } from '@/utils/statsTableAdapter';
 
 export const ANALYTICS_TABS: { id: AnalyticsTab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
+  { id: 'characters', label: 'Stats Characters' },
   { id: 'grading', label: 'Stats Grading' },
   { id: 'grading2', label: 'Stats Grading · Method 2' },
   { id: 'grading3', label: 'Stats Grading · Method 3' },
   { id: 'omit', label: 'Omit Test' },
   { id: 'dominance', label: 'Dominance Checker' },
   { id: 'opposite', label: 'Opposite Stats Analysis' },
-  { id: 'unity', label: 'DA Unity Finder' },
-  { id: 'skeleton', label: 'Query Skeleton' },
+  { id: 'unity', label: 'Gap Analytics' },
+  { id: 'skeleton', label: 'Strategy Builder' },
   { id: 'tables', label: 'Stats Tables' },
   { id: 'additional', label: 'Additional stats' },
   { id: 'footy', label: 'Footy Stats' },

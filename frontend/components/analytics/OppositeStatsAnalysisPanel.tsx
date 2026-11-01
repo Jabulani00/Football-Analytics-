@@ -129,7 +129,7 @@ export default function OppositeStatsAnalysisPanel() {
         <Text style={styles.title}>Opposite Stats Analysis</Text>
         <Text style={styles.subtitle}>
           Complementary pairs — SC% vs FTS% and Conc% vs CS% — per team. The difference falls in a DA
-          band: ≤ {SHORT_MAX}% short (balanced, no DA), {SHORT_MAX + 1}–{DA_MIN - 1}% borderline, ≥ {DA_MIN}% long
+          band: 0–{SHORT_MAX}% None DA, {SHORT_MAX + 1}–{DA_MIN - 1}% Lean DA, ≥ {DA_MIN}% DA
           (Double Agent). Unity above is the share of the league&apos;s teams that are DA on each pair. The
           trigger keeps teams that both score and concede (SC/m ≥ {TRIGGER_RATE} and Conc/m ≥ {TRIGGER_RATE}).
           Smallest difference first. Pick the scope to match the fixture&apos;s Home/Away side.
@@ -221,8 +221,8 @@ export default function OppositeStatsAnalysisPanel() {
               </View>
             </DragScroll>
             <Text style={styles.hint}>
-              Each pair shows both values, their difference, and the allocation: Short = balanced (no DA),
-              Border = in between ({SHORT_MAX + 1}–{DA_MIN - 1}%), Long = DA (≥ {DA_MIN}%). Confirm a DA against Home/Away before acting.
+              Each pair shows both values, their difference, and the allocation: None DA = 0–{SHORT_MAX}%,
+              Lean DA = {SHORT_MAX + 1}–{DA_MIN - 1}%, DA = {DA_MIN}% or more. Confirm a DA against Home/Away before acting.
             </Text>
           </>
         )
@@ -238,9 +238,9 @@ function PairCell({ p }: { p: OppositePair }) {
     : p.allocation === 'short' ? theme.accentGreen
     : theme.textMuted;
   const allocLabel =
-    p.allocation === 'long' ? 'Long · DA'
-    : p.allocation === 'borderline' ? 'Border · ~'
-    : p.allocation === 'short' ? 'Short · no DA'
+    p.allocation === 'long' ? 'DA'
+    : p.allocation === 'borderline' ? 'Lean DA'
+    : p.allocation === 'short' ? 'None DA'
     : '—';
   return (
     <View style={styles.cPair}>

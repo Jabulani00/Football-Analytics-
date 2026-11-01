@@ -2,8 +2,7 @@
  * Dominance Checker — Home/Away and 1st-Half/2nd-Half analysis.
  *
  * For every stat it compares two sides (Home vs Away, or 1st half vs 2nd half),
- * takes the difference, and calls the dominant side when the difference is
- * "long" (≥ 20%) — a short difference (≤ 15%) is treated as even, per the notes.
+ * takes the difference: 0–15 is None DA, 16–24 is Lean DA, and 25+ is DA.
  * Values are read from the live stat tables statsBuilder already produces; the
  * percentage difference is in points for % stats and relative for raw stats
  * (PPG, AVG goals).
@@ -11,11 +10,11 @@
  * Pure: no network, no React.
  */
 import type { TeamStatRow, TeamStatsExport } from '@/types/data';
+import { DA_MIN, NONE_DA_MAX, differenceDaBand } from '@/utils/daBands';
 
-/** ≥ this % difference = a long (dominant / DA) difference (per the DA bands). */
-export const LONG_DIFF = 25;
-/** ≤ this % difference = a short difference → even, no DA. 16–24 is the mid band. */
-export const EVEN_DIFF = 15;
+/** Compatibility names used by the existing UI. */
+export const LONG_DIFF = DA_MIN;
+export const EVEN_DIFF = NONE_DA_MAX;
 
 export type StatFamily = 'ordinary' | 'ppg';
 export type StatDef = { key: string; label: string; family: StatFamily; pctBased: boolean; decimals: number };
@@ -65,6 +64,13 @@ export type DominanceRow = {
   magnitude: DominanceMagnitude;
 };
 
+export type TeamHomeAwayValues = {
+  team: string;
+  teamId: number | null;
+  home: number | null;
+  away: number | null;
+};
+
 function numAt(row: TeamStatRow | undefined, key: string): number | null {
   if (!row) return null;
   const cell = row[key];
@@ -90,7 +96,8 @@ export function measureFor(a: number | null, b: number | null, pctBased: boolean
 
 export function classify(a: number | null, b: number | null, measure: number | null): { side: DominanceSide; magnitude: DominanceMagnitude } {
   if (a == null || b == null || measure == null) return { side: 'na', magnitude: 'na' };
-  const magnitude: DominanceMagnitude = measure >= LONG_DIFF ? 'long' : measure <= EVEN_DIFF ? 'short' : 'mid';
+  const band = differenceDaBand(measure);
+  const magnitude: DominanceMagnitude = band === 'da' ? 'long' : band === 'lean' ? 'mid' : band === 'none' ? 'short' : 'na';
   if (magnitude === 'short') return { side: 'even', magnitude };
   const side: DominanceSide = a > b ? 'a' : a < b ? 'b' : 'even';
   return { side, magnitude };
@@ -101,6 +108,31 @@ function dominanceRow(def: StatDef, a: number | null, b: number | null): Dominan
   const measure = measureFor(a, b, def.pctBased);
   const { side, magnitude } = classify(a, b, measure);
   return { statKey: def.key, statLabel: def.label, pctBased: def.pctBased, decimals: def.decimals, a, b, difference, measure, side, magnitude };
+}
+
+/** Read only the selected stat's full-time home and away values for each team. */
+export function homeAwayValuesForStat(stats: TeamStatsExport, statKey: string): TeamHomeAwayValues[] {
+  const def = DOMINANCE_STATS.find((item) => item.key === statKey);
+  if (!def) return [];
+  const rows = stats.tables['ordinary_ft_overall'] ?? [];
+  const sideValues = (scope: 'home' | 'away') => new Map<string, number | null>(
+    (stats.tables[`${def.family}_ft_${scope}`] ?? []).map((row) => [
+      teamKey(String(row.team_name)),
+      numAt(row, def.key),
+    ] as const),
+  );
+  const homeValues = sideValues('home');
+  const awayValues = sideValues('away');
+  return rows.map((row) => {
+    const team = String(row.team_name);
+    const teamId = numAt(row, 'team_id');
+    return {
+      team,
+      teamId,
+      home: homeValues.get(teamKey(team)) ?? null,
+      away: awayValues.get(teamKey(team)) ?? null,
+    };
+  });
 }
 
 /** Home vs Away, full time, for one team — a row per stat. */

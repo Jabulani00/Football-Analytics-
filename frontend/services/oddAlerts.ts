@@ -458,7 +458,7 @@ export async function fetchUpcomingForCompetitions(
  * Flashscore "Results" source. Optionally scope to one or more competitions.
  */
 export function fetchFixturesBetween(
-  opts: { fromUnix: number; toUnix: number; competitions?: string; teams?: string; page?: number; cache?: 'off' },
+  opts: { fromUnix: number; toUnix: number; competitions?: string; teams?: string; page?: number; perPage?: number; cache?: 'off' },
   signal?: AbortSignal,
 ): Promise<ApiEnvelope<RawFixture>> {
   return getJson<RawFixture>(
@@ -469,6 +469,7 @@ export function fetchFixturesBetween(
       competitions: opts.competitions,
       teams: opts.teams,
       page: opts.page,
+      per_page: opts.perPage,
       cache: opts.cache,
     },
     signal,
@@ -481,7 +482,7 @@ export function fetchFixturesBetween(
  * competitions — used for cross-competition form (e.g. cup fixtures).
  */
 export async function fetchAllFixturesBetween(
-  opts: { fromUnix: number; toUnix: number; competitions?: string; teams?: string; maxPages?: number; cache?: 'off' },
+  opts: { fromUnix: number; toUnix: number; competitions?: string; teams?: string; maxPages?: number; perPage?: number; cache?: 'off' },
   signal?: AbortSignal,
 ): Promise<RawFixture[]> {
   const maxPages = opts.maxPages ?? 3;

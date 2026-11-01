@@ -9,6 +9,7 @@ import BetSlipPanel from '@/components/analytics/BetSlipPanel';
 import HollywoodOddsPanel from '@/components/analytics/HollywoodOddsPanel';
 import OddsFusionPanel from '@/components/analytics/OddsFusionPanel';
 import OverviewPanel from '@/components/analytics/OverviewPanel';
+import StatsCharactersPanel from '@/components/analytics/StatsCharactersPanel';
 import PredictionsPanel from '@/components/analytics/PredictionsPanel';
 import SmartFinderPanel from '@/components/analytics/SmartFinderPanel';
 import StatsGradingPanel from '@/components/analytics/StatsGradingPanel';
@@ -18,7 +19,7 @@ import OmitTestPanel from '@/components/analytics/OmitTestPanel';
 import DominanceCheckerPanel from '@/components/analytics/DominanceCheckerPanel';
 import OppositeStatsAnalysisPanel from '@/components/analytics/OppositeStatsAnalysisPanel';
 import UnityFinderPanel from '@/components/analytics/UnityFinderPanel';
-import QuerySkeletonPanel from '@/components/analytics/QuerySkeletonPanel';
+import StrategyBuilderPanel from '@/components/analytics/StrategyBuilderPanel';
 import FootyStatsPanel from '@/components/analytics/FootyStatsPanel';
 import StatsTablesPanel from '@/components/analytics/StatsTablesPanel';
 import StrategiesPanel from '@/components/analytics/StrategiesPanel';
@@ -54,6 +55,8 @@ function PanelForTab({
   switch (tab) {
     case 'overview':
       return <OverviewPanel />;
+    case 'characters':
+      return <StatsCharactersPanel />;
     case 'grading':
       return <StatsGradingPanel />;
     case 'grading2':
@@ -69,7 +72,7 @@ function PanelForTab({
     case 'unity':
       return <UnityFinderPanel />;
     case 'skeleton':
-      return <QuerySkeletonPanel />;
+      return <StrategyBuilderPanel />;
     case 'tables':
       return <StatsTablesPanel showCatalogue={showTableCatalogue} />;
     case 'additional':

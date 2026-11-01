@@ -13,6 +13,7 @@ import { FT_ONLY_STATS, HALF_ONLY_STATS, PPG_STATS, SERIES_STATS, statOnMatches,
 import { SERIES_DEFS } from '@/utils/fixtureSeries';
 import { bandOf, BANDS, type Band } from '@/utils/leagueTables';
 import { DISPLAY_STATS } from '@/utils/statsTableAdapter';
+import { differenceDaBand, type DifferenceDaBand } from '@/utils/daBands';
 
 export const MIN_COLOUR_OPPONENT_MATCHES = 3;
 
@@ -355,7 +356,9 @@ export type ColourDifference = {
   difference: number | null;
   /** Colour with the larger figure. Null when a figure is missing or the two figures tie. */
   higher: Band | null;
-  /** Largest gap among the pairs that both have a figure. Ties share DA. */
+  /** DA band for this pair's displayed points or raw-stat relative difference. */
+  band: DifferenceDaBand;
+  /** True when this pair's difference is at least 25. */
   isDA: boolean;
 };
 
@@ -380,11 +383,13 @@ function roundGap(value: number, decimals: number): number {
 
 /**
  * Gaps between the three colour figures: Red–Green, Yellow–Green, Red–Yellow.
- * The largest gap is DA (Double Agent). Equal largest gaps are all DA.
+ * Each pair uses the shared DA thresholds. Percentage stats use point gaps;
+ * raw stats use relative percentage gaps, matching Home/Away dominance.
  */
 export function colourPairDifferences(
   rows: { colour: Band; value: number | null }[],
   decimals = 1,
+  pctBased = true,
 ): ColourDifference[] {
   const valueOf = (colour: Band) => rows.find((row) => row.colour === colour)?.value ?? null;
   const built: ColourDifference[] = COLOUR_PAIRS.map((pair) => {
@@ -395,21 +400,23 @@ export function colourPairDifferences(
     const higher = leftShown == null || rightShown == null || leftShown === rightShown
       ? null
       : leftShown > rightShown ? pair.left : pair.right;
+    const difference = left == null || right == null ? null : roundGap(Math.abs(left - right), decimals);
+    const measure = left == null || right == null
+      ? null
+      : pctBased
+        ? Math.abs(left - right)
+        : Math.abs(left) + Math.abs(right) === 0
+          ? 0
+          : Math.abs(left - right) / ((Math.abs(left) + Math.abs(right)) / 2) * 100;
+    const band = differenceDaBand(measure);
     return {
       ...pair,
-      difference: leftShown == null || rightShown == null ? null : roundGap(Math.abs(left - right), decimals),
+      difference,
       higher,
-      isDA: false,
+      band,
+      isDA: band === 'da',
     };
   });
-  let max: number | null = null;
-  for (const row of built) {
-    if (row.difference == null) continue;
-    if (max == null || row.difference > max) max = row.difference;
-  }
-  if (max != null) {
-    for (const row of built) row.isDA = row.difference === max;
-  }
   return built;
 }
 

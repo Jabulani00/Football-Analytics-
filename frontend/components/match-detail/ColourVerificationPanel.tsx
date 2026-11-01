@@ -86,7 +86,7 @@ export default function ColourVerificationPanel({
         The ranking is your own figure against the green, yellow and red tables.
         Strong numbers position 1 as your highest figure. Weak numbers position 1 as your smallest figure, then up to the highest.
         The read opens after 3 matches against the opponent’s colour in that split.
-        See difference compares Red with Green, Yellow with Green, and Red with Yellow. The largest gap is DA (Double Agent), read from the colours T1 and T2 sit on.
+        See difference compares Red with Green, Yellow with Green, and Red with Yellow. Each pair is None DA at 0–15, Lean DA at 16–24, and DA at 25+. Percent stats use point gaps; raw stats use relative gaps.
         Up is the higher figure in that pair and Down is the lower one, including when both figures are under 50%.
       </Text>
       <View style={styles.rules}>
@@ -494,9 +494,8 @@ function ColourDifferences({
   ownLabel: string;
   opponentLabel: string;
 }) {
-  const differences = colourPairDifferences(rows, colourDifferenceDecimals(stat));
+  const differences = colourPairDifferences(rows, colourDifferenceDecimals(stat), !stat.raw);
   const pair = colourPairBetween(differences, ownColour, opponentColour);
-  const daPairs = differences.filter((row) => row.isDA);
   const agents = pair?.isDA === true;
   const lean = colourDaLean(pair, opponentColour);
   return (
@@ -504,6 +503,7 @@ function ColourDifferences({
       <Text style={styles.ladderTitle}>Difference between colours</Text>
       {differences.map((row) => {
         const rowLean = row.isDA && row.key === pair?.key ? lean : null;
+        const badge = row.band === 'da' ? 'DA' : row.band === 'lean' ? 'Lean DA' : row.band === 'none' ? 'None DA' : '—';
         return (
           <View key={row.key} style={[styles.diffRow, row.isDA && styles.diffDA]}>
             <View style={styles.colourCell}>
@@ -517,7 +517,7 @@ function ColourDifferences({
               {row.difference == null ? '—' : formatColourStatValue(stat, row.difference)}
             </Text>
             <View style={styles.diffTags}>
-              {row.isDA ? <Text style={styles.diffBadgeOn}>DA</Text> : null}
+              <Text style={row.isDA ? styles.diffBadgeOn : styles.diffBadgeOff}>{badge}</Text>
               {rowLean ? <LeanTag lean={rowLean} /> : null}
             </View>
           </View>
@@ -529,7 +529,7 @@ function ColourDifferences({
           {lean ? <LeanTag lean={lean} /> : null}
         </View>
         <Text style={styles.daBody}>
-          {doubleAgentCopy(ownLabel, opponentLabel, ownColour, opponentColour, pair, daPairs, stat, lean)}
+          {doubleAgentCopy(ownLabel, opponentLabel, ownColour, opponentColour, pair, stat, lean)}
         </Text>
       </View>
     </View>
@@ -545,18 +545,12 @@ function LeanTag({ lean }: { lean: ColourDaLean }) {
   );
 }
 
-function pairGapLabel(row: ColourDifference, stat: ColourStat): string {
-  const gap = row.difference == null ? '—' : formatColourStatValue(stat, row.difference);
-  return `${colourWord(row.left)} vs ${colourWord(row.right)} (${gap})`;
-}
-
 function doubleAgentCopy(
   ownLabel: string,
   opponentLabel: string,
   ownColour: TableColour | null,
   opponentColour: TableColour | null,
   pair: ColourDifference | null,
-  daPairs: ColourDifference[],
   stat: ColourStat,
   lean: ColourDaLean | null,
 ): string {
@@ -578,13 +572,11 @@ function doubleAgentCopy(
       ? `This is Down. ${opponentLabel} is on ${colourWord(opponentColour)}, the lower figure.`
       : '';
   if (pair.isDA) {
-    const base = daPairs.length > 1
-      ? `${sides} are Double Agents. ${between} ties for the largest gap (${gap}).`
-      : `${sides} are Double Agents. ${between} is the largest gap (${gap}).`;
+    const base = `${sides} are Double Agents. ${between} has a DA gap of ${gap} (at least 25).`;
     return direction ? `${base} ${direction}` : base;
   }
-  const largest = daPairs.map((row) => pairGapLabel(row, stat)).join(', ');
-  const base = `${sides} differ by ${gap}. The Double Agent gap is ${largest || 'still open'}.`;
+  const status = pair.band === 'lean' ? 'Lean DA (16–24)' : pair.band === 'none' ? 'None DA (0–15)' : 'not classifiable';
+  const base = `${sides} differ by ${gap}. This pair is ${status}; DA starts at 25.`;
   return direction ? `${base} ${direction}` : base;
 }
 
@@ -858,6 +850,7 @@ const styles = StyleSheet.create({
   diffValue: { width: 72, fontFamily: fonts.display, fontSize: 16, color: theme.textPrimary, textAlign: 'right' },
   diffTags: { width: 78, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 4 },
   diffBadgeOn: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: theme.accentPurple },
+  diffBadgeOff: { fontFamily: fonts.bodySemiBold, fontSize: 11, color: theme.textMuted },
   leanTag: { borderRadius: 99, paddingHorizontal: 7, paddingVertical: 2 },
   leanTagUp: { backgroundColor: 'rgba(5, 150, 105, 0.16)' },
   leanTagDown: { backgroundColor: 'rgba(220, 38, 38, 0.14)' },

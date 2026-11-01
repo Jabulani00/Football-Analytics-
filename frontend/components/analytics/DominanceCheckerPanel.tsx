@@ -92,8 +92,8 @@ export default function DominanceCheckerPanel() {
         <Text style={styles.title}>Dominance Checker</Text>
         <Text style={styles.subtitle}>
           For one team, every stat compared Home vs Away and 1st half vs 2nd half. The dominant side
-          is called when the difference is long (≥ {LONG_DIFF}%); a short difference (≤ {EVEN_DIFF}%)
-          is even, {EVEN_DIFF + 1}–{LONG_DIFF - 1}% a lean. % stats compare by points, PPG and AVG by
+          is DA at {LONG_DIFF}% or more; 0–{EVEN_DIFF}% is None DA and {EVEN_DIFF + 1}–{LONG_DIFF - 1}% is Lean DA.
+          % stats compare by points, PPG and AVG by
           relative size. The Unity column is the share of the whole league&apos;s teams that are DA on
           that stat (difference ≥ {DA_MIN}%).
         </Text>

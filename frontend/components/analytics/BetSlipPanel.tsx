@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Platform, Pressable, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import SectionLabel from '@/components/shared/SectionLabel';
+import { useBetwayExport } from '@/hooks/useBetwayExport';
 import { useHollywoodExport } from '@/hooks/useHollywoodExport';
 import { buildBetSlipSummary } from '@/services/betSlipShare';
 import type { BetSlipLeg } from '@/types/analytics';
@@ -20,10 +21,14 @@ export default function BetSlipPanel({
   const [mode, setMode] = useState<'accumulator' | 'singles'>('accumulator');
   const [shareMessage, setShareMessage] = useState<string | null>(null);
   const { state: exportState, exportSlip } = useHollywoodExport();
+  const { state: betwayExportState, exportSlip: exportBetwaySlip } = useBetwayExport();
 
   // Only Hollywoodbets-sourced legs carry the metadata a booking code needs.
   const hbLegs = useMemo(() => legs.map((l) => l.hbLeg).filter((l): l is NonNullable<typeof l> => l != null), [legs]);
-  const canExport = mode === 'accumulator' && legs.length > 0 && hbLegs.length === legs.length;
+  const betwayLegs = useMemo(() => legs.map((l) => l.betwayLeg).filter((l): l is NonNullable<typeof l> => l != null), [legs]);
+  const mixedBookmakers = hbLegs.length > 0 && betwayLegs.length > 0;
+  const canExport = mode === 'accumulator' && hbLegs.length > 0;
+  const canExportBetway = mode === 'accumulator' && betwayLegs.length > 0;
 
   const combinedOdds = useMemo(
     () => legs.reduce((acc, leg) => acc * leg.odds, 1),
@@ -65,8 +70,9 @@ export default function BetSlipPanel({
     <View style={styles.container}>
       <Text style={styles.intro}>
         Selections added from Hollywoodbets, Odds Fusion, or qualified Strategies are saved on
-        this device. Review the slip, share a bookmaker-aware text summary, or generate a
-        Hollywoodbets booking code when every leg came from Hollywoodbets.
+        this device. Review the slip, share a bookmaker-aware text summary, or hand each
+        bookmaker its own compatible selections. Mixed-bookmaker accumulators are split because
+        neither bookmaker can accept the other bookmaker&apos;s selections.
       </Text>
 
       <View style={styles.slip}>
@@ -133,8 +139,15 @@ export default function BetSlipPanel({
         ) : null}
         {shareMessage ? <Text style={styles.shareMessage}>{shareMessage}</Text> : null}
 
+        {mixedBookmakers ? (
+          <Text style={styles.splitNotice}>
+            MIXED SLIP: one cross-bookmaker accumulator is impossible. The actions below split it
+            into a Hollywoodbets booking code and a separate verified Betway hand-off.
+          </Text>
+        ) : null}
+
         <Pressable
-          onPress={() => canExport && exportSlip(hbLegs)}
+          onPress={() => canExport && void exportSlip(hbLegs)}
           style={({ pressed, hovered }) => [
             styles.generateBtn,
             (pressed || (Platform.OS === 'web' && hovered)) && styles.generateBtnHover,
@@ -142,7 +155,9 @@ export default function BetSlipPanel({
           ]}
           disabled={!canExport || exportState.status === 'loading'}>
           <Text style={styles.generateText}>
-            {exportState.status === 'loading' ? 'GENERATING…' : 'EXPORT TO HOLLYWOODBETS'}
+            {exportState.status === 'loading'
+              ? 'GENERATING…'
+              : `EXPORT ${hbLegs.length} TO HOLLYWOODBETS`}
           </Text>
         </Pressable>
 
@@ -150,7 +165,7 @@ export default function BetSlipPanel({
           <Text style={styles.exportHint}>
             {mode === 'singles'
               ? 'Switch to Accumulator to generate one Hollywoodbets booking code.'
-              : 'Every leg must come from live Hollywoodbets odds to generate a booking code.'}
+              : 'Add at least one selection from live Hollywoodbets odds to generate a booking code.'}
           </Text>
         ) : null}
         {exportState.status === 'done' ? (
@@ -160,6 +175,39 @@ export default function BetSlipPanel({
         ) : null}
         {exportState.status === 'error' ? (
           <Text style={styles.exportErr}>{exportState.message}</Text>
+        ) : null}
+
+        <Pressable
+          onPress={() => canExportBetway && void exportBetwaySlip(betwayLegs)}
+          style={({ pressed, hovered }) => [
+            styles.betwayBtn,
+            (pressed || (Platform.OS === 'web' && hovered)) && styles.generateBtnHover,
+            (!canExportBetway || betwayExportState.status === 'loading') && styles.generateBtnDisabled,
+          ]}
+          disabled={!canExportBetway || betwayExportState.status === 'loading'}>
+          <Text style={styles.betwayText}>
+            {betwayExportState.status === 'loading'
+              ? 'VERIFYING LIVE PRICES…'
+              : `COPY ${betwayLegs.length} & OPEN IN BETWAY`}
+          </Text>
+        </Pressable>
+        {legs.length > 0 && !canExportBetway ? (
+          <Text style={styles.exportHint}>
+            {mode === 'singles'
+              ? 'Switch to Accumulator to prepare a Betway Multi Bet.'
+              : 'Add at least one selection from live Betway markets to prepare a Betway hand-off.'}
+          </Text>
+        ) : null}
+        {betwayExportState.status === 'done' ? (
+          <Text style={styles.exportOk}>
+            Verified Betway selections copied and Betway opened.
+            {betwayExportState.priceChanges > 0
+              ? ` ${betwayExportState.priceChanges} price change${betwayExportState.priceChanges === 1 ? '' : 's'} shown in the copied slip.`
+              : ''}
+          </Text>
+        ) : null}
+        {betwayExportState.status === 'error' ? (
+          <Text style={styles.exportErr}>{betwayExportState.message}</Text>
         ) : null}
       </View>
 
@@ -420,6 +468,35 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: theme.bg,
     letterSpacing: 1,
+  },
+  betwayBtn: {
+    marginTop: spacing.md,
+    backgroundColor: theme.accentBlue,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    borderRadius: layout.borderRadius,
+    width: '100%',
+    alignItems: 'center',
+    ...(Platform.OS === 'web' ? ({ cursor: 'pointer' } as object) : {}),
+  },
+  betwayText: {
+    fontFamily: fonts.display,
+    fontSize: 14,
+    color: theme.bg,
+    letterSpacing: 1,
+  },
+  splitNotice: {
+    marginTop: spacing.lg,
+    padding: spacing.sm,
+    width: '100%',
+    borderWidth: layout.borderWidth,
+    borderColor: theme.yellow,
+    borderRadius: layout.borderRadius,
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 11,
+    lineHeight: 17,
+    color: theme.yellow,
+    textAlign: 'center',
   },
   exportHint: {
     fontFamily: fonts.body,

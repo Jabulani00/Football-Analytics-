@@ -91,6 +91,8 @@ export type BetSlipLeg = {
    * as ShareLeg in services/hollywoodbets.ts.
    */
   hbLeg?: import('@/services/hollywoodbets').ShareLeg;
+  /** Exact Betway provider identifiers used to refresh this outcome before hand-off. */
+  betwayLeg?: import('@/services/betwayBetSlip').BetwaySlipLeg;
 };
 
 export type OddsFusionRow = {
@@ -106,6 +108,7 @@ export type OddsFusionRow = {
 
 export type AnalyticsTab =
   | 'overview'
+  | 'characters'
   | 'grading'
   | 'grading2'
   | 'grading3'
