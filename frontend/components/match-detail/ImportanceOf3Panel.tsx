@@ -29,6 +29,8 @@ type Props = {
   matches?: SeasonMatch[];
   schedule?: ImbangiScheduleMatch[];
   imbangiLoading?: boolean;
+  /** When set, only this call function is shown. */
+  section?: string | null;
 };
 
 type LedgerRow =
@@ -380,10 +382,20 @@ function PullScale({
   );
 }
 
-function PullBoard({ a, b }: { a: SingayeRead | null; b: SingayeRead | null }) {
-  const kinds = (['take_over', 'chaser', 'gebe_widening'] as const).filter(
-    (kind) => a?.pull?.kind === kind || b?.pull?.kind === kind,
-  );
+function PullBoard({
+  a,
+  b,
+  onlyKind,
+}: {
+  a: SingayeRead | null;
+  b: SingayeRead | null;
+  onlyKind?: PullFactorKind;
+}) {
+  const kinds = onlyKind
+    ? [onlyKind]
+    : (['take_over', 'chaser', 'gebe_widening'] as const).filter(
+        (kind) => a?.pull?.kind === kind || b?.pull?.kind === kind,
+      );
   const leftPoints = pullPoints(a);
   const rightPoints = pullPoints(b);
   return (
@@ -589,6 +601,25 @@ const RULES: { rule: string; line: string }[] = [
   { rule: 'Imbangi', line: 'ΔP ≤ 4 · A 10 · B 8 · C 6' },
 ];
 
+function ledgerSection(rows: LedgerRow[], title: string): LedgerRow[] {
+  const start = rows.findIndex((row) => row.kind === 'section' && row.label === title);
+  if (start < 0) return [];
+  const out: LedgerRow[] = [];
+  for (let index = start; index < rows.length; index += 1) {
+    const row = rows[index];
+    if (index > start && row.kind === 'section') break;
+    out.push(row);
+  }
+  return out;
+}
+
+function pullKind(section: string): PullFactorKind | null {
+  if (section === 'pull_take_over') return 'take_over';
+  if (section === 'pull_chaser') return 'chaser';
+  if (section === 'pull_gebe') return 'gebe_widening';
+  return null;
+}
+
 function RuleTable() {
   return (
     <View style={styles.card}>
@@ -614,6 +645,7 @@ export default function ImportanceOf3Panel({
   matches,
   schedule,
   imbangiLoading,
+  section = null,
 }: Props) {
   if (standings.length === 0 || (t1Id == null && t2Id == null)) {
     return (
@@ -636,6 +668,30 @@ export default function ImportanceOf3Panel({
   });
 
   const rows = buildLedger(report.singaye1, report.singaye2, t1Label, t2Label, t2Id, t1Id, report.targets);
+  const kind = section ? pullKind(section) : null;
+
+  if (section) {
+    const ledgerTitle =
+      section === 'ahead'
+        ? 'Ahead — take over'
+        : section === 'tail'
+          ? 'Tail — dethrone'
+          : section === 'escape'
+            ? 'Escape'
+            : section === 'pull_gebe'
+              ? 'Gebe widening'
+              : section === 'imbangi'
+                ? 'Imbangi'
+                : null;
+    const focused = ledgerTitle ? ledgerSection(rows, ledgerTitle) : [];
+    return (
+      <View>
+        {focused.length > 0 ? <Ledger rows={focused} /> : null}
+        {section === 'escape' ? <EscapeMatrix a={report.singaye1} b={report.singaye2} /> : null}
+        {kind ? <PullBoard a={report.singaye1} b={report.singaye2} onlyKind={kind} /> : null}
+      </View>
+    );
+  }
 
   return (
     <View>

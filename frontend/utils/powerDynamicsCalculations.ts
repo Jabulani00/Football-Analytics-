@@ -1,7 +1,8 @@
 /**
  * Power dynamics calculations.
  * One number per sector for T1 and T2, then three reads:
- * sectors at 6 or more, each side's total, and how many sectors T2 wins.
+ * sectors at 6 or more, each side's total, and the sectors each side wins.
+ * A win is the higher number. The gap is 6 or more, 4 to 5.9, or under 4.
  */
 
 import type { H2HMatch } from '@/services/oddAlerts';
@@ -36,6 +37,7 @@ import { contestedLeagueBoard } from '@/utils/separatorTools';
 import { lastN } from '@/utils/teamResults';
 
 export const SECTOR_HIT = 6;
+export const MARGIN_MID = 4;
 export const Y_APPLICATION_VALUE = 2;
 export const IMBANGI_TRUE_VALUE = 6;
 
@@ -76,6 +78,23 @@ export type SectorHit = {
   value: number;
 };
 
+export type MarginBandId = 'high' | 'mid' | 'low';
+
+export type ComparedSector = {
+  id: string;
+  label: string;
+  t1: number;
+  t2: number;
+  margin: number;
+};
+
+export type MarginBands = Record<MarginBandId, ComparedSector[]>;
+
+export type SideMarginRead = {
+  count: number;
+  bands: MarginBands;
+};
+
 export type PowerDynamicsCalculation = {
   t1Yellow: boolean;
   t2Yellow: boolean;
@@ -88,8 +107,8 @@ export type PowerDynamicsCalculation = {
   };
   calc2: { t1: number; t2: number };
   calc3: {
-    count: number;
-    sectors: { id: string; label: string; t1: number; t2: number }[];
+    t1: SideMarginRead;
+    t2: SideMarginRead;
   };
 };
 
@@ -116,6 +135,48 @@ type SideNumbers = { t1: number | null; t2: number | null };
 
 function num(value: number | null | undefined): number {
   return value == null || Number.isNaN(value) ? 0 : value;
+}
+
+/** Same tenth the screen prints, so a sector lands in the group the user sees. */
+function shown(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+function emptyBands(): MarginBands {
+  return { high: [], mid: [], low: [] };
+}
+
+function marginBand(margin: number): MarginBandId {
+  if (margin >= SECTOR_HIT) return 'high';
+  if (margin >= MARGIN_MID) return 'mid';
+  return 'low';
+}
+
+function readBands(bands: MarginBands): SideMarginRead {
+  return {
+    count: bands.high.length + bands.mid.length + bands.low.length,
+    bands,
+  };
+}
+
+function sectorWins(sectors: CalculationSector[]): { t1: SideMarginRead; t2: SideMarginRead } {
+  const t1 = emptyBands();
+  const t2 = emptyBands();
+  for (const row of sectors) {
+    const left = shown(num(row.t1));
+    const right = shown(num(row.t2));
+    if (left === right) continue;
+    const margin = shown(Math.abs(left - right));
+    const side = left > right ? t1 : t2;
+    side[marginBand(margin)].push({
+      id: row.id,
+      label: row.label,
+      t1: left,
+      t2: right,
+      margin,
+    });
+  }
+  return { t1: readBands(t1), t2: readBands(t2) };
 }
 
 function sumParts(parts: SectorPart[]): SideNumbers {
@@ -439,9 +500,6 @@ export function summariseSectorScores(opts: {
   const t2Hits = hits('t2');
   const leader: SideId | 'level' =
     t1Hits.length === t2Hits.length ? 'level' : t1Hits.length > t2Hits.length ? 't1' : 't2';
-  const t2Wins = opts.sectors
-    .map((row) => ({ id: row.id, label: row.label, t1: num(row.t1), t2: num(row.t2) }))
-    .filter((row) => row.t2 > row.t1);
   return {
     t1Yellow: opts.t1Yellow,
     t2Yellow: opts.t2Yellow,
@@ -452,7 +510,7 @@ export function summariseSectorScores(opts: {
       t1: opts.sectors.reduce((sum, row) => sum + num(row.t1), 0),
       t2: opts.sectors.reduce((sum, row) => sum + num(row.t2), 0),
     },
-    calc3: { count: t2Wins.length, sectors: t2Wins },
+    calc3: sectorWins(opts.sectors),
   };
 }
 

@@ -324,7 +324,8 @@ export default function H2HPanel({
   t2Name,
   competitionName,
   initialSplit = 'overall',
-}: H2HPanelProps & { initialSplit?: H2HSplit }) {
+  lockSplit = false,
+}: H2HPanelProps & { initialSplit?: H2HSplit; lockSplit?: boolean }) {
   const [split, setSplit] = useState<H2HSplit>(initialSplit);
   const [gradeModal, setGradeModal] = useState<{
     kind: H2HGradeGuideKind;
@@ -371,48 +372,60 @@ export default function H2HPanel({
   );
 
   if (matches.length === 0) {
+    const showOverallSays = !lockSplit || split === 'overall';
     return (
       <View style={styles.wrap}>
-        <Text style={styles.optionsTitle}>What the head-to-head says</Text>
-        {options.says.map((b) => (
-          <SayBlock key={b.id} block={b} onGradePress={openGrade} />
-        ))}
-        {extraTags.map((t) => (
-          <OptionChip key={t.id} tag={t} />
-        ))}
+        {showOverallSays ? (
+          <>
+            <Text style={styles.optionsTitle}>What the head-to-head says</Text>
+            {options.says.map((b) => (
+              <SayBlock key={b.id} block={b} onGradePress={openGrade} />
+            ))}
+            {extraTags.map((t) => (
+              <OptionChip key={t.id} tag={t} />
+            ))}
+          </>
+        ) : null}
         <Text style={styles.empty}>No head-to-head history available.</Text>
         {gradeModalEl}
       </View>
     );
   }
 
+  const showSays = !lockSplit || split === 'overall';
   return (
     <View style={styles.wrap}>
-      <Text style={styles.optionsTitle}>What the head-to-head says</Text>
-      <Text style={styles.optionsSub}>
-        Quick reads from past meetings between these two
-        {options.pointsShare
-          ? ` · these ${options.pointsShare.max / 3} H2H games are ${options.pointsShare.max} points`
-          : ''}
-      </Text>
-      <View style={styles.optionList}>
-        {options.says.map((b) => (
-          <SayBlock key={b.id} block={b} onGradePress={openGrade} />
-        ))}
-        {extraTags.map((t) => (
-          <OptionChip key={t.id} tag={t} />
-        ))}
-      </View>
+      {showSays ? (
+        <>
+          <Text style={styles.optionsTitle}>What the head-to-head says</Text>
+          <Text style={styles.optionsSub}>
+            Quick reads from past meetings between these two
+            {options.pointsShare
+              ? ` · these ${options.pointsShare.max / 3} H2H games are ${options.pointsShare.max} points`
+              : ''}
+          </Text>
+          <View style={styles.optionList}>
+            {options.says.map((b) => (
+              <SayBlock key={b.id} block={b} onGradePress={openGrade} />
+            ))}
+            {extraTags.map((t) => (
+              <OptionChip key={t.id} tag={t} />
+            ))}
+          </View>
+        </>
+      ) : null}
 
-      <SubTabBar
-        tabs={[
-          { id: 'overall', label: 'Overall' },
-          { id: 'home', label: `${homeName} at home` },
-          { id: 'away', label: `${awayName} away` },
-        ]}
-        active={split}
-        onChange={setSplit}
-      />
+      {lockSplit ? null : (
+        <SubTabBar
+          tabs={[
+            { id: 'overall', label: 'Overall' },
+            { id: 'home', label: `${homeName} at home` },
+            { id: 'away', label: `${awayName} away` },
+          ]}
+          active={split}
+          onChange={setSplit}
+        />
+      )}
 
       {filtered.length > 0 ? (
         <>

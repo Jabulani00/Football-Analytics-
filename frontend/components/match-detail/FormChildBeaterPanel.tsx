@@ -41,6 +41,7 @@ type Props = {
   seasonLinked: boolean;
   /** Opens on this period. The caller remounts the panel when the function changes. */
   initialGroup?: FormChildGroup;
+  lockGroup?: boolean;
 };
 
 function toSide(snap: PowerDynamicsBundle['t1']): FormChildSide {
@@ -145,6 +146,7 @@ export default function FormChildBeaterPanel({
   exclude,
   seasonLinked,
   initialGroup,
+  lockGroup = false,
 }: Props) {
   const [group, setGroup] = useState<FormChildGroup>(initialGroup ?? 'table');
   const [venue, setVenue] = useState<FormChildVenue>('overall');
@@ -172,7 +174,7 @@ export default function FormChildBeaterPanel({
         title="Form + Child beater"
         note="Green: 0–0.7 Bad, 0.8–1.2 Good, 1.3–3 Great. Yellow: 0–0.9 Bad, 1.0–1.4 Mild/ok, 1.5–1.7 Good, 1.8–3 Great. Red: 0–1 Bad, 1.1–1.4 Mild/ok, 1.5–1.7 Good, 1.8–3 Great. A red side on 1.5–1.7 is Umshayi wezingane. Any other red PPG is not a child beater. A yellow side who takes more than half the points from teams below them is Umnqumi wehlathi."
       />
-      <SubTabBar tabs={GROUP_TABS} active={group} onChange={setGroup} />
+      {lockGroup ? null : <SubTabBar tabs={GROUP_TABS} active={group} onChange={setGroup} />}
       {group !== 'table' ? (
         <SubTabBar tabs={VENUE_TABS} active={venue} onChange={setVenue} />
       ) : null}

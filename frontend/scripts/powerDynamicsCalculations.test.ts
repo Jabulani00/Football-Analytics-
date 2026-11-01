@@ -52,13 +52,51 @@ console.log('\ncalculation summary');
   check('T2 hit is last 5 only', calc.calc1.t2.map((hit) => hit.id).join() === 'last5');
   check('equal hit counts are level', calc.calc1.leader === 'level');
   check('apple totals add every numbered sector', calc.calc2.t1 === 15 && calc.calc2.t2 === 9);
-  check('T2 wins only the sector it leads', calc.calc3.count === 1 && calc.calc3.sectors[0]?.id === 'last5');
+  check(
+    'T2 wins only the sector it leads, by 4',
+    calc.calc3.t2.count === 1 && calc.calc3.t2.bands.mid[0]?.id === 'last5' && calc.calc3.t2.bands.mid[0]?.margin === 4,
+  );
+  check(
+    'T1 wins split into 6 or more and under 4',
+    calc.calc3.t1.count === 2 &&
+      calc.calc3.t1.bands.high.map((hit) => hit.id).join() === 'baseline' &&
+      calc.calc3.t1.bands.low.map((hit) => hit.id).join() === 'indlela',
+  );
   check('missing values count as zero in the total', summariseSectorScores({
     t1Yellow: false,
     t2Yellow: false,
     ticks: [],
     sectors: [row('form', 'Form', 'core', null, 6)],
   }).calc2.t1 === 0);
+}
+
+console.log('\nwin margin bands');
+{
+  const calc = summariseSectorScores({
+    t1Yellow: false,
+    t2Yellow: false,
+    ticks: [],
+    sectors: [
+      row('by6', 'By 6', 'core', 10, 4),
+      row('by59', 'By 5.9', 'core', 9, 3.1),
+      row('by4', 'By 4', 'core', 4, 0),
+      row('by39', 'By 3.9', 'core', 3.9, 0),
+      row('tie', 'Tie', 'core', 2, 2),
+      row('t2high', 'T2 by 6', 'core', 0, 6),
+      row('t2mid', 'T2 by 4.5', 'core', 1, 5.5),
+      row('t2low', 'T2 by 1', 'core', 1, 2),
+      row('roundsUp', 'Rounds to 6', 'core', 5.96, 0),
+      row('staysMid', 'Stays 5.9', 'core', 5.94, 0),
+    ],
+  });
+  const ids = (side: 't1' | 't2', band: 'high' | 'mid' | 'low') =>
+    calc.calc3[side].bands[band].map((hit) => hit.id).join();
+  check('6 and above is its own group', ids('t1', 'high') === 'by6,roundsUp');
+  check('4 to 5.9 includes 4, 4.5 and 5.9', ids('t1', 'mid') === 'by59,by4,staysMid');
+  check('under 4 stays out of the middle group', ids('t1', 'low') === 'by39');
+  check('a tie is not a win', calc.calc3.t1.count + calc.calc3.t2.count === 9);
+  check('T2 groups mirror the same cuts', ids('t2', 'high') === 't2high' && ids('t2', 'mid') === 't2mid' && ids('t2', 'low') === 't2low');
+  check('each side keeps its own count', calc.calc3.t1.count === 6 && calc.calc3.t2.count === 3);
 }
 
 console.log('\ncontested league spread');

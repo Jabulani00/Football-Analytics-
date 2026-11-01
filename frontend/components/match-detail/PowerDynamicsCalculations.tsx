@@ -1,5 +1,5 @@
-import { useMemo, type ReactNode } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { useMemo, useState, type ReactNode } from 'react';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import type { H2HMatch } from '@/services/oddAlerts';
 import type { SeasonMatch } from '@/utils/bhozomaEngine';
@@ -11,8 +11,12 @@ import {
   SECTOR_HIT,
   type CalculationSector,
   type CalculationTick,
+  type ComparedSector,
+  type MarginBandId,
+  type MarginBands,
   type PowerDynamicsCalculation,
   type SectorGroup,
+  type SideMarginRead,
 } from '@/utils/powerDynamicsCalculations';
 import type { IndlelaPath, PowerDynamicsBundle, PpgSwing, StreakSide } from '@/utils/powerDynamicsEngine';
 import type { ProblemCauserRead } from '@/utils/problemCauser';
@@ -58,6 +62,106 @@ function fmt(value: number | null | undefined): string {
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 }
 
+const SECTOR_PREVIEW = 5;
+
+const WIN_BANDS: { id: MarginBandId; title: string; chip: string }[] = [
+  { id: 'high', title: 'Won by 6 or more', chip: '6+' },
+  { id: 'mid', title: 'Won by 4 to 5.9', chip: '4–5.9' },
+  { id: 'low', title: 'Won by less than 4', chip: 'Under 4' },
+];
+
+function takePreview(bands: MarginBands, limit: number): MarginBands {
+  const next: MarginBands = { high: [], mid: [], low: [] };
+  let left = limit;
+  for (const band of WIN_BANDS) {
+    if (left <= 0) break;
+    next[band.id] = bands[band.id].slice(0, left);
+    left -= next[band.id].length;
+  }
+  return next;
+}
+
+function ownScore(row: ComparedSector, side: 't1' | 't2'): { own: number; other: number } {
+  return side === 't1' ? { own: row.t1, other: row.t2 } : { own: row.t2, other: row.t1 };
+}
+
+function wonCall(t1Name: string, t2Name: string, t1: SideMarginRead, t2: SideMarginRead): string {
+  if (t1.count === t2.count) {
+    return `${t1Name} and ${t2Name} won the same number of sectors (${t1.count}).`;
+  }
+  const leader = t1.count > t2.count ? t1Name : t2Name;
+  const high = Math.max(t1.count, t2.count);
+  const low = Math.min(t1.count, t2.count);
+  return `${leader} won more sectors (${high}–${low}).`;
+}
+
+function bandPaint(id: MarginBandId) {
+  if (id === 'high') {
+    return { text: styles.bandHigh, fill: styles.bandFillHigh, pill: styles.pillHigh, mark: styles.markHigh };
+  }
+  if (id === 'mid') {
+    return { text: styles.bandMid, fill: styles.bandFillMid, pill: styles.pillMid, mark: styles.markMid };
+  }
+  return { text: styles.bandLow, fill: styles.bandFillLow, pill: styles.pillLow, mark: styles.markLow };
+}
+
+function SectorFact({
+  label,
+  aside,
+  note,
+  band,
+}: {
+  label: string;
+  aside: string;
+  note?: string;
+  band: MarginBandId;
+}) {
+  const paint = bandPaint(band);
+  return (
+    <View style={[styles.fact, paint.fill]}>
+      <View style={styles.factTop}>
+        <Text style={styles.factName}>{label}</Text>
+        <Text style={[styles.factAside, paint.text]}>{aside}</Text>
+      </View>
+      {note ? <Text style={styles.factNote}>{note}</Text> : null}
+    </View>
+  );
+}
+
+function SectorModal({
+  visible,
+  title,
+  subtitle,
+  onClose,
+  children,
+}: {
+  visible: boolean;
+  title: string;
+  subtitle: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalRoot}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close sectors" />
+        <View style={styles.modalSheet}>
+          <View style={styles.modalHead}>
+            <View style={styles.modalTitles}>
+              <Text style={styles.modalTitle}>{title}</Text>
+              <Text style={styles.modalSub}>{subtitle}</Text>
+            </View>
+            <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Close">
+              <Text style={styles.modalClose}>Close</Text>
+            </Pressable>
+          </View>
+          <ScrollView style={styles.modalList}>{children}</ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function leaderLine(calc: PowerDynamicsCalculation, t1: string, t2: string): string {
   if (calc.calc1.leader === 'level') {
     return `${t1} and ${t2} have the same number of sectors at ${SECTOR_HIT} or more (${calc.calc1.t1.length}).`;
@@ -69,6 +173,9 @@ function leaderLine(calc: PowerDynamicsCalculation, t1: string, t2: string): str
 }
 
 function HitList({ label, rows }: { label: string; rows: { label: string; value: number }[] }) {
+  const [open, setOpen] = useState(false);
+  const shown = rows.slice(0, SECTOR_PREVIEW);
+  const overflow = rows.length > SECTOR_PREVIEW;
   return (
     <View style={styles.hitCol}>
       <Text style={styles.hitLabel}>{label}</Text>
@@ -76,12 +183,168 @@ function HitList({ label, rows }: { label: string; rows: { label: string; value:
       {rows.length === 0 ? (
         <Text style={styles.muted}>None at {SECTOR_HIT} or more</Text>
       ) : (
-        rows.map((row) => (
-          <Text key={row.label} style={styles.hitRow}>
-            {row.label} · {fmt(row.value)}
-          </Text>
+        shown.map((row) => (
+          <SectorFact key={row.label} label={row.label} aside={fmt(row.value)} band="high" />
         ))
       )}
+      {overflow ? (
+        <Pressable
+          onPress={() => setOpen(true)}
+          accessibilityRole="button"
+          accessibilityLabel={`Show more sectors for ${label}`}
+          style={styles.moreBtn}>
+          <Text style={styles.showMore}>Show more</Text>
+        </Pressable>
+      ) : null}
+      <SectorModal
+        visible={open}
+        title={label}
+        subtitle={`${rows.length} sectors of ${SECTOR_HIT} or more`}
+        onClose={() => setOpen(false)}>
+        {rows.map((row) => (
+          <SectorFact key={row.label} label={row.label} aside={fmt(row.value)} band="high" />
+        ))}
+      </SectorModal>
+    </View>
+  );
+}
+
+function SideWon({
+  name,
+  read,
+  side,
+}: {
+  name: string;
+  read: SideMarginRead;
+  side: 't1' | 't2';
+}) {
+  const [open, setOpen] = useState(false);
+  const preview = takePreview(read.bands, SECTOR_PREVIEW);
+  const overflow = read.count > SECTOR_PREVIEW;
+  return (
+    <View style={styles.winBox}>
+      <Text style={styles.hitLabel}>{name}</Text>
+      <Text style={styles.hitCount}>{read.count}</Text>
+      <Text style={styles.winCaption}>sectors won</Text>
+      <View style={styles.pillRow}>
+        {WIN_BANDS.map((band) => {
+          const paint = bandPaint(band.id);
+          return (
+            <View key={band.id} style={[styles.pill, paint.pill]}>
+              <Text style={[styles.pillCount, paint.text]}>{read.bands[band.id].length}</Text>
+              <Text style={[styles.pillLabel, paint.text]} numberOfLines={1}>
+                {band.chip}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+      {read.count === 0 ? (
+        <Text style={styles.muted}>No sectors won</Text>
+      ) : (
+        WIN_BANDS.map((band) =>
+          preview[band.id].length === 0 ? null : (
+            <View key={band.id} style={styles.bandBlock}>
+              <View style={styles.bandHead}>
+                <View style={[styles.bandMark, bandPaint(band.id).mark]} />
+                <Text style={styles.bandTitle}>{band.title}</Text>
+              </View>
+              {preview[band.id].map((row) => {
+                const scores = ownScore(row, side);
+                return (
+                  <SectorFact
+                    key={row.id}
+                    label={row.label}
+                    aside={`+${fmt(row.margin)}`}
+                    note={`${fmt(scores.own)} over ${fmt(scores.other)}`}
+                    band={band.id}
+                  />
+                );
+              })}
+            </View>
+          ),
+        )
+      )}
+      {overflow ? (
+        <Pressable
+          onPress={() => setOpen(true)}
+          accessibilityRole="button"
+          accessibilityLabel={`Show more sectors won by ${name}`}
+          style={styles.moreBtn}>
+          <Text style={styles.showMore}>Show more</Text>
+        </Pressable>
+      ) : null}
+      <SectorModal
+        visible={open}
+        title={name}
+        subtitle={`${read.count} sectors won`}
+        onClose={() => setOpen(false)}>
+        {WIN_BANDS.map((band) => (
+          <View key={band.id} style={styles.modalBand}>
+            <View style={styles.bandHead}>
+              <View style={[styles.bandMark, bandPaint(band.id).mark]} />
+              <Text style={styles.bandTitle}>{band.title}</Text>
+              <Text style={[styles.bandCount, bandPaint(band.id).text]}>{read.bands[band.id].length}</Text>
+            </View>
+            {read.bands[band.id].length === 0 ? (
+              <Text style={styles.muted}>None</Text>
+            ) : (
+              read.bands[band.id].map((row) => {
+                const scores = ownScore(row, side);
+                return (
+                  <SectorFact
+                    key={row.id}
+                    label={row.label}
+                    aside={`+${fmt(row.margin)}`}
+                    note={`${fmt(scores.own)} over ${fmt(scores.other)}`}
+                    band={band.id}
+                  />
+                );
+              })
+            )}
+          </View>
+        ))}
+      </SectorModal>
+    </View>
+  );
+}
+
+function WonSectors({
+  t1Name,
+  t2Name,
+  wins,
+  only,
+}: {
+  t1Name: string;
+  t2Name: string;
+  wins: PowerDynamicsCalculation['calc3'];
+  only?: 't2';
+}) {
+  const lead = (
+    <Text style={styles.detail}>
+      The higher number wins the sector. The gap is 6 or more, 4 to 5.9, or less than 4.
+    </Text>
+  );
+  if (only === 't2') {
+    const count = wins.t2.count;
+    return (
+      <View>
+        {lead}
+        <Text style={styles.calcCall}>
+          {t2Name} won {count} {count === 1 ? 'sector' : 'sectors'}.
+        </Text>
+        <SideWon name={t2Name} read={wins.t2} side="t2" />
+      </View>
+    );
+  }
+  return (
+    <View>
+      {lead}
+      <Text style={styles.calcCall}>{wonCall(t1Name, t2Name, wins.t1, wins.t2)}</Text>
+      <View style={styles.hitGrid}>
+        <SideWon name={t1Name} read={wins.t1} side="t1" />
+        <SideWon name={t2Name} read={wins.t2} side="t2" />
+      </View>
     </View>
   );
 }
@@ -200,7 +463,7 @@ export default function PowerDynamicsCalculations(props: Props) {
   return (
     <View>
       <Text style={styles.intro}>
-        {t1} against {t2}. A sector of {SECTOR_HIT} or more is listed in calculation 1. Totals add every numbered sector. Ticks stay out of the totals.
+        {t1} against {t2}. Calculation 1 lists a sector of {SECTOR_HIT} or more. Totals add every numbered sector. Calculations 1 and 2 show the sectors each side won. Calculation 3 shows the sectors {t2} won. The gap is 6 or more, 4 to 5.9, or less than 4. Ticks stay out of the totals.
       </Text>
       {calc.t1Yellow || calc.t2Yellow ? (
         <Text style={styles.yellowNote}>
@@ -218,6 +481,8 @@ export default function PowerDynamicsCalculations(props: Props) {
           <HitList label={t1} rows={calc.calc1.t1} />
           <HitList label={t2} rows={calc.calc1.t2} />
         </View>
+        <Text style={styles.blockLabel}>Sectors won</Text>
+        <WonSectors t1Name={t1} t2Name={t2} wins={calc.calc3} />
       </View>
 
       <View style={styles.calcCard}>
@@ -234,21 +499,14 @@ export default function PowerDynamicsCalculations(props: Props) {
           </View>
         </View>
         <Text style={styles.detail}>Core, semi-core, and Y applications. Additional sectors are ticks only.</Text>
+        <Text style={styles.blockLabel}>Sectors won</Text>
+        <WonSectors t1Name={t1} t2Name={t2} wins={calc.calc3} />
       </View>
 
       <View style={styles.calcCard}>
         <Text style={styles.calcKicker}>Calculation 3 · Apples v oranges</Text>
-        <Text style={styles.calcTitle}>Sectors T2 won against T1</Text>
-        <Text style={styles.total}>{calc.calc3.count}</Text>
-        {calc.calc3.sectors.length === 0 ? (
-          <Text style={styles.muted}>T2 is not ahead in any numbered sector.</Text>
-        ) : (
-          calc.calc3.sectors.map((row) => (
-            <Text key={row.id} style={styles.hitRow}>
-              {row.label} · T2 {fmt(row.t2)} over T1 {fmt(row.t1)}
-            </Text>
-          ))
-        )}
+        <Text style={styles.calcTitle}>Sectors {t2} won</Text>
+        <WonSectors t1Name={t1} t2Name={t2} wins={calc.calc3} only="t2" />
       </View>
 
       <Section title={GROUP_COPY.core.title} note={GROUP_COPY.core.note}>
@@ -342,8 +600,15 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginBottom: spacing.sm,
   },
-  hitGrid: { flexDirection: 'row', gap: spacing.md },
-  hitCol: { flex: 1, gap: 2 },
+  hitGrid: { flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-start' },
+  hitCol: {
+    flex: 1,
+    minWidth: 0,
+    gap: 6,
+    backgroundColor: theme.surfaceHover,
+    borderRadius: layout.borderRadius,
+    padding: spacing.sm,
+  },
   hitLabel: {
     fontFamily: fonts.bodySemiBold,
     fontSize: 12,
@@ -351,14 +616,41 @@ const styles = StyleSheet.create({
   },
   hitCount: {
     fontFamily: fonts.display,
-    fontSize: 28,
+    fontSize: 32,
+    lineHeight: 36,
     color: theme.textPrimary,
   },
-  hitRow: {
-    fontFamily: fonts.body,
-    fontSize: 12,
-    color: theme.textPrimary,
+  fact: {
+    borderLeftWidth: 3,
+    borderRadius: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    marginTop: 4,
+  },
+  factTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.xs,
+  },
+  factName: {
+    flex: 1,
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 13,
     lineHeight: 17,
+    color: theme.textPrimary,
+  },
+  factAside: {
+    fontFamily: fonts.displaySemi,
+    fontSize: 16,
+    lineHeight: 18,
+  },
+  factNote: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    lineHeight: 15,
+    color: theme.textMuted,
+    marginTop: 2,
   },
   totalGrid: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.xs },
   totalCol: { flex: 1 },
@@ -454,4 +746,139 @@ const styles = StyleSheet.create({
     color: theme.textMuted,
     lineHeight: 17,
   },
+  blockLabel: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 13,
+    color: theme.textPrimary,
+    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  winBox: {
+    flex: 1,
+    minWidth: 0,
+    backgroundColor: theme.surfaceHover,
+    borderRadius: layout.borderRadius,
+    padding: spacing.sm,
+  },
+  winCaption: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: theme.textMuted,
+    marginTop: -2,
+  },
+  pillRow: {
+    flexDirection: 'row',
+    gap: 4,
+    marginTop: spacing.sm,
+  },
+  pill: {
+    flex: 1,
+    alignItems: 'center',
+    borderRadius: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 2,
+  },
+  pillCount: {
+    fontFamily: fonts.displaySemi,
+    fontSize: 16,
+    lineHeight: 18,
+  },
+  pillLabel: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 10,
+    lineHeight: 13,
+    textAlign: 'center',
+  },
+  pillHigh: { backgroundColor: '#D1FAE5' },
+  pillMid: { backgroundColor: '#FEF3C7' },
+  pillLow: { backgroundColor: '#E2E8F0' },
+  bandHigh: { color: '#047857' },
+  bandMid: { color: '#A16207' },
+  bandLow: { color: '#475569' },
+  bandFillHigh: { backgroundColor: '#ECFDF5', borderLeftColor: '#059669' },
+  bandFillMid: { backgroundColor: '#FFFBEB', borderLeftColor: '#CA8A04' },
+  bandFillLow: { backgroundColor: theme.surface, borderLeftColor: '#94A3B8' },
+  markHigh: { backgroundColor: '#059669' },
+  markMid: { backgroundColor: '#CA8A04' },
+  markLow: { backgroundColor: '#94A3B8' },
+  bandBlock: { marginTop: spacing.sm },
+  bandHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  bandMark: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  bandTitle: {
+    flex: 1,
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 11,
+    lineHeight: 15,
+    color: theme.textPrimary,
+  },
+  bandCount: {
+    fontFamily: fonts.displaySemi,
+    fontSize: 14,
+    lineHeight: 16,
+  },
+  moreBtn: {
+    marginTop: spacing.sm,
+    borderWidth: layout.borderWidth,
+    borderColor: theme.borderStrong,
+    borderRadius: layout.borderRadius,
+    backgroundColor: theme.surface,
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  showMore: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 12,
+    color: theme.accentBlue,
+  },
+  modalRoot: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    justifyContent: 'center',
+    padding: spacing.lg,
+  },
+  modalSheet: {
+    maxHeight: '80%',
+    width: '100%',
+    maxWidth: 560,
+    alignSelf: 'center',
+    backgroundColor: theme.surface,
+    borderRadius: layout.borderRadius,
+    borderWidth: layout.borderWidth,
+    borderColor: theme.border,
+    padding: spacing.md,
+  },
+  modalHead: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: spacing.sm,
+    gap: spacing.sm,
+  },
+  modalTitles: { flex: 1 },
+  modalTitle: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 16,
+    color: theme.textPrimary,
+  },
+  modalSub: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: theme.textMuted,
+    marginTop: 2,
+  },
+  modalClose: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 13,
+    color: theme.accentBlue,
+    paddingVertical: 2,
+  },
+  modalList: { maxHeight: 420 },
+  modalBand: { marginBottom: spacing.sm },
 });

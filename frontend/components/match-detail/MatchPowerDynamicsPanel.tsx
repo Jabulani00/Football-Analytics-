@@ -506,6 +506,7 @@ export default function MatchPowerDynamicsPanel({
             matches={seasonFx.matches}
             schedule={seasonFx.schedule}
             imbangiLoading={seasonId != null && seasonFx.loading && seasonFx.matches.length === 0}
+            section={focus?.tabId === 'importance_3pts' ? focus.functionId : null}
           />
         );
       case 'last5':
@@ -721,6 +722,7 @@ export default function MatchPowerDynamicsPanel({
               t2Name={pd.t2.name}
               competitionName={competitionName}
               initialSplit={h2hSplit(focus?.functionId)}
+              lockSplit={focus?.tabId === 'h2h'}
             />
           </View>
         );
@@ -735,6 +737,7 @@ export default function MatchPowerDynamicsPanel({
             competitionId={competitionId}
             seasonLinked={seasonId != null}
             initialGroup={childGroup(focus?.functionId)}
+            lockGroup={focus?.tabId === 'form_child_beater'}
             exclude={
               kickoffUnix != null && homeId != null && awayId != null
                 ? { unix: kickoffUnix, homeId, awayId }
