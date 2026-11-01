@@ -1,3 +1,5 @@
+import { BookmakerAssessment } from '@/components/analytics/BookmakerFixtures';
+import { hollywoodFixture } from '@/services/bookmakerFixtures';
 import { useMemo, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
@@ -472,6 +474,7 @@ export default function HollywoodOddsPanel({ onAddLeg }: { onAddLeg?: (leg: BetS
                     );
                   })}
                 </View>
+                <BookmakerAssessment fixture={hollywoodFixture(event)} />
                 <AllMarkets
                   event={event}
                   selected={selected}

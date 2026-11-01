@@ -1,17 +1,23 @@
-import { useMemo } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import BookmakerFixtures from '@/components/analytics/BookmakerFixtures';
+import { hollywoodFixture } from '@/services/bookmakerFixtures';
+import { fetchEventDetail } from '@/services/hollywoodbets';
+import { useEffect, useMemo, useState } from 'react';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import ComplianceBadge from '@/components/analytics/ComplianceBadge';
 import SectionLabel from '@/components/shared/SectionLabel';
 import type { HollywoodPopularOddsState } from '@/hooks/useHollywoodPopularOdds';
-import { ODDS_FUSION_ROWS } from '@/mock/analyticsData';
+import FilterDropdown from '@/components/shared/FilterDropdown';
+import { paginateFusionRows } from '@/services/hollywoodFusionView';
 import type { FusionRow, MarketRow } from '@/services/hollywoodFusion';
 import { complianceFromPercent } from '@/utils/compliance';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 import type { BetSlipLeg } from '@/types/analytics';
 
-/** Common display shape so live and sample rows render through one loop. */
+/** Hollywood selections only; other bookmakers appear in the matched comparison below. */
 type DisplayRow = {
+  eventId: number;
+  marketName: string;
   id: string;
   fixture: string;
   signal: string;
@@ -43,18 +49,18 @@ function fromMarket(row: MarketRow, i: number): DisplayRow {
         : 'No de-vig available';
 
   return {
+    eventId: row.eventId,
+    marketName: row.marketName,
     id: `${row.eventId}-${row.betTypeId}-${row.marketNumber}-${i}`,
     fixture: row.fixture,
     signal,
-    compliance: Math.round(modelPct ?? fairPct ?? 0),
+    compliance: modelPct == null ? null : Math.round(modelPct),
     book: 'Hollywoodbets',
     market: `${row.marketName} — ${row.selection}`,
     odds: row.decimal,
     edge: row.edgePct,
     agreement: row.agreement,
-    ruleSummary: row.value
-      ? `Δ ${row.value.oppositionDelta.toFixed(2)} ${row.value.deltaBand} · ${row.value.inWatchRange ? 'inside 0.35–0.65' : 'outside 0.35–0.65'}${row.value.investigateScores ? ' · inspect scores' : ''}`
-      : null,
+    ruleSummary: null,
     betSlipLeg: row.hbLeg
       ? {
           id: `fusion-${row.eventId}-${row.betTypeId}-${row.marketNumber}`,
@@ -83,10 +89,12 @@ function fromFusion(row: FusionRow): DisplayRow {
     : `Book ${fairPct.toFixed(0)}% — ${PICK_LABEL[row.pick]} · no model yet`;
 
   return {
+    eventId: row.eventId,
+    marketName: 'Full Time',
     id: String(row.eventId),
     fixture: row.fixture,
     signal,
-    compliance: Math.round(modelPct ?? fairPct),
+    compliance: modelPct == null ? null : Math.round(modelPct),
     book: 'Hollywoodbets',
     market: `1X2 — ${PICK_LABEL[row.pick]}`,
     odds: row.decimal[key],
@@ -115,62 +123,40 @@ export default function OddsFusionPanel({
   live: HollywoodPopularOddsState;
   onAddLeg: (leg: BetSlipLeg) => void;
 }) {
-  const rows = useMemo<DisplayRow[]>(() => {
-    // Prefer the per-market view: it covers 1X2, BTTS and the Over/Under lines
-    // the value rules actually read, rather than 1X2 alone.
-    const extra: DisplayRow[] = live.extraOffers.slice(0, 20).map((offer, index) => ({
-      id: `oddalerts-${offer.providerFixtureId}-${offer.bookmakerSlug}-${index}`,
-      fixture: offer.fixture,
-      signal: 'OddAlerts multi-bookmaker value feed',
-      compliance: null,
-      book: offer.bookmaker,
-      market: `${offer.market} — ${offer.selection}`,
-      odds: offer.decimal,
-      edge: offer.providerValuePct,
-      agreement: null,
-      ruleSummary: 'Provider-reported value · PDF pair rules await both opposite prices',
-      betSlipLeg: {
-        id: `oddalerts-${offer.providerFixtureId}-${offer.bookmakerSlug}-${index}`,
-        fixture: offer.fixture,
-        market: offer.market,
-        selection: offer.selection,
-        odds: offer.decimal,
-        bookmaker: offer.bookmaker,
-        kickoff: offer.kickoffUnix ? new Date(offer.kickoffUnix * 1000).toISOString() : undefined,
-      },
-    }));
-    if (live.marketRows.length > 0) return [...live.marketRows.map(fromMarket), ...extra];
-    if (live.rows.length > 0) return [...live.rows.map(fromFusion), ...extra];
-    if (extra.length > 0) return extra;
-    // Fallback to bundled sample rows (also used while loading / offline).
-    return ODDS_FUSION_ROWS.map((r) => ({
-      id: r.id,
-      fixture: r.fixture,
-      signal: r.statSignal,
-      compliance: r.statCompliance,
-      book: r.bookmaker,
-      market: r.market,
-      odds: r.odds,
-      edge: r.edge,
-      agreement: null,
-      ruleSummary: null,
-      betSlipLeg: null,
-    }));
-  }, [live.rows, live.marketRows, live.extraOffers]);
-
-  const isLive = live.rows.length > 0 || live.marketRows.length > 0 || live.extraOffers.length > 0;
+  const [showModel, setShowModel] = useState(false);
+  const fixtures = useMemo(() => live.events.map((event) => hollywoodFixture(event, live.observedAt)), [live.events, live.observedAt]);
+  const [query, setQuery] = useState('');
+  const [market, setMarket] = useState('');
+  const [page, setPage] = useState(0);
+  useEffect(() => { setQuery(''); setMarket(''); setPage(0); }, [live.categoryId, live.tournamentId]);
+  const allRows = useMemo<DisplayRow[]>(() => live.marketRows.length > 0
+    ? live.marketRows.map(fromMarket) : live.rows.map(fromFusion), [live.rows, live.marketRows]);
+  const markets = [...new Set(allRows.map((row) => row.marketName))];
+  const activeMarket = markets.includes(market) ? market : '';
+  const shown = paginateFusionRows(allRows, query, activeMarket, page);
+  const rows = shown.rows;
+  const isLive = allRows.length > 0;
 
   return (
     <View style={styles.container}>
+      <BookmakerFixtures key={`${live.categoryId}-${live.tournamentId}`} showLocationFilters={false} fixtures={fixtures} loadMarkets={async (id) => {
+        const event = await fetchEventDetail(Number(id));
+        if (!event) throw new Error('This fixture is no longer offered by Hollywoodbets.');
+        return hollywoodFixture(event, new Date().toISOString());
+      }} />
+      <Pressable accessibilityRole="button" accessibilityState={{ expanded: showModel }} onPress={() => setShowModel((value) => !value)}>
+        <Text style={styles.sourceNote}>{showModel ? 'Hide model comparison and slip tools' : 'Show model comparison and slip tools'}</Text>
+      </Pressable>
+      {showModel ? <>
       <Text style={styles.intro}>
-        Combine statistical outputs with live odds from Odds Alert API and Hollywoodbets.
-        Identify value where stat compliance aligns with available prices.
+        Browse Hollywoodbets prices for your selected country and competition.
+        Matched model evidence adds probability comparisons and value analysis when available.
       </Text>
 
       <View style={styles.sectionRow}>
-        <SectionLabel style={styles.section}>Odds Fusion — Live Matches</SectionLabel>
+        <SectionLabel style={styles.section}>Odds Fusion - Hollywoodbets</SectionLabel>
         <Text style={[styles.liveTag, isLive ? styles.liveOn : styles.liveOff]}>
-          {live.loading ? 'LOADING…' : isLive ? 'LIVE' : 'SAMPLE'}
+          {live.loading ? 'LOADING...' : isLive ? 'HOLLYWOOD PRICES' : 'NO PRICES'}
         </Text>
       </View>
       {isLive && live.source ? (
@@ -178,6 +164,24 @@ export default function OddsFusionPanel({
           {live.source.categoryName} · {live.source.tournamentName}
         </Text>
       ) : null}
+
+      <View style={styles.filters}>
+        <TextInput accessibilityLabel="Search Hollywood fixtures" placeholder="Search teams in this competition"
+          placeholderTextColor={theme.textMuted} value={query}
+          onChangeText={(value) => { setQuery(value); setPage(0); }} style={styles.search} />
+        <FilterDropdown label="Market" value={activeMarket}
+          options={[{ value: '', label: 'All supported markets' }, ...markets.map((name) => ({ value: name, label: name }))]}
+          onChange={(value) => { setMarket(value); setPage(0); }} />
+      </View>
+      <Text style={styles.sourceNote}>
+        Showing {shown.visibleFixtureCount} of {shown.fixtureCount} matching fixtures / {shown.selectionCount} selections
+      </Text>
+      {!live.loading && rows.length === 0 ? <Text style={styles.sourceNote}>
+        {live.tournamentId == null ? 'Choose a country and competition above.'
+          : live.error ? 'Prices are unavailable. Use Refresh to retry.'
+          : allRows.length > 0 ? 'No fixtures match your search or market filter.'
+          : 'No supported open prices were returned for this competition.'}
+      </Text> : null}
 
       <View style={styles.table}>
         <View style={styles.headerRow}>
@@ -229,6 +233,16 @@ export default function OddsFusionPanel({
         ))}
       </View>
 
+      {shown.pageCount > 1 ? <View style={styles.filters}>
+        <Pressable accessibilityRole="button" disabled={shown.page === 0} onPress={() => setPage(shown.page - 1)}>
+          <Text style={styles.sourceNote}>Previous</Text>
+        </Pressable>
+        <Text style={styles.sourceNote}>Page {shown.page + 1} of {shown.pageCount}</Text>
+        <Pressable accessibilityRole="button" disabled={shown.page + 1 >= shown.pageCount} onPress={() => setPage(shown.page + 1)}>
+          <Text style={styles.sourceNote}>Next</Text>
+        </Pressable>
+      </View> : null}
+
       <SectionLabel style={styles.compareTitle}>Same-fixture Bookmaker Comparison</SectionLabel>
       {live.comparisons.length > 0 ? (
         <View style={styles.comparisonList}>
@@ -275,11 +289,16 @@ export default function OddsFusionPanel({
             </View>
           ))}
       </View>
+      </> : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  filters: { width: '100%', maxWidth: 900, flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md,
+    alignItems: 'center', justifyContent: 'center', marginBottom: spacing.md },
+  search: { flexGrow: 1, minWidth: 220, padding: spacing.md, color: theme.textPrimary,
+    borderWidth: 1, borderColor: theme.border, borderRadius: 8, fontFamily: fonts.body },
   container: {
     width: '100%',
     alignItems: 'center',

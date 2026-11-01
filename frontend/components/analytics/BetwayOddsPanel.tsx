@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import BookmakerFixtures from '@/components/analytics/BookmakerFixtures';
+import { betwayFixture } from '@/services/bookmakerFixtures';
+import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import { useBetwayHunt } from '@/hooks/useBetwayHunt';
@@ -267,6 +269,8 @@ export default function BetwayOddsPanel({ onAddLeg }: { onAddLeg?: (leg: BetSlip
   const hunt = useBetwayHunt();
   const snapshot = hunt.snapshot;
   const latest = hunt.metrics.latestRun;
+  const [showSlipTools, setShowSlipTools] = useState(false);
+  const fixtures = useMemo(() => (snapshot?.currentEvents ?? []).map(betwayFixture), [snapshot?.currentEvents]);
 
   return (
     <View style={styles.container}>
@@ -378,7 +382,16 @@ export default function BetwayOddsPanel({ onAddLeg }: { onAddLeg?: (leg: BetSlip
         </View>
       ) : null}
 
-      <View style={styles.section}>
+      <BookmakerFixtures fixtures={fixtures} loadMarkets={async (id) => {
+        const event = snapshot?.currentEvents.find((item) => item.provider_event_id === id);
+        if (!event) throw new Error('Betway fixture is no longer listed.');
+        const response = await fetchBetwayEventMarkets(id, 'All');
+        return { ...betwayFixture({ ...event, markets: response.markets }), observedAt: new Date().toISOString() };
+      }} />
+      <Pressable accessibilityRole="button" accessibilityState={{ expanded: showSlipTools }} onPress={() => setShowSlipTools((value) => !value)}>
+        <Text style={styles.sectionTitle}>{showSlipTools ? 'Hide bet slip tools' : 'Show bet slip tools'}</Text>
+      </Pressable>
+      {showSlipTools ? <View style={styles.section}>
         <Text style={styles.sectionTitle}>CURRENT BETWAY MARKETS</Text>
         <Text style={styles.sectionHint}>
           1X2 is shown first. Open a fixture to load Betway&apos;s live Popular, Goals, Teams, Winner, Halves, Scores,
@@ -410,7 +423,7 @@ export default function BetwayOddsPanel({ onAddLeg }: { onAddLeg?: (leg: BetSlip
             Showing the next {MAX_VISIBLE_FIXTURES} of {snapshot.currentEvents.length} Betway fixtures.
           </Text>
         ) : null}
-      </View>
+      </View> : null}
     </View>
   );
 }

@@ -8,6 +8,7 @@ import BetwayOddsPanel from '@/components/analytics/BetwayOddsPanel';
 import BetSlipPanel from '@/components/analytics/BetSlipPanel';
 import HollywoodOddsPanel from '@/components/analytics/HollywoodOddsPanel';
 import OddsFusionPanel from '@/components/analytics/OddsFusionPanel';
+import HollywoodFusionBrowser from '@/components/analytics/HollywoodFusionBrowser';
 import OverviewPanel from '@/components/analytics/OverviewPanel';
 import StatsCharactersPanel from '@/components/analytics/StatsCharactersPanel';
 import PredictionsPanel from '@/components/analytics/PredictionsPanel';
@@ -152,6 +153,7 @@ export default function AnalyticsHub({ onBack: _onBack }: AnalyticsHubProps) {
         <AnalyticsNav active={activeTab} onChange={setActiveTab} />
 
         <View onLayout={(event) => { panelY.current = event.nativeEvent.layout.y; }} style={styles.panel}>
+          {needsPopularOdds ? <HollywoodFusionBrowser live={live} /> : null}
           <PanelForTab tab={activeTab} live={live} slip={slip} showTableCatalogue={showTableCatalogue} />
         </View>
       </ScrollView>
