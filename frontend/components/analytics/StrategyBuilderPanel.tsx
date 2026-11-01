@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { Platform } from 'react-native';
 import type { StyleProp, ViewStyle } from 'react-native';
 import { useQueries } from '@tanstack/react-query';
 
@@ -26,6 +27,17 @@ import { fonts, layout, spacing, theme } from '@/styles/theme';
 
 const ALL = 'all';
 let CONDITION_SEQ = 0;
+
+// Remember that the explainer has been shown, so it auto-opens only on a first visit.
+const HELP_SEEN_KEY = 'scoreline.strategy-builder.help-seen.v1';
+function helpSeen(): boolean {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return true;
+  try { return window.localStorage.getItem(HELP_SEEN_KEY) === '1'; } catch { return true; }
+}
+function markHelpSeen(): void {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+  try { window.localStorage.setItem(HELP_SEEN_KEY, '1'); } catch { /* ignore */ }
+}
 
 function defaultOptions(dimensionId: string): Record<string, string> {
   const dim = getDimension(dimensionId);
@@ -70,6 +82,11 @@ export default function StrategyBuilderPanel() {
 
   const feed = useLiveCompetitionFeed(3);
   const liveLeagues = useMemo(() => feed.competitions.filter((c) => c.rank === 0), [feed.competitions]);
+
+  // ---- explainer (auto-opens on a first visit, reopen any time) ----
+  const [showHelp, setShowHelp] = useState<boolean>(() => !helpSeen());
+  const closeHelp = () => { setShowHelp(false); markHelpSeen(); };
+  const openHelp = () => setShowHelp(true);
 
   // ---- query: the strategy ----
   const [conditions, setConditions] = useState<Condition[]>([]);
@@ -277,10 +294,16 @@ export default function StrategyBuilderPanel() {
 
   return (
     <View style={[styles.layout, wide && styles.layoutRow]}>
+      <HelpModal visible={showHelp} onClose={closeHelp} />
       {!wide ? aside : null}
       <View style={styles.main}>
       <View style={styles.header}>
-        <Text style={styles.title}>Strategy Builder</Text>
+        <View style={styles.titleRow}>
+          <Text style={styles.title}>Strategy Builder</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel="How the Strategy Builder works" onPress={openHelp} style={({ pressed }) => [styles.helpBtn, pressed && styles.helpBtnPressed]}>
+            <Text style={styles.helpBtnText}>? How it works</Text>
+          </Pressable>
+        </View>
         <Text style={styles.subtitle}>
           Build a strategy from the analytics you already have. Combine conditions with AND / OR across every ongoing league. View it as the qualifying teams, or as fixtures — each fixture carrying its best, 2nd-best and 3rd-best betting recommendation. Save a build to re-run it live anytime.
         </Text>
@@ -436,6 +459,57 @@ export default function StrategyBuilderPanel() {
       ) : null}
       </View>
       {wide ? aside : null}
+    </View>
+  );
+}
+
+/** Pop-up explainer for the whole page. Auto-opens on a first visit. */
+function HelpModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.helpOverlay}>
+        <Pressable style={styles.helpBackdrop} onPress={onClose} accessibilityLabel="Close explainer" />
+        <View style={styles.helpCard}>
+          <View style={styles.helpHead}>
+            <Text style={styles.helpTitle}>How the Strategy Builder works</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel="Close" onPress={onClose} style={styles.helpClose}>
+              <Text style={styles.helpCloseText}>×</Text>
+            </Pressable>
+          </View>
+          <Text style={styles.helpLead}>
+            One place to combine every analytics engine in the app into a single strategy, then see the teams and upcoming fixtures that fit it — recomputed live.
+          </Text>
+          <ScrollView style={styles.helpScroll} contentContainerStyle={styles.helpScrollBody}>
+            <HelpStep n="1" title="Pick what to measure" accent={theme.accentBlue}>
+              Choose a <Text style={styles.helpStrong}>Category</Text>. “Stat filter · all tables” reaches every metric across all 81 tables — pick a <Text style={styles.helpStrong}>Family</Text> (Ordinary, Series runs, FT-only patterns, Points), a <Text style={styles.helpStrong}>Window</Text> (season or last 10/8/6/5) and a stat. The named categories (Stats Characters, Grading, Dominance, Opposite, Gap) use their own engines and terminology unchanged.
+            </HelpStep>
+            <HelpStep n="2" title="Add conditions & combine" accent={theme.accentPurple}>
+              Set the period, method and level, then <Text style={styles.helpStrong}>+ Add condition</Text>. Stack as many as you like and switch <Text style={styles.helpStrong}>AND</Text> (must satisfy all) / <Text style={styles.helpStrong}>OR</Text> (any one). Tap <Text style={styles.helpStrong}>NOT</Text> on a chip to exclude teams that match it.
+            </HelpStep>
+            <HelpStep n="3" title="Read the results" accent={theme.accentGreen}>
+              <Text style={styles.helpStrong}>Teams</Text> lists every qualifying side, graded green / yellow / red with the exact reason per condition. <Text style={styles.helpStrong}>Fixtures</Text> turns the strategy onto upcoming matches — a three-colour risk table with the best, 2nd-best and 3rd-best bet per fixture; tap a row for the full read.
+            </HelpStep>
+            <HelpStep n="4" title="Save & reuse" accent={theme.accentOrange}>
+              Tap <Text style={styles.helpStrong}>★ Save</Text> and name it. Only the recipe is stored — never the teams or fixtures — so each time you open a saved strategy it recalculates against the latest data in the side panel.
+            </HelpStep>
+          </ScrollView>
+          <Pressable accessibilityRole="button" onPress={onClose} style={({ pressed }) => [styles.helpCta, pressed && styles.addBtnPressed]}>
+            <Text style={styles.helpCtaText}>Got it — start building</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function HelpStep({ n, title, accent, children }: { n: string; title: string; accent: string; children: ReactNode }) {
+  return (
+    <View style={styles.helpStep}>
+      <View style={[styles.helpNum, { backgroundColor: accent }]}><Text style={styles.helpNumText}>{n}</Text></View>
+      <View style={styles.helpStepBody}>
+        <Text style={[styles.helpStepTitle, { color: accent }]}>{title}</Text>
+        <Text style={styles.helpStepText}>{children}</Text>
+      </View>
     </View>
   );
 }
@@ -853,4 +927,31 @@ const styles = StyleSheet.create({
   savedLoadTextOn: { color: theme.accentGreen },
   savedDel: { borderWidth: layout.borderWidth, borderColor: theme.border, borderRadius: 999, paddingHorizontal: spacing.md, paddingVertical: 6, backgroundColor: theme.surface },
   savedDelText: { fontFamily: fonts.bodyMedium, fontSize: 11, color: theme.loss },
+
+  // Header title row + explainer trigger
+  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, flexWrap: 'wrap' },
+  helpBtn: { borderWidth: 1.5, borderColor: theme.accentBlue, borderRadius: 999, paddingHorizontal: spacing.md, paddingVertical: 5, backgroundColor: 'rgba(37,99,235,0.08)' },
+  helpBtnPressed: { opacity: 0.7 },
+  helpBtnText: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: theme.accentBlue },
+
+  // Explainer modal
+  helpOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.lg },
+  helpBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(15,23,42,0.45)' },
+  helpCard: { width: '100%', maxWidth: 520, maxHeight: '86%', backgroundColor: theme.surface, borderRadius: 16, borderWidth: layout.borderWidth, borderColor: theme.border, padding: spacing.lg, zIndex: 1 },
+  helpHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+  helpTitle: { fontFamily: fonts.display, fontSize: 20, color: theme.textPrimary, flexShrink: 1 },
+  helpClose: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.surfaceMuted },
+  helpCloseText: { fontFamily: fonts.bodySemiBold, fontSize: 20, color: theme.textMuted, lineHeight: 22 },
+  helpLead: { fontFamily: fonts.body, fontSize: 13, lineHeight: 20, color: theme.textMuted, marginTop: spacing.xs, marginBottom: spacing.sm },
+  helpScroll: { flexGrow: 0 },
+  helpScrollBody: { gap: spacing.md, paddingVertical: spacing.xs },
+  helpStep: { flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-start' },
+  helpNum: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 },
+  helpNumText: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: '#FFFFFF' },
+  helpStepBody: { flex: 1, gap: 2 },
+  helpStepTitle: { fontFamily: fonts.bodySemiBold, fontSize: 14 },
+  helpStepText: { fontFamily: fonts.body, fontSize: 13, lineHeight: 19, color: theme.textPrimary },
+  helpStrong: { fontFamily: fonts.bodySemiBold, color: theme.textPrimary },
+  helpCta: { marginTop: spacing.md, borderRadius: 999, paddingVertical: 11, alignItems: 'center', backgroundColor: theme.accentGreen },
+  helpCtaText: { fontFamily: fonts.bodySemiBold, fontSize: 14, color: '#FFFFFF' },
 });
