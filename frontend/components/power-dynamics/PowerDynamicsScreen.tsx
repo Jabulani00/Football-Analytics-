@@ -16,7 +16,7 @@ export default function PowerDynamicsScreen() {
           <Text style={styles.kicker}>All leagues</Text>
           <Text style={[styles.title, narrow && styles.titleNarrow]}>Power dynamics</Text>
           <Text style={styles.blurb}>
-            Leagues, tables, and season games are kept in this browser after the first load. A refresh opens that copy. Pick a sector, an option, and any number of in-options. Changing an in-option uses the saved copy.
+            Leagues, tables, and season games stay in this browser. Choose a sector, then an option and its in-options.
           </Text>
         </View>
         <PowerDynamicCallSearch heading={false} />

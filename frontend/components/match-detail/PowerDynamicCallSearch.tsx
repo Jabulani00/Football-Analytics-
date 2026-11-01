@@ -1,6 +1,9 @@
-import { useMemo, useState, useSyncExternalStore } from 'react';
+﻿import { useMemo, useState, useSyncExternalStore } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { SectorIntro } from '@/components/match-detail/PowerDynamicsSectors';
+import PowerDynamicFixtureModal from '@/components/match-detail/PowerDynamicFixtureModal';
+import SubTabBar from '@/components/shared/SubTabBar';
 import {
   getPowerDynamicLibrarySnapshot,
   retryPowerDynamicLibrary,
@@ -8,10 +11,9 @@ import {
   startPowerDynamicLibrary,
   subscribePowerDynamicLibrary,
 } from '@/services/powerDynamicCallLibrary';
-import PowerDynamicFixtureModal from '@/components/match-detail/PowerDynamicFixtureModal';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 import type { PowerDynamicHit } from '@/utils/powerDynamicLibraryScore';
-import { formatUpcomingDayLabel, parseDateKey, todayKey } from '@/utils/dates';
+import { formatUpcomingDayLabel, todayKey } from '@/utils/dates';
 import { POWER_DYNAMIC_CALLS, powerDynamicCall } from '@/utils/powerDynamicCalls';
 import { callAspectById, callAspectsFor } from '@/utils/powerDynamicCallSearch';
 
@@ -23,15 +25,6 @@ type InRow = {
   wrongId?: string;
   plainId?: string;
 };
-
-function dayCard(key: string): { kicker: string; day: string; month: string } {
-  const date = parseDateKey(key);
-  return {
-    kicker: formatUpcomingDayLabel(key),
-    day: String(date.getDate()),
-    month: date.toLocaleDateString('en-GB', { month: 'short' }),
-  };
-}
 
 function inOptionRows(aspects: { id: string; label: string; detail: string; mark?: 'tick' | 'wrong' }[]): InRow[] {
   const rows: InRow[] = [];
@@ -131,64 +124,34 @@ export default function PowerDynamicCallSearch({ heading = true }: { heading?: b
         </Text>
       )}
 
-      <View style={styles.board}>
-        <Text style={styles.step}>01  Sector</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.sectorRow}>
-          {POWER_DYNAMIC_CALLS.map((item) => {
-            const active = item.id === tabId;
-            return (
-              <Pressable
-                key={item.id}
-                onPress={() => {
-                  setTabId(item.id);
-                  setFunctionId('');
-                  setAspectIds([]);
-                  setQuery('');
-                }}
-                style={[styles.sector, active && styles.sectorOn]}>
-                <Text style={[styles.sectorIndex, active && styles.sectorIndexOn]}>{item.index}</Text>
-                <Text style={[styles.sectorName, active && styles.sectorNameOn]}>{item.name}</Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
+      <View>
+        <SectorIntro title="Sector" note="Open one sector. Its options and in-options follow." />
+        <SubTabBar
+          tabs={POWER_DYNAMIC_CALLS.map((item) => ({ id: item.id, label: `${item.index}. ${item.name}` }))}
+          active={tabId}
+          onChange={(id) => {
+            setTabId(id);
+            setFunctionId('');
+            setAspectIds([]);
+            setQuery('');
+          }}
+        />
 
         {call ? (
           <>
-            <Text style={styles.step}>02  Option</Text>
-            <View style={styles.pills}>
-              <Pressable
-                onPress={() => {
-                  setFunctionId('');
-                  setQuery('');
-                }}
-                style={[styles.pill, functionId === '' && styles.pillOn]}>
-                <Text style={[styles.pillText, functionId === '' && styles.pillTextOn]}>All options</Text>
-              </Pressable>
-              {call.functions.map((item) => {
-                const active = item.id === functionId;
-                return (
-                  <Pressable
-                    key={item.id}
-                    onPress={() => {
-                      setFunctionId(item.id);
-                      setQuery('');
-                    }}
-                    style={[styles.pill, active && styles.pillOn]}>
-                    <Text style={[styles.pillText, active && styles.pillTextOn]}>{item.label}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-            <View style={styles.inTitle}>
-              <Text style={styles.step}>03  In-option</Text>
-              <Text style={styles.inCount}>{inOptionCount}</Text>
-            </View>
-            <Text style={styles.markNote}>
-              {hasMarks ? 'A tick means the call holds. A cross means the same call does not. ' : ''}
-              Every option is listed with its in-options. Select any number.
-              {aspectIds.length > 0 ? ` ${aspectIds.length} selected.` : ''}
-            </Text>
+            <SectorIntro title="Option" note={call.detail} />
+            <SubTabBar
+              tabs={[{ id: '', label: 'All options' }, ...call.functions.map((item) => ({ id: item.id, label: item.label }))]}
+              active={functionId}
+              onChange={(id) => {
+                setFunctionId(id);
+                setQuery('');
+              }}
+            />
+            <SectorIntro
+              title={`In-option · ${inOptionCount}`}
+              note={`${hasMarks ? 'A tick means the call holds. A cross means the same call does not. ' : ''}Every option is listed with its in-options. Select any number.${aspectIds.length > 0 ? ` ${aspectIds.length} selected.` : ''}`}
+            />
             {inOptionCount > 8 ? (
               <TextInput
                 value={query}
@@ -203,8 +166,8 @@ export default function PowerDynamicCallSearch({ heading = true }: { heading?: b
                 {visibleGroups.length === 0 ? <Text style={styles.emptyIn}>No in-option matches that search.</Text> : null}
                 {visibleGroups.map((group) => (
                   <View key={group.item.id}>
-                    <View style={styles.inHead}>
-                      <Text style={styles.inHeadLabel}>{group.item.label}</Text>
+                    <View style={styles.sectionBar}>
+                      <Text style={styles.section}>{group.item.label}</Text>
                       {group.rows.some((row) => row.tickId) ? (
                         <View style={styles.marks}>
                           <Text style={styles.markHead}>True</Text>
@@ -234,13 +197,13 @@ export default function PowerDynamicCallSearch({ heading = true }: { heading?: b
                               onPress={() => row.tickId && setAspectIds((current) => toggleId(current, row.tickId ?? ''))}
                               style={[styles.mark, tickOn && styles.markTick]}
                               accessibilityLabel={`${row.label} true`}>
-                              <Text style={[styles.markGlyph, tickOn && styles.markGlyphOn]}>✓</Text>
+                              <Text style={[styles.markGlyph, tickOn && styles.markGlyphTick]}>✓</Text>
                             </Pressable>
                             <Pressable
                               onPress={() => row.wrongId && setAspectIds((current) => toggleId(current, row.wrongId ?? ''))}
                               style={[styles.mark, wrongOn && styles.markWrong]}
                               accessibilityLabel={`${row.label} opposite`}>
-                              <Text style={[styles.markGlyph, wrongOn && styles.markGlyphOn]}>✗</Text>
+                              <Text style={[styles.markGlyph, wrongOn && styles.markGlyphWrong]}>✗</Text>
                             </Pressable>
                           </View>
                         </View>
@@ -258,22 +221,15 @@ export default function PowerDynamicCallSearch({ heading = true }: { heading?: b
 
       {selected.length > 0 ? (
         <View style={styles.stage}>
-          <Text style={styles.path}>
-            {call?.name} · {selected.length === 1 ? aspectCaption(selected[0].id) : `${selected.length} in-options`}
-          </Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dates}>
-            {dates.map((key) => {
-              const active = key === dateKey;
-              const card = dayCard(key);
-              return (
-                <Pressable key={key} onPress={() => setDateKey(key)} style={[styles.day, active && styles.dayOn]}>
-                  <Text style={[styles.dayKicker, active && styles.dayKickerOn]}>{card.kicker}</Text>
-                  <Text style={[styles.dayNum, active && styles.dayNumOn]}>{card.day}</Text>
-                  <Text style={[styles.dayMonth, active && styles.dayKickerOn]}>{card.month}</Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
+          <SectorIntro
+            title="Day"
+            note={call?.name ? `${call.name} · ${selected.length === 1 ? aspectCaption(selected[0].id) : `${selected.length} in-options`}` : undefined}
+          />
+          <SubTabBar
+            tabs={dates.map((key) => ({ id: key, label: formatUpcomingDayLabel(key) }))}
+            active={dateKey}
+            onChange={setDateKey}
+          />
         </View>
       ) : null}
 
@@ -293,13 +249,12 @@ export default function PowerDynamicCallSearch({ heading = true }: { heading?: b
               <Pressable
                 key={`${hit.fixtureId}-${hit.aspectId}`}
                 onPress={() => setOpenHit(hit)}
-                style={({ pressed }) => [styles.ticket, pressed && styles.ticketPressed]}
+                style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
                 accessibilityRole="button"
                 accessibilityLabel={`Open ${hit.name}, ${hit.aspectLabel}`}
               >
-                <View style={styles.ticketBar} />
-                <Text style={styles.place}>{index + 1}</Text>
-                <View style={styles.identity}>
+                <Text style={styles.cardIndex}>{index + 1}</Text>
+                <View style={styles.cardBody}>
                   <Text style={styles.belongs} numberOfLines={2}>{hit.aspectLabel}</Text>
                   <Text style={styles.home} numberOfLines={1}>{home || hit.name}</Text>
                   {away ? <Text style={styles.away} numberOfLines={1}>{away}</Text> : null}
@@ -323,243 +278,101 @@ export default function PowerDynamicCallSearch({ heading = true }: { heading?: b
 
 const styles = StyleSheet.create({
   title: {
-    fontFamily: fonts.display,
-    fontSize: 22,
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 16,
     color: theme.textPrimary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
     marginBottom: spacing.sm,
   },
-  board: {
-    backgroundColor: theme.surface,
-    borderWidth: layout.borderWidth,
-    borderColor: theme.border,
-    borderRadius: 12,
-    padding: spacing.md,
-    gap: spacing.sm,
-  },
-  step: {
-    fontFamily: fonts.bodySemiBold,
-    fontSize: 11,
-    letterSpacing: 1.1,
-    color: theme.textMuted,
-    textTransform: 'uppercase',
-    marginTop: spacing.xs,
-  },
-  sectorRow: { gap: spacing.sm, paddingVertical: spacing.xs },
-  sector: {
-    width: 148,
-    minHeight: 84,
-    padding: spacing.sm,
-    borderRadius: 10,
-    borderWidth: layout.borderWidth,
-    borderColor: theme.border,
-    backgroundColor: theme.bg,
-    justifyContent: 'space-between',
-  },
-  sectorOn: {
-    borderColor: theme.accentGreen,
-    backgroundColor: '#ECFDF5',
-  },
-  sectorIndex: {
-    fontFamily: fonts.display,
-    fontSize: 18,
-    color: theme.textFaint,
-  },
-  sectorIndexOn: { color: theme.accentGreen },
-  sectorName: {
-    fontFamily: fonts.bodySemiBold,
-    fontSize: 14,
-    lineHeight: 18,
-    color: theme.textPrimary,
-  },
-  sectorNameOn: { color: theme.textPrimary },
-  hint: {
-    fontFamily: fonts.body,
-    fontSize: 13,
-    color: theme.textMuted,
-    marginBottom: spacing.xs,
-  },
-  pills: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  pill: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: 8,
-    borderRadius: 999,
-    borderWidth: layout.borderWidth,
-    borderColor: theme.border,
-    backgroundColor: theme.bg,
-  },
-  pillOn: { borderColor: theme.accentGreen, backgroundColor: theme.accentGreen },
-  pillText: { fontFamily: fonts.bodyMedium, fontSize: 13, color: theme.textPrimary },
-  pillTextOn: { color: '#FFFFFF', fontFamily: fonts.bodySemiBold },
-  inTitle: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  inCount: {
-    fontFamily: fonts.display,
-    fontSize: 16,
-    color: theme.textMuted,
-  },
-  markNote: {
-    fontFamily: fonts.body,
-    fontSize: 12,
-    lineHeight: 16,
-    color: theme.textMuted,
-  },
+  hint: { fontFamily: fonts.bodyMedium, fontSize: 13, color: theme.textPrimary, opacity: 0.85 },
   search: {
     borderWidth: layout.borderWidth,
     borderColor: theme.border,
-    borderRadius: 8,
+    borderRadius: layout.borderRadius,
     paddingHorizontal: spacing.sm,
     paddingVertical: 8,
     fontFamily: fonts.body,
     fontSize: 14,
     color: theme.textPrimary,
-    backgroundColor: theme.bg,
+    backgroundColor: theme.surface,
+    marginBottom: spacing.sm,
   },
   inSheet: {
     borderWidth: layout.borderWidth,
     borderColor: theme.border,
-    borderRadius: 10,
+    borderRadius: layout.borderRadius,
     overflow: 'hidden',
-    backgroundColor: theme.bg,
-  },
-  inHead: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 6,
-    borderBottomWidth: layout.borderWidth,
-    borderBottomColor: theme.border,
     backgroundColor: theme.surface,
-  },
-  inHeadLabel: {
-    flex: 1,
-    fontFamily: fonts.bodyMedium,
-    fontSize: 11,
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-    color: theme.textFaint,
+    marginBottom: spacing.sm,
   },
   inScroll: { maxHeight: 380 },
+  sectionBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.surfaceMuted,
+    borderLeftWidth: 3,
+    borderLeftColor: theme.textPrimary,
+    paddingVertical: 6,
+    paddingHorizontal: spacing.sm,
+  },
+  section: { flex: 1, fontFamily: fonts.bodySemiBold, fontSize: 14, color: theme.textPrimary },
   inRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    minHeight: 48,
+    minHeight: 44,
     paddingHorizontal: spacing.sm,
     paddingVertical: 8,
     borderBottomWidth: layout.borderWidth,
     borderBottomColor: theme.border,
   },
-  inRowOn: { backgroundColor: '#F0FDF4' },
-  inLabel: { flex: 1, fontFamily: fonts.body, fontSize: 14, lineHeight: 18, color: theme.textPrimary },
-  inLabelOn: { fontFamily: fonts.bodySemiBold },
+  inRowOn: { backgroundColor: 'rgba(5, 150, 105, 0.08)' },
+  inLabel: { flex: 1, fontFamily: fonts.bodyMedium, fontSize: 13, lineHeight: 18, color: theme.textPrimary },
+  inLabelOn: { fontFamily: fonts.bodySemiBold, color: theme.accentGreen },
   marks: { width: 92, flexDirection: 'row', justifyContent: 'flex-end', gap: 6 },
-  markHead: { width: 40, textAlign: 'center', fontFamily: fonts.bodyMedium, fontSize: 10, color: theme.textFaint },
+  markHead: { width: 40, textAlign: 'center', fontFamily: fonts.bodyMedium, fontSize: 10, color: theme.textMuted },
   mark: {
     width: 40,
     height: 32,
-    borderRadius: 8,
+    borderRadius: layout.borderRadius,
     borderWidth: layout.borderWidth,
     borderColor: theme.border,
     backgroundColor: theme.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  markTick: { backgroundColor: theme.accentGreen, borderColor: theme.accentGreen },
-  markWrong: { backgroundColor: theme.loss, borderColor: theme.loss },
+  markTick: { borderColor: theme.accentGreen, backgroundColor: 'rgba(5, 150, 105, 0.14)' },
+  markWrong: { borderColor: theme.loss, backgroundColor: 'rgba(220, 38, 38, 0.1)' },
   markGlyph: { fontSize: 16, color: theme.textMuted, fontFamily: fonts.bodySemiBold },
-  markGlyphOn: { color: '#FFFFFF' },
+  markGlyphTick: { color: theme.accentGreen },
+  markGlyphWrong: { color: theme.loss },
   emptyIn: { fontFamily: fonts.body, fontSize: 13, color: theme.textMuted, padding: spacing.md },
-  stage: { marginTop: spacing.md, gap: spacing.sm },
-  path: {
-    fontFamily: fonts.bodySemiBold,
-    fontSize: 14,
-    lineHeight: 20,
-    color: theme.textPrimary,
-  },
-  dates: { gap: spacing.sm, paddingVertical: spacing.xs },
-  day: {
-    width: 76,
-    paddingVertical: spacing.sm,
-    borderRadius: 10,
-    borderWidth: layout.borderWidth,
-    borderColor: theme.border,
-    backgroundColor: theme.surface,
-    alignItems: 'center',
-  },
-  dayOn: { borderColor: theme.accentGreen, backgroundColor: '#ECFDF5' },
-  dayKicker: { fontFamily: fonts.bodyMedium, fontSize: 10, color: theme.textMuted },
-  dayKickerOn: { color: theme.accentGreen },
-  dayNum: { fontFamily: fonts.display, fontSize: 22, color: theme.textPrimary, lineHeight: 26 },
-  dayNumOn: { color: theme.accentGreen },
-  dayMonth: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted },
-  fit: { gap: spacing.sm },
-  fitCol: { gap: 4 },
-  fitLabel: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: theme.textMuted },
-  ruler: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
-  stepChip: {
-    minWidth: 36,
-    paddingVertical: 6,
-    paddingHorizontal: 4,
-    borderRadius: 6,
-    borderWidth: layout.borderWidth,
-    borderColor: theme.border,
-    backgroundColor: theme.surface,
-    alignItems: 'center',
-  },
-  stepChipOn: { backgroundColor: theme.textPrimary, borderColor: theme.textPrimary },
-  stepChipText: { fontFamily: fonts.bodyMedium, fontSize: 12, color: theme.textMuted },
-  stepChipTextOn: { color: '#FFFFFF' },
+  stage: { marginTop: spacing.xs },
   progress: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm },
   progressText: { fontFamily: fonts.body, fontSize: 13, color: theme.textMuted, flex: 1 },
-  readyNote: { fontFamily: fonts.body, fontSize: 12, color: theme.textMuted, marginBottom: spacing.sm },
+  readyNote: { fontFamily: fonts.bodyMedium, fontSize: 13, color: theme.textPrimary, opacity: 0.85, marginBottom: spacing.sm },
   error: { fontFamily: fonts.body, fontSize: 13, color: theme.loss, marginBottom: spacing.sm },
-  list: { marginTop: spacing.sm, gap: spacing.sm },
-  count: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: theme.textMuted },
+  list: { gap: spacing.sm },
+  count: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: theme.textMuted },
   empty: { fontFamily: fonts.body, fontSize: 13, color: theme.textMuted },
-  ticket: {
+  card: {
     flexDirection: 'row',
-    alignItems: 'stretch',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
     backgroundColor: theme.surface,
     borderWidth: layout.borderWidth,
     borderColor: theme.border,
-    borderRadius: 12,
-    overflow: 'hidden',
+    borderRadius: layout.borderRadius,
+    padding: spacing.sm,
   },
-  ticketPressed: { backgroundColor: theme.surfaceHover },
-  ticketBar: { width: 5, backgroundColor: theme.accentGreen },
-  place: {
-    width: 36,
-    textAlign: 'center',
-    textAlignVertical: 'center',
-    fontFamily: fonts.display,
-    fontSize: 16,
-    color: theme.textFaint,
-    paddingTop: spacing.md,
-  },
-  identity: { flex: 1, minWidth: 0, paddingVertical: spacing.sm, paddingRight: spacing.sm },
-  belongs: {
-    alignSelf: 'flex-start',
-    fontFamily: fonts.bodySemiBold,
-    fontSize: 11,
-    lineHeight: 15,
-    color: theme.accentGreen,
-    backgroundColor: '#ECFDF5',
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    marginBottom: 4,
-  },
+  cardPressed: { backgroundColor: theme.surfaceHover },
+  cardIndex: { width: 22, fontFamily: fonts.bodySemiBold, fontSize: 13, color: theme.textMuted, paddingTop: 2 },
+  cardBody: { flex: 1, minWidth: 0 },
+  belongs: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: theme.accentGreen, marginBottom: 2 },
   home: { fontFamily: fonts.bodySemiBold, fontSize: 15, color: theme.textPrimary },
-  away: { fontFamily: fonts.body, fontSize: 14, color: theme.textPrimary, marginTop: 1 },
-  meta: { fontFamily: fonts.body, fontSize: 12, color: theme.textMuted, marginTop: 4 },
-  reason: { fontFamily: fonts.body, fontSize: 12, lineHeight: 16, color: theme.textPrimary, marginTop: 4 },
-  scoreBox: {
-    width: 64,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderLeftWidth: layout.borderWidth,
-    borderLeftColor: theme.border,
-  },
-  percent: { fontFamily: fonts.display, fontSize: 26, lineHeight: 28 },
-  percentUnit: { fontFamily: fonts.bodyMedium, fontSize: 11, color: theme.textFaint },
+  away: { fontFamily: fonts.bodyMedium, fontSize: 14, color: theme.textPrimary, marginTop: 1 },
+  meta: { fontFamily: fonts.bodyMedium, fontSize: 12, color: theme.textPrimary, opacity: 0.75, marginTop: 4 },
+  reason: { fontFamily: fonts.bodyMedium, fontSize: 13, lineHeight: 18, color: theme.textPrimary, marginTop: 4 },
   more: { fontFamily: fonts.body, fontSize: 12, lineHeight: 16, color: theme.textMuted },
 });
