@@ -54,7 +54,9 @@ import {
   evaluateImportanceOf3,
   PULL_FACTOR_LABEL,
   PULL_ROWS,
+  PUSH_FACTOR_LABEL,
   type PullFactorKind,
+  type PushFactorKind,
   type SingayeRead,
 } from '@/utils/importanceOf3Engine';
 import {
@@ -302,6 +304,27 @@ function importanceAspects(): MeasureAspect[] {
           binary: true,
           measure: 'importance',
           token: `pull:${kind}:${row.index}`,
+        }),
+      );
+    }
+  }
+  const pushFunction: Record<PushFactorKind, string> = {
+    dethrone: 'push_dethrone',
+    comes_short: 'push_comes_short',
+    clear: 'push_clear',
+  };
+  for (const kind of ['dethrone', 'comes_short', 'clear'] as const) {
+    for (const row of PULL_ROWS) {
+      out.push(
+        aspect({
+          id: `push-${kind}-${row.index}`,
+          tabId: 'importance_3pts',
+          functionId: pushFunction[kind],
+          label: `${PUSH_FACTOR_LABEL[kind]} ${row.index}`,
+          detail: `Late stretch. ${row.detail}. Equals ${row.equals}.`,
+          binary: true,
+          measure: 'importance',
+          token: `push:${kind}:${row.index}`,
         }),
       );
     }
@@ -1507,6 +1530,13 @@ function scoreImportance(row: MeasureRow, table: MeasureRow[], token: string, co
   if (head === 'pull') {
     const on = read.pull.kind === parts[1] && String(read.pull.index) === parts[2];
     return fit(on ? 100 : 0, `${read.pull.type} · ${read.pull.detail}`);
+  }
+  if (head === 'push') {
+    const on = read.push.active && read.push.kind === parts[1] && String(read.push.index) === parts[2];
+    const reason = read.push.active
+      ? `${read.push.type} · ${read.push.detail}`
+      : 'Push factors are off until the late stretch';
+    return fit(on ? 100 : 0, reason);
   }
   if (head === 'ahead') {
     const call = parts[1];

@@ -7,9 +7,11 @@ import {
   formatPositionList,
   PULL_FACTOR_LABEL,
   PULL_ROWS,
+  PUSH_FACTOR_LABEL,
   type ImportanceOf3,
   type ImbangiFit,
   type PullFactorKind,
+  type PushFactorKind,
   type SingayeRead,
   type TargetBand,
   type TargetKind,
@@ -45,6 +47,12 @@ function signed(n: number): string {
 function rate(points: number, played: number): string {
   if (played <= 0) return '—';
   return (points / played).toFixed(2);
+}
+
+function pushColor(kind: PushFactorKind): string {
+  if (kind === 'dethrone') return theme.loss;
+  if (kind === 'comes_short') return theme.accentOrange;
+  return theme.accentBlue;
 }
 
 function pullColor(kind: PullFactorKind): string {
@@ -208,6 +216,11 @@ function buildLedger(
     line('Points still available', (read) => String(read.remaining * 3)),
     line('Reach to Ahead', reachLabel, (read) => reachColor(read)),
     line('Pull factor', (read) => `${read.pull.type} · equals ${read.pull.equals}`, (read) => pullColor(read.pull.kind)),
+    line(
+      'Push factor',
+      (read) => (read.push.active ? `${read.push.type} · equals ${read.push.equals}` : 'Off until the late stretch'),
+      (read) => (read.push.active ? pushColor(read.push.kind) : undefined),
+    ),
 
     { kind: 'section', label: 'Ahead — take over' },
     line('Ahead', (read) => neighbourName(read.ahead, read.slot === 1 ? aOther : bOther, read.slot === 1 ? 2 : 1)),
@@ -440,6 +453,73 @@ function PullBoard({
   );
 }
 
+function PushBoard({
+  a,
+  b,
+  onlyKind,
+}: {
+  a: SingayeRead | null;
+  b: SingayeRead | null;
+  onlyKind?: PushFactorKind;
+}) {
+  const live = [a, b].filter((read) => read?.push.active);
+  const kinds = onlyKind
+    ? [onlyKind]
+    : (['dethrone', 'comes_short', 'clear'] as const).filter(
+        (kind) => a?.push.kind === kind || b?.push.kind === kind,
+      );
+  return (
+    <View style={styles.card}>
+      <Text style={styles.cardTitle}>Push factor</Text>
+      {live.length === 0 ? (
+        <Text style={styles.muted}>Push factors turn on in the late stretch, with about 10 games left.</Text>
+      ) : (
+        <View style={styles.kindRow}>
+          {[
+            { read: a, mark: 'Singaye 1' },
+            { read: b, mark: 'Singaye 2' },
+          ].map((side) => (
+            <View key={side.mark} style={[styles.pullSide, side.read?.push.active ? { borderColor: pushColor(side.read.push.kind) } : null]}>
+              <Text style={styles.pullName}>{side.mark}</Text>
+              {side.read?.push.active ? (
+                <>
+                  <Text style={[styles.pullKind, { color: pushColor(side.read.push.kind) }]}>{side.read.push.type}</Text>
+                  <Text style={styles.pullEquals}>{side.read.push.equals}</Text>
+                  <Text style={styles.pullDetail}>{side.read.push.detail}</Text>
+                </>
+              ) : (
+                <Text style={styles.muted}>Off until the late stretch.</Text>
+              )}
+            </View>
+          ))}
+        </View>
+      )}
+      {kinds.map((kind) => (
+        <View key={kind} style={styles.scaleBlock}>
+          <Text style={styles.scaleTitle}>{PUSH_FACTOR_LABEL[kind]}</Text>
+          {PULL_ROWS.map((row) => {
+            const marks = [
+              a?.push.active && a.push.kind === kind && a.push.index === row.index ? 'S1' : null,
+              b?.push.active && b.push.kind === kind && b.push.index === row.index ? 'S2' : null,
+            ].filter(Boolean);
+            const on = marks.length > 0;
+            return (
+              <View key={`${kind}-${row.index}`} style={[styles.scaleRow, on && styles.scaleRowLive]}>
+                <Text style={styles.scaleKind}>
+                  {PUSH_FACTOR_LABEL[kind]} {row.index}
+                </Text>
+                <Text style={styles.scaleDetail}>{row.detail}</Text>
+                <Text style={[styles.scaleEquals, on && { color: pushColor(kind) }]}>{row.equals}</Text>
+                <Text style={styles.scaleWho}>{marks.join(' · ')}</Text>
+              </View>
+            );
+          })}
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function Ladder({ read, title }: { read: SingayeRead | null; title: string }) {
   if (!read) {
     return (
@@ -620,6 +700,13 @@ function pullKind(section: string): PullFactorKind | null {
   return null;
 }
 
+function pushKind(section: string): PushFactorKind | null {
+  if (section === 'push_dethrone') return 'dethrone';
+  if (section === 'push_comes_short') return 'comes_short';
+  if (section === 'push_clear') return 'clear';
+  return null;
+}
+
 function RuleTable() {
   return (
     <View style={styles.card}>
@@ -669,6 +756,7 @@ export default function ImportanceOf3Panel({
 
   const rows = buildLedger(report.singaye1, report.singaye2, t1Label, t2Label, t2Id, t1Id, report.targets);
   const kind = section ? pullKind(section) : null;
+  const pushed = section ? pushKind(section) : null;
 
   if (section) {
     const ledgerTitle =
@@ -689,6 +777,7 @@ export default function ImportanceOf3Panel({
         {focused.length > 0 ? <Ledger rows={focused} /> : null}
         {section === 'escape' ? <EscapeMatrix a={report.singaye1} b={report.singaye2} /> : null}
         {kind ? <PullBoard a={report.singaye1} b={report.singaye2} onlyKind={kind} /> : null}
+        {pushed ? <PushBoard a={report.singaye1} b={report.singaye2} onlyKind={pushed} /> : null}
       </View>
     );
   }
@@ -707,6 +796,7 @@ export default function ImportanceOf3Panel({
       </View>
       <EscapeMatrix a={report.singaye1} b={report.singaye2} />
       <PullBoard a={report.singaye1} b={report.singaye2} />
+      <PushBoard a={report.singaye1} b={report.singaye2} />
       <PositionRail standings={standings} report={report} />
       <RuleTable />
     </View>

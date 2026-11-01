@@ -9,6 +9,7 @@ import {
   type CallSearchContext,
   type MeasureAspect,
 } from '@/utils/powerDynamicCallMeasures';
+import { CALCULATION_ASPECTS, scoreCalculationFixture } from '@/utils/powerDynamicCalculationCalls';
 import {
   classifyBaselineLetter,
   STREAMLINE_CLOSE_MAX,
@@ -147,6 +148,7 @@ export const CALL_ASPECTS: CallAspect[] = [
     pair: true,
   },
   ...measureAspects(),
+  ...CALCULATION_ASPECTS,
 ];
 
 const ASPECT_BY_ID = new Map(CALL_ASPECTS.map((aspect) => [aspect.id, aspect]));
@@ -301,6 +303,7 @@ export function scoreCallFixture(
 ): CallScore | null {
   const aspect = callAspectById(aspectId);
   if (!aspect) return null;
+  if (aspect.tabId === 'calculations') return scoreCalculationFixture(aspectId, home, away, table, context);
   const fixture = context?.fixture ?? { homeId: home.teamId, awayId: away.teamId, unix: 0 };
   const scoreSide = (side: CallTableRow, opponent: CallTableRow) =>
     scoreCallAspect(aspectId, side, table, { ...context, opponentId: opponent.teamId, fixture });

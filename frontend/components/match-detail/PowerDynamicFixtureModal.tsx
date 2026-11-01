@@ -6,6 +6,7 @@ import { findPowerDynamicFixture } from '@/services/powerDynamicCallLibrary';
 import { fetchFixtureDetail, type StandingRow } from '@/services/oddAlerts';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 import type { PowerDynamicHit } from '@/utils/powerDynamicLibraryScore';
+import { CALCULATION_CALL } from '@/utils/powerDynamicCalculationCalls';
 import { powerDynamicCall } from '@/utils/powerDynamicCalls';
 import { callAspectById } from '@/utils/powerDynamicCallSearch';
 
@@ -36,7 +37,8 @@ export default function PowerDynamicFixtureModal({
   const height = useWindowDimensions().height;
   const found = findPowerDynamicFixture(hit.fixtureId);
   const aspect = callAspectById(hit.aspectId);
-  const sector = aspect ? powerDynamicCall(aspect.tabId) : undefined;
+  const sector = aspect?.tabId === 'calculations' ? CALCULATION_CALL : aspect ? powerDynamicCall(aspect.tabId) : undefined;
+  const option = sector?.functions.find((item) => item.id === aspect?.functionId);
   const detail = useQuery({
     queryKey: ['power-dynamic-in-option', hit.fixtureId],
     queryFn: ({ signal }) => fetchFixtureDetail(hit.fixtureId, signal),
@@ -55,7 +57,7 @@ export default function PowerDynamicFixtureModal({
           <View style={styles.head}>
             <View style={styles.headCopy}>
               <Text style={styles.kicker}>
-                {sector ? `${sector.index}. ${sector.name}` : 'Power dynamics'}
+                {sector ? `${sector.index}. ${sector.name}${option ? ` · ${option.label}` : ''}` : 'Power dynamics'}
               </Text>
               <Text style={styles.aspect}>{hit.aspectLabel}</Text>
             </View>
@@ -113,7 +115,11 @@ export default function PowerDynamicFixtureModal({
                 probability={detail.data?.probability}
                 kickoffUnix={found.fixture.unix}
                 fixtureId={found.fixture.id}
-                focus={aspect ? { tabId: aspect.tabId, functionId: aspect.functionId } : { tabId: 'baseline', functionId: 'original' }}
+                focus={
+                  aspect
+                    ? { tabId: aspect.tabId, functionId: aspect.functionId, aspectId: hit.aspectId }
+                    : { tabId: 'baseline', functionId: 'original' }
+                }
                 suppliedSeason={{ matches: found.record.matches, schedule: found.record.schedule }}
               />
             </ScrollView>

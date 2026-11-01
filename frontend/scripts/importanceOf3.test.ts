@@ -158,6 +158,40 @@ console.log('\nrelegation safety and gebe widening');
   check('about 20 games left at 50%', leader.remaining >= 18 && leader.remaining <= 22, `rem=${leader.remaining}`);
 }
 
+console.log('\npush factor kinds');
+{
+  const lateTable = Array.from({ length: 20 }, (_, i) => ({
+    rank: i + 1,
+    teamId: i + 1,
+    name: `P${i + 1}`,
+    points: 100 - i,
+    played: 32,
+  }));
+  const late = evaluateImportanceOf3({
+    table: lateTable,
+    t1Id: 18,
+    t2Id: null,
+    competitionId: 423,
+    seasonProgress: 90,
+    formReady: true,
+  }).singaye1;
+  check(
+    'late dethrone with a target and Imbangi equals 10',
+    late?.push.active === true && late.push.kind === 'dethrone' && late.push.index === 1 && late.push.equals === 10,
+    `${late?.push.type} active=${late?.push.active} equals ${late?.push.equals}`,
+  );
+
+  const early = evaluateImportanceOf3({
+    table: lateTable.map((row) => ({ ...row, played: 8 })),
+    t1Id: 18,
+    t2Id: null,
+    competitionId: 423,
+    seasonProgress: 20,
+    formReady: true,
+  }).singaye1;
+  check('the same dethrone stays off early in the season', early?.push.kind === 'dethrone' && early.push.active === false, `${early?.push.type} active=${early?.push.active}`);
+}
+
 console.log('\nimbangi fit');
 {
   const close = side(league([40, 37, 30]), 2);

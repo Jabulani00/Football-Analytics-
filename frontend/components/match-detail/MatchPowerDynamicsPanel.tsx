@@ -113,6 +113,7 @@ type BatetemeSubId = (typeof BATETEME_SUBS)[number]['id'];
 export type PowerDynamicsFocus = {
   tabId: string;
   functionId: string;
+  aspectId?: string;
 };
 
 type Props = {
@@ -241,8 +242,10 @@ export default function MatchPowerDynamicsPanel({
   ]);
 
   const season = competition?.seasons[0] ?? null;
+  const calculationFocus = focus?.tabId === 'calculations';
   const needSeasonFx =
     page === 'calculations' ||
+    calculationFocus ||
     view === 'bhozoma' ||
     view === 'imbangi' ||
     view === 'importance_3pts' ||
@@ -911,7 +914,39 @@ export default function MatchPowerDynamicsPanel({
   })();
 
   const calculationsLoading =
-    page === 'calculations' && seasonId != null && seasonFx.loading && seasonFx.matches.length === 0;
+    (page === 'calculations' || calculationFocus) &&
+    seasonId != null &&
+    seasonFx.loading &&
+    seasonFx.matches.length === 0;
+
+  const calculationsView = calculationsLoading ? (
+    <View style={styles.center}>
+      <ActivityIndicator color={theme.accentGreen} />
+      <Text style={styles.muted}>Loading season games for the calculations…</Text>
+    </View>
+  ) : (
+    <PowerDynamicsCalculations
+      pd={pd}
+      standings={like}
+      matches={seasonFx.matches}
+      schedule={seasonFx.schedule}
+      seasonProgress={seasonProgress}
+      competitionId={competitionId}
+      h2hMatches={h2hMatches}
+      homeName={homeName}
+      awayName={awayName}
+      competitionName={competitionName}
+      initial={initialState}
+      indlela={indlela}
+      problem={problem}
+      swing={history.swing}
+      loss={history.loss}
+      win={history.win}
+      focus={calculationFocus && focus ? { functionId: focus.functionId, aspectId: focus.aspectId } : undefined}
+    />
+  );
+
+  if (calculationFocus) return <View>{calculationsView}</View>;
 
   if (focus) return <View>{body}</View>;
 
@@ -928,31 +963,7 @@ export default function MatchPowerDynamicsPanel({
         style={styles.pagePicker}
       />
       {page === 'calculations' ? (
-        calculationsLoading ? (
-          <View style={styles.center}>
-            <ActivityIndicator color={theme.accentGreen} />
-            <Text style={styles.muted}>Loading season games for the calculations…</Text>
-          </View>
-        ) : (
-          <PowerDynamicsCalculations
-            pd={pd}
-            standings={like}
-            matches={seasonFx.matches}
-            schedule={seasonFx.schedule}
-            seasonProgress={seasonProgress}
-            competitionId={competitionId}
-            h2hMatches={h2hMatches}
-            homeName={homeName}
-            awayName={awayName}
-            competitionName={competitionName}
-            initial={initialState}
-            indlela={indlela}
-            problem={problem}
-            swing={history.swing}
-            loss={history.loss}
-            win={history.win}
-          />
-        )
+        calculationsView
       ) : (
         <View>
           <Text style={styles.blurb}>

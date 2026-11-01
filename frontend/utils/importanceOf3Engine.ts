@@ -17,7 +17,9 @@
  *   dethrone, target relation              = 10
  *
  * Pull factors (take over, chaser, gebe widening) each have seven kinds.
- * The kind equals 10, 8, 6, 4, 4, 2, or 0 from the pull-factor sheet.
+ * Push factors (dethrone, comes short, nothing below) use the same seven kinds.
+ * Push turns on in the late stretch: 10 or fewer games left, or the season is at least 75% complete.
+ * The kind equals 10, 8, 6, 4, 4, 2, or 0 from the factor sheet.
  * Fewer games means 10 or fewer still to play. More than 10 is the other side.
  */
 
@@ -32,6 +34,7 @@ import {
 } from '@/utils/imbangiEngine';
 import {
   estimateRemainingMatches,
+  LATE_SEASON_PROGRESS,
   MOTIVATION_GAP_MAX,
   type StandingLike,
 } from '@/utils/motivationEngine';
@@ -45,6 +48,9 @@ export type TargetBand = {
 };
 
 export type PullFactorKind = 'take_over' | 'chaser' | 'gebe_widening';
+
+/** Pressure from the side below. Clear means this side is last. */
+export type PushFactorKind = 'dethrone' | 'comes_short' | 'clear';
 
 /** More than this many games left is the sheet's "more than 10 games remaining". */
 export const PULL_FEW_GAMES = 10;
@@ -91,6 +97,17 @@ export type PullFactorRead = {
   widenMotivation: boolean;
 };
 
+export type PushFactorRead = {
+  kind: PushFactorKind;
+  index: PullRowIndex;
+  type: string;
+  detail: string;
+  equals: number;
+  points: PullPoint[];
+  /** Late stretch. Early in the season the row is still read, and the call stays off. */
+  active: boolean;
+};
+
 export function pullRow(index: PullRowIndex) {
   const row = PULL_ROWS.find((item) => item.index === index);
   if (!row) return PULL_ROWS[0];
@@ -101,6 +118,12 @@ export function pullRow(index: PullRowIndex) {
  * First matching kind on the sheet.
  * A checked wide gap is non Imbangi. No neighbour to check, with fewer games, is kind 3.
  */
+/** Push factors count once about 10 games remain, or the season is at least 75% complete. */
+export function pushFactorsActive(remaining: number, seasonProgress: number | null | undefined): boolean {
+  if (remaining <= PULL_FEW_GAMES) return true;
+  return seasonProgress != null && seasonProgress >= LATE_SEASON_PROGRESS;
+}
+
 export function matchPullRow(input: {
   targetAttached: boolean;
   imbangi: boolean | null;
@@ -162,6 +185,7 @@ export type SingayeRead = {
     relegationLine: number | null;
   };
   pull: PullFactorRead;
+  push: PushFactorRead;
   imbangiAhead: ImbangiFit | null;
   imbangiTail: ImbangiFit | null;
 };
@@ -345,6 +369,54 @@ function pullTypeLabel(kind: PullFactorKind, index: PullRowIndex): string {
   return `${PULL_FACTOR_LABEL[kind]} ${index}`;
 }
 
+function pushTypeLabel(kind: PushFactorKind, index: PullRowIndex): string {
+  return `${PUSH_FACTOR_LABEL[kind]} ${index}`;
+}
+
+function buildPushFactor(input: {
+  kind: PushFactorKind;
+  active: boolean;
+  targetAttached: boolean;
+  targetNumber: string;
+  targetReading: string;
+  imbangiFit: ImbangiFit | null;
+  remaining: number;
+}): PushFactorRead {
+  const fewerGames = input.remaining <= PULL_FEW_GAMES;
+  const imbangi = input.imbangiFit == null ? null : input.imbangiFit.fits;
+  const index = matchPullRow({
+    targetAttached: input.targetAttached,
+    imbangi,
+    fewerGames,
+  });
+  const row = pullRow(index);
+  const gamesPoint: PullPoint = {
+    id: 'games',
+    point: 'Games remaining',
+    numberText: String(input.remaining),
+    reading: input.active ? 'Late stretch · push factors on' : 'Early season · push factors off',
+    equalsText: '—',
+    equalsValue: null,
+  };
+  const targetPoint: PullPoint = {
+    id: 'target',
+    point: 'Target below',
+    numberText: input.targetNumber,
+    reading: input.targetReading,
+    equalsText: '—',
+    equalsValue: null,
+  };
+  return {
+    kind: input.kind,
+    index,
+    type: pushTypeLabel(input.kind, index),
+    detail: row.detail,
+    equals: row.equals,
+    points: [targetPoint, imbangiPoint(input.imbangiFit), gamesPoint],
+    active: input.active,
+  };
+}
+
 function imbangiPoint(fit: ImbangiFit | null): PullPoint {
   if (!fit) {
     return {
@@ -503,6 +575,7 @@ function readSingaye(
       : aheadTargets.length > 0;
   const targetLabels = pullKind === 'gebe_widening' ? targetsHeld : aheadTargets;
   const targetRank = pullKind === 'gebe_widening' ? team.rank : ahead?.rank;
+  const remaining = estimateRemainingMatches(team, table, seasonProgress);
   const pull = buildPullFactor({
     kind: pullKind,
     targetAttached,
@@ -511,10 +584,29 @@ function readSingaye(
       ? `Target attached${targetLabels.length > 0 ? ` · ${targetLabels.join(', ')}` : ''}`
       : 'No target attached',
     imbangiFit: pullKind === 'gebe_widening' ? imbangiTail : imbangiAhead,
-    remaining: estimateRemainingMatches(team, table, seasonProgress),
+    remaining,
     gapNow,
     gapAfterWin,
     widenMotivation: tail != null && prize,
+  });
+
+  const pushKind: PushFactorKind =
+    dethVerdict === 'dethrone' ? 'dethrone' : dethVerdict === 'comes_short' ? 'comes_short' : 'clear';
+  const pushTarget =
+    relegationRead(team.rank, relegationLine) === 'escaping' ||
+    relegationRead(team.rank, relegationLine) === 'safety' ||
+    targetInFight;
+  const pushLabels = pushKind === 'clear' ? targetsHeld : relationLabels;
+  const push = buildPushFactor({
+    kind: pushKind,
+    active: pushFactorsActive(remaining, seasonProgress),
+    targetAttached: pushTarget,
+    targetNumber: tail ? `#${tail.rank}` : `#${team.rank}`,
+    targetReading: pushTarget
+      ? `Target attached${pushLabels.length > 0 ? ` · ${pushLabels.join(', ')}` : ''}`
+      : 'No target attached',
+    imbangiFit: imbangiTail,
+    remaining,
   });
 
   return {
@@ -523,7 +615,7 @@ function readSingaye(
     ahead,
     tail,
     targetsHeld,
-    remaining: estimateRemainingMatches(team, table, seasonProgress),
+    remaining,
     takeover: {
       diff: takeDiff,
       verdict: takeVerdict,
@@ -544,6 +636,7 @@ function readSingaye(
       relegationLine,
     },
     pull,
+    push,
     imbangiAhead,
     imbangiTail,
   };
@@ -587,4 +680,10 @@ export const PULL_FACTOR_LABEL: Record<PullFactorKind, string> = {
   take_over: 'Take over',
   chaser: 'Chaser',
   gebe_widening: 'Gebe widening',
+};
+
+export const PUSH_FACTOR_LABEL: Record<PushFactorKind, string> = {
+  dethrone: 'Dethrone',
+  comes_short: 'Comes short',
+  clear: 'Nothing below',
 };

@@ -6,6 +6,7 @@ import type { SeasonMatch } from '@/utils/bhozomaEngine';
 import type { ImbangiScheduleMatch } from '@/utils/imbangiEngine';
 import type { FixtureInitialState } from '@/utils/last5Analysis';
 import type { StandingLike } from '@/utils/motivationEngine';
+import { scoreCalculationRead } from '@/utils/powerDynamicCalculationCalls';
 import {
   buildPowerDynamicsCalculations,
   SECTOR_HIT,
@@ -39,6 +40,8 @@ type Props = {
   swing: { t1: PpgSwing; t2: PpgSwing };
   loss: { t1: StreakSide; t2: StreakSide };
   win: { t1: StreakSide; t2: StreakSide };
+  /** The calculation option and in-option opened from a call. */
+  focus?: { functionId: string; aspectId?: string };
 };
 
 const GROUP_COPY: Record<SectorGroup, { title: string; note: string }> = {
@@ -110,15 +113,17 @@ function SectorFact({
   aside,
   note,
   band,
+  picked,
 }: {
   label: string;
   aside: string;
   note?: string;
   band: MarginBandId;
+  picked?: boolean;
 }) {
   const paint = bandPaint(band);
   return (
-    <View style={[styles.fact, paint.fill]}>
+    <View style={[styles.fact, paint.fill, picked && styles.factPicked]}>
       <View style={styles.factTop}>
         <Text style={styles.factName}>{label}</Text>
         <Text style={[styles.factAside, paint.text]}>{aside}</Text>
@@ -213,10 +218,12 @@ function SideWon({
   name,
   read,
   side,
+  emphasize,
 }: {
   name: string;
   read: SideMarginRead;
   side: 't1' | 't2';
+  emphasize?: MarginBandId;
 }) {
   const [open, setOpen] = useState(false);
   const preview = takePreview(read.bands, SECTOR_PREVIEW);
@@ -242,14 +249,16 @@ function SideWon({
       {read.count === 0 ? (
         <Text style={styles.muted}>No sectors won</Text>
       ) : (
-        WIN_BANDS.map((band) =>
-          preview[band.id].length === 0 ? null : (
+        WIN_BANDS.map((band) => {
+          const rows = emphasize === band.id ? read.bands[band.id] : preview[band.id];
+          if (rows.length === 0) return null;
+          return (
             <View key={band.id} style={styles.bandBlock}>
               <View style={styles.bandHead}>
                 <View style={[styles.bandMark, bandPaint(band.id).mark]} />
                 <Text style={styles.bandTitle}>{band.title}</Text>
               </View>
-              {preview[band.id].map((row) => {
+              {rows.map((row) => {
                 const scores = ownScore(row, side);
                 return (
                   <SectorFact
@@ -258,12 +267,13 @@ function SideWon({
                     aside={`+${fmt(row.margin)}`}
                     note={`${fmt(scores.own)} over ${fmt(scores.other)}`}
                     band={band.id}
+                    picked={emphasize === band.id}
                   />
                 );
               })}
             </View>
-          ),
-        )
+          );
+        })
       )}
       {overflow ? (
         <Pressable
@@ -314,11 +324,13 @@ function WonSectors({
   t2Name,
   wins,
   only,
+  highlight,
 }: {
   t1Name: string;
   t2Name: string;
   wins: PowerDynamicsCalculation['calc3'];
   only?: 't2';
+  highlight?: { side: 't1' | 't2'; band: MarginBandId } | null;
 }) {
   const lead = (
     <Text style={styles.detail}>
@@ -333,7 +345,7 @@ function WonSectors({
         <Text style={styles.calcCall}>
           {t2Name} won {count} {count === 1 ? 'sector' : 'sectors'}.
         </Text>
-        <SideWon name={t2Name} read={wins.t2} side="t2" />
+        <SideWon name={t2Name} read={wins.t2} side="t2" emphasize={highlight?.side === 't2' ? highlight.band : undefined} />
       </View>
     );
   }
@@ -342,8 +354,8 @@ function WonSectors({
       {lead}
       <Text style={styles.calcCall}>{wonCall(t1Name, t2Name, wins.t1, wins.t2)}</Text>
       <View style={styles.hitGrid}>
-        <SideWon name={t1Name} read={wins.t1} side="t1" />
-        <SideWon name={t2Name} read={wins.t2} side="t2" />
+        <SideWon name={t1Name} read={wins.t1} side="t1" emphasize={highlight?.side === 't1' ? highlight.band : undefined} />
+        <SideWon name={t2Name} read={wins.t2} side="t2" emphasize={highlight?.side === 't2' ? highlight.band : undefined} />
       </View>
     </View>
   );
@@ -355,9 +367,9 @@ function ValueCell({ value, hit }: { value: number | null; hit: boolean }) {
   );
 }
 
-function SectorRow({ row }: { row: CalculationSector }) {
+function SectorRow({ row, picked }: { row: CalculationSector; picked?: boolean }) {
   return (
-    <View style={styles.sector}>
+    <View style={[styles.sector, picked && styles.picked]}>
       <View style={styles.sectorHead}>
         <Text style={styles.sectorName}>{row.label}</Text>
         {row.coreFor.length > 0 ? (
@@ -393,9 +405,9 @@ function SectorRow({ row }: { row: CalculationSector }) {
   );
 }
 
-function TickRow({ row }: { row: CalculationTick }) {
+function TickRow({ row, picked }: { row: CalculationTick; picked?: boolean }) {
   return (
-    <View style={styles.sector}>
+    <View style={[styles.sector, picked && styles.picked]}>
       <Text style={styles.sectorName}>{row.label}</Text>
       <View style={styles.valueRow}>
         <View style={styles.valueCol}>
@@ -408,6 +420,38 @@ function TickRow({ row }: { row: CalculationTick }) {
         </View>
       </View>
       <Text style={styles.detail}>{row.detail}</Text>
+    </View>
+  );
+}
+
+function aspectBase(aspectId: string | undefined): string {
+  return (aspectId ?? '').replace(/::(tick|wrong)$/, '');
+}
+
+function sectorIdFromAspect(base: string): string | null {
+  const match = base.match(/^sector-(.+)-(?:t1-hit|t2-hit|t1|t2|level)$/);
+  return match?.[1] ?? null;
+}
+
+function tickIdFromAspect(base: string): string | null {
+  const match = base.match(/^tick-(.+)-(?:t1|t2)$/);
+  return match?.[1] ?? null;
+}
+
+function bandFromAspect(base: string): { side: 't1' | 't2'; band: MarginBandId } | null {
+  const match = base.match(/^calc3-(t1|t2)-(high|mid|low)$/);
+  if (!match) return null;
+  return { side: match[1] as 't1' | 't2', band: match[2] as MarginBandId };
+}
+
+function CallVerdict({ aspectId, calc }: { aspectId: string; calc: PowerDynamicsCalculation }) {
+  const verdict = scoreCalculationRead(aspectId, calc);
+  if (!verdict) return null;
+  const holds = verdict.percent > 0;
+  return (
+    <View style={[styles.callout, holds ? styles.calloutOn : styles.calloutOff]}>
+      <Text style={styles.calloutTitle}>{holds ? 'This call holds' : 'This call does not hold'}</Text>
+      <Text style={styles.calcCall}>{verdict.reason}</Text>
     </View>
   );
 }
@@ -459,6 +503,73 @@ export default function PowerDynamicsCalculations(props: Props) {
   const yInCore = calc.sectors.filter((row) => row.group === 'y' && row.coreFor.length > 0);
   const semi = calc.sectors.filter((row) => row.group === 'semi');
   const yOnly = calc.sectors.filter((row) => row.group === 'y' && row.coreFor.length === 0);
+  const focusId = props.focus?.functionId;
+  const base = aspectBase(props.focus?.aspectId);
+
+  if (focusId) {
+    const pickedSector = sectorIdFromAspect(base);
+    const pickedTick = tickIdFromAspect(base);
+    const pickedBand = bandFromAspect(base);
+    const groupRows =
+      focusId === 'core' ? [...core, ...yInCore] : focusId === 'semi' ? semi : focusId === 'y' ? calc.sectors.filter((row) => row.group === 'y') : [];
+    const shownSectors = pickedSector ? groupRows.filter((row) => row.id === pickedSector) : groupRows;
+    const shownTicks = pickedTick ? calc.ticks.filter((row) => row.id === pickedTick) : calc.ticks;
+    const group = focusId === 'core' || focusId === 'semi' || focusId === 'y' ? GROUP_COPY[focusId] : null;
+    return (
+      <View>
+        {props.focus?.aspectId ? <CallVerdict aspectId={props.focus.aspectId} calc={calc} /> : null}
+        {focusId === 'calc1' ? (
+          <View style={styles.calcCard}>
+            <Text style={styles.calcKicker}>Calculation 1</Text>
+            <Text style={styles.calcTitle}>Sectors of {SECTOR_HIT} or more</Text>
+            <Text style={styles.calcCall}>{leaderLine(calc, t1, t2)}</Text>
+            <View style={styles.hitGrid}>
+              <HitList label={t1} rows={calc.calc1.t1} />
+              <HitList label={t2} rows={calc.calc1.t2} />
+            </View>
+          </View>
+        ) : null}
+        {focusId === 'calc2' ? (
+          <View style={styles.calcCard}>
+            <Text style={styles.calcKicker}>Calculation 2 · Apples v apples</Text>
+            <Text style={styles.calcTitle}>Totals</Text>
+            <View style={styles.totalGrid}>
+              <View style={styles.totalCol}>
+                <Text style={styles.hitLabel}>{t1}</Text>
+                <Text style={styles.total}>{fmt(calc.calc2.t1)}</Text>
+              </View>
+              <View style={styles.totalCol}>
+                <Text style={styles.hitLabel}>{t2}</Text>
+                <Text style={styles.total}>{fmt(calc.calc2.t2)}</Text>
+              </View>
+            </View>
+            <Text style={styles.detail}>Core, semi-core, and Y applications. Additional sectors are ticks only.</Text>
+          </View>
+        ) : null}
+        {focusId === 'calc3' ? (
+          <View style={styles.calcCard}>
+            <Text style={styles.calcKicker}>Calculation 3</Text>
+            <Text style={styles.calcTitle}>Sectors won</Text>
+            <WonSectors t1Name={t1} t2Name={t2} wins={calc.calc3} highlight={pickedBand} />
+          </View>
+        ) : null}
+        {group ? (
+          <Section title={group.title} note={group.note}>
+            {shownSectors.map((row) => (
+              <SectorRow key={row.id} row={row} picked={row.id === pickedSector} />
+            ))}
+          </Section>
+        ) : null}
+        {focusId === 'ticks' ? (
+          <Section title="Ticks" note="A tick means the side falls under that sector. Ticks are not added into the totals.">
+            {shownTicks.map((row) => (
+              <TickRow key={row.id} row={row} picked={row.id === pickedTick} />
+            ))}
+          </Section>
+        ) : null}
+      </View>
+    );
+  }
 
   return (
     <View>
@@ -557,6 +668,34 @@ function Section({ title, note, children }: { title: string; note: string; child
 }
 
 const styles = StyleSheet.create({
+  callout: {
+    borderWidth: layout.borderWidth,
+    borderRadius: layout.borderRadius,
+    padding: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  calloutOn: {
+    borderColor: theme.accentGreen,
+    backgroundColor: 'rgba(5, 150, 105, 0.08)',
+  },
+  calloutOff: {
+    borderColor: theme.loss,
+    backgroundColor: 'rgba(220, 38, 38, 0.08)',
+  },
+  calloutTitle: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 13,
+    color: theme.textPrimary,
+    marginBottom: 2,
+  },
+  picked: {
+    borderColor: theme.accentGreen,
+    backgroundColor: 'rgba(5, 150, 105, 0.08)',
+  },
+  factPicked: {
+    borderWidth: layout.borderWidth,
+    borderColor: theme.accentGreen,
+  },
   intro: {
     fontFamily: fonts.body,
     fontSize: 13,

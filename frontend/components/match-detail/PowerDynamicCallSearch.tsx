@@ -14,7 +14,8 @@ import {
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 import type { PowerDynamicHit } from '@/utils/powerDynamicLibraryScore';
 import { formatUpcomingDayLabel, todayKey } from '@/utils/dates';
-import { POWER_DYNAMIC_CALLS, powerDynamicCall } from '@/utils/powerDynamicCalls';
+import { POWER_DYNAMIC_CALLS, powerDynamicCall, type PowerDynamicCallDef } from '@/utils/powerDynamicCalls';
+import { CALCULATION_CALL } from '@/utils/powerDynamicCalculationCalls';
 import { callAspectById, callAspectsFor } from '@/utils/powerDynamicCallSearch';
 
 type InRow = {
@@ -59,8 +60,15 @@ function toggleId(current: string[], id: string): string[] {
   return current.includes(id) ? current.filter((item) => item !== id) : [...current, id];
 }
 
-export default function PowerDynamicCallSearch({ heading = true }: { heading?: boolean }) {
-  const [tabId, setTabId] = useState('');
+export default function PowerDynamicCallSearch({
+  heading = true,
+  source = 'sectors',
+}: {
+  heading?: boolean;
+  source?: 'sectors' | 'calculations';
+}) {
+  const calls: PowerDynamicCallDef[] = source === 'calculations' ? [CALCULATION_CALL] : POWER_DYNAMIC_CALLS;
+  const [tabId, setTabId] = useState(source === 'calculations' ? 'calculations' : '');
   const [functionId, setFunctionId] = useState('');
   const [aspectIds, setAspectIds] = useState<string[]>([]);
   const [openHit, setOpenHit] = useState<PowerDynamicHit | null>(null);
@@ -73,7 +81,7 @@ export default function PowerDynamicCallSearch({ heading = true }: { heading?: b
   );
   const dates = library.days;
 
-  const call = tabId ? powerDynamicCall(tabId) : undefined;
+  const call = tabId ? calls.find((item) => item.id === tabId) ?? powerDynamicCall(tabId) : undefined;
   const groups = useMemo(() => {
     if (!call) return [];
     const options = functionId ? call.functions.filter((item) => item.id === functionId) : call.functions;
@@ -125,21 +133,25 @@ export default function PowerDynamicCallSearch({ heading = true }: { heading?: b
       )}
 
       <View>
-        <SectorIntro title="Sector" note="Open one sector. Its options and in-options follow." />
-        <SubTabBar
-          tabs={POWER_DYNAMIC_CALLS.map((item) => ({ id: item.id, label: `${item.index}. ${item.name}` }))}
-          active={tabId}
-          onChange={(id) => {
-            setTabId(id);
-            setFunctionId('');
-            setAspectIds([]);
-            setQuery('');
-          }}
-        />
+        {source === 'calculations' ? null : (
+          <>
+            <SectorIntro title="Sector" note="Open one sector. Its options and in-options follow." />
+            <SubTabBar
+              tabs={calls.map((item) => ({ id: item.id, label: `${item.index}. ${item.name}` }))}
+              active={tabId}
+              onChange={(id) => {
+                setTabId(id);
+                setFunctionId('');
+                setAspectIds([]);
+                setQuery('');
+              }}
+            />
+          </>
+        )}
 
         {call ? (
           <>
-            <SectorIntro title="Option" note={call.detail} />
+            <SectorIntro title={source === 'calculations' ? 'Calculation' : 'Option'} note={call.detail} />
             <SubTabBar
               tabs={[{ id: '', label: 'All options' }, ...call.functions.map((item) => ({ id: item.id, label: item.label }))]}
               active={functionId}
@@ -149,8 +161,8 @@ export default function PowerDynamicCallSearch({ heading = true }: { heading?: b
               }}
             />
             <SectorIntro
-              title={`In-option · ${inOptionCount}`}
-              note={`${hasMarks ? 'A tick means the call holds. A cross means the same call does not. ' : ''}Every option is listed with its in-options. Select any number.${aspectIds.length > 0 ? ` ${aspectIds.length} selected.` : ''}`}
+              title={source === 'calculations' ? `Call · ${inOptionCount}` : `In-option · ${inOptionCount}`}
+              note={`${hasMarks ? 'A tick means the call holds. A cross means the same call does not. ' : ''}Select any number.${aspectIds.length > 0 ? ` ${aspectIds.length} selected.` : ''}`}
             />
             {inOptionCount > 8 ? (
               <TextInput

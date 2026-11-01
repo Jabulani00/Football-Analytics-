@@ -90,6 +90,8 @@ console.log('\nevery option has in-options');
 {
   const takeOver = callAspectsFor('importance_3pts', 'pull_take_over');
   check('importance of 3 lists all 7 take-over kinds', takeOver.filter((item) => item.mark === 'tick').length === 7);
+  const push = callAspectsFor('importance_3pts', 'push_dethrone');
+  check('importance of 3 lists all 7 dethrone push kinds', push.filter((item) => item.mark === 'tick').length === 7);
   check('importance of 3 lists the escape scores', callAspectsFor('importance_3pts', 'escape').some((item) => item.id.startsWith('escape-10')));
   const missing = POWER_DYNAMIC_CALLS.flatMap((sector) =>
     sector.functions.filter((option) => callAspectsFor(sector.id, option.id).length === 0).map((option) => `${sector.name} · ${option.label}`),
