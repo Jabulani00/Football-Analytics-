@@ -93,6 +93,23 @@ console.log('\nevery option has in-options');
   const push = callAspectsFor('importance_3pts', 'push_dethrone');
   check('importance of 3 lists all 7 dethrone push kinds', push.filter((item) => item.mark === 'tick').length === 7);
   check('importance of 3 lists the escape scores', callAspectsFor('importance_3pts', 'escape').some((item) => item.id.startsWith('escape-10')));
+  const changes = callAspectsFor('last5', 'label_change').filter((item) => item.mark === 'tick').map((item) => item.label);
+  check('each positive change code is its own in-option', changes.includes('Positive · A1 · 5 positives, 0 negatives') && changes.includes('Positive · D3 · 2 positives, 1 negative'));
+  check('each negative change code is separate', changes.includes('Negative · A1 · 5 negatives, 0 positives') && changes.includes('Negative · B2 · 4 negatives, 1 positive'));
+  check('no change and cancel are their own in-options', changes.includes('No change · G1 · No positive or negative changes') && changes.includes('Cancel · F1 · 2 positives and 2 negatives cancel') && changes.includes('Cancel · F2 · 1 positive and 1 negative cancel'));
+  const homeAway = callAspectsFor('home_away_strong', 'read').map((item) => item.label);
+  check('home/away strong drops the never-beaten calls', !homeAway.some((label) => label.includes('never been beaten')));
+  check('h2h lists never beaten at home', callAspectsFor('h2h', 'home').some((item) => item.label === 'has never been beaten at home'));
+  check('h2h lists never beaten away', callAspectsFor('h2h', 'away').some((item) => item.label === 'has never been beaten away'));
+  const zidane = callAspectsFor('baseline', 'zidane_law').map((item) => item.label);
+  check('zidane lists both never-beaten calls', zidane.includes('has never been beaten at home') && zidane.includes('has never been beaten away') && zidane.includes('T1 has never beaten T2'));
+  const homeFirst = callAspectsFor('form_child_beater', 'home_1h');
+  const awaySecond = callAspectsFor('form_child_beater', 'away_2h');
+  const overallHalf = callAspectsFor('form_child_beater', 'overall_1h');
+  check('home, away, and overall halves are callable', homeFirst.some((item) => item.label === 'Great') && awaySecond.some((item) => item.label === 'Umshayi wezingane') && overallHalf.some((item) => item.label === 'Good'));
+  const childOrder = callAspectsFor('form_child_beater', 'overall_ft').filter((item) => item.mark !== 'wrong').map((item) => item.label);
+  const umshayiAt = childOrder.indexOf('Umshayi wezingane');
+  check('bhozoma follows umshayi wezingane', umshayiAt >= 0 && childOrder[umshayiAt + 1] === 'Bhozoma');
   const missing = POWER_DYNAMIC_CALLS.flatMap((sector) =>
     sector.functions.filter((option) => callAspectsFor(sector.id, option.id).length === 0).map((option) => `${sector.name} · ${option.label}`),
   );

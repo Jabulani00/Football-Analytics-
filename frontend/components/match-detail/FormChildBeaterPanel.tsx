@@ -17,17 +17,19 @@ import type { StandingLike } from '@/utils/motivationEngine';
 import type { PowerDynamicsBundle, TableColour, Tone } from '@/utils/powerDynamicsEngine';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
-const GROUP_TABS: { id: FormChildGroup; label: string }[] = [
-  { id: 'table', label: 'Overall' },
-  { id: 'ft', label: 'Full time' },
-  { id: '1h', label: '1st half' },
-  { id: '2h', label: '2nd half' },
-];
+type FormChildPlace = 'overall' | 'home' | 'away';
+type FormChildPeriod = 'ft' | '1h' | '2h';
 
-const VENUE_TABS: { id: FormChildVenue; label: string }[] = [
+const PLACE_TABS: { id: FormChildPlace; label: string }[] = [
   { id: 'overall', label: 'Overall' },
   { id: 'home', label: 'Home' },
   { id: 'away', label: 'Away' },
+];
+
+const PERIOD_TABS: { id: FormChildPeriod; label: string }[] = [
+  { id: 'ft', label: 'Full time' },
+  { id: '1h', label: '1st half' },
+  { id: '2h', label: '2nd half' },
 ];
 
 type Props = {
@@ -39,9 +41,10 @@ type Props = {
   competitionId?: number | string | null;
   exclude?: FixtureExclude | null;
   seasonLinked: boolean;
-  /** Opens on this period. The caller remounts the panel when the function changes. */
-  initialGroup?: FormChildGroup;
-  lockGroup?: boolean;
+  /** Opens on this place. The caller remounts the panel when the function changes. */
+  initialPlace?: FormChildPlace;
+  /** Opens on this period for Overall, Home, or Away. */
+  initialPeriod?: FormChildPeriod;
 };
 
 function toSide(snap: PowerDynamicsBundle['t1']): FormChildSide {
@@ -145,12 +148,14 @@ export default function FormChildBeaterPanel({
   competitionId,
   exclude,
   seasonLinked,
-  initialGroup,
-  lockGroup = false,
+  initialPlace = 'overall',
+  initialPeriod = 'ft',
 }: Props) {
-  const [group, setGroup] = useState<FormChildGroup>(initialGroup ?? 'table');
-  const [venue, setVenue] = useState<FormChildVenue>('overall');
-  const needsGames = group !== 'table';
+  const [place, setPlace] = useState<FormChildPlace>(initialPlace);
+  const [period, setPeriod] = useState<FormChildPeriod>(initialPeriod);
+  const group: FormChildGroup = period;
+  const venue: FormChildVenue = place;
+  const placeWord = place === 'overall' ? 'league' : place;
   const ht = halfTimeCoverage(matches);
 
   const rows = useMemo(
@@ -174,43 +179,35 @@ export default function FormChildBeaterPanel({
         title="Form + Child beater"
         note="Green: 0–0.7 Bad, 0.8–1.2 Good, 1.3–3 Great. Yellow: 0–0.9 Bad, 1.0–1.4 Mild/ok, 1.5–1.7 Good, 1.8–3 Great. Red: 0–1 Bad, 1.1–1.4 Mild/ok, 1.5–1.7 Good, 1.8–3 Great. A red side on 1.5–1.7 is Umshayi wezingane. Any other red PPG is not a child beater. A yellow side who takes more than half the points from teams below them is Umnqumi wehlathi."
       />
-      {lockGroup ? null : <SubTabBar tabs={GROUP_TABS} active={group} onChange={setGroup} />}
-      {group !== 'table' ? (
-        <SubTabBar tabs={VENUE_TABS} active={venue} onChange={setVenue} />
-      ) : null}
+      <SubTabBar tabs={PLACE_TABS} active={place} onChange={setPlace} />
+      <SubTabBar tabs={PERIOD_TABS} active={period} onChange={setPeriod} />
       <Text style={styles.scope}>
-        {group === 'table'
-          ? 'League table PPG — points divided by games played.'
-          : group === '1h'
-            ? '1st-half points from finished league games, excluding this fixture.'
-            : group === '2h'
-              ? '2nd-half points from finished league games, excluding this fixture.'
-              : 'Full-time points from finished league games, excluding this fixture.'}
+        {period === '1h'
+          ? `1st-half points from finished ${placeWord} games, excluding this fixture.`
+          : period === '2h'
+            ? `2nd-half points from finished ${placeWord} games, excluding this fixture.`
+            : `Full-time points from finished ${placeWord} games, excluding this fixture.`}
       </Text>
       {standings.length === 0 ? (
         <Text style={styles.muted}>Need a league table for these labels.</Text>
-      ) : needsGames && !seasonLinked ? (
+      ) : !seasonLinked ? (
         <Text style={styles.muted}>No season linked to this fixture.</Text>
-      ) : needsGames && loading && matches.length === 0 ? (
+      ) : loading && matches.length === 0 ? (
         <View style={styles.center}>
           <ActivityIndicator color={theme.accentGreen} />
           <Text style={styles.muted}>Loading season games…</Text>
         </View>
-      ) : needsGames && error ? (
+      ) : error ? (
         <Text style={styles.muted}>{error}</Text>
       ) : (
         <View>
-          {group === 'table' && loading && matches.length === 0 ? (
-            <Text style={styles.scope}>Checking Bhozoma from season games…</Text>
-          ) : null}
-          {group === 'table' && error ? <Text style={styles.muted}>{error}</Text> : null}
           {group === '1h' || group === '2h' ? (
             <Text style={styles.scope}>
               {ht.covered} of {ht.total} finished games have a half-time score
               {ht.covered === 0 ? ' — half tables stay empty until that data lands' : ''}.
             </Text>
           ) : null}
-          {needsGames && matches.length === 0 ? (
+          {matches.length === 0 ? (
             <Text style={styles.muted}>No finished season fixtures loaded yet.</Text>
           ) : (
             <ScrollView horizontal showsHorizontalScrollIndicator>

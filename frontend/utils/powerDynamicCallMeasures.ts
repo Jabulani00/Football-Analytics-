@@ -39,7 +39,7 @@ import {
   type FormChange,
   type TrueOption,
 } from '@/utils/last5Analysis';
-import { last5LabelChanges, twoGoalBandSides, type TwoGoalGrade } from '@/utils/last5Sections';
+import { CHANGE_GUIDE, last5LabelChanges, twoGoalBandSides, type ChangeKind, type TwoGoalGrade } from '@/utils/last5Sections';
 import {
   LAST5_WINDOW,
   LAST6_BAND_LABEL,
@@ -135,6 +135,36 @@ function aspect(
   return { needsFixtures: false, ...partial };
 }
 
+function labelChangeKind(kind: ChangeKind): string {
+  if (kind === 'strength') return 'Positive';
+  if (kind === 'weakness') return 'Negative';
+  if (kind === 'no_change') return 'No change';
+  return 'Cancel';
+}
+
+function unbeatenAspect(
+  tabId: string,
+  functionId: string,
+  id: string,
+  token: 'home' | 'away',
+): MeasureAspect {
+  const home = token === 'home';
+  return aspect({
+    id,
+    tabId,
+    functionId,
+    label: home ? 'has never been beaten at home' : 'has never been beaten away',
+    detail: home
+      ? 'The home side has never been beaten at home.'
+      : 'The away side has never been beaten away.',
+    needsFixtures: true,
+    binary: true,
+    pair: true,
+    measure: 'venue-unbeaten',
+    token,
+  });
+}
+
 function colourAspects(): MeasureAspect[] {
   const out: MeasureAspect[] = [];
   for (const stat of COLOUR_STAT_CATALOGUE) {
@@ -167,37 +197,60 @@ const FORM_BANDS: { id: FormChildBand; label: string }[] = [
   { id: 'bad', label: 'Bad' },
 ];
 
-const FORM_GROUPS = ['table', 'ft', '1h', '2h'] as const;
+const FORM_SLICES: { id: string; sample: string }[] = [
+  { id: 'overall_ft', sample: 'Overall · full time.' },
+  { id: 'overall_1h', sample: 'Overall · 1st half.' },
+  { id: 'overall_2h', sample: 'Overall · 2nd half.' },
+  { id: 'home_ft', sample: 'Home · full time.' },
+  { id: 'home_1h', sample: 'Home · 1st half.' },
+  { id: 'home_2h', sample: 'Home · 2nd half.' },
+  { id: 'away_ft', sample: 'Away · full time.' },
+  { id: 'away_1h', sample: 'Away · 1st half.' },
+  { id: 'away_2h', sample: 'Away · 2nd half.' },
+];
 
 function formChildAspects(): MeasureAspect[] {
   const out: MeasureAspect[] = [];
-  for (const group of FORM_GROUPS) {
-    const sample = group === 'table' ? 'Season table.' : group === 'ft' ? 'Full-time matches.' : group === '1h' ? '1st half.' : '2nd half.';
+  for (const group of FORM_SLICES) {
+    const sample = group.sample;
     for (const band of FORM_BANDS) {
       out.push(
         aspect({
-          id: `form-child-${group}-${band.id}`,
+          id: `form-child-${group.id}-${band.id}`,
           tabId: 'form_child_beater',
-          functionId: group,
+          functionId: group.id,
           label: band.label,
           detail: `${sample} How close this side’s form band is to ${band.label}.`,
-          needsFixtures: group !== 'table',
-          measure: 'form-child',
-          token: band.id,
+        needsFixtures: true,
+        measure: 'form-child',
+        token: band.id,
         }),
       );
     }
     out.push(
       aspect({
-        id: `form-child-${group}-child`,
+        id: `form-child-${group.id}-child`,
         tabId: 'form_child_beater',
-        functionId: group,
+        functionId: group.id,
         label: 'Umshayi wezingane',
         detail: `${sample} Red PPG in the child-beater band.`,
         binary: true,
-        needsFixtures: group !== 'table',
+        needsFixtures: true,
         measure: 'form-child',
         token: 'child',
+      }),
+    );
+    out.push(
+      aspect({
+        id: `form-child-${group.id}-bhozoma`,
+        tabId: 'form_child_beater',
+        functionId: group.id,
+        label: 'Bhozoma',
+        detail: `${sample} Umnqumi wehlathi — the Bhozoma column for this filter.`,
+        binary: true,
+        needsFixtures: true,
+        measure: 'form-child',
+        token: 'bhozoma',
       }),
     );
   }
@@ -452,6 +505,8 @@ function rawMeasureAspects(): MeasureAspect[] {
       measure: 'stream-h2h',
       token: 'never',
     }),
+    unbeatenAspect('baseline', 'zidane_law', 'zidane-unbeaten-home', 'home'),
+    unbeatenAspect('baseline', 'zidane_law', 'zidane-unbeaten-away', 'away'),
     aspect({
       id: 'bookie-did-beat',
       tabId: 'baseline',
@@ -637,50 +692,19 @@ function rawMeasureAspects(): MeasureAspect[] {
         token: grade.id,
       }),
     ),
-    aspect({
-      id: 'label-strength',
-      tabId: 'last5',
-      functionId: 'label_change',
-      label: 'Positive change',
-      detail: 'Positive change in the last 5.',
-      needsFixtures: true,
-      binary: true,
-      measure: 'label-change',
-      token: 'strength',
-    }),
-    aspect({
-      id: 'label-weakness',
-      tabId: 'last5',
-      functionId: 'label_change',
-      label: 'Negative change',
-      detail: 'Negative change in the last 5.',
-      needsFixtures: true,
-      binary: true,
-      measure: 'label-change',
-      token: 'weakness',
-    }),
-    aspect({
-      id: 'label-cancel',
-      tabId: 'last5',
-      functionId: 'label_change',
-      label: 'Cancel',
-      detail: 'Positive and negative changes cancel.',
-      needsFixtures: true,
-      binary: true,
-      measure: 'label-change',
-      token: 'cancel',
-    }),
-    aspect({
-      id: 'label-none',
-      tabId: 'last5',
-      functionId: 'label_change',
-      label: 'No change',
-      detail: 'No change in the last 5.',
-      needsFixtures: true,
-      binary: true,
-      measure: 'label-change',
-      token: 'no_change',
-    }),
+    ...CHANGE_GUIDE.map((row) =>
+      aspect({
+        id: `label-${row.kind}-${row.code}`,
+        tabId: 'last5',
+        functionId: 'label_change',
+        label: `${labelChangeKind(row.kind)} · ${row.code} · ${row.detail}`,
+        detail: row.detail,
+        needsFixtures: true,
+        binary: true,
+        measure: 'label-change',
+        token: `${row.kind}:${row.code}`,
+      }),
+    ),
     ...deathAspects(),
     aspect({
       id: 'death-stronger',
@@ -943,6 +967,8 @@ function rawMeasureAspects(): MeasureAspect[] {
     h2h('away', 'won', 'Won away', 'Win share in meetings away.'),
     h2h('away', 'shared', 'Drew away', 'Draw share in meetings away.'),
     h2h('away', 'lost', 'Lost away', 'Loss share in meetings away.'),
+    unbeatenAspect('h2h', 'home', 'h2h-unbeaten-home', 'home'),
+    unbeatenAspect('h2h', 'away', 'h2h-unbeaten-away', 'away'),
     ...formChildAspects(),
     aspect({
       id: 'venue-balanced',
@@ -952,30 +978,6 @@ function rawMeasureAspects(): MeasureAspect[] {
       detail: 'Home and away point shares close to even. A 50/50 split is a full match.',
       measure: 'venue-balance',
       token: 'even',
-    }),
-    aspect({
-      id: 'venue-unbeaten-home',
-      tabId: 'home_away_strong',
-      functionId: 'read',
-      label: 'has never been beaten at home',
-      detail: 'The home side has never been beaten at home.',
-      needsFixtures: true,
-      binary: true,
-      pair: true,
-      measure: 'venue-unbeaten',
-      token: 'home',
-    }),
-    aspect({
-      id: 'venue-unbeaten-away',
-      tabId: 'home_away_strong',
-      functionId: 'read',
-      label: 'has never been beaten away',
-      detail: 'The away side has never been beaten away.',
-      needsFixtures: true,
-      binary: true,
-      pair: true,
-      measure: 'venue-unbeaten',
-      token: 'away',
     }),
     ...colourAspects(),
     aspect({
@@ -1616,14 +1618,30 @@ function formSample(
 ): { ppg: number; colour: TableColour } | null {
   const colour = colourFromZone(row.zone);
   if (!colour) return null;
-  if (group === 'table') {
+  const filter = formChildFilter(group);
+  if (filter === 'table') {
     if (row.played <= 0) return null;
     return { ppg: row.points / row.played, colour };
   }
-  const period = group === '1h' || group === '2h' ? group : 'ft';
-  const results = resultsFromSeasonMatches(row.teamId, matches, table, { period });
+  const results = resultsFromSeasonMatches(row.teamId, matches, table, {
+    period: filter.period,
+    venue: filter.venue,
+  });
   if (results.length === 0) return null;
   return { ppg: pointsOf(results) / results.length, colour };
+}
+
+function formChildFilter(
+  functionId: string,
+): 'table' | { period: 'ft' | '1h' | '2h'; venue: 'overall' | 'home' | 'away' } {
+  if (functionId === 'table') return 'table';
+  const scoped = /^(overall|home|away)_(ft|1h|2h)$/.exec(functionId);
+  if (scoped) {
+    return { venue: scoped[1] as 'overall' | 'home' | 'away', period: scoped[2] as 'ft' | '1h' | '2h' };
+  }
+  if (functionId === '1h' || functionId === '2h') return { venue: 'overall', period: functionId };
+  if (functionId === 'ft') return { venue: 'overall', period: 'ft' };
+  return 'table';
 }
 
 function bandFit(actual: FormChildBand, target: FormChildBand): number {
@@ -1839,10 +1857,10 @@ export function scoreMeasure(
     });
     const side = sides.left;
     if (!side) return null;
-    const called =
-      token === 'weakness' ? 'Negative change' : token === 'strength' ? 'Positive change' : side.hierarchy.title;
-    if (side.hierarchy.kind !== token) return fit(0, called);
-    return fit(100, `${called} · ${side.hierarchy.code}`);
+    const [kind, code] = token.split(':');
+    const called = `${labelChangeKind(side.hierarchy.kind as ChangeKind)} · ${side.hierarchy.code}`;
+    const on = side.hierarchy.kind === kind && side.hierarchy.code === code;
+    return fit(on ? 100 : 0, called);
   }
 
   if (measure === 'death-trap') {
@@ -1911,6 +1929,19 @@ export function scoreMeasure(
     if (token === 'child') {
       const note = umshayiWezingane(sample.ppg, sample.colour);
       return fit(isRedChildBeater(sample.ppg, sample.colour) ? 100 : 0, note ?? `${sample.ppg.toFixed(2)} PPG`);
+    }
+    if (token === 'bhozoma') {
+      const filter = formChildFilter(item.functionId);
+      if (filter === 'table') return fit(0, 'Not Bhozoma');
+      const built = cached(
+        context,
+        `form-bhozoma:${filter.venue}:${filter.period}:${context?.competitionId ?? 0}`,
+        () => buildBhozomaTable(table, matches, context?.competitionId, filter.venue, filter.period),
+      );
+      const found = built.rows.find((side) => side.teamId === row.teamId);
+      const label = found?.isMidTable ? found.below.label : null;
+      const on = label != null && label.startsWith('Umnqumi wehlathi');
+      return fit(on ? 100 : 0, on && label ? label : 'Not Bhozoma');
     }
     const band = formChildBand(sample.ppg, sample.colour);
     return fit(bandFit(band, token as FormChildBand), `${band} · ${sample.ppg.toFixed(2)} PPG`);

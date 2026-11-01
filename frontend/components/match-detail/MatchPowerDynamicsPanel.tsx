@@ -45,7 +45,6 @@ import { useSeasonFixtures } from '@/hooks/useSeasonFixtures';
 import type { Competition, H2HMatch, OddsByMarket, Probability, StandingRow } from '@/services/oddAlerts';
 import type { SeasonMatch } from '@/utils/bhozomaEngine';
 import type { ImbangiScheduleMatch } from '@/utils/imbangiEngine';
-import type { FormChildGroup } from '@/utils/formChildBeater';
 import type { H2HSplit } from '@/utils/h2hDisplay';
 import { fonts, spacing, theme } from '@/styles/theme';
 import { buildInitialState, findUkulumbana } from '@/utils/last5Analysis';
@@ -144,9 +143,11 @@ function isPowerTab(id: string | undefined): id is PowerDynamicsTabId {
   return POWER_DYNAMICS_TABS.some((tab) => tab.id === id);
 }
 
-function childGroup(id: string | undefined): FormChildGroup | undefined {
-  if (id === 'table' || id === 'ft' || id === '1h' || id === '2h') return id;
-  return undefined;
+function childFocus(id: string | undefined): { place: 'overall' | 'home' | 'away'; period: 'ft' | '1h' | '2h' } {
+  const scoped = /^(overall|home|away)_(ft|1h|2h)$/.exec(id ?? '');
+  if (scoped) return { place: scoped[1] as 'overall' | 'home' | 'away', period: scoped[2] as 'ft' | '1h' | '2h' };
+  if (id === 'ft' || id === '1h' || id === '2h') return { place: 'overall', period: id };
+  return { place: 'overall', period: 'ft' };
 }
 
 function h2hSplit(id: string | undefined): H2HSplit {
@@ -732,6 +733,7 @@ export default function MatchPowerDynamicsPanel({
       case 'form_child_beater':
         return (
           <FormChildBeaterPanel
+            key={focus?.functionId ?? 'browse'}
             pd={pd}
             standings={like}
             matches={seasonFx.matches}
@@ -739,8 +741,8 @@ export default function MatchPowerDynamicsPanel({
             error={seasonFx.error}
             competitionId={competitionId}
             seasonLinked={seasonId != null}
-            initialGroup={childGroup(focus?.functionId)}
-            lockGroup={focus?.tabId === 'form_child_beater'}
+            initialPlace={childFocus(focus?.functionId).place}
+            initialPeriod={childFocus(focus?.functionId).period}
             exclude={
               kickoffUnix != null && homeId != null && awayId != null
                 ? { unix: kickoffUnix, homeId, awayId }
