@@ -3,6 +3,8 @@
  * Run: npx tsx scripts/powerDynamicCallLibrary.test.ts
  */
 import { parseSavedPowerDynamicLibrary } from '../utils/powerDynamicLibraryDisk';
+import { POWER_DYNAMIC_CALLS } from '../utils/powerDynamicCalls';
+import { callAspectsFor } from '../utils/powerDynamicCallSearch';
 import { scorePowerDynamicPacks, type PowerDynamicLeaguePack } from '../utils/powerDynamicLibraryScore';
 import type { CallTableRow } from '../utils/powerDynamicCallSearch';
 
@@ -82,6 +84,17 @@ console.log('\nbrowser copy');
   check('a saved copy opens without the server', restored?.packs.length === 1 && restored.packs[0].byTeam.get(1)?.name === 'Top');
   check('the saved fixture is still on that copy', restored?.packs[0].fixtures[0]?.id === 11);
   check('a broken copy is ignored', parseSavedPowerDynamicLibrary({ version: 1, days: [], packs: [] }) == null);
+}
+
+console.log('\nevery option has in-options');
+{
+  const takeOver = callAspectsFor('importance_3pts', 'pull_take_over');
+  check('importance of 3 lists all 7 take-over kinds', takeOver.filter((item) => item.mark === 'tick').length === 7);
+  check('importance of 3 lists the escape scores', callAspectsFor('importance_3pts', 'escape').some((item) => item.id.startsWith('escape-10')));
+  const missing = POWER_DYNAMIC_CALLS.flatMap((sector) =>
+    sector.functions.filter((option) => callAspectsFor(sector.id, option.id).length === 0).map((option) => `${sector.name} · ${option.label}`),
+  );
+  check('every sector option has in-options', missing.length === 0, missing.join(', '));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

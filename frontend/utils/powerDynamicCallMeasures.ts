@@ -50,7 +50,20 @@ import {
   last5FormLeagueTable,
   resultsFromSeasonMatches,
 } from '@/utils/last6Form';
-import { evaluateTeamMotivation, type MotivationGrade, type MotivationOutcome, type TeamStance } from '@/utils/motivationEngine';
+import {
+  evaluateImportanceOf3,
+  PULL_FACTOR_LABEL,
+  PULL_ROWS,
+  type PullFactorKind,
+  type SingayeRead,
+} from '@/utils/importanceOf3Engine';
+import {
+  evaluateTeamMotivation,
+  type MotivationGrade,
+  type MotivationOutcome,
+  type StandingLike,
+  type TeamStance,
+} from '@/utils/motivationEngine';
 import {
   colourFromZone,
   currentStreak,
@@ -106,6 +119,9 @@ export type CallSearchContext = {
   opponentId?: number;
   /** This fixture, used as the current stop on a path. */
   fixture?: { homeId: number; awayId: number; unix: number };
+  /** Full league table when the call needs more than rank and points. */
+  standings?: StandingLike[];
+  competitionId?: number;
 };
 
 const PAIR = 'Compared with the nearest side on the table.';
@@ -267,15 +283,116 @@ const GRADES: { id: TwoGoalGrade; label: string }[] = [
 
 const LEVELS: ProblemLevelName[] = ['Entry', 'Moderate', 'Major', 'Extreme'];
 
-const MOTIVATION_OUTCOMES: { id: MotivationOutcome; label: string }[] = [
-  { id: 'extend_lead', label: 'Extend the lead' },
-  { id: 'take_over', label: 'Take over' },
-  { id: 'chase_reduce_gap', label: 'Chase, reduce the gap' },
-  { id: 'escape_relegation', label: 'Escape relegation' },
-  { id: 'escape_safety', label: 'Escape to safety' },
-  { id: 'no_reward', label: 'No reward' },
-  { id: 'futile_chase', label: 'Futile chase' },
-];
+function importanceAspects(): MeasureAspect[] {
+  const out: MeasureAspect[] = [];
+  const pullFunction: Record<PullFactorKind, string> = {
+    take_over: 'pull_take_over',
+    chaser: 'pull_chaser',
+    gebe_widening: 'pull_gebe',
+  };
+  for (const kind of ['take_over', 'chaser', 'gebe_widening'] as const) {
+    for (const row of PULL_ROWS) {
+      out.push(
+        aspect({
+          id: `pull-${kind}-${row.index}`,
+          tabId: 'importance_3pts',
+          functionId: pullFunction[kind],
+          label: `${PULL_FACTOR_LABEL[kind]} ${row.index}`,
+          detail: `${row.detail}. Equals ${row.equals}.`,
+          binary: true,
+          measure: 'importance',
+          token: `pull:${kind}:${row.index}`,
+        }),
+      );
+    }
+  }
+  for (const item of [
+    { id: 'take_over', label: 'Take over' },
+    { id: 'chaser', label: 'Chaser' },
+    { id: 'gebe', label: 'Gebe widening' },
+    { id: 'motivated', label: 'Motivation ≤ 4' },
+  ]) {
+    out.push(
+      aspect({
+        id: `ahead-${item.id}`,
+        tabId: 'importance_3pts',
+        functionId: 'ahead',
+        label: item.label,
+        detail: `Ahead — ${item.label}.`,
+        binary: true,
+        measure: 'importance',
+        token: `ahead:${item.id}`,
+      }),
+    );
+  }
+  for (const item of [
+    { id: 'dethrone', label: 'Dethrone' },
+    { id: 'comes_short', label: 'Comes short' },
+    { id: 'target', label: 'Target in the fight' },
+    { id: 'motivated', label: 'Motivation to dethrone' },
+  ]) {
+    out.push(
+      aspect({
+        id: `tail-${item.id}`,
+        tabId: 'importance_3pts',
+        functionId: 'tail',
+        label: item.label,
+        detail: `Tail — ${item.label}.`,
+        binary: true,
+        measure: 'importance',
+        token: `tail:${item.id}`,
+      }),
+    );
+  }
+  for (const item of [
+    { id: '0', label: 'Comes short, no target' },
+    { id: '5', label: 'Comes short, target motivation' },
+    { id: '4', label: 'Dethrone, no target' },
+    { id: '10', label: 'Dethrone, with target' },
+    { id: 'escaping', label: 'Escaping relegation' },
+    { id: 'safety', label: 'Relegation safety' },
+    { id: 'clear', label: 'Clear of relegation' },
+    { id: 'unknown', label: 'Relegation unmapped' },
+  ]) {
+    out.push(
+      aspect({
+        id: `escape-${item.id}`,
+        tabId: 'importance_3pts',
+        functionId: 'escape',
+        label: item.label,
+        detail: item.label,
+        binary: true,
+        measure: 'importance',
+        token: `escape:${item.id}`,
+      }),
+    );
+  }
+  for (const item of [
+    { id: 'ahead', label: 'Imbangi vs ahead' },
+    { id: 'tail', label: 'Imbangi vs tail' },
+    { id: 'ahead:A', label: 'Ahead · grade A' },
+    { id: 'ahead:B', label: 'Ahead · grade B' },
+    { id: 'ahead:C', label: 'Ahead · grade C' },
+    { id: 'tail:A', label: 'Tail · grade A' },
+    { id: 'tail:B', label: 'Tail · grade B' },
+    { id: 'tail:C', label: 'Tail · grade C' },
+  ]) {
+    out.push(
+      aspect({
+        id: `imbangi-io3-${item.id.replace(':', '-')}`,
+        tabId: 'importance_3pts',
+        functionId: 'imbangi',
+        label: item.label,
+        detail: item.label,
+        binary: true,
+        needsFixtures: true,
+        measure: 'importance',
+        token: `imbangi:${item.id}`,
+      }),
+    );
+  }
+  return out;
+}
 
 function rawMeasureAspects(): MeasureAspect[] {
   const h2h = (venue: 'overall' | 'home' | 'away', token: string, label: string, detail: string): MeasureAspect =>
@@ -336,87 +453,7 @@ function rawMeasureAspects(): MeasureAspect[] {
       measure: 'stream-h2h',
       token: 'none',
     }),
-    aspect({
-      id: 'motive-chase',
-      tabId: 'importance_3pts',
-      functionId: 'read',
-      label: 'Chasing',
-      detail: 'The three points pull this side up the table.',
-      binary: true,
-      measure: 'motive',
-      token: 'chase',
-    }),
-    aspect({
-      id: 'motive-escape',
-      tabId: 'importance_3pts',
-      functionId: 'read',
-      label: 'Escaping',
-      detail: 'The three points are about getting out of trouble.',
-      binary: true,
-      measure: 'motive',
-      token: 'escape',
-    }),
-    aspect({
-      id: 'motive-none',
-      tabId: 'importance_3pts',
-      functionId: 'read',
-      label: 'Little to gain',
-      detail: 'Little to gain from the table.',
-      binary: true,
-      measure: 'motive',
-      token: 'no_reward',
-    }),
-    aspect({
-      id: 'motive-grade-a',
-      tabId: 'importance_3pts',
-      functionId: 'read',
-      label: 'Strong need',
-      detail: 'Strong need for the three points.',
-      binary: true,
-      measure: 'motive',
-      token: 'grade-A',
-    }),
-    aspect({
-      id: 'motive-grade-b',
-      tabId: 'importance_3pts',
-      functionId: 'read',
-      label: 'Some need',
-      detail: 'Some need for the three points.',
-      binary: true,
-      measure: 'motive',
-      token: 'grade-B',
-    }),
-    aspect({
-      id: 'motive-win-climbs',
-      tabId: 'importance_3pts',
-      functionId: 'read',
-      label: 'A win moves them up',
-      detail: 'A win changes the place on the table.',
-      measure: 'motive',
-      token: 'win-climbs',
-    }),
-    aspect({
-      id: 'motive-futile',
-      tabId: 'importance_3pts',
-      functionId: 'read',
-      label: 'Futile chase',
-      detail: 'Futile chase — remaining matches cannot close it.',
-      binary: true,
-      measure: 'motive',
-      token: 'futile',
-    }),
-    ...MOTIVATION_OUTCOMES.map((item) =>
-      aspect({
-        id: `motive-${item.id}`,
-        tabId: 'importance_3pts',
-        functionId: 'read',
-        label: item.label,
-        detail: `The three-point read is “${item.label}”.`,
-        binary: true,
-        measure: 'motive',
-        token: `outcome:${item.id}`,
-      }),
-    ),
+    ...importanceAspects(),
     ...(['good', 'medium', 'bad', 'good_inhla', 'medium_inhla', 'bad_inhla'] as TrueOption[]).map((option) =>
       aspect({
         id: `naming-l5-${option}`,
@@ -1446,6 +1483,74 @@ function motivationFor(row: MeasureRow, table: MeasureRow[], context: CallSearch
   return cached(context, `mot:${row.teamId}`, () => evaluateTeamMotivation(row.teamId, table));
 }
 
+function importanceOf(row: MeasureRow, table: MeasureRow[], context: CallSearchContext | undefined): SingayeRead | null {
+  const standings = context?.standings && context.standings.length > 0 ? context.standings : table;
+  return cached(context, `importance:${row.teamId}:${context?.opponentId ?? 0}:${context?.competitionId ?? 0}`, () => {
+    const read = evaluateImportanceOf3({
+      table: standings,
+      t1Id: row.teamId,
+      t2Id: context?.opponentId,
+      competitionId: context?.competitionId,
+      matches: context?.matches,
+      schedule: context?.schedule,
+      formReady: (context?.matches?.length ?? 0) > 0,
+    });
+    return read.singaye1;
+  });
+}
+
+function scoreImportance(row: MeasureRow, table: MeasureRow[], token: string, context: CallSearchContext | undefined): MeasureScore | null {
+  const read = importanceOf(row, table, context);
+  if (!read) return null;
+  const parts = token.split(':');
+  const head = parts[0];
+  if (head === 'pull') {
+    const on = read.pull.kind === parts[1] && String(read.pull.index) === parts[2];
+    return fit(on ? 100 : 0, `${read.pull.type} · ${read.pull.detail}`);
+  }
+  if (head === 'ahead') {
+    const call = parts[1];
+    const on =
+      call === 'take_over'
+        ? read.takeover.verdict === 'take_over'
+        : call === 'chaser'
+          ? read.takeover.verdict === 'chaser'
+          : call === 'gebe'
+            ? read.takeover.verdict === 'none'
+            : read.takeover.motivated;
+    const word = read.takeover.verdict === 'take_over' ? 'Take over' : read.takeover.verdict === 'chaser' ? 'Chaser' : 'Gebe widening';
+    return fit(on ? 100 : 0, word);
+  }
+  if (head === 'tail') {
+    const call = parts[1];
+    const on =
+      call === 'dethrone'
+        ? read.dethrone.verdict === 'dethrone'
+        : call === 'comes_short'
+          ? read.dethrone.verdict === 'comes_short'
+          : call === 'target'
+            ? read.dethrone.targetInFight
+            : read.dethrone.motivated;
+    const word = read.dethrone.verdict === 'dethrone' ? 'Dethrone' : read.dethrone.verdict === 'comes_short' ? 'Comes short' : 'No tail call';
+    return fit(on ? 100 : 0, word);
+  }
+  if (head === 'escape') {
+    const call = parts[1];
+    const on = call === '0' || call === '4' || call === '5' || call === '10' ? String(read.escape.score ?? '') === call : read.escape.relegation === call;
+    const word = read.escape.score == null ? 'No escape score' : `Escape ${read.escape.score}`;
+    return fit(on ? 100 : 0, `${word} · ${read.escape.relegation}`);
+  }
+  if (head === 'imbangi') {
+    const side = parts[1] === 'tail' ? read.imbangiTail : read.imbangiAhead;
+    const grade = parts[2];
+    if (!side) return fit(0, 'No neighbour');
+    const on = grade ? side.grade === grade : side.fits;
+    const word = side.grade ? `${side.grade} · ΔP ${side.pointsDiff}` : `ΔP ${side.pointsDiff}`;
+    return fit(on ? 100 : 0, word);
+  }
+  return null;
+}
+
 function scoreMotive(row: MeasureRow, table: MeasureRow[], token: string, context: CallSearchContext | undefined): MeasureScore | null {
   const mot = motivationFor(row, table, context);
   if (!mot) return null;
@@ -1587,6 +1692,7 @@ export function scoreMeasure(
     return fit(wins > 0 ? 100 : 0, wins > 0 ? `${wins} win${wins === 1 ? '' : 's'} against ${other.name}` : `No win against ${other.name}`);
   }
 
+  if (measure === 'importance') return scoreImportance(row, table, token, context);
   if (measure === 'motive') return scoreMotive(row, table, token, context);
 
   if (measure === 'late') {

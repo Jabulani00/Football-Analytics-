@@ -3,6 +3,7 @@
  */
 
 import type { SeasonMatch } from '@/utils/bhozomaEngine';
+import type { StandingLike } from '@/utils/motivationEngine';
 import type { ImbangiScheduleMatch } from '@/utils/imbangiEngine';
 import { callAspectById, scoreCallFixture, type CallTableRow } from '@/utils/powerDynamicCallSearch';
 
@@ -29,6 +30,7 @@ export type PowerDynamicLeaguePack = {
   byTeam: Map<number, CallTableRow>;
   matches: SeasonMatch[];
   schedule: ImbangiScheduleMatch[];
+  standings?: StandingLike[];
   cache: Map<string, unknown>;
   fixtures: {
     id: number;
@@ -70,6 +72,8 @@ export function scorePowerDynamicPacks(
           matches: pack.matches,
           schedule: pack.schedule,
           cache: pack.cache,
+          standings: pack.standings,
+          competitionId: pack.competitionId,
           fixture: { homeId: fixture.homeId, awayId: fixture.awayId, unix: fixture.unix },
         });
         if (!score) continue;

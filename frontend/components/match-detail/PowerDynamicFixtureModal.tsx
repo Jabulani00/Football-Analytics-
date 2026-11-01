@@ -9,12 +9,6 @@ import type { PowerDynamicHit } from '@/utils/powerDynamicLibraryScore';
 import { powerDynamicCall } from '@/utils/powerDynamicCalls';
 import { callAspectById } from '@/utils/powerDynamicCallSearch';
 
-function bandColor(percent: number): string {
-  if (percent >= 80) return theme.accentGreen;
-  if (percent >= 40) return theme.yellow;
-  return theme.loss;
-}
-
 function kickoffLabel(unix: number): string {
   if (!unix) return '';
   return new Date(unix * 1000).toLocaleString('en-GB', {
@@ -66,7 +60,6 @@ export default function PowerDynamicFixtureModal({
               <Text style={styles.aspect}>{hit.aspectLabel}</Text>
             </View>
             <View style={styles.headEnd}>
-              <Text style={[styles.percent, { color: bandColor(hit.percent) }]}>{hit.percent}%</Text>
               <Pressable
                 onPress={onClose}
                 style={styles.close}

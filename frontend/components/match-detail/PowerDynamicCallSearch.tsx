@@ -24,8 +24,6 @@ type InRow = {
   plainId?: string;
 };
 
-const PERCENT_STEPS = Array.from({ length: 11 }, (_, index) => index * 10);
-
 function dayCard(key: string): { kicker: string; day: string; month: string } {
   const date = parseDateKey(key);
   return {
@@ -56,12 +54,6 @@ function inOptionRows(aspects: { id: string; label: string; detail: string; mark
   return rows;
 }
 
-function bandColor(percent: number): string {
-  if (percent >= 80) return theme.accentGreen;
-  if (percent >= 40) return theme.yellow;
-  return theme.loss;
-}
-
 function aspectCaption(id: string): string {
   const aspect = callAspectById(id);
   if (!aspect) return id;
@@ -79,8 +71,6 @@ export default function PowerDynamicCallSearch({ heading = true }: { heading?: b
   const [functionId, setFunctionId] = useState('');
   const [aspectIds, setAspectIds] = useState<string[]>([]);
   const [openHit, setOpenHit] = useState<PowerDynamicHit | null>(null);
-  const [minPct, setMinPct] = useState(0);
-  const [maxPct, setMaxPct] = useState(100);
   const [query, setQuery] = useState('');
   const [dateKey, setDateKey] = useState(todayKey);
   const library = useSyncExternalStore(
@@ -91,22 +81,29 @@ export default function PowerDynamicCallSearch({ heading = true }: { heading?: b
   const dates = library.days;
 
   const call = tabId ? powerDynamicCall(tabId) : undefined;
-  const aspects = call && functionId ? callAspectsFor(tabId, functionId) : [];
+  const groups = useMemo(() => {
+    if (!call) return [];
+    const options = functionId ? call.functions.filter((item) => item.id === functionId) : call.functions;
+    return options
+      .map((item) => ({ item, rows: inOptionRows(callAspectsFor(tabId, item.id)) }))
+      .filter((group) => group.rows.length > 0);
+  }, [call, functionId, tabId]);
   const selected = aspectIds.map((id) => callAspectById(id)).filter((item) => item != null);
   const selectionKey = aspectIds.join('|');
-  const rows = useMemo(() => inOptionRows(aspects), [aspects]);
   const hits = useMemo(() => {
     if (library.phase !== 'ready' || aspectIds.length === 0) return [];
     return scorePowerDynamicLibrary(aspectIds, dateKey);
   }, [library.phase, library.revision, selectionKey, dateKey, aspectIds]);
-  const hasMarks = rows.some((row) => row.tickId);
   const needle = query.trim().toLowerCase();
-  const visibleRows = needle ? rows.filter((row) => row.label.toLowerCase().includes(needle)) : rows;
-
-  const floor = Math.min(minPct, maxPct);
-  const ceiling = Math.max(minPct, maxPct);
-  const shown = hits.filter((hit) => hit.percent >= floor && hit.percent <= ceiling);
-  const option = call?.functions.find((item) => item.id === functionId);
+  const visibleGroups = groups
+    .map((group) => ({
+      ...group,
+      rows: needle ? group.rows.filter((row) => row.label.toLowerCase().includes(needle)) : group.rows,
+    }))
+    .filter((group) => group.rows.length > 0);
+  const inOptionCount = groups.reduce((sum, group) => sum + group.rows.length, 0);
+  const hasMarks = groups.some((group) => group.rows.some((row) => row.tickId));
+  const shown = hits.filter((hit) => hit.percent > 0);
 
   return (
     <View>
@@ -160,6 +157,14 @@ export default function PowerDynamicCallSearch({ heading = true }: { heading?: b
           <>
             <Text style={styles.step}>02  Option</Text>
             <View style={styles.pills}>
+              <Pressable
+                onPress={() => {
+                  setFunctionId('');
+                  setQuery('');
+                }}
+                style={[styles.pill, functionId === '' && styles.pillOn]}>
+                <Text style={[styles.pillText, functionId === '' && styles.pillTextOn]}>All options</Text>
+              </Pressable>
               {call.functions.map((item) => {
                 const active = item.id === functionId;
                 return (
@@ -167,7 +172,6 @@ export default function PowerDynamicCallSearch({ heading = true }: { heading?: b
                     key={item.id}
                     onPress={() => {
                       setFunctionId(item.id);
-                      setAspectIds([]);
                       setQuery('');
                     }}
                     style={[styles.pill, active && styles.pillOn]}>
@@ -176,23 +180,16 @@ export default function PowerDynamicCallSearch({ heading = true }: { heading?: b
                 );
               })}
             </View>
-          </>
-        ) : (
-          <Text style={styles.hint}>Choose a sector to open its options.</Text>
-        )}
-
-        {functionId ? (
-          <>
             <View style={styles.inTitle}>
               <Text style={styles.step}>03  In-option</Text>
-              <Text style={styles.inCount}>{rows.length}</Text>
+              <Text style={styles.inCount}>{inOptionCount}</Text>
             </View>
             <Text style={styles.markNote}>
               {hasMarks ? 'A tick means the call holds. A cross means the same call does not. ' : ''}
-              Select any number. The closest fits stay at the top, and each result names its in-option.
+              Every option is listed with its in-options. Select any number.
               {aspectIds.length > 0 ? ` ${aspectIds.length} selected.` : ''}
             </Text>
-            {rows.length > 8 ? (
+            {inOptionCount > 8 ? (
               <TextInput
                 value={query}
                 onChangeText={setQuery}
@@ -202,61 +199,67 @@ export default function PowerDynamicCallSearch({ heading = true }: { heading?: b
               />
             ) : null}
             <View style={styles.inSheet}>
-              {hasMarks ? (
-                <View style={styles.inHead}>
-                  <Text style={styles.inHeadLabel}>{option?.label}</Text>
-                  <View style={styles.marks}>
-                    <Text style={styles.markHead}>True</Text>
-                    <Text style={styles.markHead}>Opposite</Text>
-                  </View>
-                </View>
-              ) : null}
               <ScrollView style={styles.inScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-                {visibleRows.length === 0 ? <Text style={styles.emptyIn}>No in-option matches that search.</Text> : null}
-                {visibleRows.map((row) => {
-                  const plainOn = row.plainId != null && aspectIds.includes(row.plainId);
-                  const tickOn = row.tickId != null && aspectIds.includes(row.tickId);
-                  const wrongOn = row.wrongId != null && aspectIds.includes(row.wrongId);
-                  if (row.plainId) {
-                    return (
-                      <Pressable
-                        key={row.key}
-                        onPress={() => setAspectIds((current) => toggleId(current, row.plainId ?? ''))}
-                        style={[styles.inRow, plainOn && styles.inRowOn]}>
-                        <Text style={[styles.inLabel, plainOn && styles.inLabelOn]}>{row.label}</Text>
-                      </Pressable>
-                    );
-                  }
-                  return (
-                    <View key={row.key} style={[styles.inRow, (tickOn || wrongOn) && styles.inRowOn]}>
-                      <Text style={[styles.inLabel, (tickOn || wrongOn) && styles.inLabelOn]}>{row.label}</Text>
-                      <View style={styles.marks}>
-                        <Pressable
-                          onPress={() => row.tickId && setAspectIds((current) => toggleId(current, row.tickId ?? ''))}
-                          style={[styles.mark, tickOn && styles.markTick]}
-                          accessibilityLabel={`${row.label} true`}>
-                          <Text style={[styles.markGlyph, tickOn && styles.markGlyphOn]}>✓</Text>
-                        </Pressable>
-                        <Pressable
-                          onPress={() => row.wrongId && setAspectIds((current) => toggleId(current, row.wrongId ?? ''))}
-                          style={[styles.mark, wrongOn && styles.markWrong]}
-                          accessibilityLabel={`${row.label} opposite`}>
-                          <Text style={[styles.markGlyph, wrongOn && styles.markGlyphOn]}>✗</Text>
-                        </Pressable>
-                      </View>
+                {visibleGroups.length === 0 ? <Text style={styles.emptyIn}>No in-option matches that search.</Text> : null}
+                {visibleGroups.map((group) => (
+                  <View key={group.item.id}>
+                    <View style={styles.inHead}>
+                      <Text style={styles.inHeadLabel}>{group.item.label}</Text>
+                      {group.rows.some((row) => row.tickId) ? (
+                        <View style={styles.marks}>
+                          <Text style={styles.markHead}>True</Text>
+                          <Text style={styles.markHead}>Opposite</Text>
+                        </View>
+                      ) : null}
                     </View>
-                  );
-                })}
+                    {group.rows.map((row) => {
+                      const plainOn = row.plainId != null && aspectIds.includes(row.plainId);
+                      const tickOn = row.tickId != null && aspectIds.includes(row.tickId);
+                      const wrongOn = row.wrongId != null && aspectIds.includes(row.wrongId);
+                      if (row.plainId) {
+                        return (
+                          <Pressable
+                            key={row.key}
+                            onPress={() => setAspectIds((current) => toggleId(current, row.plainId ?? ''))}
+                            style={[styles.inRow, plainOn && styles.inRowOn]}>
+                            <Text style={[styles.inLabel, plainOn && styles.inLabelOn]}>{row.label}</Text>
+                          </Pressable>
+                        );
+                      }
+                      return (
+                        <View key={row.key} style={[styles.inRow, (tickOn || wrongOn) && styles.inRowOn]}>
+                          <Text style={[styles.inLabel, (tickOn || wrongOn) && styles.inLabelOn]}>{row.label}</Text>
+                          <View style={styles.marks}>
+                            <Pressable
+                              onPress={() => row.tickId && setAspectIds((current) => toggleId(current, row.tickId ?? ''))}
+                              style={[styles.mark, tickOn && styles.markTick]}
+                              accessibilityLabel={`${row.label} true`}>
+                              <Text style={[styles.markGlyph, tickOn && styles.markGlyphOn]}>✓</Text>
+                            </Pressable>
+                            <Pressable
+                              onPress={() => row.wrongId && setAspectIds((current) => toggleId(current, row.wrongId ?? ''))}
+                              style={[styles.mark, wrongOn && styles.markWrong]}
+                              accessibilityLabel={`${row.label} opposite`}>
+                              <Text style={[styles.markGlyph, wrongOn && styles.markGlyphOn]}>✗</Text>
+                            </Pressable>
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                ))}
               </ScrollView>
             </View>
           </>
-        ) : null}
+        ) : (
+          <Text style={styles.hint}>Choose a sector to open its options.</Text>
+        )}
       </View>
 
       {selected.length > 0 ? (
         <View style={styles.stage}>
           <Text style={styles.path}>
-            {call?.name} · {option?.label} · {selected.length === 1 ? aspectCaption(selected[0].id) : `${selected.length} in-options`}
+            {call?.name} · {selected.length === 1 ? aspectCaption(selected[0].id) : `${selected.length} in-options`}
           </Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dates}>
             {dates.map((key) => {
@@ -271,35 +274,6 @@ export default function PowerDynamicCallSearch({ heading = true }: { heading?: b
               );
             })}
           </ScrollView>
-
-          <View style={styles.fit}>
-            <View style={styles.fitCol}>
-              <Text style={styles.fitLabel}>From {floor}%</Text>
-              <View style={styles.ruler}>
-                {PERCENT_STEPS.map((step) => {
-                  const on = step === floor;
-                  return (
-                    <Pressable key={`from-${step}`} onPress={() => setMinPct(step)} style={[styles.stepChip, on && styles.stepChipOn]}>
-                      <Text style={[styles.stepChipText, on && styles.stepChipTextOn]}>{step}</Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </View>
-            <View style={styles.fitCol}>
-              <Text style={styles.fitLabel}>To {ceiling}%</Text>
-              <View style={styles.ruler}>
-                {PERCENT_STEPS.map((step) => {
-                  const on = step === ceiling;
-                  return (
-                    <Pressable key={`to-${step}`} onPress={() => setMaxPct(step)} style={[styles.stepChip, on && styles.stepChipOn]}>
-                      <Text style={[styles.stepChipText, on && styles.stepChipTextOn]}>{step}</Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </View>
-          </View>
         </View>
       ) : null}
 
@@ -310,9 +284,9 @@ export default function PowerDynamicCallSearch({ heading = true }: { heading?: b
       {library.phase === 'ready' && selected.length > 0 ? (
         <View style={styles.list}>
           <Text style={styles.count}>
-            {shown.length} result{shown.length === 1 ? '' : 's'} from {floor}% to {ceiling}%, closest first
+            {shown.length} fixture{shown.length === 1 ? '' : 's'}
           </Text>
-          {shown.length === 0 ? <Text style={styles.empty}>No fixture in this percentage band.</Text> : null}
+          {shown.length === 0 ? <Text style={styles.empty}>No fixture matches this call.</Text> : null}
           {shown.slice(0, 250).map((hit, index) => {
             const [home, away] = hit.name.split(' vs ');
             return (
@@ -323,7 +297,7 @@ export default function PowerDynamicCallSearch({ heading = true }: { heading?: b
                 accessibilityRole="button"
                 accessibilityLabel={`Open ${hit.name}, ${hit.aspectLabel}`}
               >
-                <View style={[styles.ticketBar, { backgroundColor: bandColor(hit.percent) }]} />
+                <View style={styles.ticketBar} />
                 <Text style={styles.place}>{index + 1}</Text>
                 <View style={styles.identity}>
                   <Text style={styles.belongs} numberOfLines={2}>{hit.aspectLabel}</Text>
@@ -334,15 +308,11 @@ export default function PowerDynamicCallSearch({ heading = true }: { heading?: b
                   </Text>
                   <Text style={styles.reason} numberOfLines={2}>{hit.reason}</Text>
                 </View>
-                <View style={styles.scoreBox}>
-                  <Text style={[styles.percent, { color: bandColor(hit.percent) }]}>{hit.percent}</Text>
-                  <Text style={styles.percentUnit}>%</Text>
-                </View>
               </Pressable>
             );
           })}
           {shown.length > 250 ? (
-            <Text style={styles.more}>Showing the first 250 fixtures in this band. Tighten the percentage to see a shorter list.</Text>
+            <Text style={styles.more}>Showing the first 250 fixtures.</Text>
           ) : null}
         </View>
       ) : null}
@@ -555,7 +525,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   ticketPressed: { backgroundColor: theme.surfaceHover },
-  ticketBar: { width: 5 },
+  ticketBar: { width: 5, backgroundColor: theme.accentGreen },
   place: {
     width: 36,
     textAlign: 'center',
