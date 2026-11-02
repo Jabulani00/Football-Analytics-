@@ -7,21 +7,20 @@ import { useQueries } from '@tanstack/react-query';
 import DragScroll from '@/components/shared/DragScroll';
 import FilterDropdown from '@/components/shared/FilterDropdown';
 import PageControls, { PAGE_SIZE } from '@/components/shared/PageControls';
-import RecommendationCard from '@/components/analytics/RecommendationCard';
 import { useLiveCompetitionFeed } from '@/hooks/useLiveCompetitions';
 import { useLiveFixtures } from '@/hooks/useLiveFixtures';
 import { useSavedBuilderStrategies } from '@/hooks/useSavedBuilderStrategies';
-import { fetchAllFixturesBetween, seasonWindowUnix, type Fixture } from '@/services/oddAlerts';
+import { fetchAllFixturesBetween, seasonWindowUnix, type Fixture, type RawFixture } from '@/services/oddAlerts';
+import { TARGET_MARKETS, backtestTeam, targetMarket, type BacktestResult, type BacktestScope, type TargetMarket } from '@/utils/strategyBacktest';
 import { clientStaleTime } from '@/services/oddAlertsCachePolicy';
 import { buildLeagueStatsLive } from '@/services/statsBuilder';
-import { MARKET_MODULES, type MarketModule, type RecCandidate, type RiskLevel } from '@/utils/fixtureRecommendation';
 import { nextFixtureFor, type UpcomingLite } from '@/utils/statsGrading';
 import {
   DIMENSIONS, MATCH_SCOPES, buildStrategyConfig, conditionLabel, evaluateStrategy, filterResults, getDimension,
-  needsExport, needsFixtures, periodLabel, prepareLeague, recommendFixture, resultBackground, resultColour,
-  resultsByTeam, summarize, teamKeyOf,
-  type Condition, type Dimension, type FixtureRec, type LeagueBundle, type LeaguePrep, type MatchScope,
-  type ResultColor, type SavedStrategy, type StrategyLogic, type StrategyPeriod, type StrategyResult,
+  needsExport, needsFixtures, periodFrom, periodLabel, resultBackground, resultColour,
+  resultsByTeam, splitPeriod, summarize, teamKeyOf,
+  type Condition, type Dimension, type LeagueBundle, type MatchScope,
+  type ResultColor, type SavedStrategy, type StatHalf, type StatScope, type StrategyLogic, type StrategyPeriod, type StrategyResult,
 } from '@/utils/strategyBuilder';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
@@ -62,18 +61,17 @@ const COLOR_GROUPS: { value: ResultColor; label: string }[] = [
   { value: 'none', label: 'Ungraded' },
 ];
 
-type FxRow = { fx: Fixture; fr: FixtureRec; home?: StrategyResult; away?: StrategyResult };
-
-/** The three-colour split for the fixtures table — by the recommendation's risk. */
-const RISK_COLOR: Record<RiskLevel, string> = { low: theme.accentGreen, medium: theme.yellow, high: theme.loss };
-const RISK_BG: Record<RiskLevel, string> = { low: 'rgba(5,150,105,0.10)', medium: 'rgba(202,138,4,0.12)', high: 'rgba(220,38,38,0.08)' };
-const RISK_LABEL: Record<RiskLevel, string> = { low: 'Low', medium: 'Med', high: 'High' };
-const RISK_SECTIONS: { level: RiskLevel; label: string }[] = [
-  { level: 'low', label: 'LOW RISK · safest reads' },
-  { level: 'medium', label: 'MEDIUM RISK · moderate edge' },
-  { level: 'high', label: 'HIGH RISK · volatile' },
+/** A qualifying fixture: the matched side(s) and the strongest colour across them. */
+type FxRow = { fx: Fixture; home?: StrategyResult; away?: StrategyResult; color: ResultColor };
+const COLOR_RANK: Record<ResultColor, number> = { green: 3, yellow: 2, red: 1, none: 0 };
+const strongerColor = (cs: ResultColor[]): ResultColor => cs.reduce<ResultColor>((best, c) => (COLOR_RANK[c] > COLOR_RANK[best] ? c : best), 'none');
+/** The three-colour split for the results — by the matched side's strongest grade. */
+const COLOR_SECTIONS: { color: ResultColor; label: string }[] = [
+  { color: 'green', label: 'GREEN · strongest' },
+  { color: 'yellow', label: 'YELLOW · middle' },
+  { color: 'red', label: 'RED · weakest' },
+  { color: 'none', label: 'UNGRADED' },
 ];
-const pct = (n: number) => `${Math.round(n * 100)}%`;
 
 export default function StrategyBuilderPanel() {
   const { width } = useWindowDimensions();
@@ -91,13 +89,16 @@ export default function StrategyBuilderPanel() {
   // ---- query: the strategy ----
   const [conditions, setConditions] = useState<Condition[]>([]);
   const [logic, setLogic] = useState<StrategyLogic>('and');
+  // Global FT/1H/2H + Overall/Home/Away panel — every condition is read at this period/venue.
+  const [gHalf, setGHalf] = useState<StatHalf>('ft');
+  const [gScope, setGScope] = useState<StatScope>('overall');
+  const gPeriod = useMemo(() => periodFrom(gHalf, gScope), [gHalf, gScope]);
 
-  // ---- result mode + fixtures controls ----
+  // ---- result mode + filters ----
   const [resultMode, setResultMode] = useState<'teams' | 'fixtures'>('teams');
   const [matchScope, setMatchScope] = useState<MatchScope>('either');
-  const [markets, setMarkets] = useState<MarketModule[]>([...MARKET_MODULES]);
-  const [minConf, setMinConf] = useState(0);
-  const [fxSort, setFxSort] = useState<'best' | 'kickoff'>('best');
+  // Teams-mode historical success rate: the market to score qualifying teams against (ALL = off).
+  const [target, setTarget] = useState<string>(ALL);
 
   // ---- saved strategies (the HOW only — recomputed live on load) ----
   const { saved, save, remove } = useSavedBuilderStrategies();
@@ -107,6 +108,9 @@ export default function StrategyBuilderPanel() {
 
   const wantExport = conditions.length > 0 && needsExport(conditions);
   const teamsNeedFixtures = conditions.length > 0 && needsFixtures(conditions);
+  // A chosen target market needs the season fixtures to backtest (bounded to the capped leagues).
+  const wantBacktest = resultMode === 'teams' && target !== ALL && conditions.length > 0;
+  const targetDef = useMemo(() => (target !== ALL ? targetMarket(target) : undefined), [target]);
 
   // ---- upcoming fixtures (each team's next match, and the fixtures shown in Fixtures mode) ----
   const up = useLiveFixtures('ns', { upcomingDays: 7, upcomingScope: 'all' });
@@ -131,7 +135,9 @@ export default function StrategyBuilderPanel() {
   // In Fixtures mode only the capped leagues are ever shown, so both exports and
   // season fixtures are fetched only for them — even for export/fixtures-based
   // conditions. Teams mode still spans every league.
-  const needFixturesFor = (compId: number) => (resultMode === 'teams' ? teamsNeedFixtures : fixtureCompIds.has(compId));
+  const needFixturesFor = (compId: number) => (resultMode === 'teams'
+    ? (teamsNeedFixtures || (wantBacktest && fixtureCompIds.has(compId)))
+    : (teamsNeedFixtures && fixtureCompIds.has(compId)));
   const needExportFor = (compId: number) => (resultMode === 'teams' ? wantExport : wantExport && fixtureCompIds.has(compId));
 
   // ---- per-league data (reused engines; built only when a condition/mode needs it) ----
@@ -167,6 +173,15 @@ export default function StrategyBuilderPanel() {
     [liveLeagues, exportSig, fixtureSig],
   );
 
+  // Season fixtures per league + a name→id map, for the Teams-mode backtest.
+  const fixturesByComp = useMemo(() => {
+    const m = new Map<number, RawFixture[]>();
+    liveLeagues.forEach((comp, i) => { const fx = fixtureResults[i]?.data; if (fx) m.set(comp.id, fx); });
+    return m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveLeagues, fixtureSig]);
+  const compIdByName = useMemo(() => new Map(liveLeagues.map((l) => [l.name, l.id] as const)), [liveLeagues]);
+
   const exportEnabled = liveLeagues.filter((comp) => needExportFor(comp.id)).length;
   const exportSettled = exportResults.filter((r) => r.isSuccess || r.isError).length;
   const fixtureEnabled = liveLeagues.filter((comp) => needFixturesFor(comp.id)).length;
@@ -176,49 +191,27 @@ export default function StrategyBuilderPanel() {
     || (fixtureEnabled > 0 && fixtureSettled < fixtureEnabled);
 
   // ---- results ----
-  const results = useMemo(() => evaluateStrategy(bundles, conditions, logic), [bundles, conditions, logic]);
+  const results = useMemo(() => evaluateStrategy(bundles, conditions, logic, gPeriod), [bundles, conditions, logic, gPeriod]);
 
-  // ---- fixtures mode: per-league prep + ranked recommendations ----
-  const prepByComp = useMemo(() => {
-    const m = new Map<number, LeaguePrep>();
-    if (resultMode !== 'fixtures') return m;
-    liveLeagues.forEach((comp, i) => {
-      const fx = fixtureResults[i]?.data;
-      if (fx && fx.length) m.set(comp.id, prepareLeague(fx));
-    });
-    return m;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resultMode, liveLeagues, fixtureSig]);
-
-  const marketsKey = markets.join(',');
+  // ---- fixtures mode: upcoming fixtures whose side(s) qualify, with their grades ----
   const fixtureRows = useMemo(() => {
-    if (resultMode !== 'fixtures') return [] as { fx: Fixture; fr: FixtureRec; home?: StrategyResult; away?: StrategyResult }[];
-    const activeModules = markets.length ? markets : [...MARKET_MODULES];
+    if (resultMode !== 'fixtures' || !conditions.length) return [] as FxRow[];
+    const idx = resultsByTeam(results);
     const leagueById = new Map(liveLeagues.map((l) => [l.id, l]));
-    const idx = conditions.length ? resultsByTeam(results) : null;
-    const rows: { fx: Fixture; fr: FixtureRec; home?: StrategyResult; away?: StrategyResult }[] = [];
+    const rows: FxRow[] = [];
     for (const fx of up.fixtures) {
       const comp = leagueById.get(fx.competition.id);
       if (!comp) continue;
-      const prep = prepByComp.get(fx.competition.id);
-      if (!prep) continue;
-      const fr = recommendFixture(prep, { id: fx.home.id, name: fx.home.name }, { id: fx.away.id, name: fx.away.name }, activeModules);
-      if (!fr) continue;
-      let home: StrategyResult | undefined;
-      let away: StrategyResult | undefined;
-      if (idx) {
-        home = idx.get(`${comp.name}::${teamKeyOf({ teamId: fx.home.id, team: fx.home.name })}`);
-        away = idx.get(`${comp.name}::${teamKeyOf({ teamId: fx.away.id, team: fx.away.name })}`);
-        const pass = matchScope === 'home' ? !!home : matchScope === 'away' ? !!away : matchScope === 'both' ? !!home && !!away : !!home || !!away;
-        if (!pass) continue;
-      }
-      if (minConf > 0 && (fr.rec.best?.probability ?? 0) * 100 < minConf) continue;
-      rows.push({ fx, fr, home, away });
+      const home = idx.get(`${comp.name}::${teamKeyOf({ teamId: fx.home.id, team: fx.home.name })}`);
+      const away = idx.get(`${comp.name}::${teamKeyOf({ teamId: fx.away.id, team: fx.away.name })}`);
+      const pass = matchScope === 'home' ? !!home : matchScope === 'away' ? !!away : matchScope === 'both' ? !!home && !!away : !!home || !!away;
+      if (!pass) continue;
+      const color = strongerColor([home?.color, away?.color].filter((c): c is ResultColor => !!c));
+      rows.push({ fx, home, away, color });
     }
-    rows.sort((a, b) => (fxSort === 'kickoff' ? a.fx.kickoffUnix - b.fx.kickoffUnix : (b.fr.rec.best?.probability ?? 0) - (a.fr.rec.best?.probability ?? 0)));
+    rows.sort((a, b) => a.fx.kickoffUnix - b.fx.kickoffUnix);
     return rows;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resultMode, up.fixtures, prepByComp, liveLeagues, results, conditions, matchScope, minConf, fxSort, marketsKey]);
+  }, [resultMode, up.fixtures, liveLeagues, results, conditions, matchScope]);
 
   // ---- result filters ----
   const [fLeague, setFLeague] = useState(ALL);
@@ -230,7 +223,7 @@ export default function StrategyBuilderPanel() {
   const filtered = useMemo(() => filterResults(results, { league: fLeague, dimension: fDimension, color: fColor, minGames: fMinGames }), [results, fLeague, fDimension, fColor, fMinGames]);
   const summary = useMemo(() => summarize(filtered), [filtered]);
 
-  useEffect(() => setPage(1), [resultMode, conditions, logic, fLeague, fDimension, fColor, fMinGames, matchScope, minConf, fxSort, marketsKey]);
+  useEffect(() => setPage(1), [resultMode, conditions, logic, gPeriod, fLeague, fDimension, fColor, fMinGames, matchScope, target]);
 
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safe = Math.min(page, pages);
@@ -250,16 +243,15 @@ export default function StrategyBuilderPanel() {
   }, [resultMode, fixtureRows, results]);
   const dimensionOptions = useMemo(() => [{ value: ALL, label: 'All categories' }, ...[...new Set(conditions.map((c) => c.dimensionId))].map((id) => ({ value: id, label: getDimension(id)?.label ?? id }))], [conditions]);
 
-  const addCondition = (c: Condition) => { setConditions((cur) => [...cur, c]); setActiveId(null); };
+  const addCondition = (c: Condition) => { setConditions((cur) => [...cur, { ...c, period: gPeriod }]); setActiveId(null); };
   const removeCondition = (id: string) => { setConditions((cur) => cur.filter((c) => c.id !== id)); setActiveId(null); };
   const toggleNot = (id: string) => { setConditions((cur) => cur.map((c) => (c.id === id ? { ...c, not: !c.not } : c))); setActiveId(null); };
-  const toggleMarket = (m: MarketModule) => setMarkets((cur) => (cur.includes(m) ? cur.filter((x) => x !== m) : [...cur, m]));
   const clearAll = () => { setConditions([]); setFLeague(ALL); setFDimension(ALL); setFColor(ALL); setFMinGames(0); setActiveId(null); };
 
-  // Save the current build (conditions + logic + view), never its results.
+  // Save the current build (conditions + logic + global period + view), never its results.
   const commitSave = () => {
     if (!conditions.length) return;
-    const entry = save(draftName, buildStrategyConfig({ conditions, logic, resultMode, matchScope, markets, minConf, fxSort }));
+    const entry = save(draftName, buildStrategyConfig({ conditions, logic, period: gPeriod, resultMode, matchScope }));
     setActiveId(entry.id);
     setDraftName('');
     setSaving(false);
@@ -269,18 +261,15 @@ export default function StrategyBuilderPanel() {
     const cfg = s.config;
     setConditions(cfg.conditions.map((c) => ({ ...c, id: `c${(CONDITION_SEQ += 1)}`, options: { ...c.options } })));
     setLogic(cfg.logic);
+    const sp = splitPeriod(cfg.period ?? 'overall');
+    setGHalf(sp.half); setGScope(sp.scope);
     setResultMode(cfg.resultMode);
     setMatchScope(cfg.matchScope);
-    setMarkets([...cfg.markets]);
-    setMinConf(cfg.minConf);
-    setFxSort(cfg.fxSort);
     setFLeague(ALL); setFDimension(ALL); setFColor(ALL); setFMinGames(0);
     setActiveId(s.id);
     setSaving(false);
   };
   const removeStrategy = (id: string) => { remove(id); setActiveId((cur) => (cur === id ? null : cur)); };
-
-  const MARKET_LABEL: Record<MarketModule, string> = { result: 'Result', goals: 'Goals', btts: 'BTTS' };
 
   const aside = (
     <SavedStrategiesPanel
@@ -305,13 +294,43 @@ export default function StrategyBuilderPanel() {
           </Pressable>
         </View>
         <Text style={styles.subtitle}>
-          Build a strategy from the analytics you already have. Combine conditions with AND / OR across every ongoing league. View it as the qualifying teams, or as fixtures — each fixture carrying its best, 2nd-best and 3rd-best betting recommendation. Save a build to re-run it live anytime.
+          Combine any conditions across every stat and grading method, at one global period and venue. View it as the qualifying teams — with an optional historical success rate — or as fixtures, each showing the exact grade every feature qualified with. Save a build to re-run it live anytime.
         </Text>
+      </View>
+
+      {/* Global period + venue panel — every condition is read here */}
+      <View style={styles.periodCard}>
+        <View style={styles.periodGroup}>
+          <Text style={styles.periodLabel}>Period</Text>
+          <View style={styles.segRow}>
+            {([['ft', 'Full time'], ['ht', '1st half'], ['2h', '2nd half']] as const).map(([v, label]) => {
+              const on = gHalf === v;
+              return (
+                <Pressable key={v} accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => setGHalf(v)} style={[styles.segBtn, on && styles.segBtnOn]}>
+                  <Text style={[styles.segText, on && styles.segTextOn]}>{label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+        <View style={styles.periodGroup}>
+          <Text style={styles.periodLabel}>Venue</Text>
+          <View style={styles.segRow}>
+            {([['overall', 'Overall'], ['home', 'Home'], ['away', 'Away']] as const).map(([v, label]) => {
+              const on = gScope === v;
+              return (
+                <Pressable key={v} accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => setGScope(v)} style={[styles.segBtn, on && styles.segBtnOn]}>
+                  <Text style={[styles.segText, on && styles.segTextOn]}>{label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
       </View>
 
       {/* Result mode */}
       <View style={styles.modeRow}>
-        {([['teams', 'Teams'], ['fixtures', 'Fixtures · recommendations']] as const).map(([v, label]) => {
+        {([['teams', 'Teams'], ['fixtures', 'Fixtures · grade qualification']] as const).map(([v, label]) => {
           const on = resultMode === v;
           return (
             <Pressable key={v} accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => setResultMode(v)} style={[styles.modeBtn, on && styles.modeBtnOn]}>
@@ -322,7 +341,7 @@ export default function StrategyBuilderPanel() {
       </View>
 
       {/* A. Strategy configuration */}
-      <ConditionBuilder narrow={narrow} onAdd={addCondition} />
+      <ConditionBuilder narrow={narrow} period={gPeriod} onAdd={addCondition} />
 
       {/* B. Conditions + logic */}
       {conditions.length > 0 ? (
@@ -384,7 +403,7 @@ export default function StrategyBuilderPanel() {
             ? <Text style={styles.statusLive}>● {summary.teams} teams · {summary.leagues} leagues · {logic.toUpperCase()} of {conditions.length} condition{conditions.length > 1 ? 's' : ''}</Text>
             : <Text style={styles.statusMuted}>Add a condition to see the qualifying teams.</Text>
         ) : (
-          <Text style={styles.statusLive}>● {fxFiltered.length} fixtures with a recommendation{conditions.length > 0 ? ` · ${MATCH_SCOPES.find((s) => s.value === matchScope)?.label.toLowerCase()} matches the strategy` : ''}</Text>
+          <Text style={styles.statusLive}>● {fxFiltered.length} qualifying fixtures{conditions.length > 0 ? ` · ${MATCH_SCOPES.find((s) => s.value === matchScope)?.label.toLowerCase()} matches the strategy` : ''}</Text>
         )}
       </View>
 
@@ -405,7 +424,11 @@ export default function StrategyBuilderPanel() {
                 <FilterDropdown label="Category" value={fDimension} options={dimensionOptions} onChange={setFDimension} style={narrow ? styles.full : styles.flex} />
                 <FilterDropdown label="Colour" value={fColor} options={[{ value: ALL, label: 'All colours' }, ...COLOR_GROUPS.map((c) => ({ value: c.value, label: c.label }))]} onChange={setFColor} style={narrow ? styles.full : styles.flex} />
                 <FilterDropdown label="Min games" value={String(fMinGames)} options={[{ value: '0', label: 'Any games' }, { value: '5', label: '5+ games' }, { value: '8', label: '8+ games' }]} onChange={(v) => setFMinGames(Number(v))} style={narrow ? styles.full : styles.flex} />
+                <FilterDropdown label="Historical outcome" value={target} options={[{ value: ALL, label: 'Off · no backtest' }, ...TARGET_MARKETS.map((m) => ({ value: m.key, label: `${m.group} · ${m.label}` }))]} onChange={setTarget} style={narrow ? styles.full : styles.flex} />
               </View>
+              {target !== ALL ? (
+                <Text style={styles.backtestNote}>Historical success rate = how often “{targetDef?.label}” actually happened in each team’s completed matches this season (current-season form, not a point-in-time backtest). Shown only for the top {FIXTURE_LEAGUE_CAP} ongoing leagues; “—” where the sample is too small.</Text>
+              ) : null}
             </View>
           ) : null}
           {filtered.length === 0 ? (
@@ -413,16 +436,14 @@ export default function StrategyBuilderPanel() {
           ) : (
             <>
               <PageControls page={safe} pages={pages} total={filtered.length} from={start + 1} to={start + visible.length} onChange={setPage} />
-              <View style={styles.resultList}>
-                {visible.map((r) => <ResultCard key={`${r.competition}-${r.team}`} result={r} upcoming={upcoming} />)}
-              </View>
+              <TeamsTable rows={visible} upcoming={upcoming} target={targetDef ?? null} fixturesByComp={fixturesByComp} compIdByName={compIdByName} />
               <PageControls page={safe} pages={pages} total={filtered.length} from={start + 1} to={start + visible.length} onChange={setPage} />
             </>
           )}
         </>
       ) : null}
 
-      {/* ===== Fixtures mode ===== */}
+      {/* ===== Fixtures mode · grade qualification ===== */}
       {resultMode === 'fixtures' && !loading && !up.loading ? (
         <>
           <View style={styles.filterCard}>
@@ -431,27 +452,17 @@ export default function StrategyBuilderPanel() {
               {conditions.length > 0 ? (
                 <FilterDropdown label="Applies to" value={matchScope} options={MATCH_SCOPES.map((s) => ({ value: s.value, label: s.label }))} onChange={(v) => setMatchScope(v as MatchScope)} style={narrow ? styles.full : styles.flex} />
               ) : null}
-              <FilterDropdown label="Min confidence" value={String(minConf)} options={[{ value: '0', label: 'Any' }, { value: '40', label: '40%+' }, { value: '60', label: '60%+' }]} onChange={(v) => setMinConf(Number(v))} style={narrow ? styles.full : styles.flex} />
-              <FilterDropdown label="Sort" value={fxSort} options={[{ value: 'best', label: 'Best pick first' }, { value: 'kickoff', label: 'Kickoff' }]} onChange={(v) => setFxSort(v as 'best' | 'kickoff')} style={narrow ? styles.full : styles.flex} />
             </View>
-            <Text style={styles.topListNote}>Markets</Text>
-            <View style={styles.marketRow}>
-              {MARKET_MODULES.map((m) => {
-                const on = markets.includes(m);
-                return (
-                  <Pressable key={m} accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => toggleMarket(m)} style={[styles.marketPill, on && styles.marketPillOn]}>
-                    <Text style={[styles.marketPillText, on && styles.marketPillTextOn]}>{MARKET_LABEL[m]}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
+            <Text style={styles.backtestNote}>Every upcoming fixture whose side(s) satisfy the strategy, showing the exact grade each feature qualified with. Read at {periodLabel(gPeriod)}.</Text>
           </View>
-          {fxFiltered.length === 0 ? (
-            <Text style={styles.empty}>No fixture with a recommendation{conditions.length > 0 ? ' matches the strategy' : ''} right now. Widen the markets, lower min confidence, or change the match scope.</Text>
+          {conditions.length === 0 ? (
+            <Text style={styles.empty}>Add a condition above to see the qualifying fixtures.</Text>
+          ) : fxFiltered.length === 0 ? (
+            <Text style={styles.empty}>No upcoming fixture matches this strategy. Try OR logic, relax a condition, or change which side it applies to.</Text>
           ) : (
             <>
               <PageControls page={fxSafe} pages={fxPages} total={fxFiltered.length} from={fxStart + 1} to={fxStart + fxVisible.length} onChange={setPage} />
-              <FixtureTable rows={fxVisible} hasConditions={conditions.length > 0} />
+              <GradeFixtureTable rows={fxVisible} upcoming={upcoming} />
               <PageControls page={fxSafe} pages={fxPages} total={fxFiltered.length} from={fxStart + 1} to={fxStart + fxVisible.length} onChange={setPage} />
             </>
           )}
@@ -459,6 +470,144 @@ export default function StrategyBuilderPanel() {
       ) : null}
       </View>
       {wide ? aside : null}
+    </View>
+  );
+}
+
+/** Teams results as a table split into three colours, each row showing its
+ *  qualifying grade and (when a target market is chosen) its historical success
+ *  rate. Tap a row for the per-condition breakdown + the backtest detail. */
+const TEAM_SECTIONS: { color: ResultColor; label: string }[] = [
+  { color: 'green', label: 'GREEN · strongest' },
+  { color: 'yellow', label: 'YELLOW · middle' },
+  { color: 'red', label: 'RED · weakest' },
+  { color: 'none', label: 'UNGRADED' },
+];
+
+type TeamRow = { result: StrategyResult; nf: ReturnType<typeof nextFixtureFor>; bt: BacktestResult | null };
+
+function TeamsTable({ rows, upcoming, target, fixturesByComp, compIdByName }: {
+  rows: StrategyResult[];
+  upcoming: UpcomingLite[];
+  target: TargetMarket | null;
+  fixturesByComp: Map<number, RawFixture[]>;
+  compIdByName: Map<string, number>;
+}) {
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const built: TeamRow[] = useMemo(() => rows.map((result) => {
+    const nf = nextFixtureFor(result.teamId, result.team, upcoming);
+    let bt: BacktestResult | null = null;
+    if (target) {
+      const compId = compIdByName.get(result.competition);
+      const fixtures = compId != null ? fixturesByComp.get(compId) : undefined;
+      if (fixtures) {
+        const scope: BacktestScope = nf ? (nf.side === 'home' ? 'home' : 'away') : 'overall';
+        bt = backtestTeam(fixtures, result.teamId, scope, target, compId);
+      }
+    }
+    return { result, nf, bt };
+  }), [rows, upcoming, target, fixturesByComp, compIdByName]);
+
+  const keyOf = (r: StrategyResult) => `${r.competition}::${r.team}`;
+  const expanded = expandedKey != null ? built.find((b) => keyOf(b.result) === expandedKey) : undefined;
+  const minW = target ? 920 : 820;
+  return (
+    <View>
+      <DragScroll horizontal style={styles.fxScroll} contentContainerStyle={styles.fxScrollContent}>
+        <View style={[styles.fxTable, { minWidth: minW }]}>
+          <View style={[styles.fxTRow, styles.fxTHeadRow]}>
+            <Text style={[styles.tTeam, styles.fxTHead]}>Team</Text>
+            <Text style={[styles.tNext, styles.fxTHead]}>Next fixture</Text>
+            <Text style={[styles.tCond, styles.fxTHead]}>Conditions</Text>
+            <Text style={[styles.tGrade, styles.fxTHead]}>Grade</Text>
+            <Text style={[styles.tRead, styles.fxTHead]}>Reading</Text>
+            {target ? <Text style={[styles.tRate, styles.fxTHead]}>Hist. {target.label}</Text> : null}
+          </View>
+          {TEAM_SECTIONS.map((sec) => {
+            const group = built.filter((b) => b.result.color === sec.color);
+            if (!group.length) return null;
+            const col = resultColour(sec.color);
+            return (
+              <View key={sec.color}>
+                <View style={[styles.fxSectionRow, { backgroundColor: resultBackground(sec.color) }]}>
+                  <Text style={[styles.fxSectionTitle, { color: col }]}>{sec.label} · {group.length}</Text>
+                </View>
+                {group.map((b) => (
+                  <TeamsTableRow key={keyOf(b.result)} row={b} hasTarget={!!target} active={expandedKey === keyOf(b.result)} onPress={() => setExpandedKey((x) => (x === keyOf(b.result) ? null : keyOf(b.result)))} />
+                ))}
+              </View>
+            );
+          })}
+        </View>
+      </DragScroll>
+      {expanded ? (
+        <View style={[styles.fxDetail, { borderColor: resultColour(expanded.result.color) }]}>
+          <ResultCard result={expanded.result} upcoming={upcoming} />
+          {target ? <BacktestDetail bt={expanded.bt} target={target} /> : null}
+        </View>
+      ) : null}
+      <Text style={styles.hint}>Rows are grouped by the strongest qualifying colour. Tap a team for its per-condition grades{target ? ' and the matches behind its historical rate' : ''}.</Text>
+    </View>
+  );
+}
+
+function TeamsTableRow({ row, hasTarget, active, onPress }: { row: TeamRow; hasTarget: boolean; active: boolean; onPress: () => void }) {
+  const { result, nf, bt } = row;
+  const tint = resultColour(result.color);
+  const graded = result.conditions.find((c) => c.grade);
+  const primary = result.conditions[0];
+  const rateCol = bt ? (bt.rate >= 60 ? theme.accentGreen : bt.rate >= 45 ? theme.yellow : theme.loss) : theme.textFaint;
+  return (
+    <Pressable accessibilityRole="button" accessibilityState={{ expanded: active }} onPress={onPress} style={[styles.fxTRow, { backgroundColor: active ? theme.surfaceHover : resultBackground(result.color) }]}>
+      <View style={styles.tTeam}>
+        <View style={styles.teamNameRow}><View style={[styles.colorDot, { backgroundColor: tint }]} /><Text style={styles.fxHome} numberOfLines={1}>{result.team}</Text></View>
+        <Text style={styles.fxAway} numberOfLines={1}>{result.competition}</Text>
+      </View>
+      <View style={styles.tNext}>
+        {nf ? (
+          <>
+            <Text style={styles.fxCellMuted} numberOfLines={1}>{nf.side === 'home' ? 'vs ' : '@ '}{nf.opponentName}</Text>
+            <Text style={styles.fxCellFaint} numberOfLines={1}>{nf.side === 'home' ? 'Home' : 'Away'} · {kickoffLabel(nf.fixture.kickoffUnix, nf.fixture.kickoff)}</Text>
+          </>
+        ) : <Text style={styles.fxNone}>No upcoming fixture</Text>}
+      </View>
+      <Text style={[styles.tCond, styles.fxCellMuted]}>{result.conditions.length}</Text>
+      <View style={styles.tGrade}>
+        {graded ? (
+          <>
+            <Text style={[styles.gradeTxt, { color: resultColour(graded.color) }]} numberOfLines={1}>{graded.grade}</Text>
+            <Text style={styles.fxCellFaint} numberOfLines={1}>{graded.dimensionLabel}</Text>
+          </>
+        ) : <Text style={styles.fxNone}>—</Text>}
+      </View>
+      <Text style={[styles.tRead, styles.fxCellMuted]} numberOfLines={2}>{primary?.valueText ?? '—'}</Text>
+      {hasTarget ? (
+        <View style={styles.tRate}>
+          {bt ? (
+            <>
+              <Text style={[styles.rateTxt, { color: rateCol }]}>{Math.round(bt.rate)}%</Text>
+              <Text style={styles.fxCellFaint}>{bt.hits}/{bt.sample}</Text>
+            </>
+          ) : <Text style={styles.fxNone}>Insuff. data</Text>}
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}
+
+function BacktestDetail({ bt, target }: { bt: BacktestResult | null; target: TargetMarket }) {
+  if (!bt) {
+    return <Text style={styles.btNote}>Historical “{target.label}” rate: insufficient completed matches this season (need a larger sample).</Text>;
+  }
+  return (
+    <View style={styles.btWrap}>
+      <Text style={styles.btTitle}>Historical “{target.label}” · {Math.round(bt.rate)}% ({bt.hits}/{bt.sample}) · {bt.scope} matches this season</Text>
+      <View style={styles.btDots}>
+        {bt.matches.slice(0, 20).map((m, i) => (
+          <View key={i} style={[styles.btDot, { backgroundColor: m.hit ? theme.accentGreen : theme.loss }]} />
+        ))}
+      </View>
+      <Text style={styles.btNote}>{bt.hits} hit · {bt.misses} missed. Current-season form on this market, not a point-in-time backtest.</Text>
     </View>
   );
 }
@@ -487,7 +636,7 @@ function HelpModal({ visible, onClose }: { visible: boolean; onClose: () => void
               Set the period, method and level, then <Text style={styles.helpStrong}>+ Add condition</Text>. Stack as many as you like and switch <Text style={styles.helpStrong}>AND</Text> (must satisfy all) / <Text style={styles.helpStrong}>OR</Text> (any one). Tap <Text style={styles.helpStrong}>NOT</Text> on a chip to exclude teams that match it.
             </HelpStep>
             <HelpStep n="3" title="Read the results" accent={theme.accentGreen}>
-              <Text style={styles.helpStrong}>Teams</Text> lists every qualifying side, graded green / yellow / red with the exact reason per condition. <Text style={styles.helpStrong}>Fixtures</Text> turns the strategy onto upcoming matches — a three-colour risk table with the best, 2nd-best and 3rd-best bet per fixture; tap a row for the full read.
+              <Text style={styles.helpStrong}>Teams</Text> lists every qualifying side, graded green / yellow / red with the exact reason per condition (and an optional historical success rate). <Text style={styles.helpStrong}>Fixtures</Text> turns the strategy onto upcoming matches — each one showing the matched side(s) and the exact grade every feature qualified with; tap a row for the full read.
             </HelpStep>
             <HelpStep n="4" title="Save & reuse" accent={theme.accentOrange}>
               Tap <Text style={styles.helpStrong}>★ Save</Text> and name it. Only the recipe is stored — never the teams or fixtures — so each time you open a saved strategy it recalculates against the latest data in the side panel.
@@ -524,33 +673,23 @@ function SummaryTile({ label, value, color }: { label: string; value: number; co
 }
 
 /** A. Progressive selection: category → period → method → options → Add. */
-function ConditionBuilder({ narrow, onAdd }: { narrow: boolean; onAdd: (c: Condition) => void }) {
+function ConditionBuilder({ narrow, period, onAdd }: { narrow: boolean; period: StrategyPeriod; onAdd: (c: Condition) => void }) {
   const DEFAULT_DIM = DIMENSIONS[0].id; // Stat filter · all tables — the unified entry
   const first = getDimension(DEFAULT_DIM)!;
   const [dimId, setDimId] = useState(DEFAULT_DIM);
   const [opts, setOpts] = useState<Record<string, string>>(defaultOptions(DEFAULT_DIM));
-  const [period, setPeriod] = useState<StrategyPeriod>(first.periods[0]);
-  const [methodId, setMethodId] = useState<string>(methodsOf(first, first.periods[0], defaultOptions(DEFAULT_DIM))[0]?.value ?? '');
+  const [methodId, setMethodId] = useState<string>(methodsOf(first, period, defaultOptions(DEFAULT_DIM))[0]?.value ?? '');
   const dim = getDimension(dimId)!;
   const methods = methodsOf(dim, period, opts);
 
-  // Reset downstream selections in the change handlers (never in an effect, to
-  // avoid render-loop churn): a new category resets period/method/options; a new
-  // period or an option that drives the feature list keeps the method only if it
-  // is still offered.
+  // Period is global now; a new category resets method/options, an option that
+  // drives the feature list keeps the method only if it is still offered.
   const changeDim = (v: string) => {
     const d = getDimension(v)!;
     const o = defaultOptions(v);
     setDimId(v);
-    setPeriod(d.periods[0]);
     setOpts(o);
-    setMethodId(methodsOf(d, d.periods[0], o)[0]?.value ?? '');
-  };
-  const changePeriod = (v: string) => {
-    const p = v as StrategyPeriod;
-    setPeriod(p);
-    const ms = methodsOf(dim, p, opts);
-    if (!ms.some((m) => m.value === methodId)) setMethodId(ms[0]?.value ?? '');
+    setMethodId(methodsOf(d, period, o)[0]?.value ?? '');
   };
   const changeOpt = (key: string, v: string) => {
     const next = { ...opts, [key]: v };
@@ -568,15 +707,25 @@ function ConditionBuilder({ narrow, onAdd }: { narrow: boolean; onAdd: (c: Condi
       <Text style={styles.sectionLabel}>Strategy configuration</Text>
       <View style={[styles.filterRow, narrow && styles.filterCol]}>
         <FilterDropdown label="Category" value={dimId} options={DIMENSIONS.map((d) => ({ value: d.id, label: d.label }))} onChange={changeDim} style={narrow ? styles.full : styles.flex} />
-        {dim.periods.length > 1 ? (
-          <FilterDropdown label="Period" value={period} options={dim.periods.map((p) => ({ value: p, label: periodLabel(p) }))} onChange={changePeriod} style={narrow ? styles.full : styles.flex} />
-        ) : null}
         <FilterDropdown label="Method / feature" value={methodId} options={methods} onChange={setMethodId} style={narrow ? styles.full : styles.flex} />
       </View>
       {dim.options && dim.options.length > 0 ? (
         <View style={[styles.filterRow, narrow && styles.filterCol]}>
-          {dim.options.map((o) => (
-            <FilterDropdown key={o.key} label={o.label} value={opts[o.key] ?? o.default} options={o.options} onChange={(v) => changeOpt(o.key, v)} style={narrow ? styles.full : styles.flex} />
+          {dim.options.filter((o) => (o.visible ? o.visible(opts) : true)).map((o) => (
+            o.kind === 'number' ? (
+              <View key={o.key} style={narrow ? styles.full : styles.flex}>
+                <Text style={styles.numLabel}>{o.label}</Text>
+                <TextInput
+                  value={opts[o.key] ?? o.default}
+                  onChangeText={(t) => changeOpt(o.key, t.replace(/[^0-9.]/g, ''))}
+                  keyboardType="decimal-pad"
+                  style={styles.numInput}
+                  accessibilityLabel={o.label}
+                />
+              </View>
+            ) : (
+              <FilterDropdown key={o.key} label={o.label} value={opts[o.key] ?? o.default} options={o.options} onChange={(v) => changeOpt(o.key, v)} style={narrow ? styles.full : styles.flex} />
+            )
           ))}
         </View>
       ) : null}
@@ -619,37 +768,33 @@ function ResultCard({ result, upcoming }: { result: StrategyResult; upcoming: Up
   );
 }
 
-/** Fixtures as a table split into three risk colours (green / yellow / red),
- *  each row showing its best / 2nd / 3rd betting pick; tap a row for the full card. */
-function FixtureTable({ rows, hasConditions }: { rows: FxRow[]; hasConditions: boolean }) {
+/** Fixtures as a table split into three grade colours; each row shows the matched
+ *  side(s) and the exact grade each feature qualified with. Tap for the breakdown. */
+function GradeFixtureTable({ rows, upcoming }: { rows: FxRow[]; upcoming: UpcomingLite[] }) {
   const [expandedId, setExpandedId] = useState<number | null>(null);
-  const minW = hasConditions ? 1040 : 960;
   const expanded = expandedId != null ? rows.find((r) => r.fx.id === expandedId) : undefined;
   return (
     <View>
       <DragScroll horizontal style={styles.fxScroll} contentContainerStyle={styles.fxScrollContent}>
-        <View style={[styles.fxTable, { minWidth: minW }]}>
+        <View style={[styles.fxTable, { minWidth: 900 }]}>
           <View style={[styles.fxTRow, styles.fxTHeadRow]}>
             <Text style={[styles.cKick, styles.fxTHead]}>Kickoff</Text>
             <Text style={[styles.cFix, styles.fxTHead]}>Fixture</Text>
             <Text style={[styles.cLeague, styles.fxTHead]}>League</Text>
-            <Text style={[styles.cBest, styles.fxTHead]}>Best bet</Text>
-            <Text style={[styles.cAlt, styles.fxTHead]}>2nd best</Text>
-            <Text style={[styles.cAlt, styles.fxTHead]}>3rd best</Text>
-            <Text style={[styles.cRisk, styles.fxTHead]}>Risk</Text>
-            {hasConditions ? <Text style={[styles.cMatch, styles.fxTHead]}>Strategy</Text> : null}
+            <Text style={[styles.cApplies, styles.fxTHead]}>Applies</Text>
+            <Text style={[styles.cGrades, styles.fxTHead]}>Qualified grades</Text>
           </View>
-          {RISK_SECTIONS.map((sec) => {
-            const group = rows.filter((r) => r.fr.rec.riskLevel === sec.level);
+          {COLOR_SECTIONS.map((sec) => {
+            const group = rows.filter((r) => r.color === sec.color);
             if (!group.length) return null;
-            const col = RISK_COLOR[sec.level];
+            const col = resultColour(sec.color);
             return (
-              <View key={sec.level}>
-                <View style={[styles.fxSectionRow, { backgroundColor: RISK_BG[sec.level] }]}>
+              <View key={sec.color}>
+                <View style={[styles.fxSectionRow, { backgroundColor: resultBackground(sec.color) }]}>
                   <Text style={[styles.fxSectionTitle, { color: col }]}>{sec.label} · {group.length}</Text>
                 </View>
                 {group.map((r) => (
-                  <FixtureTableRow key={r.fx.id} r={r} hasConditions={hasConditions} active={expandedId === r.fx.id} onPress={() => setExpandedId((x) => (x === r.fx.id ? null : r.fx.id))} />
+                  <GradeFixtureRow key={r.fx.id} r={r} active={expandedId === r.fx.id} onPress={() => setExpandedId((x) => (x === r.fx.id ? null : r.fx.id))} />
                 ))}
               </View>
             );
@@ -657,67 +802,49 @@ function FixtureTable({ rows, hasConditions }: { rows: FxRow[]; hasConditions: b
         </View>
       </DragScroll>
       {expanded ? (
-        <View style={[styles.fxDetail, { borderColor: RISK_COLOR[expanded.fr.rec.riskLevel] }]}>
+        <View style={[styles.fxDetail, { borderColor: resultColour(expanded.color) }]}>
           <Text style={styles.fxDetailTitle}>{expanded.fx.home.name} vs {expanded.fx.away.name} · {expanded.fx.competition.name}</Text>
-          {hasConditions && (expanded.home || expanded.away) ? (
-            <View style={styles.matchedWrap}>
-              {expanded.home ? <Text style={styles.matchedLine} numberOfLines={1}><Text style={[styles.matchedSide, { color: theme.accentGreen }]}>Home ✓ </Text>{expanded.home.conditions.map((c) => c.feature).join(' · ')}</Text> : null}
-              {expanded.away ? <Text style={styles.matchedLine} numberOfLines={1}><Text style={[styles.matchedSide, { color: theme.accentBlue }]}>Away ✓ </Text>{expanded.away.conditions.map((c) => c.feature).join(' · ')}</Text> : null}
-            </View>
-          ) : null}
-          <RecommendationCard rec={expanded.fr.rec} homePosition={expanded.fx.home.position} awayPosition={expanded.fx.away.position} />
+          {expanded.home ? <ResultCard result={expanded.home} upcoming={upcoming} /> : null}
+          {expanded.away ? <ResultCard result={expanded.away} upcoming={upcoming} /> : null}
         </View>
       ) : null}
-      <Text style={styles.hint}>Rows are grouped by the pick's risk — green safest, red most volatile. Tap a fixture for its full read.</Text>
+      <Text style={styles.hint}>Grouped by the matched side's strongest grade. Tap a fixture for the full per-feature breakdown.</Text>
     </View>
   );
 }
 
-function FixtureTableRow({ r, hasConditions, active, onPress }: { r: FxRow; hasConditions: boolean; active: boolean; onPress: () => void }) {
-  const { fx, fr, home, away } = r;
-  const level = fr.rec.riskLevel;
-  const col = RISK_COLOR[level];
-  const best = fr.rec.best;
+function GradeFixtureRow({ r, active, onPress }: { r: FxRow; active: boolean; onPress: () => void }) {
+  const { fx, home, away } = r;
   return (
-    <Pressable accessibilityRole="button" accessibilityState={{ expanded: active }} onPress={onPress} style={[styles.fxTRow, { backgroundColor: active ? theme.surfaceHover : RISK_BG[level] }]}>
+    <Pressable accessibilityRole="button" accessibilityState={{ expanded: active }} onPress={onPress} style={[styles.fxTRow, { backgroundColor: active ? theme.surfaceHover : resultBackground(r.color) }]}>
       <Text style={[styles.cKick, styles.fxCellMuted]} numberOfLines={2}>{kickoffLabel(fx.kickoffUnix, fx.kickoff)}</Text>
       <View style={styles.cFix}>
         <Text style={styles.fxHome} numberOfLines={1}>{fx.home.name}</Text>
         <Text style={styles.fxAway} numberOfLines={1}>{fx.away.name}</Text>
       </View>
       <Text style={[styles.cLeague, styles.fxCellFaint]} numberOfLines={2}>{fx.competition.name}</Text>
-      <View style={styles.cBest}>
-        {best ? (
-          <>
-            <Text style={styles.fxMarket} numberOfLines={1}>{best.market}</Text>
-            <Text style={[styles.fxSel, { color: col }]} numberOfLines={1}>{best.selection}</Text>
-            <Text style={[styles.fxProb, { color: col }]}>{pct(best.probability)}{best.edge != null && best.edge > 0 ? <Text style={styles.fxEdge}>  +{Math.round(best.edge * 100)}%</Text> : null}</Text>
-          </>
-        ) : <Text style={styles.fxNone}>—</Text>}
+      <View style={styles.cApplies}>
+        {home ? <Text style={[styles.matchTick, { color: theme.accentGreen }]} numberOfLines={1}>Home ✓</Text> : null}
+        {away ? <Text style={[styles.matchTick, { color: theme.accentBlue }]} numberOfLines={1}>Away ✓</Text> : null}
+        {!home && !away ? <Text style={styles.fxNone}>—</Text> : null}
       </View>
-      <AltCell c={fr.rec.candidates[1]} />
-      <AltCell c={fr.rec.candidates[2]} />
-      <View style={styles.cRisk}>
-        <View style={[styles.riskChip, { borderColor: col, backgroundColor: RISK_BG[level] }]}><Text style={[styles.riskChipTxt, { color: col }]}>{RISK_LABEL[level]}</Text></View>
-        <Text style={styles.riskScore}>{fr.rec.riskScore}</Text>
+      <View style={styles.cGrades}>
+        {home ? <GradeChips side="H" result={home} /> : null}
+        {away ? <GradeChips side="A" result={away} /> : null}
       </View>
-      {hasConditions ? (
-        <View style={styles.cMatch}>
-          {home ? <Text style={[styles.matchTick, { color: theme.accentGreen }]} numberOfLines={1}>Home ✓</Text> : null}
-          {away ? <Text style={[styles.matchTick, { color: theme.accentBlue }]} numberOfLines={1}>Away ✓</Text> : null}
-          {!home && !away ? <Text style={styles.fxNone}>—</Text> : null}
-        </View>
-      ) : null}
     </Pressable>
   );
 }
 
-function AltCell({ c }: { c?: RecCandidate }) {
-  if (!c) return <View style={styles.cAlt}><Text style={styles.fxNone}>—</Text></View>;
+function GradeChips({ side, result }: { side: 'H' | 'A'; result: StrategyResult }) {
   return (
-    <View style={styles.cAlt}>
-      <Text style={styles.fxAltSel} numberOfLines={1}>{c.selection}</Text>
-      <Text style={styles.fxAltProb}>{pct(c.probability)}</Text>
+    <View style={styles.gradeChipsRow}>
+      {result.conditions.map((ev, i) => (
+        <View key={i} style={[styles.gradeChip, { borderColor: resultColour(ev.color), backgroundColor: resultBackground(ev.color) }]}>
+          <Text style={[styles.gradeChipSide, { color: resultColour(ev.color) }]}>{side}</Text>
+          <Text style={styles.gradeChipTxt} numberOfLines={1}>{ev.feature}{ev.grade ? ` · ${ev.grade}` : ''}</Text>
+        </View>
+      ))}
     </View>
   );
 }
@@ -786,6 +913,8 @@ const styles = StyleSheet.create({
   filterCol: { flexDirection: 'column' },
   flex: { flexGrow: 1, flexBasis: 160, minWidth: 140 },
   full: { width: '100%', minWidth: 0, flexBasis: 'auto', flexGrow: 0 },
+  numLabel: { fontFamily: fonts.bodySemiBold, fontSize: 11, color: theme.textMuted, letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: spacing.xs },
+  numInput: { borderWidth: layout.borderWidth, borderColor: theme.borderStrong, borderRadius: layout.borderRadius, paddingHorizontal: spacing.md, paddingVertical: 10, fontFamily: fonts.bodyMedium, fontSize: 14, color: theme.textPrimary, backgroundColor: theme.surface },
   addBtn: { alignSelf: 'flex-start', marginTop: spacing.xs, borderWidth: 1.5, borderColor: theme.accentGreen, borderRadius: 999, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, backgroundColor: 'rgba(5,150,105,0.08)' },
   addBtnPressed: { opacity: 0.7 },
   addBtnText: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: theme.accentGreen },
@@ -954,4 +1083,39 @@ const styles = StyleSheet.create({
   helpStrong: { fontFamily: fonts.bodySemiBold, color: theme.textPrimary },
   helpCta: { marginTop: spacing.md, borderRadius: 999, paddingVertical: 11, alignItems: 'center', backgroundColor: theme.accentGreen },
   helpCtaText: { fontFamily: fonts.bodySemiBold, fontSize: 14, color: '#FFFFFF' },
+
+  // Teams results table
+  backtestNote: { fontFamily: fonts.body, fontSize: 11, lineHeight: 16, color: theme.textMuted, marginTop: spacing.sm },
+  tTeam: { width: 160, paddingHorizontal: 4 },
+  tNext: { width: 160, paddingHorizontal: 4 },
+  tCond: { width: 70, paddingHorizontal: 4 },
+  tGrade: { width: 100, paddingHorizontal: 4 },
+  tRead: { width: 120, paddingHorizontal: 4 },
+  tRate: { width: 96, paddingHorizontal: 4, alignItems: 'flex-start' },
+  teamNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  gradeTxt: { fontFamily: fonts.bodySemiBold, fontSize: 12 },
+  rateTxt: { fontFamily: fonts.display, fontSize: 16 },
+  btWrap: { marginTop: spacing.sm, borderTopWidth: layout.borderWidth, borderTopColor: theme.border, paddingTop: spacing.sm, gap: 6 },
+  btTitle: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: theme.textPrimary },
+  btDots: { flexDirection: 'row', flexWrap: 'wrap', gap: 3 },
+  btDot: { width: 12, height: 12, borderRadius: 3 },
+  btNote: { fontFamily: fonts.body, fontSize: 11, lineHeight: 16, color: theme.textMuted },
+
+  // Global period + venue panel
+  periodCard: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.lg, borderWidth: layout.borderWidth, borderColor: theme.border, borderRadius: layout.borderRadius, backgroundColor: theme.surface, padding: spacing.md, marginBottom: spacing.sm },
+  periodGroup: { gap: spacing.xs },
+  periodLabel: { fontFamily: fonts.bodySemiBold, fontSize: 10, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
+  segRow: { flexDirection: 'row', gap: spacing.xs },
+  segBtn: { borderWidth: 1.5, borderColor: theme.border, borderRadius: 999, paddingHorizontal: spacing.md, paddingVertical: 6, backgroundColor: theme.surface },
+  segBtnOn: { borderColor: theme.accentGreen, backgroundColor: 'rgba(5,150,105,0.10)' },
+  segText: { fontFamily: fonts.bodyMedium, fontSize: 12, color: theme.textMuted },
+  segTextOn: { fontFamily: fonts.bodySemiBold, color: theme.accentGreen },
+
+  // Grade-qualification fixtures table
+  cApplies: { width: 84, paddingHorizontal: 4 },
+  cGrades: { flex: 1, minWidth: 260, paddingHorizontal: 4, gap: 3 },
+  gradeChipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
+  gradeChip: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: layout.borderWidth, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  gradeChipSide: { fontFamily: fonts.bodySemiBold, fontSize: 10 },
+  gradeChipTxt: { fontFamily: fonts.bodyMedium, fontSize: 11, color: theme.textPrimary, maxWidth: 220 },
 });

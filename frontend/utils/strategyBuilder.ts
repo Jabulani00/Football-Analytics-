@@ -26,6 +26,7 @@ import {
   type GapMarket, type GapPeriod, type GoalTeamAnalysis,
 } from '@/utils/gapAnalytics';
 import { SERIES_DEFS } from '@/utils/fixtureSeries';
+import { buildOmitTestFromExport, type OmitDirection } from '@/utils/omitTest';
 import {
   STATS_CHARACTERS, characterFor, levelForAvgM1, levelForRankM2,
   levelGlyph, MIN_GAMES_OVERALL, MIN_GAMES_PER_VENUE, type CharColour, type CharLevel,
@@ -36,18 +37,45 @@ import { theme } from '@/styles/theme';
 
 /* ----------------------------------------------------------------- common types */
 
-export type StrategyPeriod = 'overall' | 'home' | 'away' | 'firsthalf' | 'secondhalf';
+/** FT/1H/2H × Overall/Home/Away. A single value encodes both the half and the
+ *  venue; the global panel sets it for every condition. */
+export type StrategyPeriod =
+  | 'overall' | 'home' | 'away'
+  | 'firsthalf' | 'firsthalf_home' | 'firsthalf_away'
+  | 'secondhalf' | 'secondhalf_home' | 'secondhalf_away';
+export type StatHalf = 'ft' | 'ht' | '2h';
+export type StatScope = 'overall' | 'home' | 'away';
 export type ResultColor = 'green' | 'yellow' | 'red' | 'none';
 
+/** Split a period into its half (ft/ht/2h) and venue scope. */
+export function splitPeriod(p: StrategyPeriod): { half: StatHalf; scope: StatScope } {
+  switch (p) {
+    case 'home': return { half: 'ft', scope: 'home' };
+    case 'away': return { half: 'ft', scope: 'away' };
+    case 'firsthalf': return { half: 'ht', scope: 'overall' };
+    case 'firsthalf_home': return { half: 'ht', scope: 'home' };
+    case 'firsthalf_away': return { half: 'ht', scope: 'away' };
+    case 'secondhalf': return { half: '2h', scope: 'overall' };
+    case 'secondhalf_home': return { half: '2h', scope: 'home' };
+    case 'secondhalf_away': return { half: '2h', scope: 'away' };
+    default: return { half: 'ft', scope: 'overall' };
+  }
+}
+/** Build a period from a half + venue (the global panel's two axes). */
+export function periodFrom(half: StatHalf, scope: StatScope): StrategyPeriod {
+  if (half === 'ht') return scope === 'home' ? 'firsthalf_home' : scope === 'away' ? 'firsthalf_away' : 'firsthalf';
+  if (half === '2h') return scope === 'home' ? 'secondhalf_home' : scope === 'away' ? 'secondhalf_away' : 'secondhalf';
+  return scope === 'home' ? 'home' : scope === 'away' ? 'away' : 'overall';
+}
+function isHalf(p: StrategyPeriod): boolean { return splitPeriod(p).half !== 'ft'; }
+
 export const PERIODS: { value: StrategyPeriod; label: string }[] = [
-  { value: 'overall', label: 'Overall' },
-  { value: 'home', label: 'Home' },
-  { value: 'away', label: 'Away' },
-  { value: 'firsthalf', label: 'First Half' },
-  { value: 'secondhalf', label: 'Second Half' },
+  { value: 'overall', label: 'Overall' }, { value: 'home', label: 'Home' }, { value: 'away', label: 'Away' },
 ];
 export function periodLabel(p: StrategyPeriod): string {
-  return PERIODS.find((x) => x.value === p)?.label ?? p;
+  const { half, scope } = splitPeriod(p);
+  const h = half === 'ft' ? 'FT' : half === 'ht' ? '1H' : '2H';
+  return `${h}${scope === 'home' ? ' Home' : scope === 'away' ? ' Away' : ''}`;
 }
 
 /** One team's reading for one condition, in a shape common to every engine. */
@@ -72,7 +100,19 @@ export type TeamEval = {
 };
 
 export type MethodOpt = { value: string; label: string };
-export type OptionDef = { key: string; label: string; options: MethodOpt[]; default: string };
+/**
+ * A condition selector. 'select' (default) renders as a dropdown of `options`;
+ * 'number' renders as a numeric text input (used for a ≥/≤ limit value). An
+ * option can hide itself for the current selection via `visible`.
+ */
+export type OptionDef = {
+  key: string;
+  label: string;
+  options: MethodOpt[];
+  default: string;
+  kind?: 'select' | 'number';
+  visible?: (options: Record<string, string>) => boolean;
+};
 
 /** A league's prepared data: the built export and/or its season fixtures. */
 export type LeagueBundle = { competition: string; stats?: TeamStatsExport; fixtures?: RawFixture[] };
@@ -121,11 +161,8 @@ function tableVal(stats: TeamStatsExport, family: string, periodKey: string, sco
 }
 /** Where a period reads from in the export tables. */
 function exportLoc(p: StrategyPeriod): { periodKey: string; scope: string } {
-  if (p === 'home') return { periodKey: 'ft', scope: 'home' };
-  if (p === 'away') return { periodKey: 'ft', scope: 'away' };
-  if (p === 'firsthalf') return { periodKey: 'ht', scope: 'overall' };
-  if (p === 'secondhalf') return { periodKey: '2h', scope: 'overall' };
-  return { periodKey: 'ft', scope: 'overall' };
+  const { half, scope } = splitPeriod(p);
+  return { periodKey: half, scope };
 }
 function pctText(v: number | null): string { return v == null ? '—' : `${Math.round(v)}%`; }
 function avgText(v: number | null): string { return v == null ? '—' : v.toFixed(2); }
@@ -156,12 +193,12 @@ const statsCall: Dimension = {
   label: 'Stats call',
   source: 'export',
   periods: ['overall', 'home', 'away', 'firsthalf', 'secondhalf'],
-  methods: (p) => (p === 'firsthalf' || p === 'secondhalf' ? HALF_STATS : DOMINANCE_STATS).map((d) => ({ value: d.key, label: d.label })),
+  methods: (p) => (isHalf(p) ? HALF_STATS : DOMINANCE_STATS).map((d) => ({ value: d.key, label: d.label })),
   options: [{ key: 'band', label: 'Level', options: STATS_CALL_BANDS, default: 'up' }],
   evaluate: (b, sel) => {
     const stats = b.stats;
     if (!stats) return [];
-    const defs: StatDef[] = sel.period === 'firsthalf' || sel.period === 'secondhalf' ? HALF_STATS : DOMINANCE_STATS;
+    const defs: StatDef[] = isHalf(sel.period) ? HALF_STATS : DOMINANCE_STATS;
     const def = defs.find((d) => d.key === sel.methodId);
     if (!def) return [];
     const band = sel.options.band ?? 'up';
@@ -191,8 +228,8 @@ const statsCall: Dimension = {
 
 /* ----------------------------------------------------------------- 2 · Characters */
 
-const charGapPeriod = (p: StrategyPeriod): GapPeriod => (p === 'firsthalf' ? 'firsthalf' : p === 'secondhalf' ? 'secondhalf' : 'fulltime');
-const charScope = (p: StrategyPeriod): 'home' | 'away' | 'overall' => (p === 'home' ? 'home' : p === 'away' ? 'away' : 'overall');
+const charGapPeriod = (p: StrategyPeriod): GapPeriod => { const h = splitPeriod(p).half; return h === 'ht' ? 'firsthalf' : h === '2h' ? 'secondhalf' : 'fulltime'; };
+const charScope = (p: StrategyPeriod): 'home' | 'away' | 'overall' => splitPeriod(p).scope;
 
 const characters: Dimension = {
   id: 'characters',
@@ -394,7 +431,7 @@ const opposite: Dimension = {
   evaluate: (b, sel) => {
     const stats = b.stats;
     if (!stats) return [];
-    const scope: OppositeScope = sel.period === 'home' ? 'home' : sel.period === 'away' ? 'away' : 'overall';
+    const scope: OppositeScope = splitPeriod(sel.period).scope;
     const want = sel.options.allocation ?? 'long';
     const pairIdx = sel.methodId === ALL ? null : Number(sel.methodId);
     const rows = buildOppositeStats(stats, b.competition, scope);
@@ -422,7 +459,7 @@ const opposite: Dimension = {
 
 /* ----------------------------------------------------------------- 7 · Gap Analysis */
 
-const gapGapPeriod = (p: StrategyPeriod): GapPeriod => (p === 'firsthalf' ? 'firsthalf' : p === 'secondhalf' ? 'secondhalf' : 'fulltime');
+const gapGapPeriod = (p: StrategyPeriod): GapPeriod => { const h = splitPeriod(p).half; return h === 'ht' ? 'firsthalf' : h === '2h' ? 'secondhalf' : 'fulltime'; };
 
 const gap: Dimension = {
   id: 'gap',
@@ -549,7 +586,10 @@ const statFilter: Dimension = {
   options: [
     { key: 'family', label: 'Family', options: STAT_FAMILIES.map((f) => ({ value: f.value, label: f.label })), default: 'ordinary' },
     { key: 'window', label: 'Window', options: STAT_WINDOWS, default: 'season' },
-    { key: 'level', label: 'Level', options: STAT_LEVELS, default: ALL },
+    { key: 'mode', label: 'Match by', options: [{ value: 'band', label: 'Level band' }, { value: 'limit', label: 'Limit (≥ / ≤)' }], default: 'band' },
+    { key: 'level', label: 'Level', options: STAT_LEVELS, default: ALL, visible: (o) => (o.mode ?? 'band') !== 'limit' },
+    { key: 'cmp', label: 'Test', options: [{ value: 'gte', label: '≥' }, { value: 'lte', label: '≤' }], default: 'gte', visible: (o) => o.mode === 'limit' },
+    { key: 'value', label: 'Value', options: [], default: '50', kind: 'number', visible: (o) => o.mode === 'limit' },
   ],
   evaluate: (b, sel) => {
     const stats = b.stats;
@@ -566,6 +606,12 @@ const statFilter: Dimension = {
     const winLabel = STAT_WINDOWS.find((w) => w.value === window)?.label ?? '';
     const windowPart = usesWindow ? ` · ${winLabel}` : '';
     const levelLabel = STAT_LEVELS.find((l) => l.value === level)?.label ?? '';
+    // Limit mode: qualify by a user ≥/≤ threshold instead of the level band.
+    const mode = sel.options.mode ?? 'band';
+    const cmp = sel.options.cmp ?? 'gte';
+    const limit = Number(sel.options.value);
+    const hasLimit = mode === 'limit' && Number.isFinite(limit);
+    const limitPart = hasLimit ? ` · ${cmp === 'gte' ? '≥' : '≤'} ${item.kind === 'avg' ? limit.toFixed(2) : limit}${item.kind === 'pct' ? '%' : ''}` : '';
     const out: TeamEval[] = [];
     for (const row of rows) {
       const raw = row[item.key];
@@ -573,26 +619,27 @@ const statFilter: Dimension = {
       let color: ResultColor;
       let valueText: string;
       let grade: string | null;
-      let qualifies: boolean;
+      let bandQualifies: boolean;
       if (item.kind === 'pct') {
         const dir = directionOf(raw);
         color = dir === 'up' ? 'green' : dir === 'mid' ? 'yellow' : 'red';
         grade = dir.toUpperCase();
         valueText = pctText(raw);
-        qualifies = level === ALL ? true : level === 'strong' ? dir === 'up' : level === 'middle' ? dir === 'mid' : dir === 'down';
+        bandQualifies = level === ALL ? true : level === 'strong' ? dir === 'up' : level === 'middle' ? dir === 'mid' : dir === 'down';
       } else if (item.kind === 'run') {
-        if (raw < 1) continue;
+        if (!hasLimit && raw < 1) continue; // band mode wants an active run
         color = raw >= 4 ? 'green' : raw >= 2 ? 'yellow' : 'red';
         grade = `${raw}×`;
         valueText = `${raw} in a row`;
-        qualifies = level === ALL ? true : level === 'strong' ? raw >= 4 : level === 'middle' ? raw >= 2 && raw < 4 : raw >= 1;
+        bandQualifies = level === ALL ? true : level === 'strong' ? raw >= 4 : level === 'middle' ? raw >= 2 && raw < 4 : raw >= 1;
       } else {
         // Raw averages carry no band; the Level selector doesn't apply.
         color = 'none';
         grade = null;
         valueText = raw.toFixed(2);
-        qualifies = true;
+        bandQualifies = true;
       }
+      const qualifies = hasLimit ? (cmp === 'gte' ? raw >= limit : raw <= limit) : bandQualifies;
       if (!qualifies) continue;
       const sampleRaw = row['sample_size'];
       const sample = typeof sampleRaw === 'number' && Number.isFinite(sampleRaw) ? sampleRaw : null;
@@ -601,10 +648,69 @@ const statFilter: Dimension = {
         value: raw, valueText, grade, color,
         dimensionId: 'statfilter', dimensionLabel: 'Stat filter',
         feature: `${fam.label} · ${item.label}`,
-        method: `${fam.label}${windowPart}${level !== ALL && item.kind !== 'avg' ? ` · ${levelLabel}` : ''}`,
+        method: `${fam.label}${windowPart}${hasLimit ? limitPart : (level !== ALL && item.kind !== 'avg' ? ` · ${levelLabel}` : '')}`,
         period: sel.period,
-        reason: `${item.label}${windowPart}: ${valueText} (${periodLabel(sel.period)})`,
+        reason: `${item.label}${windowPart}: ${valueText} (${periodLabel(sel.period)})${hasLimit ? ` — ${cmp === 'gte' ? '≥' : '≤'} ${item.kind === 'avg' ? limit.toFixed(2) : limit}` : ''}`,
         sample,
+      });
+    }
+    return out;
+  },
+};
+
+/* ----------------------------------------------------------------- 9 · Omit Test (scoring-average sensitivity) */
+
+/** The scenario whose % change is largest in magnitude — the team's dominant direction. */
+function omitDominant(scenarios: { percentChange: number | null; direction: OmitDirection }[]): OmitDirection {
+  let dir: OmitDirection = 'unchanged';
+  let best = -1;
+  for (const s of scenarios) { const a = Math.abs(s.percentChange ?? 0); if (a > best) { best = a; dir = s.direction; } }
+  return dir;
+}
+
+const omit: Dimension = {
+  id: 'omit',
+  label: 'Omit Test',
+  source: 'export',
+  periods: ['overall'],
+  methods: () => [{ value: 'scoring', label: 'Scoring-average sensitivity' }],
+  options: [
+    {
+      key: 'direction', label: 'Classification',
+      options: [
+        { value: ALL, label: 'Sensitive (either way)' },
+        { value: 'up', label: 'Sensitive ↑ (inflated by big wins)' },
+        { value: 'down', label: 'Sensitive ↓ (propped by low scores)' },
+        { value: 'stable', label: 'Stable' },
+      ],
+      default: ALL,
+    },
+  ],
+  evaluate: (b, sel) => {
+    const stats = b.stats;
+    if (!stats) return [];
+    const want = sel.options.direction ?? ALL;
+    const out: TeamEval[] = [];
+    for (const r of buildOmitTestFromExport(stats, b.competition)) {
+      const sensitive = r.sensitivity === 'sensitive';
+      const dir = omitDominant(r.scenarios);
+      let qualifies: boolean;
+      let grade: string;
+      let color: ResultColor;
+      if (want === 'stable') { qualifies = !sensitive; grade = 'STABLE'; color = 'yellow'; }
+      else if (want === 'up') { qualifies = sensitive && dir === 'up'; grade = 'SENSITIVE ↑'; color = 'green'; }
+      else if (want === 'down') { qualifies = sensitive && dir === 'down'; grade = 'SENSITIVE ↓'; color = 'red'; }
+      else { qualifies = sensitive; grade = dir === 'up' ? 'SENSITIVE ↑' : dir === 'down' ? 'SENSITIVE ↓' : 'SENSITIVE'; color = dir === 'up' ? 'green' : dir === 'down' ? 'red' : 'yellow'; }
+      if (!qualifies) continue;
+      const pctTxt = r.maxPercentChange == null ? '—' : `${r.maxPercentChange >= 0 ? '+' : ''}${r.maxPercentChange.toFixed(1)}%`;
+      out.push({
+        teamId: r.teamId, team: r.team, competition: b.competition, qualifies: true,
+        value: r.maxPercentChange, valueText: pctTxt, grade, color,
+        dimensionId: 'omit', dimensionLabel: 'Omit Test',
+        feature: 'Scoring-avg sensitivity', method: `omit ${r.omitPct}% · FT overall`,
+        period: sel.period,
+        reason: `Scoring average moves ${pctTxt} when the top/bottom ${r.omittedCount} scoring games are removed (${r.matchesPlayed}g)`,
+        sample: r.matchesPlayed,
       });
     }
     return out;
@@ -613,7 +719,7 @@ const statFilter: Dimension = {
 
 /* ----------------------------------------------------------------- registry */
 
-export const DIMENSIONS: Dimension[] = [statFilter, statsCall, characters, grading1, grading2, dominance, opposite, gap];
+export const DIMENSIONS: Dimension[] = [statFilter, statsCall, characters, grading1, grading2, dominance, opposite, gap, omit];
 export function getDimension(id: string): Dimension | undefined {
   return DIMENSIONS.find((d) => d.id === id);
 }
@@ -664,15 +770,18 @@ export function conditionLabel(cond: Condition): string {
   const methodList = dim.methodsFor ? dim.methodsFor(cond.period, cond.options) : dim.methods(cond.period);
   const method = methodList.find((m) => m.value === cond.methodId)?.label ?? cond.methodId;
   const opts = (dim.options ?? [])
-    .map((o) => o.options.find((x) => x.value === (cond.options[o.key] ?? o.default))?.label)
+    .filter((o) => (o.visible ? o.visible(cond.options) : true))
+    .map((o) => {
+      const val = cond.options[o.key] ?? o.default;
+      if (o.kind === 'number') return val ? `${o.label} ${val}` : null;
+      return o.options.find((x) => x.value === val)?.label;
+    })
     .filter(Boolean);
-  const periodPart = dim.periods.length > 1 ? `${periodLabel(cond.period)} → ` : '';
-  return `${cond.not ? 'NOT · ' : ''}${periodPart}${dim.label} → ${method}${opts.length ? ` · ${opts.join(' · ')}` : ''}`;
+  // Period is global now (set by the FT/1H/2H + venue panel), so it is not shown per chip.
+  return `${cond.not ? 'NOT · ' : ''}${dim.label} → ${method}${opts.length ? ` · ${opts.join(' · ')}` : ''}`;
 }
 
 /* ----------------------------------------------------------------- saved strategies */
-
-const MARKET_LABELS: Record<MarketModule, string> = { result: 'Result', goals: 'Goals', btts: 'BTTS' };
 
 /**
  * The portable shape of a strategy — HOW teams/fixtures are pulled, never the
@@ -682,11 +791,10 @@ const MARKET_LABELS: Record<MarketModule, string> = { result: 'Result', goals: '
 export type SavedStrategyConfig = {
   conditions: Condition[];
   logic: StrategyLogic;
+  /** Global FT/1H/2H + venue the whole strategy is read at (default 'overall'). */
+  period?: StrategyPeriod;
   resultMode: 'teams' | 'fixtures';
   matchScope: MatchScope;
-  markets: MarketModule[];
-  minConf: number;
-  fxSort: 'best' | 'kickoff';
 };
 
 export type SavedStrategy = {
@@ -709,13 +817,12 @@ export function describeStrategy(cfg: SavedStrategyConfig): string {
   const body = conds.length
     ? `${cfg.logic.toUpperCase()} of ${conds.length}: ${conds.join(joiner)}`
     : 'No conditions yet';
+  const periodPart = `${periodLabel(cfg.period ?? 'overall')} · `;
   if (cfg.resultMode === 'fixtures') {
-    const markets = cfg.markets.length ? cfg.markets.map((m) => MARKET_LABELS[m]).join(' · ') : 'all markets';
     const scope = MATCH_SCOPES.find((s) => s.value === cfg.matchScope)?.label ?? cfg.matchScope;
-    const conf = cfg.minConf > 0 ? ` · best pick ${cfg.minConf}%+` : '';
-    return `Fixtures · best / 2nd / 3rd bets (${markets}) · ${scope}${conf}. ${body}`;
+    return `${periodPart}Fixtures · grade qualification · ${scope}. ${body}`;
   }
-  return `Qualifying teams. ${body}`;
+  return `${periodPart}Qualifying teams. ${body}`;
 }
 
 /** The parts of the panel's live state that make up a saved strategy. */
@@ -723,29 +830,27 @@ export function buildStrategyConfig(s: SavedStrategyConfig): SavedStrategyConfig
   return {
     conditions: s.conditions.map((c) => ({ ...c, options: { ...c.options } })),
     logic: s.logic,
+    period: s.period ?? 'overall',
     resultMode: s.resultMode,
     matchScope: s.matchScope,
-    markets: [...s.markets],
-    minConf: s.minConf,
-    fxSort: s.fxSort,
   };
 }
 
 /** A synthesised eval for a NOT condition a team matches by exclusion. */
-function notEval(cond: Condition, info: { team: string; teamId: number | null; competition: string }): TeamEval {
+function notEval(cond: Condition, info: { team: string; teamId: number | null; competition: string }, period: StrategyPeriod): TeamEval {
   const dim = getDimension(cond.dimensionId);
-  const methodList = dim ? (dim.methodsFor ? dim.methodsFor(cond.period, cond.options) : dim.methods(cond.period)) : [];
+  const methodList = dim ? (dim.methodsFor ? dim.methodsFor(period, cond.options) : dim.methods(period)) : [];
   const method = methodList.find((m) => m.value === cond.methodId)?.label ?? cond.methodId;
   return {
     teamId: info.teamId, team: info.team, competition: info.competition, qualifies: true,
     value: null, valueText: '—', grade: null, color: 'none',
     dimensionId: cond.dimensionId, dimensionLabel: dim?.label ?? cond.dimensionId,
-    feature: `NOT ${method}`, method: 'excluded', period: cond.period,
+    feature: `NOT ${method}`, method: 'excluded', period,
     reason: `Does not match ${dim?.label ?? cond.dimensionId} · ${method}`, sample: null,
   };
 }
 
-export function evaluateStrategy(bundles: LeagueBundle[], conditions: Condition[], logic: StrategyLogic): StrategyResult[] {
+export function evaluateStrategy(bundles: LeagueBundle[], conditions: Condition[], logic: StrategyLogic, period: StrategyPeriod = 'overall'): StrategyResult[] {
   if (!conditions.length) return [];
   // Per condition: a membership set of globalKeys and the eval that proves it.
   const condSet = new Map<string, Set<string>>();
@@ -757,7 +862,7 @@ export function evaluateStrategy(bundles: LeagueBundle[], conditions: Condition[
     const em = new Map<string, TeamEval>();
     if (dim) {
       for (const bundle of bundles) {
-        const evals = dim.evaluate(bundle, { period: cond.period, methodId: cond.methodId, options: cond.options });
+        const evals = dim.evaluate(bundle, { period, methodId: cond.methodId, options: cond.options });
         for (const ev of evals) {
           if (!ev.qualifies) continue;
           const key = `${bundle.competition}::${teamKeyOf(ev)}`;
@@ -778,7 +883,7 @@ export function evaluateStrategy(bundles: LeagueBundle[], conditions: Condition[
     });
     const ok = logic === 'and' ? matched.length === conditions.length : matched.length >= 1;
     if (!ok) continue;
-    const evals = matched.map((c) => (c.not ? notEval(c, info) : condEval.get(c.id)!.get(key)!));
+    const evals = matched.map((c) => (c.not ? notEval(c, info, period) : condEval.get(c.id)!.get(key)!));
     results.push({ team: info.team, teamId: info.teamId, competition: info.competition, conditions: evals, color: strongestColor(evals.map((e) => e.color)) });
   }
   return results.sort((a, b) => COLOR_RANK[b.color] - COLOR_RANK[a.color] || a.team.localeCompare(b.team));
