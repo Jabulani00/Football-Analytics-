@@ -22,11 +22,12 @@ const INITIAL: State = {
  * Loads the Hollywoodbets soccer navigation: all countries/categories, then the
  * tournaments for whichever `categoryId` is selected.
  */
-export function useHollywoodNav(categoryId: number | null): State {
+export function useHollywoodNav(categoryId: number | null, enabled = true): State {
   const [state, setState] = useState<State>(INITIAL);
 
   // Categories (once).
   useEffect(() => {
+    if (!enabled) return;
     const controller = new AbortController();
     setState((s) => ({ ...s, loadingCategories: true, error: null }));
     fetchSoccerCategories(controller.signal)
@@ -43,16 +44,16 @@ export function useHollywoodNav(categoryId: number | null): State {
         }
       });
     return () => controller.abort();
-  }, []);
+  }, [enabled]);
 
   // Tournaments for the selected category.
   useEffect(() => {
-    if (categoryId == null) {
-      setState((s) => ({ ...s, tournaments: [] }));
+    if (!enabled || categoryId == null) {
+      setState((s) => ({ ...s, tournaments: [], loadingTournaments: false }));
       return;
     }
     const controller = new AbortController();
-    setState((s) => ({ ...s, loadingTournaments: true, tournaments: [] }));
+    setState((s) => ({ ...s, loadingTournaments: true, tournaments: [], error: null }));
     fetchTournaments(categoryId, controller.signal)
       .then(({ tournaments }) => {
         if (!controller.signal.aborted) setState((s) => ({ ...s, tournaments, loadingTournaments: false }));
@@ -67,7 +68,7 @@ export function useHollywoodNav(categoryId: number | null): State {
         }
       });
     return () => controller.abort();
-  }, [categoryId]);
+  }, [categoryId, enabled]);
 
   return state;
 }

@@ -1,5 +1,7 @@
+import BookmakerFixtures from '@/components/analytics/BookmakerFixtures';
+import { hollywoodFixture } from '@/services/bookmakerFixtures';
 import { useMemo, useState } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import FilterDropdown from '@/components/shared/FilterDropdown';
 import { useHollywoodExport } from '@/hooks/useHollywoodExport';
@@ -7,205 +9,16 @@ import { useHollywoodHunt } from '@/hooks/useHollywoodHunt';
 import { useHollywoodNav } from '@/hooks/useHollywoodNav';
 import { useHollywoodOdds } from '@/hooks/useHollywoodOdds';
 import { summarizeCrawlState } from '@/services/huntStore';
-import {
-  BET_TYPE,
-  fetchEventDetail,
-  marketGroups,
-  toDecimal,
-  toShareLeg,
-  type HbEvent,
-  type ShareLeg,
-} from '@/services/hollywoodbets';
+import { fetchEventDetail } from '@/services/hollywoodbets';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 import type { BetSlipLeg } from '@/types/analytics';
 
-type Pick = '1' | 'X' | '2';
-const PICK_NUMBER: Record<Pick, number> = { '1': 1, X: 2, '2': 3 };
-
-/**
- * A chosen selection, from ANY market rather than 1X2 only.
- *
- * Still keyed one-per-event: books routinely reject correlated legs from the
- * same fixture in one slip (Over 2.5 and BTTS Yes on the same match, say), so
- * picking a second market on a fixture replaces the first rather than stacking.
- */
-type Selection = {
-  betTypeId: number;
-  marketNumber: number;
-  label: string;
-  leg: ShareLeg;
-  odds: number;
-};
-
-/**
- * Build the Share-A-Bet leg + decimal price for any market selection.
- *
- * Scans EVERY group carrying this bet type, not just the first. A market split
- * across groups (Additional Totals is five, one per goal line) keeps its
- * selection numbers spread across them, so `find` on the first group would miss
- * OVER 3.5 entirely and the tap would do nothing. The group also has to be the
- * right one because its `eventBetTypeMapID` is what the booking code is built
- * from — the wrong group would reserve the wrong bet.
- */
-function legFor(
-  event: HbEvent,
-  betTypeId: number,
-  marketNumber: number,
-  label: string,
-  ctx: { tournamentId: number; tournamentName: string; countryId: number },
-): Selection | null {
-  for (const bt of event.betTypes) {
-    if (bt.id !== betTypeId) continue;
-    const market = bt.markets.find((m) => m.number === marketNumber);
-    if (!market) continue;
-    return {
-      betTypeId,
-      marketNumber,
-      label,
-      leg: toShareLeg(event, bt, market, ctx),
-      odds: toDecimal(market.odds),
-    };
-  }
-  return null;
-}
-
-/**
- * Every market beyond 1X2 that the book priced for this fixture, each selection
- * tappable and slip-ready. Markets with many outcomes (Correct Score carries 29)
- * scroll horizontally rather than wrapping into a wall of buttons.
- */
-function ExtraMarkets({
-  event,
-  selected,
-  onPick,
-}: {
-  event: HbEvent;
-  selected: Selection | undefined;
-  onPick: (betTypeId: number, marketNumber: number, label: string) => void;
+export default function HollywoodOddsPanel({ onAddLeg, selectedLegs = [] }: {
+  onAddLeg?: (leg: BetSlipLeg) => void; selectedLegs?: readonly BetSlipLeg[];
 }) {
-  // Split groups are merged here, so "Additional Totals" is one market with all
-  // its goal lines rather than five separate two-selection rows.
-  const groups = marketGroups(event).filter((g) => g.betTypeId !== BET_TYPE.FULL_TIME);
-  if (groups.length === 0) return null;
-
-  return (
-    <View style={styles.extras}>
-      {groups.map((g) => (
-        <View key={g.betTypeId} style={styles.marketGroup}>
-          <Text style={styles.marketName}>{g.name}</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.marketRow}>
-            {g.selections.map((m, i) => {
-              const isSel =
-                selected?.betTypeId === g.betTypeId && selected.marketNumber === m.number;
-              // The book marks a market unavailable rather than removing it.
-              const open = (m.status ?? '').toLowerCase() === 'active';
-              return (
-                <Pressable
-                  key={`${g.betTypeId}-${m.number}-${i}`}
-                  disabled={!open}
-                  onPress={() => onPick(g.betTypeId, m.number, `${g.name} — ${m.name}`)}
-                  style={({ pressed, hovered }) => [
-                    styles.selBtn,
-                    isSel && styles.oddsBtnActive,
-                    !open && styles.selBtnClosed,
-                    open && (pressed || (Platform.OS === 'web' && hovered)) && styles.oddsBtnHover,
-                  ]}>
-                  <Text style={[styles.selName, isSel && styles.oddsTextActive]} numberOfLines={1}>
-                    {m.name}
-                  </Text>
-                  <Text style={[styles.selOdds, isSel && styles.oddsTextActive]}>
-                    {m.decimal.toFixed(2)}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        </View>
-      ))}
-    </View>
-  );
-}
-
-/**
- * Loads and shows EVERY market for one fixture, on demand.
- *
- * Mirrors Hollywood's own "more" expander, and for the same reason: a single
- * fixture carries ~130 markets and ~600 selections, so pulling that for a whole
- * league would be gratuitous. Collapsed by default; expanding costs one call.
- */
-function AllMarkets({
-  event,
-  selected,
-  onPick,
-}: {
-  event: HbEvent;
-  selected: Selection | undefined;
-  onPick: (betTypeId: number, marketNumber: number, label: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [full, setFull] = useState<HbEvent | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const expand = async () => {
-    if (open) {
-      setOpen(false);
-      return;
-    }
-    setOpen(true);
-    if (full || loading) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const detail = await fetchEventDetail(event.id);
-      setFull(detail);
-      if (!detail) {
-        setError(
-          'Full market detail is no longer available. Hollywoodbets may have suspended, repriced, or removed this fixture.',
-        );
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not load all markets.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const shown = full ?? event;
-  const count = full ? marketGroups(full).length : null;
-
-  return (
-    <View style={styles.allWrap}>
-      <Pressable
-        onPress={expand}
-        style={({ pressed, hovered }) => [
-          styles.moreBtn,
-          (pressed || (Platform.OS === 'web' && hovered)) && styles.oddsBtnHover,
-        ]}>
-        <Text style={styles.moreText}>
-          {loading
-            ? 'Loading all markets…'
-            : open
-              ? `▾ Hide markets${count ? ` (${count})` : ''}`
-              : `▸ More markets${count ? ` (${count})` : ''}`}
-        </Text>
-      </Pressable>
-      {error ? <Text style={styles.err}>{error}</Text> : null}
-      {open && !loading ? (
-        <ExtraMarkets event={shown} selected={selected} onPick={onPick} />
-      ) : null}
-    </View>
-  );
-}
-
-export default function HollywoodOddsPanel({ onAddLeg }: { onAddLeg?: (leg: BetSlipLeg) => void }) {
   const narrow = useWindowDimensions().width < 720;
   const [categoryId, setCategoryId] = useState<number | null>(null);
   const [tournamentId, setTournamentId] = useState<number | null>(null);
-  const [selections, setSelections] = useState<Record<number, Selection>>({});
 
   const nav = useHollywoodNav(categoryId);
   const category = nav.categories.find((c) => c.id === categoryId) ?? null;
@@ -224,42 +37,10 @@ export default function HollywoodOddsPanel({ onAddLeg }: { onAddLeg?: (leg: BetS
 
   const fieldStyle = narrow ? { width: '100%' as const, minWidth: 0, flexBasis: 'auto' as const, flexGrow: 0 } : { width: '100%' as const, flexBasis: 'auto' as const };
 
-  const legs = useMemo(() => Object.values(selections), [selections]);
+  const legs = useMemo(() => selectedLegs.flatMap((item) => item.hbLeg ? [{ label: `${item.fixture}: ${item.market} - ${item.selection}`, odds: item.odds, leg: item.hbLeg }] : []), [selectedLegs]);
+  const fixtures = useMemo(() => odds.events.map((event) => hollywoodFixture(event, null, ctx ?? undefined)), [odds.events, ctx]);
   const combinedOdds = legs.reduce((acc, s) => acc * s.odds, 1);
   const crawlHealth = summarizeCrawlState(hunt.crawlState);
-
-  const addSelectionsToSlip = () => {
-    if (!onAddLeg) return;
-    for (const [eventId, selection] of Object.entries(selections)) {
-      const event = odds.events.find((item) => item.id === Number(eventId));
-      if (!event) continue;
-      const [market, picked = selection.label] = selection.label.split(' — ');
-      onAddLeg({
-        id: `hollywood-${event.id}-${selection.betTypeId}-${selection.marketNumber}`,
-        fixture: event.name,
-        market,
-        selection: picked,
-        odds: selection.odds,
-        bookmaker: 'Hollywoodbets',
-        kickoff: event.startTime,
-        hbLeg: selection.leg,
-      });
-    }
-  };
-
-  const togglePick = (event: HbEvent, betTypeId: number, marketNumber: number, label: string) => {
-    if (!ctx) return;
-    setSelections((prev) => {
-      const current = prev[event.id];
-      if (current?.betTypeId === betTypeId && current.marketNumber === marketNumber) {
-        const next = { ...prev };
-        delete next[event.id];
-        return next;
-      }
-      const sel = legFor(event, betTypeId, marketNumber, label, ctx);
-      return sel ? { ...prev, [event.id]: sel } : prev;
-    });
-  };
 
   return (
     <View style={styles.container}>
@@ -434,54 +215,12 @@ export default function HollywoodOddsPanel({ onAddLeg }: { onAddLeg?: (leg: BetS
           {!odds.loading && !odds.error && odds.events.length === 0 ? (
             <Text style={styles.muted}>No priced matches in this league right now.</Text>
           ) : null}
-          {odds.events.map((event) => {
-            const row = odds.rows.find((r) => r.eventId === event.id);
-            if (!row) return null;
-            const selected = selections[event.id];
-            const risk = hunt.riskByEvent[event.id];
-            return (
-              <View key={event.id} style={styles.eventCard}>
-                <View style={styles.fixtureRow}>
-                  <Text style={styles.fixture}>{event.name}</Text>
-                  {risk ? (
-                    <Text style={[styles.riskTag, ['removed', 'suspended', 'shortened'].includes(risk) ? styles.riskHot : styles.riskCool]}>
-                      {risk.toUpperCase()}
-                    </Text>
-                  ) : null}
-                </View>
-                <Text style={styles.kickoff}>{new Date(event.startTime).toLocaleString()}</Text>
-                <View style={styles.oddsRow}>
-                  {(['1', 'X', '2'] as Pick[]).map((p) => {
-                    const dec = p === '1' ? row.decimal.home : p === 'X' ? row.decimal.draw : row.decimal.away;
-                    const isSel =
-                      selected?.betTypeId === BET_TYPE.FULL_TIME &&
-                      selected.marketNumber === PICK_NUMBER[p];
-                    const label = p === '1' ? 'Home' : p === 'X' ? 'Draw' : 'Away';
-                    return (
-                      <Pressable
-                        key={p}
-                        onPress={() => togglePick(event, BET_TYPE.FULL_TIME, PICK_NUMBER[p], `Full Time — ${label}`)}
-                        style={({ pressed, hovered }) => [
-                          styles.oddsBtn,
-                          isSel && styles.oddsBtnActive,
-                          (pressed || (Platform.OS === 'web' && hovered)) && styles.oddsBtnHover,
-                        ]}>
-                        <Text style={[styles.oddsPick, isSel && styles.oddsTextActive]}>{p}</Text>
-                        <Text style={[styles.oddsVal, isSel && styles.oddsTextActive]}>{dec.toFixed(2)}</Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-                <AllMarkets
-                  event={event}
-                  selected={selected}
-                  onPick={(betTypeId, marketNumber, label) =>
-                    togglePick(event, betTypeId, marketNumber, label)
-                  }
-                />
-              </View>
-            );
-          })}
+          <BookmakerFixtures key={`${categoryId}-${tournamentId}`} showLocationFilters={false}
+            fixtures={fixtures} selectedLegs={selectedLegs} onToggleLeg={onAddLeg} loadMarkets={async (id) => {
+              const event = await fetchEventDetail(Number(id));
+              if (!event) throw new Error('This fixture is no longer offered by Hollywoodbets.');
+              return hollywoodFixture(event, new Date().toISOString(), ctx ?? undefined);
+            }} />
         </View>
       ) : null}
 
@@ -507,11 +246,7 @@ export default function HollywoodOddsPanel({ onAddLeg }: { onAddLeg?: (leg: BetS
               {exportState.status === 'loading' ? 'GENERATING…' : 'GENERATE BOOKING CODE'}
             </Text>
           </Pressable>
-          {onAddLeg ? (
-            <Pressable onPress={addSelectionsToSlip} style={styles.addSlipBtn}>
-              <Text style={styles.addSlipText}>ADD TO SCORELINE SLIP</Text>
-            </Pressable>
-          ) : null}
+
         </View>
       ) : null}
       {exportState.status === 'done' ? (

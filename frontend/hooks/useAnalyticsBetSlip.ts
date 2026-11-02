@@ -1,3 +1,4 @@
+import { toggleBookmakerSelection } from '@/services/bookmakerSelection';
 import { useCallback, useEffect, useState } from 'react';
 import { Platform } from 'react-native';
 
@@ -48,7 +49,11 @@ export function useAnalyticsBetSlip() {
     setLegs((current) => current.filter((leg) => leg.id !== id));
   }, []);
 
+  const toggleLeg = useCallback((leg: BetSlipLeg) => {
+    setLegs((current) => toggleBookmakerSelection(current, leg));
+  }, []);
+
   const clear = useCallback(() => setLegs([]), []);
 
-  return { legs, addLeg, addLegs, removeLeg, clear };
+  return { legs, addLeg, addLegs, removeLeg, clear, toggleLeg };
 }

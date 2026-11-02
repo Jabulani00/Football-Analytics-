@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { useHollywoodNav } from '@/hooks/useHollywoodNav';
+import { mergeCompetitionEvents } from '@/services/hollywoodFusionView';
 
 import {
-  buildAllMarketRows,
+  buildMarketRows,
   buildFusionRows,
   type FusionRow,
   type MarketRow,
@@ -13,8 +15,6 @@ import {
   CORE_BET_TYPE_IDS,
   fetchEvents,
   fetchEventsAllMarkets,
-  fetchSoccerCategories,
-  fetchTournaments,
   type HbEvent,
 } from '@/services/hollywoodbets';
 import {
@@ -42,6 +42,20 @@ import type { StrategyFixtureContext } from '@/services/strategyEngine';
 type Probs = ModelProbs;
 
 export type HollywoodPopularOddsState = {
+  events: HbEvent[];
+  observedAt: string | null;
+  navigation: ReturnType<typeof useHollywoodNav>;
+  categoryId: number | null;
+  tournamentId: number | null;
+  selectCategory: (id: number) => void;
+  selectTournament: (id: number) => void;
+  refresh: () => void;
+  enriching: boolean;
+  warning: string | null;
+  fixtureCount: number;
+  pricedFixtureCount: number;
+  modelFixtureCount: number;
+  strategyFixtureCount: number;
   rows: FusionRow[];
   /** One row per market selection we can price — the value view. */
   marketRows: MarketRow[];
@@ -54,7 +68,18 @@ export type HollywoodPopularOddsState = {
   error: string | null;
 };
 
-const EMPTY: HollywoodPopularOddsState = {
+type OddsData = Omit<HollywoodPopularOddsState,
+  'navigation' | 'categoryId' | 'tournamentId' | 'selectCategory' | 'selectTournament' | 'refresh'>;
+
+const EMPTY: OddsData = {
+  events: [],
+  observedAt: null,
+  enriching: false,
+  warning: null,
+  fixtureCount: 0,
+  pricedFixtureCount: 0,
+  modelFixtureCount: 0,
+  strategyFixtureCount: 0,
   rows: [],
   marketRows: [],
   source: null,
@@ -178,119 +203,93 @@ async function modelProbsForEvents(
   return { models, strategyContexts };
 }
 
-/**
- * Self-navigating live odds: walks the Hollywoodbets soccer tree (categories →
- * tournaments → events) and returns fusion rows for the first tournament that
- * has priced events. No hardcoded (volatile) IDs. Callers should fall back to
- * sample data when `rows` is empty (e.g. when the network is unavailable).
- */
+/** Browse the same country/competition tree as Hollywood; never silently pick a league. */
 export function useHollywoodPopularOdds(enabled = true): HollywoodPopularOddsState {
-  const [state, setState] = useState<HollywoodPopularOddsState>(EMPTY);
+  const [categoryId, setCategoryId] = useState<number | null>(null);
+  const [tournamentId, setTournamentId] = useState<number | null>(null);
+  const [revision, setRevision] = useState(0);
+  const [state, setState] = useState<OddsData>(EMPTY);
+  const navigation = useHollywoodNav(categoryId, enabled);
+  const category = navigation.categories.find((item) => item.id === categoryId);
+  const tournament = navigation.tournaments.find((item) => item.id === tournamentId);
+
+  const selectCategory = useCallback((id: number) => {
+    setCategoryId(id);
+    setTournamentId(null);
+    setState(EMPTY);
+  }, []);
+  const selectTournament = useCallback((id: number) => {
+    setTournamentId(id);
+    setState(EMPTY);
+  }, []);
+  const refresh = useCallback(() => setRevision((value) => value + 1), []);
 
   useEffect(() => {
-    if (!enabled) {
+    if (!enabled || !category || !tournament) {
       setState(EMPTY);
       return;
     }
     const controller = new AbortController();
-    setState({ ...EMPTY, loading: true });
+    const signal = controller.signal;
+    const ctx = { tournamentId: tournament.id, tournamentName: tournament.name, countryId: category.id };
+    const source = { tournamentName: tournament.name, categoryName: category.name };
+    setState({ ...EMPTY, source, loading: true });
 
-    (async () => {
+    void (async () => {
       try {
-        let bookmakers = PRIORITY_BOOKMAKERS;
-        let extraOffers: NormalizedBookmakerOffer[] = [];
-        const [bookResult, valueResult] = await Promise.allSettled([
-          fetchBookmakers(controller.signal),
-          fetchAllUpcomingValue({ maxPages: 5 }, controller.signal),
+        // Require a successful listing request: a transport failure is not an empty competition.
+        const initial = await fetchEvents(category.id, tournament.id, BET_TYPE.FULL_TIME, signal);
+        if (signal.aborted) return;
+        const initialRows = buildFusionRows(initial, ctx);
+        const observedAt = new Date().toISOString();
+        setState({ ...EMPTY, source, events: initial, observedAt, rows: initialRows,
+          marketRows: initial.flatMap((event) => buildMarketRows(event, null, ctx)),
+          fixtureCount: initial.length, pricedFixtureCount: initialRows.length,
+          loading: true });
+
+        // Keep every fixture returned for this competition, including those without model evidence.
+        const widened = await fetchEventsAllMarkets(category.id, tournament.id, CORE_BET_TYPE_IDS, signal);
+        if (signal.aborted) return;
+        const events = mergeCompetitionEvents(initial, widened);
+        const rows = buildFusionRows(events, ctx);
+        const marketRows = events.flatMap((event) => buildMarketRows(event, null, ctx));
+        const pricedFixtureCount = new Set(marketRows.map((row) => row.eventId)).size;
+        setState({ ...EMPTY, source, events, observedAt, rows, marketRows,
+          fixtureCount: events.length, pricedFixtureCount, enriching: events.length > 0 });
+        if (events.length === 0) return;
+
+        // Optional evidence must not delay the display of Hollywood's own prices.
+        const [evidence, books, offers] = await Promise.allSettled([
+          modelProbsForEvents(events, signal),
+          fetchBookmakers(signal),
+          fetchAllUpcomingValue({ maxPages: 5 }, signal),
         ]);
-        if (bookResult.status === 'fulfilled') {
-          bookmakers = mergeProviderBookmakers(bookResult.value);
-        }
-        if (valueResult.status === 'fulfilled') {
-          extraOffers = valueResult.value.flatMap(normalizeOddAlertsValueBet);
-        }
-
-        const categories = await fetchSoccerCategories(controller.signal);
-        // Try categories in order until one yields a tournament with events.
-        for (const category of categories.slice(0, 8)) {
-          if (controller.signal.aborted) return;
-          let tournaments: Awaited<ReturnType<typeof fetchTournaments>>['tournaments'] = [];
-          try {
-            tournaments = (await fetchTournaments(category.id, controller.signal)).tournaments;
-          } catch {
-            continue;
-          }
-          for (const tournament of tournaments.slice(0, 5)) {
-            if (controller.signal.aborted) return;
-            let events;
-            try {
-              events = await fetchEvents(category.id, tournament.id, BET_TYPE.FULL_TIME, controller.signal);
-            } catch {
-              continue;
-            }
-            const ctx = {
-              tournamentId: tournament.id,
-              tournamentName: tournament.name,
-              countryId: category.id,
-            };
-
-            // Cheap first pass: does this tournament have priced events at all?
-            // Only then is it worth spending the extra market + model calls.
-            const priced = buildFusionRows(events, ctx);
-            if (priced.length === 0) continue;
-
-            // Now widen to the markets the value rules need (BTTS, O/U, …).
-            let full = events;
-            try {
-              full = await fetchEventsAllMarkets(
-                category.id,
-                tournament.id,
-                CORE_BET_TYPE_IDS,
-                controller.signal,
-              );
-            } catch {
-              // Keep the 1X2-only set rather than dropping the tournament.
-            }
-            if (controller.signal.aborted) return;
-
-            let models = new Map<number, Probs>();
-            let strategyContexts = new Map<number, StrategyFixtureContext>();
-            try {
-              const bundle = await modelProbsForEvents(full, controller.signal);
-              models = bundle.models;
-              strategyContexts = bundle.strategyContexts;
-            } catch {
-              // No model available — rows still render, marked as having none.
-            }
-            if (controller.signal.aborted) return;
-
-            const lookup = (e: HbEvent) => models.get(e.id) ?? null;
-            const rows = buildFusionRows(full, ctx, lookup);
-            const marketRows = buildAllMarketRows(full, lookup, ctx);
-            const comparisons = compareHollywoodWithProvider(marketRows, extraOffers);
-            setState({
-              rows,
-              marketRows,
-              source: { tournamentName: tournament.name, categoryName: category.name },
-              bookmakers,
-              extraOffers,
-              comparisons,
-              strategyContexts,
-              loading: false,
-              error: null,
-            });
-            return;
-          }
-        }
-        if (!controller.signal.aborted) setState({ ...EMPTY, error: 'No live Hollywoodbets soccer odds available.' });
-      } catch (err) {
-        if (controller.signal.aborted) return;
-        setState({ ...EMPTY, error: err instanceof Error ? err.message : 'Failed to load Hollywoodbets odds.' });
+        if (signal.aborted) return;
+        const bundle = evidence.status === 'fulfilled' ? evidence.value : null;
+        const extraOffers = offers.status === 'fulfilled'
+          ? offers.value.flatMap(normalizeOddAlertsValueBet) : [];
+        const lookup = (event: HbEvent) => bundle?.models.get(event.id) ?? null;
+        const enrichedRows = events.flatMap((event) => buildMarketRows(event, lookup(event), ctx));
+        setState({
+          ...EMPTY, source, events, observedAt,
+          rows: buildFusionRows(events, ctx, lookup), marketRows: enrichedRows,
+          fixtureCount: events.length, pricedFixtureCount,
+          modelFixtureCount: bundle?.models.size ?? 0,
+          strategyFixtureCount: bundle?.strategyContexts.size ?? 0,
+          strategyContexts: bundle?.strategyContexts ?? new Map(),
+          bookmakers: books.status === 'fulfilled' ? mergeProviderBookmakers(books.value) : PRIORITY_BOOKMAKERS,
+          extraOffers,
+          comparisons: compareHollywoodWithProvider(enrichedRows, extraOffers),
+          warning: evidence.status === 'rejected'
+            ? 'Model evidence could not be loaded. Hollywood prices are still available.' : null,
+        });
+      } catch (error) {
+        if (!signal.aborted) setState({ ...EMPTY, source,
+          error: error instanceof Error ? error.message : 'Could not load this Hollywood competition.' });
       }
     })();
-
     return () => controller.abort();
-  }, [enabled]);
+  }, [enabled, category, tournament, revision]);
 
-  return state;
+  return { ...state, navigation, categoryId, tournamentId, selectCategory, selectTournament, refresh };
 }

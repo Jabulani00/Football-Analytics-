@@ -8,6 +8,7 @@ import BetwayOddsPanel from '@/components/analytics/BetwayOddsPanel';
 import BetSlipPanel from '@/components/analytics/BetSlipPanel';
 import HollywoodOddsPanel from '@/components/analytics/HollywoodOddsPanel';
 import OddsFusionPanel from '@/components/analytics/OddsFusionPanel';
+import HollywoodFusionBrowser from '@/components/analytics/HollywoodFusionBrowser';
 import OverviewPanel from '@/components/analytics/OverviewPanel';
 import StatsCharactersPanel from '@/components/analytics/StatsCharactersPanel';
 import PredictionsPanel from '@/components/analytics/PredictionsPanel';
@@ -88,11 +89,11 @@ function PanelForTab({
     case 'strategies':
       return <StrategiesPanel live={live} onAddLeg={slip.addLeg} />;
     case 'odds':
-      return <OddsFusionPanel live={live} onAddLeg={slip.addLeg} />;
+      return <OddsFusionPanel live={live} onAddLeg={slip.toggleLeg} selectedLegs={slip.legs} />;
     case 'hollywood':
-      return <HollywoodOddsPanel onAddLeg={slip.addLeg} />;
+      return <HollywoodOddsPanel onAddLeg={slip.toggleLeg} selectedLegs={slip.legs} />;
     case 'betway':
-      return <BetwayOddsPanel onAddLeg={slip.addLeg} />;
+      return <BetwayOddsPanel onAddLeg={slip.toggleLeg} selectedLegs={slip.legs} />;
     case 'betslip':
       return <BetSlipPanel legs={slip.legs} onRemove={slip.removeLeg} onClear={slip.clear} />;
   }
@@ -152,6 +153,7 @@ export default function AnalyticsHub({ onBack: _onBack }: AnalyticsHubProps) {
         <AnalyticsNav active={activeTab} onChange={setActiveTab} />
 
         <View onLayout={(event) => { panelY.current = event.nativeEvent.layout.y; }} style={styles.panel}>
+          {needsPopularOdds ? <HollywoodFusionBrowser live={live} /> : null}
           <PanelForTab tab={activeTab} live={live} slip={slip} showTableCatalogue={showTableCatalogue} />
         </View>
       </ScrollView>
