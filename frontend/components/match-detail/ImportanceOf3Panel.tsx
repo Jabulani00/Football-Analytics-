@@ -3,12 +3,19 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SectorIntro } from '@/components/match-detail/PowerDynamicsSectors';
 import type { SeasonMatch } from '@/utils/bhozomaEngine';
 import {
+  ESCAPE_RELEGATION_LABEL,
   evaluateImportanceOf3,
+  formatImportanceValue,
   formatPositionList,
+  importanceBlendFor,
+  importancePairSeparation,
+  IMPORTANCE_SEPARATION_LABEL,
+  IMPORTANCE_VALUE_LABEL,
   PULL_FACTOR_LABEL,
   PULL_ROWS,
   PUSH_FACTOR_LABEL,
   type ImportanceOf3,
+  type ImportanceValueBand,
   type ImbangiFit,
   type PullFactorKind,
   type PushFactorKind,
@@ -126,7 +133,7 @@ function formatTargets(labels: string[] | null | undefined, bands: TargetBand[] 
 
 function relegationLabel(read: SingayeRead): string {
   if (read.escape.relegation === 'escaping') return 'Escaping relegation';
-  if (read.escape.relegation === 'safety') return 'Relegation safety';
+  if (read.escape.relegation === 'safety') return ESCAPE_RELEGATION_LABEL;
   if (read.escape.relegation === 'unknown') return 'Relegation unmapped';
   return 'Clear of relegation';
 }
@@ -299,6 +306,52 @@ const ESCAPE_CELLS: { verdict: 'comes_short' | 'dethrone'; related: boolean; sco
 function hitsCell(read: SingayeRead | null, cell: (typeof ESCAPE_CELLS)[number]): boolean {
   if (!read || read.dethrone.verdict === 'none') return false;
   return read.dethrone.verdict === cell.verdict && read.dethrone.motivated === cell.related;
+}
+
+function valueColor(band: ImportanceValueBand): string {
+  if (band === 'high') return theme.accentGreen;
+  if (band === 'medium') return theme.yellow;
+  return theme.textMuted;
+}
+
+function SeparationSide({ read, mark }: { read: SingayeRead | null; mark: string }) {
+  const blend = importanceBlendFor(read);
+  return (
+    <View style={styles.pullSide}>
+      <Text style={styles.pullName}>{mark}</Text>
+      {blend ? (
+        <>
+          <Text style={[styles.pullKind, { color: valueColor(blend.band) }]}>{IMPORTANCE_VALUE_LABEL[blend.band]}</Text>
+          <Text style={styles.pullEquals}>{formatImportanceValue(blend.value)}</Text>
+          <Text style={styles.pullDetail}>
+            Escape {blend.escape} + pull {blend.pull}, divided by 2
+          </Text>
+        </>
+      ) : (
+        <Text style={styles.muted}>Not on this table.</Text>
+      )}
+    </View>
+  );
+}
+
+function SeparationBoard({ a, b }: { a: SingayeRead | null; b: SingayeRead | null }) {
+  const pair = importancePairSeparation(a, b);
+  const tone = pair?.separation === 'clear' ? theme.accentGreen : pair?.separation === 'mediocre' ? theme.yellow : theme.textMuted;
+  return (
+    <View style={styles.card}>
+      <Text style={styles.cardTitle}>Value separation</Text>
+      <Text style={styles.legend}>
+        Each side is (escape element + pull factor) / 2. 0–3.9 is LOW VALUE, 4–5.9 is MEDIUM VALUE, and 6 or more is HIGH VALUE. High against low is a clear separation. Medium against low, or high against medium, is mediocre. The same band is a poor separation.
+      </Text>
+      <View style={styles.kindRow}>
+        <SeparationSide read={a} mark="Singaye 1" />
+        <SeparationSide read={b} mark="Singaye 2" />
+      </View>
+      <Text style={[styles.pullKind, { color: tone }]}>
+        {pair ? IMPORTANCE_SEPARATION_LABEL[pair.separation] : 'Need both sides on the table'}
+      </Text>
+    </View>
+  );
 }
 
 function EscapeMatrix({ a, b }: { a: SingayeRead | null; b: SingayeRead | null }) {
@@ -676,7 +729,7 @@ const RULES: { rule: string; line: string }[] = [
   { rule: 'Dethrone, no target', line: 'Escape element 4' },
   { rule: 'Dethrone, with target', line: 'Escape element 10' },
   { rule: 'Escaping relegation', line: 'Singaye is in a relegation spot' },
-  { rule: 'Relegation safety', line: 'One place above the relegation line' },
+  { rule: 'Escape relegation', line: 'One place above the drop. 17th when 20 teams and the bottom three go down.' },
   { rule: 'Gebe widening', line: 'Gap to Tail, then the same gap after +3' },
   { rule: 'Imbangi', line: 'ΔP ≤ 4 · A 10 · B 8 · C 6' },
 ];
@@ -776,6 +829,7 @@ export default function ImportanceOf3Panel({
       <View>
         {focused.length > 0 ? <Ledger rows={focused} /> : null}
         {section === 'escape' ? <EscapeMatrix a={report.singaye1} b={report.singaye2} /> : null}
+        {section === 'separator' ? <SeparationBoard a={report.singaye1} b={report.singaye2} /> : null}
         {kind ? <PullBoard a={report.singaye1} b={report.singaye2} onlyKind={kind} /> : null}
         {pushed ? <PushBoard a={report.singaye1} b={report.singaye2} onlyKind={pushed} /> : null}
       </View>
@@ -796,6 +850,7 @@ export default function ImportanceOf3Panel({
       </View>
       <EscapeMatrix a={report.singaye1} b={report.singaye2} />
       <PullBoard a={report.singaye1} b={report.singaye2} />
+      <SeparationBoard a={report.singaye1} b={report.singaye2} />
       <PushBoard a={report.singaye1} b={report.singaye2} />
       <PositionRail standings={standings} report={report} />
       <RuleTable />

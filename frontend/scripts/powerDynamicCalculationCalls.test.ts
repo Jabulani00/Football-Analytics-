@@ -77,7 +77,13 @@ const tick = scoreCallFixture('tick-lost_6-t1::wrong', table[0], table[2], table
 check('a sector call is scored for the fixture', sector != null && sector.percent > 0);
 check('a tick call is scored for the fixture', tick != null && tick.percent > 0);
 const hits = scorePowerDynamicPacks([pack], ['calc1-t1::tick', 'sector-baseline-t1::tick', 'tick-lost_6-t1::wrong'], '2026-10-28');
-check('calculation, sector, and tick calls all return the fixture', ['calc1-t1::tick', 'sector-baseline-t1::tick', 'tick-lost_6-t1::wrong'].every((id) => hits.some((hit) => hit.aspectId === id && hit.percent > 0)));
+check(
+  'calculation, sector, and tick calls return the fixture once when all hold',
+  hits.length === 1 &&
+    hits[0].fixtureId === 11 &&
+    hits[0].percent > 0 &&
+    ['T1 has more sectors of 6+ · true', 'Baseline · T1 ahead · true', 'Lost 6 in a row · T1 · opposite'].every((label) => hits[0].aspectLabel.includes(label)),
+);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

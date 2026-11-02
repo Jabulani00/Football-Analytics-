@@ -52,12 +52,12 @@ const saved = pack([
 console.log('\nsaved league copy');
 {
   const first = scorePowerDynamicPacks([saved], ['colour-green'], day);
-  const second = scorePowerDynamicPacks([saved], ['colour-green', 'venue-home'], day);
+  const both = scorePowerDynamicPacks([saved], ['colour-green', 'colour-red'], day);
   check('best green fit is first', first[0]?.fixtureId === 11 && first[0].percent === 100);
   check('the result names its in-option', first[0]?.aspectLabel === 'Green table');
   check('another day is empty without fetching', scorePowerDynamicPacks([saved], ['colour-green'], '2026-10-29').length === 0);
-  check('a second in-option is scored from the same copy', second.some((hit) => hit.aspectLabel === 'Home strong'));
-  check('closest fits stay above weaker ones', second[0].percent >= second[second.length - 1].percent);
+  check('a fixture must hold every selected in-option', both.length === 1 && both[0].fixtureId === 11 && both[0].aspectLabel === 'Green table · Red table');
+  check('a fixture that misses one in-option is left out', !both.some((hit) => hit.fixtureId === 12));
 }
 
 console.log('\nbrowser copy');
@@ -93,6 +93,8 @@ console.log('\nevery option has in-options');
   const push = callAspectsFor('importance_3pts', 'push_dethrone');
   check('importance of 3 lists all 7 dethrone push kinds', push.filter((item) => item.mark === 'tick').length === 7);
   check('importance of 3 lists the escape scores', callAspectsFor('importance_3pts', 'escape').some((item) => item.id.startsWith('escape-10')));
+  const separators = callAspectsFor('importance_3pts', 'separator').filter((item) => item.mark === 'tick').map((item) => item.label);
+  check('importance of 3 lists the three separators', separators.join(' · ') === 'Clear separation · Mediocre separation · Poor separation');
   const changes = callAspectsFor('last5', 'label_change').filter((item) => item.mark === 'tick').map((item) => item.label);
   check('each positive change code is its own in-option', changes.includes('Positive · A1 · 5 positives, 0 negatives') && changes.includes('Positive · D3 · 2 positives, 1 negative'));
   check('each negative change code is separate', changes.includes('Negative · A1 · 5 negatives, 0 positives') && changes.includes('Negative · B2 · 4 negatives, 1 positive'));

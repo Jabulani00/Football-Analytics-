@@ -162,7 +162,7 @@ export default function PowerDynamicCallSearch({
             />
             <SectorIntro
               title={source === 'calculations' ? `Call · ${inOptionCount}` : `In-option · ${inOptionCount}`}
-              note={`${hasMarks ? 'A tick means the call holds. A cross means the same call does not. ' : ''}Select any number.${aspectIds.length > 0 ? ` ${aspectIds.length} selected.` : ''}`}
+              note={`${hasMarks ? 'A tick means the call holds. A cross means the same call does not. ' : ''}Select any number. A fixture is called only when every selected in-option holds.${aspectIds.length > 0 ? ` ${aspectIds.length} selected.` : ''}`}
             />
             {inOptionCount > 8 ? (
               <TextInput
@@ -273,7 +273,7 @@ export default function PowerDynamicCallSearch({
                   <Text style={styles.meta} numberOfLines={1}>
                     {hit.country} · {hit.league} · {hit.when}
                   </Text>
-                  <Text style={styles.reason} numberOfLines={2}>{hit.reason}</Text>
+                  <Text style={styles.reason} numberOfLines={4}>{hit.reason}</Text>
                 </View>
               </Pressable>
             );

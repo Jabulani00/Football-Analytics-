@@ -43,7 +43,7 @@ export const POWER_DYNAMIC_CALLS: PowerDynamicCallDef[] = [
     id: 'importance_3pts',
     index: '2',
     name: 'Importance of 3 pts',
-    detail: 'Pull factor, push factor, the side ahead, the side behind, escape, and Imbangi.',
+    detail: 'Pull factor, push factor, the side ahead, the side behind, escape, the value separator, and Imbangi.',
     functions: [
       { id: 'pull_take_over', label: 'Take over', detail: 'Pull factor kinds 1 to 7 for a take over.' },
       { id: 'pull_chaser', label: 'Chaser', detail: 'Pull factor kinds 1 to 7 for a chaser.' },
@@ -54,6 +54,7 @@ export const POWER_DYNAMIC_CALLS: PowerDynamicCallDef[] = [
       { id: 'ahead', label: 'Ahead', detail: 'The call against the side directly ahead.' },
       { id: 'tail', label: 'Tail', detail: 'The call against the side directly behind.' },
       { id: 'escape', label: 'Escape', detail: 'Escape element and the relegation read.' },
+      { id: 'separator', label: 'Separator', detail: 'Escape element and pull factor averaged, then compared.' },
       { id: 'imbangi', label: 'Imbangi', detail: 'Imbangi against the side ahead and the side behind.' },
     ],
   },

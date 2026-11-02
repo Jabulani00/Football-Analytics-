@@ -61,12 +61,14 @@ export function scorePowerDynamicPacks(
   dateKey: string,
 ): PowerDynamicHit[] {
   const hits: PowerDynamicHit[] = [];
+  if (aspectIds.length === 0) return hits;
   for (const pack of packs) {
     for (const fixture of pack.fixtures) {
       if (fixture.dateKey !== dateKey) continue;
       const home = pack.byTeam.get(fixture.homeId);
       const away = pack.byTeam.get(fixture.awayId);
       if (!home || !away) continue;
+      const matched: { id: string; percent: number; reason: string; label: string }[] = [];
       for (const id of aspectIds) {
         const score = scoreCallFixture(id, home, away, pack.table, {
           matches: pack.matches,
@@ -76,19 +78,21 @@ export function scorePowerDynamicPacks(
           competitionId: pack.competitionId,
           fixture: { homeId: fixture.homeId, awayId: fixture.awayId, unix: fixture.unix },
         });
-        if (!score) continue;
-        hits.push({
-          fixtureId: fixture.id,
-          name: `${fixture.homeName} vs ${fixture.awayName}`,
-          league: pack.name,
-          country: pack.country,
-          when: kickoffLabel(fixture.unix),
-          percent: score.percent,
-          reason: score.reason,
-          aspectId: id,
-          aspectLabel: aspectCaption(id),
-        });
+        if (!score || score.percent <= 0) break;
+        matched.push({ id, percent: score.percent, reason: score.reason, label: aspectCaption(id) });
       }
+      if (matched.length !== aspectIds.length) continue;
+      hits.push({
+        fixtureId: fixture.id,
+        name: `${fixture.homeName} vs ${fixture.awayName}`,
+        league: pack.name,
+        country: pack.country,
+        when: kickoffLabel(fixture.unix),
+        percent: Math.min(...matched.map((item) => item.percent)),
+        reason: matched.map((item) => item.reason).join(' · '),
+        aspectId: matched[0].id,
+        aspectLabel: matched.map((item) => item.label).join(' · '),
+      });
     }
   }
   hits.sort(

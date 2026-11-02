@@ -52,12 +52,16 @@ import {
 } from '@/utils/last6Form';
 import {
   evaluateImportanceOf3,
+  fixtureTargetNote,
+  importancePairSeparation,
+  IMPORTANCE_SEPARATION_LABEL,
+  IMPORTANCE_VALUE_LABEL,
+  formatImportanceValue,
   PULL_FACTOR_LABEL,
   PULL_ROWS,
   PUSH_FACTOR_LABEL,
   type PullFactorKind,
   type PushFactorKind,
-  type SingayeRead,
 } from '@/utils/importanceOf3Engine';
 import {
   evaluateTeamMotivation,
@@ -426,7 +430,7 @@ function importanceAspects(): MeasureAspect[] {
     { id: '4', label: 'Dethrone, no target' },
     { id: '10', label: 'Dethrone, with target' },
     { id: 'escaping', label: 'Escaping relegation' },
-    { id: 'safety', label: 'Relegation safety' },
+    { id: 'safety', label: 'Escape relegation' },
     { id: 'clear', label: 'Clear of relegation' },
     { id: 'unknown', label: 'Relegation unmapped' },
   ]) {
@@ -440,6 +444,25 @@ function importanceAspects(): MeasureAspect[] {
         binary: true,
         measure: 'importance',
         token: `escape:${item.id}`,
+      }),
+    );
+  }
+  for (const item of [
+    { id: 'clear', label: 'Clear separation', detail: 'One side is HIGH VALUE (6 or more) and the other is LOW VALUE (0–3.9).' },
+    { id: 'mediocre', label: 'Mediocre separation', detail: 'MEDIUM VALUE (4–5.9) against LOW VALUE, or HIGH VALUE against MEDIUM VALUE.' },
+    { id: 'poor', label: 'Poor separation', detail: 'Both sides sit in the same value band.' },
+  ]) {
+    out.push(
+      aspect({
+        id: `separate-${item.id}`,
+        tabId: 'importance_3pts',
+        functionId: 'separator',
+        label: item.label,
+        detail: item.detail,
+        binary: true,
+        pair: true,
+        measure: 'importance',
+        token: `separate:${item.id}`,
       }),
     );
   }
@@ -1508,10 +1531,10 @@ function motivationFor(row: MeasureRow, table: MeasureRow[], context: CallSearch
   return cached(context, `mot:${row.teamId}`, () => evaluateTeamMotivation(row.teamId, table));
 }
 
-function importanceOf(row: MeasureRow, table: MeasureRow[], context: CallSearchContext | undefined): SingayeRead | null {
+function importanceReport(row: MeasureRow, table: MeasureRow[], context: CallSearchContext | undefined) {
   const standings = context?.standings && context.standings.length > 0 ? context.standings : table;
-  return cached(context, `importance:${row.teamId}:${context?.opponentId ?? 0}:${context?.competitionId ?? 0}`, () => {
-    const read = evaluateImportanceOf3({
+  return cached(context, `importance:${row.teamId}:${context?.opponentId ?? 0}:${context?.competitionId ?? 0}`, () =>
+    evaluateImportanceOf3({
       table: standings,
       t1Id: row.teamId,
       t2Id: context?.opponentId,
@@ -1519,26 +1542,30 @@ function importanceOf(row: MeasureRow, table: MeasureRow[], context: CallSearchC
       matches: context?.matches,
       schedule: context?.schedule,
       formReady: (context?.matches?.length ?? 0) > 0,
-    });
-    return read.singaye1;
-  });
+    }),
+  );
 }
 
 function scoreImportance(row: MeasureRow, table: MeasureRow[], token: string, context: CallSearchContext | undefined): MeasureScore | null {
-  const read = importanceOf(row, table, context);
+  const report = importanceReport(row, table, context);
+  const read = report.singaye1;
   if (!read) return null;
+  const noted = (score: MeasureScore): MeasureScore => ({
+    ...score,
+    reason: `${score.reason} · ${fixtureTargetNote(report.singaye1, report.singaye2)}`,
+  });
   const parts = token.split(':');
   const head = parts[0];
   if (head === 'pull') {
     const on = read.pull.kind === parts[1] && String(read.pull.index) === parts[2];
-    return fit(on ? 100 : 0, `${read.pull.type} · ${read.pull.detail}`);
+    return noted(fit(on ? 100 : 0, `${read.pull.type} · ${read.pull.detail}`));
   }
   if (head === 'push') {
     const on = read.push.active && read.push.kind === parts[1] && String(read.push.index) === parts[2];
     const reason = read.push.active
       ? `${read.push.type} · ${read.push.detail}`
       : 'Push factors are off until the late stretch';
-    return fit(on ? 100 : 0, reason);
+    return noted(fit(on ? 100 : 0, reason));
   }
   if (head === 'ahead') {
     const call = parts[1];
@@ -1551,7 +1578,7 @@ function scoreImportance(row: MeasureRow, table: MeasureRow[], token: string, co
             ? read.takeover.verdict === 'none'
             : read.takeover.motivated;
     const word = read.takeover.verdict === 'take_over' ? 'Take over' : read.takeover.verdict === 'chaser' ? 'Chaser' : 'Gebe widening';
-    return fit(on ? 100 : 0, word);
+    return noted(fit(on ? 100 : 0, word));
   }
   if (head === 'tail') {
     const call = parts[1];
@@ -1564,21 +1591,28 @@ function scoreImportance(row: MeasureRow, table: MeasureRow[], token: string, co
             ? read.dethrone.targetInFight
             : read.dethrone.motivated;
     const word = read.dethrone.verdict === 'dethrone' ? 'Dethrone' : read.dethrone.verdict === 'comes_short' ? 'Comes short' : 'No tail call';
-    return fit(on ? 100 : 0, word);
+    return noted(fit(on ? 100 : 0, word));
   }
   if (head === 'escape') {
     const call = parts[1];
     const on = call === '0' || call === '4' || call === '5' || call === '10' ? String(read.escape.score ?? '') === call : read.escape.relegation === call;
     const word = read.escape.score == null ? 'No escape score' : `Escape ${read.escape.score}`;
-    return fit(on ? 100 : 0, `${word} · ${read.escape.relegation}`);
+    return noted(fit(on ? 100 : 0, `${word} · ${read.escape.relegation}`));
+  }
+  if (head === 'separate') {
+    const found = importancePairSeparation(report.singaye1, report.singaye2);
+    if (!found) return noted(fit(0, 'Need both sides on the table'));
+    const line = (side: typeof found.a) => `${formatImportanceValue(side.value)} ${IMPORTANCE_VALUE_LABEL[side.band]}`;
+    const word = `${IMPORTANCE_SEPARATION_LABEL[found.separation]} · ${line(found.a)} v ${line(found.b)}`;
+    return noted(fit(found.separation === parts[1] ? 100 : 0, word));
   }
   if (head === 'imbangi') {
     const side = parts[1] === 'tail' ? read.imbangiTail : read.imbangiAhead;
     const grade = parts[2];
-    if (!side) return fit(0, 'No neighbour');
+    if (!side) return noted(fit(0, 'No neighbour'));
     const on = grade ? side.grade === grade : side.fits;
     const word = side.grade ? `${side.grade} · ΔP ${side.pointsDiff}` : `ΔP ${side.pointsDiff}`;
-    return fit(on ? 100 : 0, word);
+    return noted(fit(on ? 100 : 0, word));
   }
   return null;
 }

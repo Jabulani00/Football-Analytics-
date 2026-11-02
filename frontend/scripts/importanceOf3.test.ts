@@ -6,6 +6,11 @@ import {
   dethroneDiff,
   escapeScoreFor,
   evaluateImportanceOf3,
+  fixtureTargetNote,
+  importanceBlend,
+  importancePairSeparation,
+  importanceSeparation,
+  importanceValueBand,
   matchPullRow,
   takeoverDiff,
   type SingayeRead,
@@ -131,7 +136,7 @@ console.log('\npull factor kinds');
 
   const plain = evaluateImportanceOf3({
     table: league([40, 37, 34, 30, 28, 22, 20, 10, 16, 12]),
-    t1Id: 8,
+    t1Id: 6,
     t2Id: null,
     seasonProgress: 40,
     formReady: true,
@@ -145,6 +150,13 @@ console.log('\nrelegation safety and gebe widening');
   const pts = Array.from({ length: 20 }, (_, i) => 100 - i);
   const safety = side(league(pts), 17, 423);
   check('17th is relegation safety', safety.escape.relegation === 'safety', safety.escape.relegation);
+  check('17th is escape relegation', safety.targetsHeld.includes('Escape relegation'), safety.targetsHeld.join(', '));
+  const europe = side(league(pts), 5, 423);
+  check('5th takes the league cup place', europe.targetsHeld.includes('Europa League'), europe.targetsHeld.join(', '));
+  const champion = side(league(pts), 1, 423);
+  check('1st keeps top 3 and the cup', champion.targetsHeld.includes('Top 3') && champion.targetsHeld.includes('Champions League'));
+  const plainEscape = side(league(pts), 17);
+  check('an unmapped 20-team league still marks 17th as escape relegation', plainEscape.targetsHeld.includes('Escape relegation') && !plainEscape.targetsHeld.some((label) => label.includes('League')));
   check('safety line is 18', safety.escape.relegationLine === 18);
   check('safety dethrone is live and scores 10', safety.dethrone.verdict === 'dethrone' && safety.escape.score === 10);
 
@@ -237,6 +249,28 @@ console.log('\nfinished lower-league fixture');
   check('singaye 1 pull points are a list', pointsOf(report.singaye1).join(',') === 'target,imbangi,games', pointsOf(report.singaye1).join(','));
   check('singaye 2 pull points are a list', pointsOf(report.singaye2).join(',') === 'target,imbangi,games', pointsOf(report.singaye2).join(','));
   check('late season still has a pull kind', report.singaye1?.pull.index != null && report.singaye2?.pull.index != null);
+}
+
+console.log('\nvalue separation');
+{
+  check('0 to 3.9 is low', importanceValueBand(0) === 'low' && importanceValueBand(3.9) === 'low');
+  check('4 to 5.9 is medium', importanceValueBand(4) === 'medium' && importanceValueBand(5.9) === 'medium');
+  check('6 and above is high', importanceValueBand(6) === 'high' && importanceValueBand(importanceBlend(10, 10)) === 'high');
+  check('escape and pull are averaged', importanceBlend(10, 6) === 8 && importanceBlend(null, 4) === 2);
+  check('high against low is clear', importanceSeparation('high', 'low') === 'clear' && importanceSeparation('low', 'high') === 'clear');
+  check('one step apart is mediocre', importanceSeparation('medium', 'low') === 'mediocre' && importanceSeparation('high', 'medium') === 'mediocre');
+  check('the same band is poor', importanceSeparation('low', 'low') === 'poor' && importanceSeparation('high', 'high') === 'poor');
+
+  const report = evaluateImportanceOf3({
+    table: league([40, 37, 34, 30]),
+    t1Id: 1,
+    t2Id: 4,
+    formReady: true,
+  });
+  const pair = importancePairSeparation(report.singaye1, report.singaye2);
+  check('the two sides produce a separator', pair != null);
+  check('the same band is a poor separation', pair?.a.band === pair?.b.band ? pair?.separation === 'poor' : pair?.separation !== 'poor');
+  check('a top side names its target place', fixtureTargetNote(report.singaye1, report.singaye2).includes('Target position') && fixtureTargetNote(report.singaye1, report.singaye2).includes('Number 1'));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

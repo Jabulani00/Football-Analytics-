@@ -39,7 +39,10 @@ import {
   type StandingLike,
 } from '@/utils/motivationEngine';
 
-export type TargetKind = 'number_1' | 'top_3' | 'cup' | 'relegation';
+export type TargetKind = 'number_1' | 'top_3' | 'cup' | 'relegation' | 'escape_relegation';
+
+/** The place directly above a league's drop. 17th in a 20-team league. */
+export const ESCAPE_RELEGATION_LABEL = 'Escape relegation';
 
 export type TargetBand = {
   label: string;
@@ -252,6 +255,13 @@ export function targetMarksFor(
 
   const relegationPositions = marks.filter((m) => m.kind === 'relegation').map((m) => m.position);
   const relegationLine = relegationPositions.length > 0 ? Math.min(...relegationPositions) : null;
+  const escapePlace =
+    relegationLine != null && relegationLine > 1
+      ? relegationLine - 1
+      : !zonesMapped && totalTeams >= 4
+        ? totalTeams - 3
+        : null;
+  if (escapePlace != null) pushMark(marks, escapePlace, totalTeams, ESCAPE_RELEGATION_LABEL, 'escape_relegation');
   return { marks, zonesMapped, relegationLine };
 }
 
@@ -526,14 +536,14 @@ function readSingaye(
   const targetInFight = singayeRelated || tailRelated;
   const dethMotivated = dethDiff != null && dethDiff <= MOTIVATION_GAP_MAX && targetInFight;
   const tailTargets = tail ? labelsAt(marks, tail.rank) : [];
-  if (tail && relegationRead(tail.rank, relegationLine) === 'safety' && !tailTargets.includes('Relegation safety')) {
-    tailTargets.push('Relegation safety');
+  if (tail && relegationRead(tail.rank, relegationLine) === 'safety' && !tailTargets.includes(ESCAPE_RELEGATION_LABEL)) {
+    tailTargets.push(ESCAPE_RELEGATION_LABEL);
   }
   const relationLabels = [...targetsHeld, ...tailTargets].filter(
     (label, index, all) => all.indexOf(label) === index,
   );
-  if (relegationRead(team.rank, relegationLine) === 'safety' && !relationLabels.includes('Relegation safety')) {
-    relationLabels.push('Relegation safety');
+  if (relegationRead(team.rank, relegationLine) === 'safety' && !relationLabels.includes(ESCAPE_RELEGATION_LABEL)) {
+    relationLabels.push(ESCAPE_RELEGATION_LABEL);
   }
 
   const escapeScore = dethVerdict === 'none' ? null : escapeScoreFor(dethVerdict, dethMotivated);
@@ -681,6 +691,97 @@ export const PULL_FACTOR_LABEL: Record<PullFactorKind, string> = {
   chaser: 'Chaser',
   gebe_widening: 'Gebe widening',
 };
+
+export type ImportanceValueBand = 'low' | 'medium' | 'high';
+
+export type ImportanceSeparation = 'clear' | 'mediocre' | 'poor';
+
+export const IMPORTANCE_VALUE_LABEL: Record<ImportanceValueBand, string> = {
+  low: 'LOW VALUE',
+  medium: 'MEDIUM VALUE',
+  high: 'HIGH VALUE',
+};
+
+export const IMPORTANCE_SEPARATION_LABEL: Record<ImportanceSeparation, string> = {
+  clear: 'Clear separation',
+  mediocre: 'Mediocre separation',
+  poor: 'Poor separation',
+};
+
+/** (escape element + pull factor) / 2. A missing escape score counts as 0. */
+export function importanceBlend(escapeScore: number | null, pullEquals: number): number {
+  return ((escapeScore ?? 0) + pullEquals) / 2;
+}
+
+/** 0–3.9 low, 4–5.9 medium, 6 and above high. */
+export function importanceValueBand(value: number): ImportanceValueBand {
+  if (value >= 6) return 'high';
+  if (value >= 4) return 'medium';
+  return 'low';
+}
+
+/** High against low is clear. One step apart is mediocre. The same band is poor. */
+export function importanceSeparation(a: ImportanceValueBand, b: ImportanceValueBand): ImportanceSeparation {
+  if (a === b) return 'poor';
+  const rank = { low: 0, medium: 1, high: 2 };
+  return Math.abs(rank[a] - rank[b]) >= 2 ? 'clear' : 'mediocre';
+}
+
+export type ImportanceBlendRead = {
+  escape: number;
+  pull: number;
+  value: number;
+  band: ImportanceValueBand;
+};
+
+export function importanceBlendFor(read: SingayeRead | null): ImportanceBlendRead | null {
+  if (!read) return null;
+  const escape = read.escape.score ?? 0;
+  const pull = read.pull.equals;
+  const value = importanceBlend(escape, pull);
+  return { escape, pull, value, band: importanceValueBand(value) };
+}
+
+export function importancePairSeparation(
+  a: SingayeRead | null,
+  b: SingayeRead | null,
+): { a: ImportanceBlendRead; b: ImportanceBlendRead; separation: ImportanceSeparation } | null {
+  const left = importanceBlendFor(a);
+  const right = importanceBlendFor(b);
+  if (!left || !right) return null;
+  return { a: left, b: right, separation: importanceSeparation(left.band, right.band) };
+}
+
+function uniqueLabels(labels: string[]): string[] {
+  return labels.filter((label, index) => label.length > 0 && labels.indexOf(label) === index);
+}
+
+/** Target places this side occupies, or is fighting directly above and below. */
+export function involvedTargetLabels(read: SingayeRead): string[] {
+  const labels = uniqueLabels([
+    ...read.targetsHeld,
+    ...read.takeover.aheadTargets,
+    ...read.dethrone.tailTargets,
+  ]);
+  if (read.escape.relegation === 'safety' && !labels.includes(ESCAPE_RELEGATION_LABEL)) labels.push(ESCAPE_RELEGATION_LABEL);
+  return labels;
+}
+
+/** Names a target place on either side of the fixture, or says there is none. */
+export function fixtureTargetNote(a: SingayeRead | null, b: SingayeRead | null): string {
+  const lines = [a, b].flatMap((read) => {
+    if (!read) return [];
+    const labels = involvedTargetLabels(read);
+    if (labels.length === 0) return [];
+    return [`${read.team.name} · ${labels.join(', ')}`];
+  });
+  if (lines.length === 0) return 'No target position';
+  return `Target position · ${lines.join(' · ')}`;
+}
+
+export function formatImportanceValue(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
 
 export const PUSH_FACTOR_LABEL: Record<PushFactorKind, string> = {
   dethrone: 'Dethrone',
