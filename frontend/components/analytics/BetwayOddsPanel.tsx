@@ -51,12 +51,14 @@ function PriceButton({
   selection,
   price,
   onAddLeg,
+  selectedLegs = [],
 }: {
   event: BetwayEvent;
   label: string;
   selection: string;
   price: number | null;
   onAddLeg?: (leg: BetSlipLeg) => void;
+  selectedLegs?: readonly BetSlipLeg[];
 }) {
   const available = event.market_open && price != null;
   const market = event.markets.find((candidate) =>
@@ -65,11 +67,13 @@ function PriceButton({
   const outcome = market?.selections.find((candidate) =>
     candidate.name.trim().toLowerCase() === selection.trim().toLowerCase(),
   );
+  const selected = market && outcome ? selectedLegs.some((leg) => leg.betwayLeg?.eventId === event.provider_event_id &&
+    leg.betwayLeg.marketId === market.market_id && leg.betwayLeg.outcomeId === outcome.outcome_id) : false;
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`Add ${event.home_team} versus ${event.away_team}, ${selection} at ${odds(price)} to bet slip`}
-      accessibilityState={{ disabled: !available }}
+      accessibilityState={{ disabled: !available, selected }}
       disabled={!available}
       onPress={() => {
         if (!available || !onAddLeg || price == null) return;
@@ -96,11 +100,12 @@ function PriceButton({
       }}
       style={({ pressed }) => [
         styles.price,
+        selected && styles.selectedPrice,
         !available && styles.priceDisabled,
         pressed && styles.pricePressed,
       ]}>
-      <Text style={styles.priceLabel}>{label}</Text>
-      <Text style={styles.priceValue}>{odds(price)}</Text>
+      <Text style={[styles.priceLabel, selected && styles.selectedText]}>{label}</Text>
+      <Text style={[styles.priceValue, selected && styles.selectedText]}>{odds(price)}</Text>
     </Pressable>
   );
 }
@@ -111,22 +116,26 @@ function MarketSelectionButton({
   selection,
   group,
   onAddLeg,
+  selectedLegs = [],
 }: {
   event: BetwayEvent;
   market: BetwayMarket;
   selection: BetwayMarketSelection;
   group: string;
   onAddLeg?: (leg: BetSlipLeg) => void;
+  selectedLegs?: readonly BetSlipLeg[];
 }) {
   const available = event.fixture_status === 'active' && market.open && selection.available && selection.odds != null;
   const marketName = market.line == null || market.name.includes(String(market.line))
     ? market.name
     : `${market.name} ${market.line}`;
+  const selected = selectedLegs.some((leg) => leg.betwayLeg?.eventId === event.provider_event_id &&
+    leg.betwayLeg.marketId === market.market_id && leg.betwayLeg.outcomeId === selection.outcome_id);
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`Add ${event.home_team} versus ${event.away_team}, ${marketName}, ${selection.name} at ${odds(selection.odds)} to bet slip`}
-      accessibilityState={{ disabled: !available }}
+      accessibilityState={{ disabled: !available, selected }}
       disabled={!available}
       onPress={() => {
         if (!available || !onAddLeg || selection.odds == null) return;
@@ -153,16 +162,17 @@ function MarketSelectionButton({
       }}
       style={({ pressed }) => [
         styles.marketSelection,
+        selected && styles.selectedPrice,
         !available && styles.priceDisabled,
         pressed && styles.pricePressed,
       ]}>
-      <Text style={styles.marketSelectionName}>{selection.name}</Text>
-      <Text style={styles.priceValue}>{odds(selection.odds)}</Text>
+      <Text style={[styles.marketSelectionName, selected && styles.selectedText]}>{selection.name}</Text>
+      <Text style={[styles.priceValue, selected && styles.selectedText]}>{odds(selection.odds)}</Text>
     </Pressable>
   );
 }
 
-function MoreMarkets({ event, onAddLeg }: { event: BetwayEvent; onAddLeg?: (leg: BetSlipLeg) => void }) {
+function MoreMarkets({ event, onAddLeg, selectedLegs = [] }: { event: BetwayEvent; onAddLeg?: (leg: BetSlipLeg) => void; selectedLegs?: readonly BetSlipLeg[] }) {
   const [expanded, setExpanded] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState('Main');
   const [responses, setResponses] = useState<Record<string, BetwayEventMarkets>>({});
@@ -255,6 +265,7 @@ function MoreMarkets({ event, onAddLeg }: { event: BetwayEvent; onAddLeg?: (leg:
                   selection={selection}
                   group={selectedGroup}
                   onAddLeg={onAddLeg}
+                  selectedLegs={selectedLegs}
                 />
               ))}
             </View>
@@ -264,7 +275,7 @@ function MoreMarkets({ event, onAddLeg }: { event: BetwayEvent; onAddLeg?: (leg:
   );
 }
 
-export default function BetwayOddsPanel({ onAddLeg }: { onAddLeg?: (leg: BetSlipLeg) => void }) {
+export default function BetwayOddsPanel({ onAddLeg, selectedLegs = [] }: { onAddLeg?: (leg: BetSlipLeg) => void; selectedLegs?: readonly BetSlipLeg[] }) {
   const narrow = useWindowDimensions().width < 720;
   const hunt = useBetwayHunt();
   const snapshot = hunt.snapshot;
@@ -382,7 +393,7 @@ export default function BetwayOddsPanel({ onAddLeg }: { onAddLeg?: (leg: BetSlip
         </View>
       ) : null}
 
-      <BookmakerFixtures fixtures={fixtures} loadMarkets={async (id) => {
+      <BookmakerFixtures fixtures={fixtures} selectedLegs={selectedLegs} onToggleLeg={onAddLeg} loadMarkets={async (id) => {
         const event = snapshot?.currentEvents.find((item) => item.provider_event_id === id);
         if (!event) throw new Error('Betway fixture is no longer listed.');
         const response = await fetchBetwayEventMarkets(id, 'All');
@@ -411,11 +422,11 @@ export default function BetwayOddsPanel({ onAddLeg }: { onAddLeg?: (leg: BetSlip
               </Text>
             </View>
             <View style={styles.prices}>
-              <PriceButton event={event} label="1" selection={event.home_team} price={event.odds_home} onAddLeg={onAddLeg} />
-              <PriceButton event={event} label="X" selection="Draw" price={event.odds_draw} onAddLeg={onAddLeg} />
-              <PriceButton event={event} label="2" selection={event.away_team} price={event.odds_away} onAddLeg={onAddLeg} />
+              <PriceButton event={event} label="1" selection={event.home_team} price={event.odds_home} onAddLeg={onAddLeg} selectedLegs={selectedLegs} />
+              <PriceButton event={event} label="X" selection="Draw" price={event.odds_draw} onAddLeg={onAddLeg} selectedLegs={selectedLegs} />
+              <PriceButton event={event} label="2" selection={event.away_team} price={event.odds_away} onAddLeg={onAddLeg} selectedLegs={selectedLegs} />
             </View>
-            <MoreMarkets event={event} onAddLeg={onAddLeg} />
+            <MoreMarkets event={event} onAddLeg={onAddLeg} selectedLegs={selectedLegs} />
           </View>
         ))}
         {snapshot && snapshot.currentEvents.length > MAX_VISIBLE_FIXTURES ? (
@@ -441,6 +452,8 @@ function betwayLifecycleExplanation(state: string): string {
 }
 
 const styles = StyleSheet.create({
+  selectedPrice: { backgroundColor: '#189F84', borderColor: '#FFD43B', borderWidth: 2 },
+  selectedText: { color: '#FFFFFF' },
   container: { width: '100%', gap: spacing.lg },
   intro: { fontFamily: fonts.body, fontSize: 14, lineHeight: 21, color: theme.textMuted },
   statusCard: { padding: spacing.lg, borderWidth: 1, borderColor: theme.accentBlue, borderRadius: layout.borderRadius, backgroundColor: theme.surface },

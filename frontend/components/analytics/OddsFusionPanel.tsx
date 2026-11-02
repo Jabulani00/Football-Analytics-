@@ -1,3 +1,4 @@
+import { isBookmakerSelected } from '@/services/bookmakerSelection';
 import BookmakerFixtures from '@/components/analytics/BookmakerFixtures';
 import { hollywoodFixture } from '@/services/bookmakerFixtures';
 import { fetchEventDetail } from '@/services/hollywoodbets';
@@ -119,12 +120,14 @@ function fromFusion(row: FusionRow): DisplayRow {
 export default function OddsFusionPanel({
   live,
   onAddLeg,
+  selectedLegs = [],
 }: {
+  selectedLegs?: readonly BetSlipLeg[];
   live: HollywoodPopularOddsState;
   onAddLeg: (leg: BetSlipLeg) => void;
 }) {
   const [showModel, setShowModel] = useState(false);
-  const fixtures = useMemo(() => live.events.map((event) => hollywoodFixture(event, live.observedAt)), [live.events, live.observedAt]);
+  const fixtures = useMemo(() => live.events.map((event) => hollywoodFixture(event, live.observedAt, live.tournamentId != null && live.categoryId != null ? { tournamentId: live.tournamentId, tournamentName: live.source?.tournamentName ?? event.tournament, countryId: live.categoryId } : undefined)), [live.events, live.observedAt, live.tournamentId, live.categoryId, live.source?.tournamentName]);
   const [query, setQuery] = useState('');
   const [market, setMarket] = useState('');
   const [page, setPage] = useState(0);
@@ -139,10 +142,10 @@ export default function OddsFusionPanel({
 
   return (
     <View style={styles.container}>
-      <BookmakerFixtures key={`${live.categoryId}-${live.tournamentId}`} showLocationFilters={false} fixtures={fixtures} loadMarkets={async (id) => {
+      <BookmakerFixtures key={`${live.categoryId}-${live.tournamentId}`} showLocationFilters={false} fixtures={fixtures} selectedLegs={selectedLegs} onToggleLeg={onAddLeg} loadMarkets={async (id) => {
         const event = await fetchEventDetail(Number(id));
         if (!event) throw new Error('This fixture is no longer offered by Hollywoodbets.');
-        return hollywoodFixture(event, new Date().toISOString());
+        return hollywoodFixture(event, new Date().toISOString(), live.tournamentId != null && live.categoryId != null ? { tournamentId: live.tournamentId, tournamentName: live.source?.tournamentName ?? event.tournament, countryId: live.categoryId } : undefined);
       }} />
       <Pressable accessibilityRole="button" accessibilityState={{ expanded: showModel }} onPress={() => setShowModel((value) => !value)}>
         <Text style={styles.sourceNote}>{showModel ? 'Hide model comparison and slip tools' : 'Show model comparison and slip tools'}</Text>
@@ -224,8 +227,8 @@ export default function OddsFusionPanel({
                 </Text>
               )}
               {row.betSlipLeg ? (
-                <Pressable onPress={() => onAddLeg(row.betSlipLeg as BetSlipLeg)} style={styles.addBtn}>
-                  <Text style={styles.addText}>+ SLIP</Text>
+                <Pressable onPress={() => onAddLeg(row.betSlipLeg as BetSlipLeg)} style={[styles.addBtn, isBookmakerSelected(selectedLegs, row.betSlipLeg) && styles.selectedSlip]}>
+                  <Text style={styles.addText}>{isBookmakerSelected(selectedLegs, row.betSlipLeg) ? 'SELECTED' : '+ SLIP'}</Text>
                 </Pressable>
               ) : null}
             </View>
@@ -295,6 +298,7 @@ export default function OddsFusionPanel({
 }
 
 const styles = StyleSheet.create({
+  selectedSlip: { backgroundColor: '#189F84', borderColor: '#FFD43B', borderWidth: 2 },
   filters: { width: '100%', maxWidth: 900, flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md,
     alignItems: 'center', justifyContent: 'center', marginBottom: spacing.md },
   search: { flexGrow: 1, minWidth: 220, padding: spacing.md, color: theme.textPrimary,

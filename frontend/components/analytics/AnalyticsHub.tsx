@@ -89,11 +89,11 @@ function PanelForTab({
     case 'strategies':
       return <StrategiesPanel live={live} onAddLeg={slip.addLeg} />;
     case 'odds':
-      return <OddsFusionPanel live={live} onAddLeg={slip.addLeg} />;
+      return <OddsFusionPanel live={live} onAddLeg={slip.toggleLeg} selectedLegs={slip.legs} />;
     case 'hollywood':
-      return <HollywoodOddsPanel onAddLeg={slip.addLeg} />;
+      return <HollywoodOddsPanel onAddLeg={slip.toggleLeg} selectedLegs={slip.legs} />;
     case 'betway':
-      return <BetwayOddsPanel onAddLeg={slip.addLeg} />;
+      return <BetwayOddsPanel onAddLeg={slip.toggleLeg} selectedLegs={slip.legs} />;
     case 'betslip':
       return <BetSlipPanel legs={slip.legs} onRemove={slip.removeLeg} onClear={slip.clear} />;
   }

@@ -1,5 +1,6 @@
+import type { BetSlipLeg } from '@/types/analytics';
 /** Stakeholder rules use website decimal prices, never probabilities or de-vigged prices. */
-export type Price = { name: string; odds: number | null; open: boolean };
+export type Price = { name: string; odds: number | null; open: boolean; betSlipLeg?: BetSlipLeg };
 export type BookMarket = { id: string; name: string; line?: number | null; selections: Price[] };
 export type BookFixture = {
   id: string; bookmaker: 'Hollywoodbets' | 'Betway'; name: string; country: string;

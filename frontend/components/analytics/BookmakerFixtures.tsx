@@ -1,12 +1,30 @@
+import { isBookmakerSelected } from '@/services/bookmakerSelection';
+import type { BetSlipLeg } from '@/types/analytics';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import FilterDropdown from '@/components/shared/FilterDropdown';
-import { assessPair, assessTeams, filterBookFixtures, opposingPairs, type BookFixture, type FixtureFilters } from '@/services/bookmakerClassification';
+import { assessPair, assessTeams, filterBookFixtures, opposingPairs, type BookFixture, type FixtureFilters, type Price } from '@/services/bookmakerClassification';
 import { fonts, spacing, theme } from '@/styles/theme';
 
 const EMPTY: FixtureFilters = { query: '', country: '', competition: '', group: '', orientation: '', category: '', preference: '', side: '' };
 const price = (value: number | null) => value == null ? 'Unavailable' : String(value);
 const time = (value: string) => Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleString() : value;
+export function BookmakerSelectionButton({ selection, label, selectedLegs, onToggleLeg }: {
+  selection: Price; label?: string; selectedLegs: readonly BetSlipLeg[]; onToggleLeg?: (leg: BetSlipLeg) => void;
+}) {
+  const leg = selection.betSlipLeg;
+  const selected = leg != null && isBookmakerSelected(selectedLegs, leg);
+  const available = selection.open && selection.odds != null && Number.isFinite(selection.odds) && selection.odds >= 1 && leg != null && onToggleLeg != null;
+  return <Pressable accessibilityRole="button"
+    accessibilityLabel={`${selected ? 'Remove' : 'Add'} ${label ?? selection.name} at ${price(selection.odds)} ${selected ? 'from' : 'to'} bet slip`}
+    accessibilityState={{ selected, disabled: !available }} disabled={!available}
+    onPress={() => { if (available && leg) onToggleLeg?.(leg); }}
+    style={({ pressed }) => [styles.selectionButton, selected && styles.selectedButton, !available && styles.disabledButton, pressed && styles.pressedButton]}>
+    <Text style={[styles.text, selected && styles.selectedText]}>{label ?? selection.name}</Text>
+    <Text style={[styles.heading, selected && styles.selectedText]}>{price(selection.odds)}{selected ? '  [Selected]' : ''}</Text>
+    {!selection.open ? <Text style={styles.note}>Unavailable</Text> : null}
+  </Pressable>;
+}
 export function BookmakerAssessment({ fixture }: { fixture: BookFixture }) {
   const result = assessTeams(fixture.home, fixture.away);
   return <View style={styles.assessment}>
@@ -21,7 +39,10 @@ export function BookmakerAssessment({ fixture }: { fixture: BookFixture }) {
     </> : <Text style={styles.text}>Unavailable - both home and away prices must be open and valid.</Text>}
   </View>;
 }
-function FixtureCard({ fixture, loadMarkets }: { fixture: BookFixture; loadMarkets: (id: string) => Promise<BookFixture> }) {
+function FixtureCard({ fixture, loadMarkets, selectedLegs, onToggleLeg }: {
+  fixture: BookFixture; loadMarkets: (id: string) => Promise<BookFixture>;
+  selectedLegs: readonly BetSlipLeg[]; onToggleLeg?: (leg: BetSlipLeg) => void;
+}) {
   const [expanded, setExpanded] = useState(false);
   const [detail, setDetail] = useState<BookFixture | null>(null);
   const [loading, setLoading] = useState(false);
@@ -43,10 +64,10 @@ function FixtureCard({ fixture, loadMarkets }: { fixture: BookFixture; loadMarke
   return <View style={styles.card}>
     <Text style={styles.heading}>{fixture.bookmaker} - {fixture.name}</Text>
     <Text style={styles.text}>{[fixture.country, fixture.competition].filter(Boolean).join(' / ')} / {time(fixture.kickoff)}</Text>
-    <View style={styles.row}>{(['home', 'draw', 'away'] as const).map((side) => <View key={side} style={styles.price}>
-      <Text style={styles.text}>{side.toUpperCase()} - {fixture[side].name}</Text>
-      <Text style={styles.heading}>{price(fixture[side].odds)}{fixture[side].open ? '' : ' (unavailable)'}</Text>
-    </View>)}</View>
+    <View style={styles.row}>{(['home', 'draw', 'away'] as const).map((side) =>
+      <BookmakerSelectionButton key={side} selection={fixture[side]} label={`${side === 'home' ? '1' : side === 'draw' ? 'X' : '2'} - ${fixture[side].name}`}
+        selectedLegs={selectedLegs} onToggleLeg={onToggleLeg} />
+    )}</View>
     <BookmakerAssessment fixture={fixture} />
     <Text style={styles.note}>Prices observed: {fixture.observedAt ? time(fixture.observedAt) : 'Time unavailable'}. Draw excluded from classification.</Text>
     <Pressable accessibilityRole="button" accessibilityState={{ expanded }} disabled={loading}
@@ -59,9 +80,9 @@ function FixtureCard({ fixture, loadMarkets }: { fixture: BookFixture; loadMarke
       {detail.markets.length === 0 ? <Text style={styles.text}>No markets returned by the bookmaker.</Text> : null}
       {detail.markets.map((market) => <View key={market.id} style={styles.assessment}>
         <Text style={styles.heading}>{market.name}{market.line != null ? ` / Line ${market.line}` : ''}</Text>
-        {market.selections.map((selection, index) => <Text key={index} style={styles.text}>
-          {selection.name}: {price(selection.odds)}{selection.open ? '' : ' (unavailable)'}
-        </Text>)}
+        <View style={styles.row}>{market.selections.map((selection, index) =>
+          <BookmakerSelectionButton key={selection.betSlipLeg?.id ?? index} selection={selection} selectedLegs={selectedLegs} onToggleLeg={onToggleLeg} />
+        )}</View>
         {opposingPairs(market).map((pair) => {
           const assessment = pair.second ? assessPair(pair.first, pair.second) : null;
           return <Text key={pair.label} style={styles.note}>{pair.label}: {assessment
@@ -73,8 +94,9 @@ function FixtureCard({ fixture, loadMarkets }: { fixture: BookFixture; loadMarke
     </> : null}
   </View>;
 }
-export default function BookmakerFixtures({ fixtures, loadMarkets, showLocationFilters = true }: {
+export default function BookmakerFixtures({ fixtures, loadMarkets, showLocationFilters = true, selectedLegs = [], onToggleLeg }: {
   fixtures: BookFixture[]; loadMarkets: (id: string) => Promise<BookFixture>; showLocationFilters?: boolean;
+  selectedLegs?: readonly BetSlipLeg[]; onToggleLeg?: (leg: BetSlipLeg) => void;
 }) {
   const [filters, setFilters] = useState<FixtureFilters>(EMPTY);
   const [page, setPage] = useState(0);
@@ -102,7 +124,7 @@ export default function BookmakerFixtures({ fixtures, loadMarkets, showLocationF
     <Pressable accessibilityRole="button" onPress={() => { setFilters(EMPTY); setPage(0); }}><Text style={styles.heading}>Clear filters</Text></Pressable>
     <Text style={styles.note}>{filtered.length} matching fixtures / {fixtures.length} returned. Page {current + 1} of {pages}</Text>
     {filtered.length === 0 ? <Text style={styles.text}>No fixtures match these filters.</Text> : null}
-    {filtered.slice(current * 10, (current + 1) * 10).map((fixture) => <FixtureCard key={`${fixture.bookmaker}-${fixture.id}`} fixture={fixture} loadMarkets={loadMarkets} />)}
+    {filtered.slice(current * 10, (current + 1) * 10).map((fixture) => <FixtureCard key={`${fixture.bookmaker}-${fixture.id}`} fixture={fixture} loadMarkets={loadMarkets} selectedLegs={selectedLegs} onToggleLeg={onToggleLeg} />)}
     <View style={styles.row}>
       <Pressable accessibilityRole="button" disabled={current === 0} onPress={() => setPage(current - 1)}><Text style={styles.heading}>Previous</Text></Pressable>
       <Pressable accessibilityRole="button" disabled={current + 1 >= pages} onPress={() => setPage(current + 1)}><Text style={styles.heading}>Next</Text></Pressable>
@@ -110,6 +132,13 @@ export default function BookmakerFixtures({ fixtures, loadMarkets, showLocationF
   </View>;
 }
 const styles = StyleSheet.create({
+  selectionButton: { flexGrow: 1, minWidth: 100, flexBasis: 140, flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between', gap: spacing.sm, padding: spacing.sm, backgroundColor: theme.surfaceMuted,
+    borderWidth: 2, borderColor: 'transparent', borderRadius: 6 },
+  selectedButton: { backgroundColor: '#189F84', borderColor: '#FFD43B' },
+  selectedText: { color: '#FFFFFF' },
+  disabledButton: { opacity: 0.5 },
+  pressedButton: { opacity: 0.8 },
   container: { width: '100%', gap: spacing.sm, marginBottom: spacing.lg },
   card: { width: '100%', padding: spacing.md, backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.border, borderRadius: 10, gap: spacing.sm },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
