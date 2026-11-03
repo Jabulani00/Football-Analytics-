@@ -904,6 +904,81 @@ export function summarize(results: StrategyResult[]): StrategySummary {
   return { teams: results.length, leagues: leagues.size, green, yellow, red };
 }
 
+/* ----------------------------------------------------------------- quick strategy presets */
+
+export type PresetCondition = { dimensionId: string; methodId: string; options: Record<string, string> };
+export type StrategyPreset = { id: string; label: string; note: string; period: StrategyPeriod; logic: StrategyLogic; conditions: PresetCondition[] };
+
+/** A Stat-filter Limit (≥/≤) condition — the shape most presets use. */
+function sfLimit(methodId: string, value: number, o: { family?: string; window?: string; cmp?: 'gte' | 'lte' } = {}): PresetCondition {
+  return {
+    dimensionId: 'statfilter',
+    methodId,
+    options: { family: o.family ?? 'ordinary', window: o.window ?? 'season', mode: 'limit', level: ALL, cmp: o.cmp ?? 'gte', value: String(value) },
+  };
+}
+
+/**
+ * Ready-made strategies, ported from the Method 3 "Leaky Leaky" family
+ * (utils/strategyFilter.ts) plus a few more. Expressed as Stat-filter limits at a
+ * single global period/venue (the builder's model), so one click fills the build.
+ */
+export const STRATEGY_PRESETS: StrategyPreset[] = [
+  {
+    id: 'leaky', label: 'Leaky Leaky · BTTS & goals', note: 'Both teams concede often and both score.',
+    period: 'overall', logic: 'and',
+    conditions: [sfLimit('conceding_05', 80, { window: 'last10' }), sfLimit('btts_yes', 55), sfLimit('over25', 50)],
+  },
+  {
+    id: 'over25', label: 'Goals galore · Over 2.5', note: 'Free-scoring and leaky over the last 10.',
+    period: 'overall', logic: 'and',
+    conditions: [sfLimit('sc_avg', 1.5, { window: 'last10' }), sfLimit('conceding_05', 80, { window: 'last10' })],
+  },
+  {
+    id: 'secondhalf', label: '2nd-half goals', note: 'Goals arrive after the break.',
+    period: 'secondhalf', logic: 'and',
+    conditions: [sfLimit('over15', 55), sfLimit('scoring_05', 70, { window: 'last5' })],
+  },
+  {
+    id: 'tight', label: 'Tight & low-scoring', note: 'Unders and clean sheets.',
+    period: 'overall', logic: 'and',
+    conditions: [sfLimit('under25', 55), sfLimit('cs_pct', 40)],
+  },
+  {
+    id: 'stronghome', label: 'Strong at home', note: 'Wins and scores at home.',
+    period: 'home', logic: 'and',
+    conditions: [sfLimit('w_pct', 55), sfLimit('sc_pct', 80)],
+  },
+  {
+    id: 'bttsboth', label: 'BTTS both halves', note: 'Both teams score in each half.',
+    period: 'overall', logic: 'and',
+    conditions: [sfLimit('btts_both_halves', 40, { family: 'ftonly' })],
+  },
+];
+
+/* ----------------------------------------------------------------- match strength & grade share */
+
+/** How much of the strategy a result satisfies — matched vs total conditions. */
+export function matchStrength(result: StrategyResult, total: number): { matched: number; total: number; pct: number } {
+  const matched = result.conditions.length;
+  return { matched, total, pct: total > 0 ? Math.round((matched / total) * 100) : 0 };
+}
+
+export type LeagueGradeShare = { total: number; byColor: Record<ResultColor, number>; byGrade: Record<string, number> };
+/** Per competition, the share of each colour / grade across that league's qualifiers. */
+export function gradeShareByLeague(results: StrategyResult[]): Map<string, LeagueGradeShare> {
+  const m = new Map<string, LeagueGradeShare>();
+  for (const r of results) {
+    let s = m.get(r.competition);
+    if (!s) { s = { total: 0, byColor: { green: 0, yellow: 0, red: 0, none: 0 }, byGrade: {} }; m.set(r.competition, s); }
+    s.total += 1;
+    s.byColor[r.color] += 1;
+    const g = r.conditions.find((c) => c.grade)?.grade;
+    if (g) s.byGrade[g] = (s.byGrade[g] ?? 0) + 1;
+  }
+  return m;
+}
+
 /* ----------------------------------------------------------------- fixture recommendations */
 
 /** League home/away goal baseline from the season's completed fixtures. */
@@ -949,7 +1024,7 @@ export function recommendFixture(
   return { prediction, rec };
 }
 
-export type ResultFilters = { league: string; dimension: string; color: string; minGames: number };
+export type ResultFilters = { league: string; dimension: string; color: string; minGames: number; minMatch?: number; total?: number };
 export function filterResults(results: StrategyResult[], f: ResultFilters): StrategyResult[] {
   return results.filter((r) => {
     if (f.league !== ALL && r.competition !== f.league) return false;
@@ -958,6 +1033,9 @@ export function filterResults(results: StrategyResult[], f: ResultFilters): Stra
     if (f.minGames > 0) {
       const samples = r.conditions.map((c) => c.sample).filter((s): s is number => s != null);
       if (samples.length && Math.min(...samples) < f.minGames) return false;
+    }
+    if (f.minMatch && f.minMatch > 0 && f.total && f.total > 0) {
+      if ((r.conditions.length / f.total) * 100 < f.minMatch) return false;
     }
     return true;
   });
