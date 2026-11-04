@@ -16,12 +16,13 @@ import { clientStaleTime } from '@/services/oddAlertsCachePolicy';
 import { buildLeagueStatsLive } from '@/services/statsBuilder';
 import { nextFixtureFor, type UpcomingLite } from '@/utils/statsGrading';
 import {
-  DIMENSIONS, MATCH_SCOPES, STRATEGY_PRESETS, buildStrategyConfig, conditionLabel, evaluateStrategy, filterResults,
-  getDimension, gradeShareByLeague, matchStrength, needsExport, needsFixtures, periodFrom, periodLabel,
-  resultBackground, resultColour, resultsByTeam, splitPeriod, summarize, teamKeyOf,
-  type Condition, type Dimension, type LeagueBundle, type LeagueGradeShare, type MatchScope,
+  DIMENSIONS, FIXTURE_SIDES, STRATEGY_PRESETS, buildStrategyConfig, conditionLabel, conditionMembership,
+  evaluateFixtureSides, evaluateStrategy, filterResults, fixtureSideLabel, getDimension, gradeShareByLeague,
+  matchStrength, needsExport, needsFixtures, periodFrom, periodLabel, resultBackground, resultColour,
+  splitPeriod, summarize,
+  type CondMembership, type Condition, type Dimension, type FixtureSide, type LeagueBundle, type LeagueGradeShare,
   type ResultColor, type SavedStrategy, type StatHalf, type StatScope, type StrategyLogic, type StrategyPeriod,
-  type StrategyPreset, type StrategyResult,
+  type StrategyPreset, type StrategyResult, type TeamEval,
 } from '@/utils/strategyBuilder';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
@@ -62,10 +63,8 @@ const COLOR_GROUPS: { value: ResultColor; label: string }[] = [
   { value: 'none', label: 'Ungraded' },
 ];
 
-/** A qualifying fixture: the matched side(s) and the strongest colour across them. */
-type FxRow = { fx: Fixture; home?: StrategyResult; away?: StrategyResult; color: ResultColor };
-const COLOR_RANK: Record<ResultColor, number> = { green: 3, yellow: 2, red: 1, none: 0 };
-const strongerColor = (cs: ResultColor[]): ResultColor => cs.reduce<ResultColor>((best, c) => (COLOR_RANK[c] > COLOR_RANK[best] ? c : best), 'none');
+/** A qualifying fixture: the conditions each team satisfied, and the strongest colour. */
+type FxRow = { fx: Fixture; homeEvals: TeamEval[]; awayEvals: TeamEval[]; color: ResultColor };
 /** The three-colour split for the results — by the matched side's strongest grade. */
 const COLOR_SECTIONS: { color: ResultColor; label: string }[] = [
   { color: 'green', label: 'GREEN · strongest' },
@@ -90,14 +89,15 @@ export default function StrategyBuilderPanel() {
   // ---- query: the strategy ----
   const [conditions, setConditions] = useState<Condition[]>([]);
   const [logic, setLogic] = useState<StrategyLogic>('and');
-  // Global FT/1H/2H + Overall/Home/Away panel — every condition is read at this period/venue.
+  // Read-context for NEW conditions: period (FT/1H/2H) × venue (Overall/Home/Away) × fixture side.
+  // Each added condition captures these, so different conditions can read differently.
   const [gHalf, setGHalf] = useState<StatHalf>('ft');
   const [gScope, setGScope] = useState<StatScope>('overall');
+  const [gSide, setGSide] = useState<FixtureSide>('either');
   const gPeriod = useMemo(() => periodFrom(gHalf, gScope), [gHalf, gScope]);
 
   // ---- result mode + filters ----
   const [resultMode, setResultMode] = useState<'teams' | 'fixtures'>('teams');
-  const [matchScope, setMatchScope] = useState<MatchScope>('either');
   // Teams-mode historical success rate: the market to score qualifying teams against (ALL = off).
   const [target, setTarget] = useState<string>(ALL);
 
@@ -191,28 +191,28 @@ export default function StrategyBuilderPanel() {
     || (exportEnabled > 0 && exportSettled < exportEnabled)
     || (fixtureEnabled > 0 && fixtureSettled < fixtureEnabled);
 
-  // ---- results ----
-  const results = useMemo(() => evaluateStrategy(bundles, conditions, logic, gPeriod), [bundles, conditions, logic, gPeriod]);
+  // ---- results (Teams mode) — each condition at its own period ----
+  const results = useMemo(() => evaluateStrategy(bundles, conditions, logic), [bundles, conditions, logic]);
 
-  // ---- fixtures mode: upcoming fixtures whose side(s) qualify, with their grades ----
+  // ---- fixtures mode: per-condition side targeting (home-team vs away-team attributes) ----
+  const membership = useMemo(
+    () => (resultMode === 'fixtures' && conditions.length ? conditionMembership(bundles, conditions) : null),
+    [resultMode, bundles, conditions],
+  );
   const fixtureRows = useMemo(() => {
-    if (resultMode !== 'fixtures' || !conditions.length) return [] as FxRow[];
-    const idx = resultsByTeam(results);
+    if (resultMode !== 'fixtures' || !conditions.length || !membership) return [] as FxRow[];
     const leagueById = new Map(liveLeagues.map((l) => [l.id, l]));
     const rows: FxRow[] = [];
     for (const fx of up.fixtures) {
       const comp = leagueById.get(fx.competition.id);
       if (!comp) continue;
-      const home = idx.get(`${comp.name}::${teamKeyOf({ teamId: fx.home.id, team: fx.home.name })}`);
-      const away = idx.get(`${comp.name}::${teamKeyOf({ teamId: fx.away.id, team: fx.away.name })}`);
-      const pass = matchScope === 'home' ? !!home : matchScope === 'away' ? !!away : matchScope === 'both' ? !!home && !!away : !!home || !!away;
-      if (!pass) continue;
-      const color = strongerColor([home?.color, away?.color].filter((c): c is ResultColor => !!c));
-      rows.push({ fx, home, away, color });
+      const r = evaluateFixtureSides(membership, conditions, logic, comp.name, { id: fx.home.id, name: fx.home.name }, { id: fx.away.id, name: fx.away.name });
+      if (!r) continue;
+      rows.push({ fx, homeEvals: r.homeEvals, awayEvals: r.awayEvals, color: r.color });
     }
     rows.sort((a, b) => a.fx.kickoffUnix - b.fx.kickoffUnix);
     return rows;
-  }, [resultMode, up.fixtures, liveLeagues, results, conditions, matchScope]);
+  }, [resultMode, up.fixtures, liveLeagues, membership, conditions, logic]);
 
   // ---- result filters ----
   const [fLeague, setFLeague] = useState(ALL);
@@ -227,7 +227,7 @@ export default function StrategyBuilderPanel() {
   // Per-league grade distribution across the qualifiers, so each row can show its grade's share.
   const leagueShare = useMemo(() => gradeShareByLeague(results), [results]);
 
-  useEffect(() => setPage(1), [resultMode, conditions, logic, gPeriod, fLeague, fDimension, fColor, fMinGames, fMinMatch, matchScope, target]);
+  useEffect(() => setPage(1), [resultMode, conditions, logic, fLeague, fDimension, fColor, fMinGames, fMinMatch, target]);
 
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safe = Math.min(page, pages);
@@ -247,7 +247,7 @@ export default function StrategyBuilderPanel() {
   }, [resultMode, fixtureRows, results]);
   const dimensionOptions = useMemo(() => [{ value: ALL, label: 'All categories' }, ...[...new Set(conditions.map((c) => c.dimensionId))].map((id) => ({ value: id, label: getDimension(id)?.label ?? id }))], [conditions]);
 
-  const addCondition = (c: Condition) => { setConditions((cur) => [...cur, { ...c, period: gPeriod }]); setActiveId(null); };
+  const addCondition = (c: Condition) => { setConditions((cur) => [...cur, { ...c, period: gPeriod, side: gSide }]); setActiveId(null); };
   const removeCondition = (id: string) => { setConditions((cur) => cur.filter((c) => c.id !== id)); setActiveId(null); };
   const toggleNot = (id: string) => { setConditions((cur) => cur.map((c) => (c.id === id ? { ...c, not: !c.not } : c))); setActiveId(null); };
   const clearAll = () => { setConditions([]); setFLeague(ALL); setFDimension(ALL); setFColor(ALL); setFMinGames(0); setFMinMatch(0); setActiveId(null); };
@@ -255,9 +255,9 @@ export default function StrategyBuilderPanel() {
   // One-click preset: set the global period/venue, logic and conditions, then recompute live.
   const applyPreset = (p: StrategyPreset) => {
     const sp = splitPeriod(p.period);
-    setGHalf(sp.half); setGScope(sp.scope);
+    setGHalf(sp.half); setGScope(sp.scope); setGSide('either');
     setLogic(p.logic);
-    setConditions(p.conditions.map((c) => ({ id: `c${(CONDITION_SEQ += 1)}`, dimensionId: c.dimensionId, period: p.period, methodId: c.methodId, options: { ...c.options } })));
+    setConditions(p.conditions.map((c) => ({ id: `c${(CONDITION_SEQ += 1)}`, dimensionId: c.dimensionId, period: p.period, methodId: c.methodId, options: { ...c.options }, side: 'either' as FixtureSide })));
     setFLeague(ALL); setFDimension(ALL); setFColor(ALL); setFMinGames(0); setFMinMatch(0);
     setActiveId(null);
   };
@@ -265,7 +265,7 @@ export default function StrategyBuilderPanel() {
   // Save the current build (conditions + logic + global period + view), never its results.
   const commitSave = () => {
     if (!conditions.length) return;
-    const entry = save(draftName, buildStrategyConfig({ conditions, logic, period: gPeriod, resultMode, matchScope }));
+    const entry = save(draftName, buildStrategyConfig({ conditions, logic, resultMode }));
     setActiveId(entry.id);
     setDraftName('');
     setSaving(false);
@@ -275,11 +275,10 @@ export default function StrategyBuilderPanel() {
     const cfg = s.config;
     setConditions(cfg.conditions.map((c) => ({ ...c, id: `c${(CONDITION_SEQ += 1)}`, options: { ...c.options } })));
     setLogic(cfg.logic);
-    const sp = splitPeriod(cfg.period ?? 'overall');
+    const sp = splitPeriod(cfg.conditions[0]?.period ?? cfg.period ?? 'overall');
     setGHalf(sp.half); setGScope(sp.scope);
     setResultMode(cfg.resultMode);
-    setMatchScope(cfg.matchScope);
-    setFLeague(ALL); setFDimension(ALL); setFColor(ALL); setFMinGames(0);
+    setFLeague(ALL); setFDimension(ALL); setFColor(ALL); setFMinGames(0); setFMinMatch(0);
     setActiveId(s.id);
     setSaving(false);
   };
@@ -352,7 +351,21 @@ export default function StrategyBuilderPanel() {
             })}
           </View>
         </View>
+        <View style={styles.periodGroup}>
+          <Text style={styles.periodLabel}>Team (fixtures)</Text>
+          <View style={styles.segRow}>
+            {FIXTURE_SIDES.map(({ value, label }) => {
+              const on = gSide === value;
+              return (
+                <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => setGSide(value)} style={[styles.segBtn, on && styles.segBtnOn]}>
+                  <Text style={[styles.segText, on && styles.segTextOn]}>{label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
       </View>
+      <Text style={styles.readNote}>Each condition you add captures the Period · Venue · Team above, so set them per condition (e.g. Away team · 2nd half · Away games) before adding.</Text>
 
       {/* Result mode */}
       <View style={styles.modeRow}>
@@ -429,7 +442,7 @@ export default function StrategyBuilderPanel() {
             ? <Text style={styles.statusLive}>● {summary.teams} teams · {summary.leagues} leagues · {logic.toUpperCase()} of {conditions.length} condition{conditions.length > 1 ? 's' : ''}</Text>
             : <Text style={styles.statusMuted}>Add a condition to see the qualifying teams.</Text>
         ) : (
-          <Text style={styles.statusLive}>● {fxFiltered.length} qualifying fixtures{conditions.length > 0 ? ` · ${MATCH_SCOPES.find((s) => s.value === matchScope)?.label.toLowerCase()} matches the strategy` : ''}</Text>
+          <Text style={styles.statusLive}>● {fxFiltered.length} qualifying fixtures{conditions.length > 0 ? ' · home/away attributes matched' : ''}</Text>
         )}
       </View>
 
@@ -476,11 +489,8 @@ export default function StrategyBuilderPanel() {
           <View style={styles.filterCard}>
             <View style={[styles.filterRow, narrow && styles.filterCol]}>
               <FilterDropdown label="League" value={fLeague} options={leagueOptions} onChange={setFLeague} style={narrow ? styles.full : styles.flex} />
-              {conditions.length > 0 ? (
-                <FilterDropdown label="Applies to" value={matchScope} options={MATCH_SCOPES.map((s) => ({ value: s.value, label: s.label }))} onChange={(v) => setMatchScope(v as MatchScope)} style={narrow ? styles.full : styles.flex} />
-              ) : null}
             </View>
-            <Text style={styles.backtestNote}>Every upcoming fixture whose side(s) satisfy the strategy, showing the exact grade each feature qualified with. Read at {periodLabel(gPeriod)}.</Text>
+            <Text style={styles.backtestNote}>Every upcoming fixture whose home team meets the home-side conditions and away team the away-side ones, showing the exact grade each feature qualified with.</Text>
           </View>
           {conditions.length === 0 ? (
             <Text style={styles.empty}>Add a condition above to see the qualifying fixtures.</Text>
@@ -489,7 +499,7 @@ export default function StrategyBuilderPanel() {
           ) : (
             <>
               <PageControls page={fxSafe} pages={fxPages} total={fxFiltered.length} from={fxStart + 1} to={fxStart + fxVisible.length} onChange={setPage} />
-              <GradeFixtureTable rows={fxVisible} upcoming={upcoming} total={conditions.length} share={leagueShare} />
+              <GradeFixtureTable rows={fxVisible} />
               <PageControls page={fxSafe} pages={fxPages} total={fxFiltered.length} from={fxStart + 1} to={fxStart + fxVisible.length} onChange={setPage} />
             </>
           )}
@@ -813,7 +823,7 @@ function ResultCard({ result, upcoming, total, share }: { result: StrategyResult
 
 /** Fixtures as a table split into three grade colours; each row shows the matched
  *  side(s) and the exact grade each feature qualified with. Tap for the breakdown. */
-function GradeFixtureTable({ rows, upcoming, total, share }: { rows: FxRow[]; upcoming: UpcomingLite[]; total: number; share: Map<string, LeagueGradeShare> }) {
+function GradeFixtureTable({ rows }: { rows: FxRow[] }) {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const expanded = expandedId != null ? rows.find((r) => r.fx.id === expandedId) : undefined;
   return (
@@ -847,17 +857,17 @@ function GradeFixtureTable({ rows, upcoming, total, share }: { rows: FxRow[]; up
       {expanded ? (
         <View style={[styles.fxDetail, { borderColor: resultColour(expanded.color) }]}>
           <Text style={styles.fxDetailTitle}>{expanded.fx.home.name} vs {expanded.fx.away.name} · {expanded.fx.competition.name}</Text>
-          {expanded.home ? <ResultCard result={expanded.home} upcoming={upcoming} total={total} share={share.get(expanded.home.competition)} /> : null}
-          {expanded.away ? <ResultCard result={expanded.away} upcoming={upcoming} total={total} share={share.get(expanded.away.competition)} /> : null}
+          <SideEvals title={`Home team ✓ · ${expanded.fx.home.name}`} tint={theme.accentGreen} evals={expanded.homeEvals} />
+          <SideEvals title={`Away team ✓ · ${expanded.fx.away.name}`} tint={theme.accentBlue} evals={expanded.awayEvals} />
         </View>
       ) : null}
-      <Text style={styles.hint}>Grouped by the matched side's strongest grade. Tap a fixture for the full per-feature breakdown.</Text>
+      <Text style={styles.hint}>Grouped by the matched side's strongest grade. Tap a fixture to see which feature each team qualified on.</Text>
     </View>
   );
 }
 
 function GradeFixtureRow({ r, active, onPress }: { r: FxRow; active: boolean; onPress: () => void }) {
-  const { fx, home, away } = r;
+  const { fx, homeEvals, awayEvals } = r;
   return (
     <Pressable accessibilityRole="button" accessibilityState={{ expanded: active }} onPress={onPress} style={[styles.fxTRow, { backgroundColor: active ? theme.surfaceHover : resultBackground(r.color) }]}>
       <Text style={[styles.cKick, styles.fxCellMuted]} numberOfLines={2}>{kickoffLabel(fx.kickoffUnix, fx.kickoff)}</Text>
@@ -867,27 +877,50 @@ function GradeFixtureRow({ r, active, onPress }: { r: FxRow; active: boolean; on
       </View>
       <Text style={[styles.cLeague, styles.fxCellFaint]} numberOfLines={2}>{fx.competition.name}</Text>
       <View style={styles.cApplies}>
-        {home ? <Text style={[styles.matchTick, { color: theme.accentGreen }]} numberOfLines={1}>Home ✓</Text> : null}
-        {away ? <Text style={[styles.matchTick, { color: theme.accentBlue }]} numberOfLines={1}>Away ✓</Text> : null}
-        {!home && !away ? <Text style={styles.fxNone}>—</Text> : null}
+        {homeEvals.length ? <Text style={[styles.matchTick, { color: theme.accentGreen }]} numberOfLines={1}>Home ✓</Text> : null}
+        {awayEvals.length ? <Text style={[styles.matchTick, { color: theme.accentBlue }]} numberOfLines={1}>Away ✓</Text> : null}
+        {!homeEvals.length && !awayEvals.length ? <Text style={styles.fxNone}>—</Text> : null}
       </View>
       <View style={styles.cGrades}>
-        {home ? <GradeChips side="H" result={home} /> : null}
-        {away ? <GradeChips side="A" result={away} /> : null}
+        <GradeChips sideLabel="H" evals={homeEvals} />
+        <GradeChips sideLabel="A" evals={awayEvals} />
       </View>
     </Pressable>
   );
 }
 
-function GradeChips({ side, result }: { side: 'H' | 'A'; result: StrategyResult }) {
+function GradeChips({ sideLabel, evals }: { sideLabel: string; evals: TeamEval[] }) {
+  if (!evals.length) return null;
   return (
     <View style={styles.gradeChipsRow}>
-      {result.conditions.map((ev, i) => (
+      {evals.map((ev, i) => (
         <View key={i} style={[styles.gradeChip, { borderColor: resultColour(ev.color), backgroundColor: resultBackground(ev.color) }]}>
-          <Text style={[styles.gradeChipSide, { color: resultColour(ev.color) }]}>{side}</Text>
-          <Text style={styles.gradeChipTxt} numberOfLines={1}>{ev.feature}{ev.grade ? ` · ${ev.grade}` : ''}</Text>
+          <Text style={[styles.gradeChipSide, { color: resultColour(ev.color) }]}>{sideLabel}</Text>
+          <Text style={styles.gradeChipTxt} numberOfLines={1}>{periodLabel(ev.period)} · {ev.feature}{ev.grade ? ` · ${ev.grade}` : ''}</Text>
         </View>
       ))}
+    </View>
+  );
+}
+
+/** The conditions one fixture side satisfied, with period/venue/grade/reason. */
+function SideEvals({ title, tint, evals }: { title: string; tint: string; evals: TeamEval[] }) {
+  if (!evals.length) return null;
+  return (
+    <View style={styles.sideEvalsWrap}>
+      <Text style={[styles.sideEvalsTitle, { color: tint }]} numberOfLines={1}>{title}</Text>
+      <View style={styles.evalList}>
+        {evals.map((ev, i) => (
+          <View key={i} style={[styles.evalRow, { backgroundColor: resultBackground(ev.color) }]}>
+            <View style={styles.evalHead}>
+              <Text style={[styles.evalFeature, { color: resultColour(ev.color) }]} numberOfLines={1}>{periodLabel(ev.period)} · {ev.dimensionLabel} · {ev.feature}</Text>
+              {ev.grade ? <Text style={[styles.evalGrade, { color: resultColour(ev.color) }]}>{ev.grade}</Text> : null}
+            </View>
+            <Text style={styles.evalMeta}>{ev.method} · {ev.valueText}{ev.sample != null ? ` · ${ev.sample}g` : ''}</Text>
+            <Text style={styles.evalReason} numberOfLines={2}>{ev.reason}</Text>
+          </View>
+        ))}
+      </View>
     </View>
   );
 }
@@ -1172,4 +1205,9 @@ const styles = StyleSheet.create({
   // Self-explaining result lines
   resultStrength: { fontFamily: fonts.bodySemiBold, fontSize: 11, color: theme.accentBlue },
   resultShare: { fontFamily: fonts.body, fontSize: 11, lineHeight: 16, color: theme.textMuted },
+
+  // Read-context note + per-side fixture detail
+  readNote: { fontFamily: fonts.body, fontSize: 11, lineHeight: 16, color: theme.textMuted, marginBottom: spacing.sm },
+  sideEvalsWrap: { marginTop: spacing.sm, gap: 4 },
+  sideEvalsTitle: { fontFamily: fonts.bodySemiBold, fontSize: 13 },
 });

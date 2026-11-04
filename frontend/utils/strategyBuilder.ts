@@ -733,17 +733,31 @@ export function needsExport(conditions: { dimensionId: string }[]): boolean {
 
 /* ----------------------------------------------------------------- orchestration */
 
+/** Which team of the upcoming fixture a condition targets (Fixtures mode). */
+export type FixtureSide = 'either' | 'home' | 'away';
+export const FIXTURE_SIDES: { value: FixtureSide; label: string }[] = [
+  { value: 'either', label: 'Either team' },
+  { value: 'home', label: 'Home team' },
+  { value: 'away', label: 'Away team' },
+];
+export function fixtureSideLabel(s: FixtureSide | undefined): string {
+  return s === 'home' ? 'Home team' : s === 'away' ? 'Away team' : 'Either';
+}
+
 export type Condition = {
   id: string;
   dimensionId: string;
+  /** How the stat is read: FT/1H/2H × Overall/Home/Away (per condition). */
   period: StrategyPeriod;
   methodId: string;
   options: Record<string, string>;
+  /** Which fixture team must satisfy this (Fixtures mode); default 'either'. */
+  side?: FixtureSide;
   /** When true, a team matches this condition by NOT satisfying it (exclude). */
   not?: boolean;
 };
 
-/** How a strategy applies to a fixture's two sides. */
+/** How a strategy applies to a fixture's two sides (legacy coarse filter). */
 export type MatchScope = 'either' | 'home' | 'away' | 'both';
 export const MATCH_SCOPES: { value: MatchScope; label: string }[] = [
   { value: 'either', label: 'Either team' },
@@ -777,8 +791,9 @@ export function conditionLabel(cond: Condition): string {
       return o.options.find((x) => x.value === val)?.label;
     })
     .filter(Boolean);
-  // Period is global now (set by the FT/1H/2H + venue panel), so it is not shown per chip.
-  return `${cond.not ? 'NOT · ' : ''}${dim.label} → ${method}${opts.length ? ` · ${opts.join(' · ')}` : ''}`;
+  // Per-condition: show the fixture side, then the stat read (period/venue), then the method.
+  const sidePart = cond.side && cond.side !== 'either' ? `${fixtureSideLabel(cond.side)} · ` : '';
+  return `${cond.not ? 'NOT · ' : ''}${sidePart}${periodLabel(cond.period)} → ${dim.label} → ${method}${opts.length ? ` · ${opts.join(' · ')}` : ''}`;
 }
 
 /* ----------------------------------------------------------------- saved strategies */
@@ -792,9 +807,9 @@ export type SavedStrategyConfig = {
   conditions: Condition[];
   logic: StrategyLogic;
   /** Global FT/1H/2H + venue the whole strategy is read at (default 'overall'). */
+  /** Legacy global default period (new builds store period/side per condition). */
   period?: StrategyPeriod;
   resultMode: 'teams' | 'fixtures';
-  matchScope: MatchScope;
 };
 
 export type SavedStrategy = {
@@ -817,12 +832,10 @@ export function describeStrategy(cfg: SavedStrategyConfig): string {
   const body = conds.length
     ? `${cfg.logic.toUpperCase()} of ${conds.length}: ${conds.join(joiner)}`
     : 'No conditions yet';
-  const periodPart = `${periodLabel(cfg.period ?? 'overall')} · `;
   if (cfg.resultMode === 'fixtures') {
-    const scope = MATCH_SCOPES.find((s) => s.value === cfg.matchScope)?.label ?? cfg.matchScope;
-    return `${periodPart}Fixtures · grade qualification · ${scope}. ${body}`;
+    return `Fixtures · grade qualification · home/away targeting. ${body}`;
   }
-  return `${periodPart}Qualifying teams. ${body}`;
+  return `Qualifying teams. ${body}`;
 }
 
 /** The parts of the panel's live state that make up a saved strategy. */
@@ -830,9 +843,7 @@ export function buildStrategyConfig(s: SavedStrategyConfig): SavedStrategyConfig
   return {
     conditions: s.conditions.map((c) => ({ ...c, options: { ...c.options } })),
     logic: s.logic,
-    period: s.period ?? 'overall',
     resultMode: s.resultMode,
-    matchScope: s.matchScope,
   };
 }
 
@@ -850,7 +861,7 @@ function notEval(cond: Condition, info: { team: string; teamId: number | null; c
   };
 }
 
-export function evaluateStrategy(bundles: LeagueBundle[], conditions: Condition[], logic: StrategyLogic, period: StrategyPeriod = 'overall'): StrategyResult[] {
+export function evaluateStrategy(bundles: LeagueBundle[], conditions: Condition[], logic: StrategyLogic): StrategyResult[] {
   if (!conditions.length) return [];
   // Per condition: a membership set of globalKeys and the eval that proves it.
   const condSet = new Map<string, Set<string>>();
@@ -862,7 +873,7 @@ export function evaluateStrategy(bundles: LeagueBundle[], conditions: Condition[
     const em = new Map<string, TeamEval>();
     if (dim) {
       for (const bundle of bundles) {
-        const evals = dim.evaluate(bundle, { period, methodId: cond.methodId, options: cond.options });
+        const evals = dim.evaluate(bundle, { period: cond.period, methodId: cond.methodId, options: cond.options });
         for (const ev of evals) {
           if (!ev.qualifies) continue;
           const key = `${bundle.competition}::${teamKeyOf(ev)}`;
@@ -883,7 +894,7 @@ export function evaluateStrategy(bundles: LeagueBundle[], conditions: Condition[
     });
     const ok = logic === 'and' ? matched.length === conditions.length : matched.length >= 1;
     if (!ok) continue;
-    const evals = matched.map((c) => (c.not ? notEval(c, info, period) : condEval.get(c.id)!.get(key)!));
+    const evals = matched.map((c) => (c.not ? notEval(c, info, c.period) : condEval.get(c.id)!.get(key)!));
     results.push({ team: info.team, teamId: info.teamId, competition: info.competition, conditions: evals, color: strongestColor(evals.map((e) => e.color)) });
   }
   return results.sort((a, b) => COLOR_RANK[b.color] - COLOR_RANK[a.color] || a.team.localeCompare(b.team));
@@ -894,6 +905,73 @@ export function resultsByTeam(results: StrategyResult[]): Map<string, StrategyRe
   const m = new Map<string, StrategyResult>();
   for (const r of results) m.set(`${r.competition}::${teamKeyOf(r)}`, r);
   return m;
+}
+
+/* ----------------------------------------------------------------- per-side fixture evaluation */
+
+export type CondMembership = { set: Set<string>; evalByKey: Map<string, TeamEval> };
+/** Per condition, the teams that satisfy it (at the condition's own period) + the proving eval. */
+export function conditionMembership(bundles: LeagueBundle[], conditions: Condition[]): Map<string, CondMembership> {
+  const out = new Map<string, CondMembership>();
+  for (const cond of conditions) {
+    const dim = getDimension(cond.dimensionId);
+    const set = new Set<string>();
+    const evalByKey = new Map<string, TeamEval>();
+    if (dim) {
+      for (const bundle of bundles) {
+        for (const ev of dim.evaluate(bundle, { period: cond.period, methodId: cond.methodId, options: cond.options })) {
+          if (!ev.qualifies) continue;
+          const key = `${bundle.competition}::${teamKeyOf(ev)}`;
+          set.add(key); evalByKey.set(key, ev);
+        }
+      }
+    }
+    out.set(cond.id, { set, evalByKey });
+  }
+  return out;
+}
+
+export type FixtureTeam = { id: number | null; name: string };
+export type FixtureSideResult = { homeEvals: TeamEval[]; awayEvals: TeamEval[]; color: ResultColor; matched: number };
+
+/**
+ * Does a fixture (home H, away A) satisfy the strategy with per-condition side
+ * targeting? Each condition is checked against the team its `side` names (either
+ * = H or A); `not` inverts membership. AND needs all conditions, OR needs one.
+ * Returns the matched evals grouped by which team satisfied them, or null.
+ */
+export function evaluateFixtureSides(
+  membership: Map<string, CondMembership>,
+  conditions: Condition[],
+  logic: StrategyLogic,
+  competition: string,
+  home: FixtureTeam,
+  away: FixtureTeam,
+): FixtureSideResult | null {
+  if (!conditions.length) return null;
+  const hKey = `${competition}::${teamKeyOf({ teamId: home.id, team: home.name })}`;
+  const aKey = `${competition}::${teamKeyOf({ teamId: away.id, team: away.name })}`;
+  const hInfo = { team: home.name, teamId: home.id, competition };
+  const aInfo = { team: away.name, teamId: away.id, competition };
+  const homeEvals: TeamEval[] = [];
+  const awayEvals: TeamEval[] = [];
+  let matched = 0;
+  for (const c of conditions) {
+    const m = membership.get(c.id);
+    if (!m) continue;
+    const inH = c.not ? !m.set.has(hKey) : m.set.has(hKey);
+    const inA = c.not ? !m.set.has(aKey) : m.set.has(aKey);
+    const side = c.side ?? 'either';
+    const takeHome = (side === 'home' || side === 'either') && inH;
+    const takeAway = (side === 'away' || side === 'either') && inA;
+    if (takeHome) homeEvals.push(c.not ? notEval(c, hInfo, c.period) : m.evalByKey.get(hKey)!);
+    if (takeAway) awayEvals.push(c.not ? notEval(c, aInfo, c.period) : m.evalByKey.get(aKey)!);
+    if (side === 'home' ? inH : side === 'away' ? inA : inH || inA) matched += 1;
+  }
+  const ok = logic === 'and' ? matched === conditions.length : matched >= 1;
+  if (!ok) return null;
+  const color = strongestColor([...homeEvals, ...awayEvals].map((e) => e.color));
+  return { homeEvals, awayEvals, color, matched };
 }
 
 export type StrategySummary = { teams: number; leagues: number; green: number; yellow: number; red: number };
