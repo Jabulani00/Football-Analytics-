@@ -167,6 +167,12 @@ function exportLoc(p: StrategyPeriod): { periodKey: string; scope: string } {
   return { periodKey: half, scope };
 }
 function pctText(v: number | null): string { return v == null ? '—' : `${Math.round(v)}%`; }
+/** The document's direction arrow for a percentage: ↑ strong · mid · ↓ weak. */
+function arrowOf(v: number | null): string {
+  if (v == null) return '—';
+  const d = directionOf(v);
+  return d === 'up' ? '↑' : d === 'down' ? '↓' : 'mid';
+}
 function avgText(v: number | null): string { return v == null ? '—' : v.toFixed(2); }
 function colourToResult(c: CharColour): ResultColor { return c === 'green' ? 'green' : c === 'red' ? 'red' : 'yellow'; }
 
@@ -298,7 +304,7 @@ const grading1: Dimension = {
   id: 'grading1',
   label: 'Stats Grading · Method 1',
   source: 'export',
-  periods: ['overall'],
+  periods: ['overall', 'firsthalf', 'secondhalf'],
   methods: () => GRADABLE_STATS.map((s) => ({ value: s.key, label: s.label })),
   options: [
     { key: 'source', label: 'Source list', options: SOURCE_LISTS.map((s) => ({ value: String(s.id), label: s.label })), default: '1' },
@@ -311,21 +317,27 @@ const grading1: Dimension = {
     const source = (Number(sel.options.source ?? '1') as SourceListId);
     const direction = sel.options.direction ?? ALL;
     const letter = sel.options.letter ?? ALL;
-    const graded = gradeAllTeamsForStat(stats, source, sel.methodId, b.competition);
+    const half = splitPeriod(sel.period).half; // 'ft' | 'ht' | '2h' — grade the chosen half
+    const graded = gradeAllTeamsForStat(stats, source, sel.methodId, b.competition, half);
+    const srcLabel = SOURCE_LISTS.find((s) => s.id === source)?.label ?? String(source);
+    const per = periodLabel(sel.period);
     const out: TeamEval[] = [];
     for (const g of graded) {
       if (g.grade == null || g.direction == null) continue;
       if (direction !== ALL && g.direction !== direction) continue;
       if (letter !== ALL && g.grade !== letter) continue;
+      const dirWord = g.direction === 'strong' ? 'Strong' : 'Weak';
+      const leagueNote = g.grade === 'C' ? ' (above league avg)' : g.grade === 'D' ? ' (below league avg)' : '';
       out.push({
         teamId: g.teamId, team: g.team, competition: b.competition, qualifies: true,
         value: g.overallValue, valueText: pctText(g.overallValue),
-        grade: `${g.grade}${g.roman ? ` · ${g.roman}` : ''}${g.da ? ' · DA' : ''}`, color: gradeColor(g.grade),
+        // Roman-forward, self-explaining — e.g. "II · B · DA" (daLevelOf still reads the DA).
+        grade: `${g.roman ? `${g.roman} · ` : ''}${g.grade}${g.da ? ' · DA' : ''}`, color: gradeColor(g.grade),
         dimensionId: 'grading1', dimensionLabel: 'Stats Grading · Method 1',
         feature: gradableStatLabel(sel.methodId),
-        method: `${g.direction} · ${SOURCE_LISTS.find((s) => s.id === source)?.label ?? source} · ${g.grade}`,
-        period: 'overall',
-        reason: `Home ${pctText(g.homeValue)} / Overall ${pctText(g.overallValue)} → grade ${g.grade}`,
+        method: `${dirWord} · ${srcLabel} · ${per}`,
+        period: sel.period,
+        reason: `Home ${pctText(g.homeValue)} ${arrowOf(g.homeValue)} / Overall ${pctText(g.overallValue)} ${arrowOf(g.overallValue)}${leagueNote} → Roman ${g.roman ?? '—'} · ${g.grade}`,
         sample: g.sample,
       });
     }
