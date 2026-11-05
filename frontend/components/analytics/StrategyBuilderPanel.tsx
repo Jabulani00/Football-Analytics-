@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { Platform } from 'react-native';
 import type { StyleProp, ViewStyle } from 'react-native';
@@ -19,8 +19,8 @@ import {
   DIMENSIONS, FIXTURE_SIDES, STRATEGY_PRESETS, buildStrategyConfig, conditionLabel, conditionMembership,
   daLevelOf, evaluateFixtureSides, evaluateStrategy, filterResults, getDimension, gradeShareByLeague,
   matchStrength, needsExport, needsFixtures, periodFrom, periodLabel, resultBackground, resultColour,
-  splitPeriod, summarize,
-  type CondMembership, type Condition, type Dimension, type FixtureSide, type LeagueBundle, type LeagueGradeShare,
+  splitPeriod, summarize, teamHalfBreakdown,
+  type CondMembership, type Condition, type Dimension, type FixtureSide, type HalfReading, type LeagueBundle, type LeagueGradeShare,
   type ResultColor, type SavedStrategy, type StatHalf, type StatScope, type StrategyLogic, type StrategyPeriod,
   type StrategyPreset, type StrategyResult, type TeamEval,
 } from '@/utils/strategyBuilder';
@@ -189,6 +189,17 @@ export default function StrategyBuilderPanel() {
 
   // ---- results (Teams mode) — each condition at its own period ----
   const results = useMemo(() => evaluateStrategy(bundles, conditions, logic), [bundles, conditions, logic]);
+
+  // One team's FT / 1st-half / 2nd-half reading of the condition an eval proves —
+  // computed lazily for the expanded row only (its own league), so it stays cheap.
+  const breakdownFor = useCallback(
+    (ev: TeamEval): HalfReading[] | null => {
+      const cond = conditions.find((c) => c.id === ev.conditionId);
+      if (!cond || cond.not) return null;
+      return teamHalfBreakdown(bundles, cond, { competition: ev.competition, team: ev.team });
+    },
+    [bundles, conditions],
+  );
 
   // ---- fixtures mode: per-condition side targeting (home-team vs away-team attributes) ----
   const membership = useMemo(
@@ -460,7 +471,7 @@ export default function StrategyBuilderPanel() {
           ) : (
             <>
               <PageControls page={safe} pages={pages} total={filtered.length} from={start + 1} to={start + visible.length} onChange={setPage} />
-              <TeamsTable rows={visible} upcoming={upcoming} target={targetDef ?? null} fixturesByComp={fixturesByComp} compIdByName={compIdByName} total={conditions.length} share={leagueShare} />
+              <TeamsTable rows={visible} upcoming={upcoming} target={targetDef ?? null} fixturesByComp={fixturesByComp} compIdByName={compIdByName} total={conditions.length} share={leagueShare} breakdownFor={breakdownFor} />
               <PageControls page={safe} pages={pages} total={filtered.length} from={start + 1} to={start + visible.length} onChange={setPage} />
             </>
           )}
@@ -483,7 +494,7 @@ export default function StrategyBuilderPanel() {
           ) : (
             <>
               <PageControls page={fxSafe} pages={fxPages} total={fxFiltered.length} from={fxStart + 1} to={fxStart + fxVisible.length} onChange={setPage} />
-              <GradeFixtureTable rows={fxVisible} />
+              <GradeFixtureTable rows={fxVisible} breakdownFor={breakdownFor} />
               <PageControls page={fxSafe} pages={fxPages} total={fxFiltered.length} from={fxStart + 1} to={fxStart + fxVisible.length} onChange={setPage} />
             </>
           )}
@@ -507,7 +518,7 @@ const TEAM_SECTIONS: { color: ResultColor; label: string }[] = [
 
 type TeamRow = { result: StrategyResult; nf: ReturnType<typeof nextFixtureFor>; bt: BacktestResult | null };
 
-function TeamsTable({ rows, upcoming, target, fixturesByComp, compIdByName, total, share }: {
+function TeamsTable({ rows, upcoming, target, fixturesByComp, compIdByName, total, share, breakdownFor }: {
   rows: StrategyResult[];
   upcoming: UpcomingLite[];
   target: TargetMarket | null;
@@ -515,6 +526,7 @@ function TeamsTable({ rows, upcoming, target, fixturesByComp, compIdByName, tota
   compIdByName: Map<string, number>;
   total: number;
   share: Map<string, LeagueGradeShare>;
+  breakdownFor: (ev: TeamEval) => HalfReading[] | null;
 }) {
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const built: TeamRow[] = useMemo(() => rows.map((result) => {
@@ -565,7 +577,7 @@ function TeamsTable({ rows, upcoming, target, fixturesByComp, compIdByName, tota
       </DragScroll>
       {expanded ? (
         <View style={[styles.fxDetail, { borderColor: resultColour(expanded.result.color) }]}>
-          <ResultCard result={expanded.result} upcoming={upcoming} total={total} share={share.get(expanded.result.competition)} />
+          <ResultCard result={expanded.result} upcoming={upcoming} total={total} share={share.get(expanded.result.competition)} breakdownFor={breakdownFor} />
           {target ? <BacktestDetail bt={expanded.bt} target={target} /> : null}
         </View>
       ) : null}
@@ -798,9 +810,11 @@ function DaBadge({ grade }: { grade: string | null }) {
   );
 }
 
-/** One condition's reading: period/venue · feature · the stat % · grade · DA · why. */
-function EvalRow({ ev }: { ev: TeamEval }) {
+/** One condition's reading: period/venue · feature · the stat % · grade · DA · why,
+ *  then how the same stat reads on each half (FT / 1st / 2nd). */
+function EvalRow({ ev, breakdown }: { ev: TeamEval; breakdown?: HalfReading[] | null }) {
   const col = resultColour(ev.color);
+  const hasBreakdown = !!breakdown && breakdown.some((h) => h.value != null);
   return (
     <View style={[styles.evalRow, { backgroundColor: resultBackground(ev.color) }]}>
       <View style={styles.evalHead}>
@@ -812,12 +826,45 @@ function EvalRow({ ev }: { ev: TeamEval }) {
       </View>
       <Text style={styles.evalMeta}><Text style={[styles.gradeStat, { color: col }]}>{ev.valueText}</Text> · {ev.method}{ev.sample != null ? ` · ${ev.sample}g` : ''}</Text>
       <Text style={styles.evalReason} numberOfLines={2}>{ev.reason}</Text>
+      {hasBreakdown ? <HalfSplit readings={breakdown!} scope={splitPeriod(ev.period).scope} /> : null}
+    </View>
+  );
+}
+
+const SCOPE_LABEL: Record<StatScope, string> = { overall: 'Overall', home: 'Home', away: 'Away' };
+
+/** How the condition's stat reads across the three halves, at its own venue. The
+ *  half the condition filters for is ringed so you see what you targeted vs the rest. */
+function HalfSplit({ readings, scope }: { readings: HalfReading[]; scope: StatScope }) {
+  return (
+    <View style={styles.halfSplit}>
+      <Text style={styles.halfSplitLabel} numberOfLines={1}>Half split · {SCOPE_LABEL[scope]}</Text>
+      <View style={styles.halfCells}>
+        {readings.map((h) => {
+          const c = resultColour(h.color);
+          const hTag = h.half === 'ft' ? 'FT' : h.half === 'ht' ? '1H' : '2H';
+          return (
+            <View
+              key={h.half}
+              style={[
+                styles.halfCell,
+                { borderColor: h.isCurrent ? c : theme.border, backgroundColor: resultBackground(h.color) },
+                h.isCurrent && styles.halfCellCurrent,
+              ]}
+            >
+              <Text style={[styles.halfCellTag, h.isCurrent && { color: c }]}>{hTag}{h.isCurrent ? ' •' : ''}</Text>
+              <Text style={[styles.halfCellVal, { color: h.value != null ? theme.textPrimary : theme.textFaint }]} numberOfLines={1}>{h.valueText}</Text>
+              {h.band ? <Text style={[styles.halfCellBand, { color: c }]} numberOfLines={1}>{h.band}</Text> : null}
+            </View>
+          );
+        })}
+      </View>
     </View>
   );
 }
 
 /** C. One qualifying team with its per-condition breakdown. */
-function ResultCard({ result, upcoming, total, share }: { result: StrategyResult; upcoming: UpcomingLite[]; total?: number; share?: LeagueGradeShare }) {
+function ResultCard({ result, upcoming, total, share, breakdownFor }: { result: StrategyResult; upcoming: UpcomingLite[]; total?: number; share?: LeagueGradeShare; breakdownFor?: (ev: TeamEval) => HalfReading[] | null }) {
   const tint = resultColour(result.color);
   const nf = nextFixtureFor(result.teamId, result.team, upcoming);
   const ms = total ? matchStrength(result, total) : null;
@@ -847,7 +894,7 @@ function ResultCard({ result, upcoming, total, share }: { result: StrategyResult
         </Text>
       ) : null}
       <View style={styles.evalList}>
-        {result.conditions.map((ev, i) => (<EvalRow key={i} ev={ev} />))}
+        {result.conditions.map((ev, i) => (<EvalRow key={i} ev={ev} breakdown={breakdownFor?.(ev) ?? null} />))}
       </View>
     </View>
   );
@@ -855,7 +902,7 @@ function ResultCard({ result, upcoming, total, share }: { result: StrategyResult
 
 /** Fixtures as a table split into three grade colours; each row shows the matched
  *  side(s) and the exact grade each feature qualified with. Tap for the breakdown. */
-function GradeFixtureTable({ rows }: { rows: FxRow[] }) {
+function GradeFixtureTable({ rows, breakdownFor }: { rows: FxRow[]; breakdownFor: (ev: TeamEval) => HalfReading[] | null }) {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const expanded = expandedId != null ? rows.find((r) => r.fx.id === expandedId) : undefined;
   return (
@@ -889,8 +936,8 @@ function GradeFixtureTable({ rows }: { rows: FxRow[] }) {
       {expanded ? (
         <View style={[styles.fxDetail, { borderColor: resultColour(expanded.color) }]}>
           <Text style={styles.fxDetailTitle}>{expanded.fx.home.name} vs {expanded.fx.away.name} · {expanded.fx.competition.name}</Text>
-          <SideEvals title={`Home team ✓ · ${expanded.fx.home.name}`} tint={theme.accentGreen} evals={expanded.homeEvals} />
-          <SideEvals title={`Away team ✓ · ${expanded.fx.away.name}`} tint={theme.accentBlue} evals={expanded.awayEvals} />
+          <SideEvals title={`Home team ✓ · ${expanded.fx.home.name}`} tint={theme.accentGreen} evals={expanded.homeEvals} breakdownFor={breakdownFor} />
+          <SideEvals title={`Away team ✓ · ${expanded.fx.away.name}`} tint={theme.accentBlue} evals={expanded.awayEvals} breakdownFor={breakdownFor} />
         </View>
       ) : null}
       <Text style={styles.hint}>Grouped by the matched side's strongest grade. Tap a fixture to see which feature each team qualified on.</Text>
@@ -937,13 +984,13 @@ function GradeChips({ sideLabel, evals }: { sideLabel: string; evals: TeamEval[]
 }
 
 /** The conditions one fixture side satisfied, with period/venue/grade/reason. */
-function SideEvals({ title, tint, evals }: { title: string; tint: string; evals: TeamEval[] }) {
+function SideEvals({ title, tint, evals, breakdownFor }: { title: string; tint: string; evals: TeamEval[]; breakdownFor?: (ev: TeamEval) => HalfReading[] | null }) {
   if (!evals.length) return null;
   return (
     <View style={styles.sideEvalsWrap}>
       <Text style={[styles.sideEvalsTitle, { color: tint }]} numberOfLines={1}>{title}</Text>
       <View style={styles.evalList}>
-        {evals.map((ev, i) => (<EvalRow key={i} ev={ev} />))}
+        {evals.map((ev, i) => (<EvalRow key={i} ev={ev} breakdown={breakdownFor?.(ev) ?? null} />))}
       </View>
     </View>
   );
@@ -1063,6 +1110,15 @@ const styles = StyleSheet.create({
   evalGrade: { fontFamily: fonts.bodySemiBold, fontSize: 12 },
   evalMeta: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted },
   evalReason: { fontFamily: fonts.body, fontSize: 11, lineHeight: 16, color: theme.textPrimary },
+
+  halfSplit: { marginTop: 4, gap: 3 },
+  halfSplitLabel: { fontFamily: fonts.bodySemiBold, fontSize: 10, letterSpacing: 0.4, textTransform: 'uppercase', color: theme.textFaint },
+  halfCells: { flexDirection: 'row', gap: spacing.xs },
+  halfCell: { flex: 1, borderWidth: 1, borderRadius: layout.borderRadius, paddingVertical: 4, paddingHorizontal: spacing.xs, alignItems: 'center', gap: 1 },
+  halfCellCurrent: { borderWidth: 1.5 },
+  halfCellTag: { fontFamily: fonts.bodySemiBold, fontSize: 10, color: theme.textMuted },
+  halfCellVal: { fontFamily: fonts.bodySemiBold, fontSize: 13 },
+  halfCellBand: { fontFamily: fonts.bodySemiBold, fontSize: 9, letterSpacing: 0.3 },
 
   modeRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
   modeBtn: { flex: 1, borderWidth: 1.5, borderColor: theme.border, borderRadius: layout.borderRadius, paddingVertical: spacing.sm, alignItems: 'center', backgroundColor: theme.surface },

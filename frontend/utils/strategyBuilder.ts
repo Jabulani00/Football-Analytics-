@@ -97,6 +97,8 @@ export type TeamEval = {
   period: StrategyPeriod;
   reason: string;
   sample: number | null;
+  /** The condition this eval proves — set when assembled into a result. */
+  conditionId?: string;
 };
 
 export type MethodOpt = { value: string; label: string };
@@ -865,6 +867,7 @@ function notEval(cond: Condition, info: { team: string; teamId: number | null; c
     dimensionId: cond.dimensionId, dimensionLabel: dim?.label ?? cond.dimensionId,
     feature: `NOT ${method}`, method: 'excluded', period,
     reason: `Does not match ${dim?.label ?? cond.dimensionId} · ${method}`, sample: null,
+    conditionId: cond.id,
   };
 }
 
@@ -884,7 +887,7 @@ export function evaluateStrategy(bundles: LeagueBundle[], conditions: Condition[
         for (const ev of evals) {
           if (!ev.qualifies) continue;
           const key = `${bundle.competition}::${teamKeyOf(ev)}`;
-          set.add(key); em.set(key, ev);
+          set.add(key); em.set(key, { ...ev, conditionId: cond.id });
           if (!universe.has(key)) universe.set(key, { team: ev.team, teamId: ev.teamId, competition: ev.competition });
         }
       }
@@ -914,6 +917,96 @@ export function resultsByTeam(results: StrategyResult[]): Map<string, StrategyRe
   return m;
 }
 
+/* ----------------------------------------------------------------- half-by-half breakdown */
+
+/** One team's reading of a condition's stat on one half (FT / 1st / 2nd). */
+export type HalfReading = {
+  half: StatHalf;
+  label: string;
+  value: number | null;
+  valueText: string;
+  /** UP/MID/DOWN band for a % (null for averages); the live grading direction. */
+  band: string | null;
+  color: ResultColor;
+  sample: number | null;
+  /** The half the condition itself filters for. */
+  isCurrent: boolean;
+};
+
+/**
+ * The single live table column a condition reads, when it maps to one — so the
+ * same stat can be re-read on the other halves. Composite dimensions (dominance,
+ * opposite, gap, characters, omit) combine several readings and return null.
+ */
+function conditionStat(cond: Condition): { prefix: string; key: string; kind: StatKind; decimals: number } | null {
+  switch (cond.dimensionId) {
+    case 'statfilter': {
+      const fam = statFamily(cond.options.family);
+      const item = fam.items.find((i) => i.key === cond.methodId);
+      if (!item) return null;
+      const window = cond.options.window ?? 'season';
+      const prefix = fam.windowed && window !== 'season' ? window : fam.prefix;
+      return { prefix, key: item.key, kind: item.kind, decimals: 2 };
+    }
+    case 'statscall': {
+      const def = DOMINANCE_STATS.find((d) => d.key === cond.methodId);
+      if (!def) return null;
+      return { prefix: def.family, key: def.key, kind: def.pctBased ? 'pct' : 'avg', decimals: def.decimals };
+    }
+    case 'grading1':
+    case 'grading2':
+      // Every gradable stat is a percentage column in the ordinary family.
+      return { prefix: 'ordinary', key: cond.methodId, kind: 'pct', decimals: 0 };
+    default:
+      return null;
+  }
+}
+
+/**
+ * How one team reads a condition's stat across Full time / 1st half / 2nd half,
+ * at the condition's own venue scope. Reuses the live tables only — no new maths;
+ * the % band reuses the shared `directionOf`. Returns null for composite
+ * conditions that don't resolve to a single stat column, or when the league's
+ * export isn't loaded. "—" where a half has no table for that stat.
+ */
+export function teamHalfBreakdown(
+  bundles: LeagueBundle[],
+  cond: Condition,
+  team: { competition: string; team: string },
+): HalfReading[] | null {
+  const stat = conditionStat(cond);
+  if (!stat) return null;
+  const stats = bundles.find((b) => b.competition === team.competition)?.stats;
+  if (!stats) return null;
+  const { half: curHalf, scope } = splitPeriod(cond.period);
+  const halves: { half: StatHalf; label: string }[] = [
+    { half: 'ft', label: 'Full time' },
+    { half: 'ht', label: '1st half' },
+    { half: '2h', label: '2nd half' },
+  ];
+  return halves.map(({ half, label }) => {
+    const v = tableVal(stats, stat.prefix, half, scope, team.team, stat.key);
+    let valueText = '—';
+    let band: string | null = null;
+    let color: ResultColor = 'none';
+    if (v != null) {
+      if (stat.kind === 'pct') {
+        const dir = directionOf(v);
+        band = dir.toUpperCase();
+        color = dir === 'up' ? 'green' : dir === 'mid' ? 'yellow' : 'red';
+        valueText = pctText(v);
+      } else if (stat.kind === 'run') {
+        color = v >= 4 ? 'green' : v >= 2 ? 'yellow' : 'red';
+        valueText = `${v}×`;
+      } else {
+        valueText = v.toFixed(stat.decimals ?? 2);
+      }
+    }
+    const s = tableVal(stats, stat.prefix, half, scope, team.team, 'sample_size');
+    return { half, label, value: v, valueText, band, color, sample: s == null ? null : Math.round(s), isCurrent: half === curHalf };
+  });
+}
+
 /* ----------------------------------------------------------------- per-side fixture evaluation */
 
 export type CondMembership = { set: Set<string>; evalByKey: Map<string, TeamEval> };
@@ -929,7 +1022,7 @@ export function conditionMembership(bundles: LeagueBundle[], conditions: Conditi
         for (const ev of dim.evaluate(bundle, { period: cond.period, methodId: cond.methodId, options: cond.options })) {
           if (!ev.qualifies) continue;
           const key = `${bundle.competition}::${teamKeyOf(ev)}`;
-          set.add(key); evalByKey.set(key, ev);
+          set.add(key); evalByKey.set(key, { ...ev, conditionId: cond.id });
         }
       }
     }
