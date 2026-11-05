@@ -727,6 +727,26 @@ export function importanceSeparation(a: ImportanceValueBand, b: ImportanceValueB
   return Math.abs(rank[a] - rank[b]) >= 2 ? 'clear' : 'mediocre';
 }
 
+/** Clear, mediocre, or poor from two sector numbers on the 0–3.9 / 4–5.9 / 6+ bands. */
+export function sectorSeparationLabel(t1: number | null, t2: number | null): string | null {
+  if (t1 == null || t2 == null || !Number.isFinite(t1) || !Number.isFinite(t2)) return null;
+  const left = importanceValueBand(t1);
+  const right = importanceValueBand(t2);
+  const kind = importanceSeparation(left, right);
+  return `${IMPORTANCE_SEPARATION_LABEL[kind]} · ${formatImportanceValue(t1)} ${IMPORTANCE_VALUE_LABEL[left]} v ${formatImportanceValue(t2)} ${IMPORTANCE_VALUE_LABEL[right]}`;
+}
+
+/**
+ * Problem causer uses its own read.
+ * The opposite in-option is clear. A stronger causer (6+) is poor, a medium causer is mediocre.
+ */
+export function problemSeparationLabel(score: number, opposite: boolean): string {
+  if (opposite) return IMPORTANCE_SEPARATION_LABEL.clear;
+  if (score >= 6) return IMPORTANCE_SEPARATION_LABEL.poor;
+  if (score >= 4) return IMPORTANCE_SEPARATION_LABEL.mediocre;
+  return IMPORTANCE_SEPARATION_LABEL.clear;
+}
+
 export type ImportanceBlendRead = {
   escape: number;
   pull: number;

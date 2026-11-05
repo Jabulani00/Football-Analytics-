@@ -21,7 +21,8 @@ import {
   type Last6Period,
   type Last6Venue,
 } from '@/utils/last6Form';
-import type { StandingLike } from '@/utils/motivationEngine';
+import { sectorSeparationLabel, problemSeparationLabel } from '@/utils/importanceOf3Engine';
+import { rankAfterWin, type StandingLike } from '@/utils/motivationEngine';
 import {
   baselineGapFor,
   evaluatePositionGap,
@@ -420,12 +421,24 @@ function h2hGradeValues(
 }
 
 /** Imbangi is the side sitting 1st or 2nd. */
-function imbangiValue(rank: number | null, label: string): { value: number; detail: string } {
+function imbangiValue(
+  table: StandingLike[],
+  teamId: number | null,
+  rank: number | null,
+  label: string,
+): { value: number; detail: string } {
   if (rank === 1 || rank === 2) {
     return { value: IMBANGI_TRUE_VALUE, detail: `${label} is #${rank}` };
   }
+  const landed = teamId != null ? rankAfterWin(table, teamId) : null;
+  if (landed === 1 || landed === 2) {
+    return {
+      value: IMBANGI_TRUE_VALUE,
+      detail: `${label} is #${rank ?? '—'}. A win lands them at #${landed}`,
+    };
+  }
   if (rank == null) return { value: 0, detail: `${label} is not on this table` };
-  return { value: 0, detail: `${label} is #${rank}` };
+  return { value: 0, detail: `${label} is #${rank}. A win leaves them outside #1 and #2` };
 }
 
 function bhozomaValue(
@@ -536,6 +549,14 @@ export function buildPowerDynamicsCalculations(
   });
   const escapeDetail = (score: number | null, name: string) =>
     score == null ? `${name} has no escape element` : `${name} escape element ${score}`;
+  const separationLine = (t1: number | null, t2: number | null) => {
+    const label = sectorSeparationLabel(t1, t2);
+    return label ? ` ${label}.` : '';
+  };
+  const problemLine = problemSeparationLabel(
+    Math.max(input.problem.t1.level.score, input.problem.t2.level.score),
+    false,
+  );
 
   const last5 = last5Parts(pd, standings, matches, input.initial);
   const last5Scores = sumParts(last5);
@@ -548,8 +569,8 @@ export function buildPowerDynamicsCalculations(
     pd.t2.name,
     input.competitionName,
   );
-  const imbangiT1 = imbangiValue(pd.t1.rank, pd.t1.label);
-  const imbangiT2 = imbangiValue(pd.t2.rank, pd.t2.label);
+  const imbangiT1 = imbangiValue(standings, pd.t1.teamId, pd.t1.rank, pd.t1.label);
+  const imbangiT2 = imbangiValue(standings, pd.t2.teamId, pd.t2.rank, pd.t2.label);
   const bhozomaT1 = bhozomaValue(
     standings,
     matches,
@@ -598,7 +619,7 @@ export function buildPowerDynamicsCalculations(
       'Baseline',
       'core',
       { t1: pd.baselineGap.t1.score, t2: pd.baselineGap.t2.score },
-      baselineDetail,
+      `${baselineDetail}${separationLine(pd.baselineGap.t1.score, pd.baselineGap.t2.score)}`,
     ),
     sector(
       'importance_3pts',
@@ -611,31 +632,43 @@ export function buildPowerDynamicsCalculations(
       `${escapeDetail(importance.singaye1?.escape.score ?? null, pd.t1.label)}. ${escapeDetail(
         importance.singaye2?.escape.score ?? null,
         pd.t2.label,
-      )}.`,
+      )}.${separationLine(importance.singaye1?.escape.score ?? 0, importance.singaye2?.escape.score ?? 0)}`,
     ),
     sector(
       'last5',
       'Last 5',
       'core',
       last5Scores,
-      'Sum of every Last 5 baseline, including each venue and period filter.',
+      `Sum of every Last 5 baseline, including each venue and period filter.${separationLine(last5Scores.t1, last5Scores.t2)}`,
       last5,
     ),
-    sector('form', 'Form', 'core', formScores, 'Baseline from last-6 form places.'),
-    sector('h2h', 'H2H', 'core', h2h.scores, h2h.detail),
+    sector(
+      'form',
+      'Form',
+      'core',
+      formScores,
+      `Baseline from last-6 form places.${separationLine(formScores.t1, formScores.t2)}`,
+    ),
+    sector(
+      'h2h',
+      'H2H',
+      'core',
+      h2h.scores,
+      `${h2h.detail}${separationLine(pd.baselineGap.t1.score, pd.baselineGap.t2.score)}`,
+    ),
     sector(
       'problem_causer',
       'Problem causer',
       'core',
       { t1: input.problem.t1.level.score, t2: input.problem.t2.level.score },
-      `${pd.t1.label} ${input.problem.t1.level.name} ${input.problem.t1.level.score} · ${pd.t2.label} ${input.problem.t2.level.name} ${input.problem.t2.level.score}`,
+      `${pd.t1.label} ${input.problem.t1.level.name} ${input.problem.t1.level.score} · ${pd.t2.label} ${input.problem.t2.level.name} ${input.problem.t2.level.score}. ${problemLine}.`,
     ),
     sector(
       'imbangi',
       'Imbangi',
-      'semi',
+      'core',
       { t1: imbangiT1.value, t2: imbangiT2.value },
-      `${pd.t1.label}: ${imbangiT1.detail}. ${pd.t2.label}: ${imbangiT2.detail}.`,
+      `${pd.t1.label}: ${imbangiT1.detail}. ${pd.t2.label}: ${imbangiT2.detail}.${separationLine(imbangiT1.value, imbangiT2.value)}`,
     ),
     sector(
       'home_away_strong',

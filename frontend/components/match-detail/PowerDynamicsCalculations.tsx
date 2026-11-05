@@ -47,11 +47,11 @@ type Props = {
 const GROUP_COPY: Record<SectorGroup, { title: string; note: string }> = {
   core: {
     title: 'Core sectors',
-    note: 'Baseline, escape, last 5, form, H2H grade, and problem-causer level.',
+    note: 'Baseline, escape, last 5, form, H2H, problem causer, and imbangi. Each row names its separation from those two values.',
   },
   semi: {
     title: 'Semi-core',
-    note: 'Imbangi is 6 when the side is 1st or 2nd, otherwise 0.',
+    note: 'Home/Away strong uses the baseline scores. A Strong label on T2 is highlighted next to gap analysis.',
   },
   y: {
     title: 'Y applications',

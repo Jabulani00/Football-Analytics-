@@ -69,7 +69,7 @@ export const POWER_DYNAMIC_CALLS: PowerDynamicCallDef[] = [
       { id: 'form_matchup', label: 'Form matchup', detail: 'The two sides’ last five, side by side.' },
       { id: 'diff', label: 'Last 5 difference', detail: 'How the last five compare across venues.' },
       { id: 'two_goal', label: 'Two-goal bands', detail: 'Wins and losses by two goals or more.' },
-      { id: 'label_change', label: 'Label change', detail: 'Hidden strength and weakness from label moves.' },
+      { id: 'label_change', label: 'Label change', detail: 'Hidden strength and weakness from label moves, then the A, B or C gap between the two places.' },
       { id: 'death_trap', label: 'Death traps', detail: 'Runs of losses, wins, scoring, and conceding.' },
       { id: 'reverse', label: 'Reverse engineering', detail: 'What the recent results were building toward.' },
     ],

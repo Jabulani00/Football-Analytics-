@@ -39,7 +39,17 @@ import {
   type FormChange,
   type TrueOption,
 } from '@/utils/last5Analysis';
-import { CHANGE_GUIDE, last5LabelChanges, twoGoalBandSides, type ChangeKind, type TwoGoalGrade } from '@/utils/last5Sections';
+import {
+  CHANGE_GUIDE,
+  CHANGE_SEPARATION_LABEL,
+  changeScalePlace,
+  changeSeparation,
+  last5LabelChanges,
+  twoGoalBandSides,
+  type ChangeKind,
+  type ChangeSeparation,
+  type TwoGoalGrade,
+} from '@/utils/last5Sections';
 import {
   LAST5_WINDOW,
   LAST6_BAND_LABEL,
@@ -54,6 +64,7 @@ import {
   evaluateImportanceOf3,
   fixtureTargetNote,
   importancePairSeparation,
+  problemSeparationLabel,
   IMPORTANCE_SEPARATION_LABEL,
   IMPORTANCE_VALUE_LABEL,
   formatImportanceValue,
@@ -726,6 +737,20 @@ function rawMeasureAspects(): MeasureAspect[] {
         binary: true,
         measure: 'label-change',
         token: `${row.kind}:${row.code}`,
+      }),
+    ),
+    ...(['A', 'B', 'C'] as const satisfies readonly ChangeSeparation[]).map((letter) =>
+      aspect({
+        id: `label-sep-${letter}`,
+        tabId: 'last5',
+        functionId: 'label_change',
+        label: CHANGE_SEPARATION_LABEL[letter],
+        detail: `${CHANGE_SEPARATION_LABEL[letter]} between the two places on the hierarchy number line.`,
+        needsFixtures: true,
+        binary: true,
+        pair: true,
+        measure: 'label-change',
+        token: `sep:${letter}`,
       }),
     ),
     ...deathAspects(),
@@ -1890,11 +1915,20 @@ export function scoreMeasure(
       mode: 'overall',
     });
     const side = sides.left;
-    if (!side) return null;
+    const otherSide = sides.right;
+    if (!side || !otherSide) return null;
+    const place = changeScalePlace(side.hierarchy);
+    const otherPlace = changeScalePlace(otherSide.hierarchy);
+    const letter = changeSeparation(place, otherPlace);
+    const gap = letter ? `${place} v ${otherPlace} · ${letter} · ${CHANGE_SEPARATION_LABEL[letter]}` : null;
+    if (token.startsWith('sep:')) {
+      const wanted = token.slice(4);
+      return fit(letter === wanted ? 100 : 0, gap ?? 'No hierarchy gap');
+    }
     const [kind, code] = token.split(':');
     const called = `${labelChangeKind(side.hierarchy.kind as ChangeKind)} · ${side.hierarchy.code}`;
     const on = side.hierarchy.kind === kind && side.hierarchy.code === code;
-    return fit(on ? 100 : 0, called);
+    return fit(on ? 100 : 0, gap ? `${called} · ${gap}` : called);
   }
 
   if (measure === 'death-trap') {
@@ -2056,7 +2090,8 @@ export function scoreMeasure(
       t2Name: other.name,
     });
     const name = read.t1.level.name;
-    return fit(name === (token as ProblemLevelName) ? 100 : 0, `${name} vs ${other.name}`);
+    const separation = problemSeparationLabel(read.t1.level.score, item.mark === 'wrong');
+    return fit(name === (token as ProblemLevelName) ? 100 : 0, `${name} vs ${other.name} · ${separation}`);
   }
 
   if (measure === 'imbangi') {

@@ -36,6 +36,8 @@ type H2HPanelProps = {
   t2Name?: string | null;
   /** Fixture competition — used for never-beaten W/D/L totals. */
   competitionName?: string | null;
+  /** Separation read from the gap-analysis values. */
+  separationNote?: string | null;
 };
 
 function FormStrip({ outcomes }: { outcomes: H2HOutcome[] }) {
@@ -323,6 +325,7 @@ export default function H2HPanel({
   t1Name,
   t2Name,
   competitionName,
+  separationNote,
   initialSplit = 'overall',
   lockSplit = false,
 }: H2HPanelProps & { initialSplit?: H2HSplit; lockSplit?: boolean }) {
@@ -375,6 +378,7 @@ export default function H2HPanel({
     const showOverallSays = !lockSplit || split === 'overall';
     return (
       <View style={styles.wrap}>
+        {separationNote ? <Text style={styles.optionsSub}>{separationNote}</Text> : null}
         {showOverallSays ? (
           <>
             <Text style={styles.optionsTitle}>What the head-to-head says</Text>
@@ -395,6 +399,7 @@ export default function H2HPanel({
   const showSays = !lockSplit || split === 'overall';
   return (
     <View style={styles.wrap}>
+      {separationNote ? <Text style={styles.optionsSub}>{separationNote}</Text> : null}
       {showSays ? (
         <>
           <Text style={styles.optionsTitle}>What the head-to-head says</Text>

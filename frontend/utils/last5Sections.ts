@@ -685,8 +685,61 @@ export const CHANGE_GUIDE: ChangeGuideRow[] = [
   { grade: 7, code: 'F2', kind: 'cancel', detail: '1 positive and 1 negative cancel' },
 ];
 
-/** 14 places. 1–7 are the positive hierarchy. 8–14 are the negative hierarchy. */
+/** 14 places. 1 is the strongest positive change, 7 the weakest. 8 is the weakest negative change, 14 the strongest. */
 export const CHANGE_SCALE_SIZE = 14;
+
+/** Places 6, 7, 8 and 9. 6 and 7 are still the weak end of the positive side. 8 and 9 are the weak end of the negative side. */
+export function changePlaceIsNeutral(place: number): boolean {
+  return place >= 6 && place <= 9;
+}
+
+/** Sheet marks under the number line. 1 is +5. 14 is −5. The four middle places are neutral. */
+export function changePlaceMark(place: number): string {
+  if (changePlaceIsNeutral(place)) return 'Neutral';
+  if (place >= 1 && place <= 5) return `+${6 - place}`;
+  if (place >= 10 && place <= 14) return `-${place - 9}`;
+  return '';
+}
+
+export type ChangeSeparation = 'A' | 'B' | 'C';
+
+export const CHANGE_SEPARATION_LABEL: Record<ChangeSeparation, string> = {
+  A: 'Clear separation',
+  B: 'Mediocre separation',
+  C: 'Poor separation',
+};
+
+/**
+ * Letters from the hierarchy sheet, starting at that place and reading across to place 14.
+ * A is clear, B is mediocre, C is poor. The same place is always C.
+ */
+const CHANGE_SEPARATION_FROM: Record<number, string> = {
+  1: 'CCBBAAAAAAAAAA',
+  2: 'CCCBAAAAAAAAA',
+  3: 'CCBBAAAAAAAA',
+  4: 'CCBBAAAAAAA',
+  5: 'CCBBAAAAAA',
+  6: 'CCBBBAAAA',
+  7: 'CCAAAAAA',
+  8: 'CCCBAAA',
+  9: 'CCBAAA',
+  10: 'CCBAA',
+  11: 'CCBA',
+  12: 'CCB',
+  13: 'CC',
+  14: 'C',
+};
+
+/** Gap analysis for two places on the hierarchy number line. Order does not matter. */
+export function changeSeparation(placeA: number, placeB: number): ChangeSeparation | null {
+  const lo = Math.min(placeA, placeB);
+  const hi = Math.max(placeA, placeB);
+  const row = CHANGE_SEPARATION_FROM[lo];
+  if (!row || hi < lo || hi > CHANGE_SCALE_SIZE) return null;
+  const letter = row[hi - lo];
+  if (letter !== 'A' && letter !== 'B' && letter !== 'C') return null;
+  return letter;
+}
 
 export type ChangeScaleSlot = {
   place: number;
@@ -701,10 +754,10 @@ export const CHANGE_SCALE: ChangeScaleSlot[] = [
   { place: 3, grade: 3, side: 'positive', label: 'Grade 3 · C1, C2' },
   { place: 4, grade: 4, side: 'positive', label: 'Grade 4 · D1, D2, D3' },
   { place: 5, grade: 5, side: 'positive', label: 'E1 · Grade 5' },
-  { place: 6, grade: 6, side: 'positive', label: 'G1 · No change' },
-  { place: 7, grade: 7, side: 'positive', label: 'F1, F2 · Cancel' },
-  { place: 8, grade: 7, side: 'negative', label: 'Grade 7' },
-  { place: 9, grade: 6, side: 'negative', label: 'Grade 6' },
+  { place: 6, grade: 6, side: 'positive', label: 'G1 · No change · Neutral' },
+  { place: 7, grade: 7, side: 'positive', label: 'F1, F2 · Cancel · Neutral' },
+  { place: 8, grade: 7, side: 'negative', label: 'Grade 7 · Neutral' },
+  { place: 9, grade: 6, side: 'negative', label: 'Grade 6 · Neutral' },
   { place: 10, grade: 5, side: 'negative', label: 'E1 · Grade 5' },
   { place: 11, grade: 4, side: 'negative', label: 'Grade 4 · D1, D2, D3' },
   { place: 12, grade: 3, side: 'negative', label: 'Grade 3 · C1, C2' },
@@ -729,6 +782,7 @@ export type ChangeScaleGap = {
   separation: number | null;
   stronger: 't1' | 't2' | 'level' | null;
   call: string;
+  match: ChangeSeparation | null;
   t1: { letter: BaselineLetter | null; score: number | null };
   t2: { letter: BaselineLetter | null; score: number | null };
 };
@@ -774,6 +828,7 @@ export function changeScaleGap(t1: ChangeHierarchy, t2: ChangeHierarchy): Change
     separation,
     stronger,
     call,
+    match: changeSeparation(t1Place, t2Place),
     t1: t1Side,
     t2: t2Side,
   };

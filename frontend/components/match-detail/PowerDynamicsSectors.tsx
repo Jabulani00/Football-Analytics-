@@ -38,6 +38,7 @@ import {
   type StreakSide,
   type Tone,
 } from '@/utils/powerDynamicsEngine';
+import { sectorSeparationLabel } from '@/utils/importanceOf3Engine';
 import {
   CHANGE_LABEL,
   OPTION_LABEL,
@@ -75,6 +76,9 @@ import {
   CHANGE_GUIDE,
   CHANGE_SCALE,
   CHANGE_SCALE_SIZE,
+  CHANGE_SEPARATION_LABEL,
+  changePlaceIsNeutral,
+  changePlaceMark,
   changeScaleGap,
   goalDiffTabLabel,
   LABEL_CHANGE_TEXT,
@@ -145,6 +149,35 @@ export function Callout({ text, tone = 'info' }: { text: string; tone?: Tone }) 
       <Text style={[styles.calloutText, { color: toneColor(tone) }]}>{text}</Text>
     </View>
   );
+}
+
+function t2IsStrong(pd: PowerDynamicsBundle): boolean {
+  const snap = pd.t2;
+  return (
+    venuePpgSplit({
+      homePoints: snap.home.points,
+      awayPoints: snap.away.points,
+      homePpg: snap.home.ppg,
+      awayPpg: snap.away.ppg,
+      playing: snap.venue,
+      leaguePpg: pd.baselineGap.leagueAvgPpg,
+    }).split === 'Strong'
+  );
+}
+
+function StrongT2Warning({ pd }: { pd: PowerDynamicsBundle }) {
+  if (!t2IsStrong(pd)) return null;
+  return (
+    <View style={styles.strongWarn}>
+      <Text style={styles.strongWarnText}>{pd.t2.label} is strong</Text>
+    </View>
+  );
+}
+
+function SeparationCallout({ t1, t2 }: { t1: number | null; t2: number | null }) {
+  const text = sectorSeparationLabel(t1, t2);
+  if (!text) return null;
+  return <Callout text={text} />;
 }
 
 export function SideCard({
@@ -360,6 +393,8 @@ export function BaselineCards({
       {gap.leagueAvgPpg != null ? (
         <Text style={styles.note}>League average PPG {gap.leagueAvgPpg.toFixed(2)}</Text>
       ) : null}
+      <StrongT2Warning pd={pd} />
+      <SeparationCallout t1={gap.t1.score} t2={gap.t2.score} />
       {gradeInCall && grade ? (
         <Pressable
           onPress={() => setGradeOpen(true)}
@@ -424,6 +459,8 @@ export function GapAnalysisCards({
   return (
     <View>
       <SectorIntro title={title} note={note} />
+      <StrongT2Warning pd={pd} />
+      <SeparationCallout t1={pd.baselineGap.t1.score} t2={pd.baselineGap.t2.score} />
       <PositionGapBoard pd={pd} />
       {one(pd.t1, g.t1Rank)}
       {one(pd.t2, g.t2Rank)}
@@ -1114,6 +1151,7 @@ export function Last5LeagueCards({
         preserveCase
         note="League ranking from last 5. Fixture sides are highlighted."
       />
+      <SeparationCallout t1={formPd.baselineGap.t1.score} t2={formPd.baselineGap.t2.score} />
       {peak ? (
         <View style={styles.peakBox}>
           <Text style={styles.peakEyebrow}>Highest gap in this section</Text>
@@ -1608,7 +1646,15 @@ function ChangeScaleBoard({
   );
   return (
     <View>
-      <Text style={styles.note}>Change scale 1–14. Places 1–7 are positive. Places 8–14 are negative.</Text>
+      <Text style={styles.note}>
+        Change scale 1–14. 1 is the strongest positive and 7 the weakest. 8 is the weakest negative and 14 the strongest. Places 6, 7, 8 and 9 are neutral changes.
+      </Text>
+      {gap.match ? (
+        <Callout
+          text={`${gap.t1Place} v ${gap.t2Place} · ${gap.match} · ${CHANGE_SEPARATION_LABEL[gap.match]}`}
+          tone={gap.match === 'A' ? 'good' : gap.match === 'B' ? 'warn' : 'info'}
+        />
+      ) : null}
       <Pressable
         onPress={() => setOpen(true)}
         accessibilityRole="button"
@@ -1673,9 +1719,13 @@ function ChangeScaleModal({
           </View>
           <ScrollView style={styles.modalList}>
             <Text style={styles.modalLead}>
+              {gap.match
+                ? `${gap.t1Place} v ${gap.t2Place} is ${gap.match} · ${CHANGE_SEPARATION_LABEL[gap.match]}. A is clear, B is mediocre, C is poor. The same place is C.`
+                : 'A is clear separation, B is mediocre separation, C is poor separation.'}
               {gap.grade && gap.from != null && gap.to != null
-                ? `${gap.grade} covers places ${gap.from}–${gap.to}. G1 is the largest gap. Each next grade is one place closer. Places 1–7 are positive. Places 8–14 are negative.`
-                : 'G1 is the largest gap. Each next grade is one place closer.'}
+                ? ` ${gap.grade} covers places ${gap.from}–${gap.to}.`
+                : ''}
+              {' '}Places 1–7 are positive. Places 8–14 are negative. Places 6, 7, 8 and 9 are neutral.
             </Text>
             <View style={styles.posGrid}>
               {CHANGE_SCALE.map((slot) => {
@@ -1688,9 +1738,13 @@ function ChangeScaleModal({
                         role === 't1' && styles.posCellT1,
                         role === 't2' && styles.posCellT2,
                         role === 'span' && styles.posCellSpan,
+                        changePlaceIsNeutral(slot.place) && role === 'idle' && styles.posCellNeutral,
                       ]}>
                       <Text style={[styles.posNum, (role === 't1' || role === 't2') && styles.posNumOn]}>
                         {slot.place}
+                      </Text>
+                      <Text style={[styles.posMark, (role === 't1' || role === 't2') && styles.posNumOn]}>
+                        {changePlaceMark(slot.place)}
                       </Text>
                       {role === 't1' || role === 't2' ? (
                         <Text style={styles.posTag}>{role === 't1' ? 'T1' : 'T2'}</Text>
@@ -1755,7 +1809,7 @@ export function LabelChangeCards({
       <SectorIntro
         title="Section 5: Hierarchy of changes"
         preserveCase
-        note="Each of the last 5 is Section 1 against Section 4. The two sides then sit on a 1–14 scale: places 1–7 are positive changes, places 8–14 are negative changes. The gap between those places uses the same G-grade as the baseline board."
+        note="Each of the last 5 is Section 1 against Section 4. The two sides sit on a 1–14 scale. 1 is the strongest positive change and 7 the weakest. 8 is the weakest negative change and 14 the strongest. Places 6, 7, 8 and 9 are neutral. The pair is then A, B or C: clear, mediocre, or poor separation."
       />
       <SubTabBar tabs={[...CHANGE_LENS_TABS]} active={lens} onChange={setLens} />
       <Text style={styles.note}>
@@ -2397,6 +2451,7 @@ export function FormCards({
         title="Form"
         note="Last 6 finished league games. Baseline types and gap grades use the same method as the Baseline tab, from last-6 form places."
       />
+      <SeparationCallout t1={formPd.baselineGap.t1.score} t2={formPd.baselineGap.t2.score} />
       <SubTabBar tabs={[...FORM_SUBS]} active={sub} onChange={setSub} />
       {sub === 'fixture' ? (
         <View>
@@ -3291,6 +3346,14 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     backgroundColor: theme.surface,
   },
+  strongWarn: {
+    borderWidth: layout.borderWidth,
+    borderRadius: layout.borderRadius,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    backgroundColor: '#F59E0B',
+  },
+  strongWarnText: { fontFamily: fonts.bodySemiBold, fontSize: 15, lineHeight: 20, color: '#1C1917' },
   calloutText: { fontFamily: fonts.bodySemiBold, fontSize: 14, lineHeight: 20 },
   changeCodePress: { cursor: 'pointer' } as object,
   changeGuideGroup: { marginBottom: spacing.md },
@@ -3374,7 +3437,12 @@ const styles = StyleSheet.create({
     backgroundColor: theme.accentOrange,
     borderColor: theme.accentOrange,
   },
+  posCellNeutral: {
+    borderColor: '#D97706',
+    backgroundColor: '#FEF3C7',
+  },
   posNum: { fontFamily: fonts.bodySemiBold, fontSize: 11, color: theme.textMuted, lineHeight: 14 },
+  posMark: { fontFamily: fonts.body, fontSize: 8, color: theme.textMuted, lineHeight: 10 },
   posNumOn: { color: '#FFFFFF' },
   posTag: {
     fontFamily: fonts.bodySemiBold,

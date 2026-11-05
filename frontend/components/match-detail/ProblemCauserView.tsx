@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { SectorIntro, SideCard } from '@/components/match-detail/PowerDynamicsSectors';
+import { Callout, SectorIntro, SideCard } from '@/components/match-detail/PowerDynamicsSectors';
+import { problemSeparationLabel } from '@/utils/importanceOf3Engine';
 import SubTabBar from '@/components/shared/SubTabBar';
 import {
   type ProblemCauserRead,
@@ -84,6 +85,10 @@ export default function ProblemCauserView({
       <SectorIntro
         title="Problem causer"
         note="Head-to-head only, when these two sides play each other. Pick T1 or T2. Each mark is 1 in green or 0 in red. The level uses every 1 minus the meetings in the sample."
+      />
+      <Callout
+        text={problemSeparationLabel(Math.max(read.t1.level.score, read.t2.level.score), false)}
+        tone={Math.max(read.t1.level.score, read.t2.level.score) >= 6 ? 'warn' : 'info'}
       />
       <SubTabBar
         tabs={[

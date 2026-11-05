@@ -10,8 +10,11 @@ import {
   type MeasureAspect,
 } from '@/utils/powerDynamicCallMeasures';
 import { CALCULATION_ASPECTS, scoreCalculationFixture } from '@/utils/powerDynamicCalculationCalls';
+import { sectorSeparationLabel } from '@/utils/importanceOf3Engine';
+import { last6FormLeagueTable } from '@/utils/last6Form';
 import {
   classifyBaselineLetter,
+  gapSideScores,
   STREAMLINE_CLOSE_MAX,
   t1IsHomeSide,
   type BaselineLetter,
@@ -307,17 +310,53 @@ export function scoreCallFixture(
   const fixture = context?.fixture ?? { homeId: home.teamId, awayId: away.teamId, unix: 0 };
   const scoreSide = (side: CallTableRow, opponent: CallTableRow) =>
     scoreCallAspect(aspectId, side, table, { ...context, opponentId: opponent.teamId, fixture });
+  let scored: CallScore | null;
   if (aspect.pair) {
     const t1 = t1IsHomeSide(home, away) ? home : away;
     const t2 = t1.teamId === home.teamId ? away : home;
-    return scoreSide(t1, t2);
+    scored = scoreSide(t1, t2);
+  } else {
+    const homeScore = scoreSide(home, away);
+    const awayScore = scoreSide(away, home);
+    if (!homeScore) scored = awayScore;
+    else if (!awayScore) scored = homeScore;
+    else if (awayScore.percent > homeScore.percent) {
+      scored = { percent: awayScore.percent, reason: `${away.name} · ${awayScore.reason}` };
+    } else scored = { percent: homeScore.percent, reason: `${home.name} · ${homeScore.reason}` };
   }
-  const homeScore = scoreSide(home, away);
-  const awayScore = scoreSide(away, home);
-  if (!homeScore) return awayScore;
-  if (!awayScore) return homeScore;
-  if (awayScore.percent > homeScore.percent) {
-    return { percent: awayScore.percent, reason: `${away.name} · ${awayScore.reason}` };
+  return withGapSeparation(aspect, scored, home, away, table, context);
+}
+
+function withGapSeparation(
+  aspect: CallAspect,
+  score: CallScore | null,
+  home: CallTableRow,
+  away: CallTableRow,
+  table: CallTableRow[],
+  context?: CallSearchContext,
+): CallScore | null {
+  if (!score) return null;
+  if (aspect.tabId !== 'baseline' && aspect.tabId !== 'h2h' && aspect.tabId !== 'form') return score;
+  const t1 = t1IsHomeSide(home, away) ? home : away;
+  const t2 = t1.teamId === home.teamId ? away : home;
+  const ranks = formRanks(aspect.tabId, t1, t2, table, context);
+  const scores = ranks ? gapSideScores(ranks.t1, ranks.t2, ranks.size) : null;
+  const note = scores ? sectorSeparationLabel(scores.t1, scores.t2) : null;
+  if (!note || score.reason.includes(note)) return score;
+  return { percent: score.percent, reason: `${score.reason} · ${note}` };
+}
+
+function formRanks(
+  tabId: string,
+  t1: CallTableRow,
+  t2: CallTableRow,
+  table: CallTableRow[],
+  context?: CallSearchContext,
+): { t1: number | null; t2: number | null; size: number } | null {
+  if (tabId === 'form' && context?.matches && context.matches.length > 0) {
+    const rows = last6FormLeagueTable(table, context.matches);
+    const rankOf = (teamId: number) => rows.find((row) => row.teamId === teamId)?.formRank ?? null;
+    return { t1: rankOf(t1.teamId), t2: rankOf(t2.teamId), size: rows.length || table.length };
   }
-  return { percent: homeScore.percent, reason: `${home.name} · ${homeScore.reason}` };
+  return { t1: t1.rank, t2: t2.rank, size: table.length };
 }
