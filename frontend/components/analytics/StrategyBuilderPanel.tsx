@@ -17,7 +17,7 @@ import { buildLeagueStatsLive } from '@/services/statsBuilder';
 import { nextFixtureFor, type UpcomingLite } from '@/utils/statsGrading';
 import {
   DIMENSIONS, FIXTURE_SIDES, STRATEGY_PRESETS, buildStrategyConfig, conditionLabel, conditionMembership,
-  evaluateFixtureSides, evaluateStrategy, filterResults, fixtureSideLabel, getDimension, gradeShareByLeague,
+  daLevelOf, evaluateFixtureSides, evaluateStrategy, filterResults, getDimension, gradeShareByLeague,
   matchStrength, needsExport, needsFixtures, periodFrom, periodLabel, resultBackground, resultColour,
   splitPeriod, summarize,
   type CondMembership, type Condition, type Dimension, type FixtureSide, type LeagueBundle, type LeagueGradeShare,
@@ -89,12 +89,8 @@ export default function StrategyBuilderPanel() {
   // ---- query: the strategy ----
   const [conditions, setConditions] = useState<Condition[]>([]);
   const [logic, setLogic] = useState<StrategyLogic>('and');
-  // Read-context for NEW conditions: period (FT/1H/2H) × venue (Overall/Home/Away) × fixture side.
-  // Each added condition captures these, so different conditions can read differently.
-  const [gHalf, setGHalf] = useState<StatHalf>('ft');
-  const [gScope, setGScope] = useState<StatScope>('overall');
-  const [gSide, setGSide] = useState<FixtureSide>('either');
-  const gPeriod = useMemo(() => periodFrom(gHalf, gScope), [gHalf, gScope]);
+  // How conditions are composed: one combined builder, or separate Home | Away panels.
+  const [buildMode, setBuildMode] = useState<'combined' | 'split'>('combined');
 
   // ---- result mode + filters ----
   const [resultMode, setResultMode] = useState<'teams' | 'fixtures'>('teams');
@@ -247,15 +243,14 @@ export default function StrategyBuilderPanel() {
   }, [resultMode, fixtureRows, results]);
   const dimensionOptions = useMemo(() => [{ value: ALL, label: 'All categories' }, ...[...new Set(conditions.map((c) => c.dimensionId))].map((id) => ({ value: id, label: getDimension(id)?.label ?? id }))], [conditions]);
 
-  const addCondition = (c: Condition) => { setConditions((cur) => [...cur, { ...c, period: gPeriod, side: gSide }]); setActiveId(null); };
+  const addCondition = (c: Condition) => { setConditions((cur) => [...cur, c]); setActiveId(null); };
   const removeCondition = (id: string) => { setConditions((cur) => cur.filter((c) => c.id !== id)); setActiveId(null); };
   const toggleNot = (id: string) => { setConditions((cur) => cur.map((c) => (c.id === id ? { ...c, not: !c.not } : c))); setActiveId(null); };
   const clearAll = () => { setConditions([]); setFLeague(ALL); setFDimension(ALL); setFColor(ALL); setFMinGames(0); setFMinMatch(0); setActiveId(null); };
 
-  // One-click preset: set the global period/venue, logic and conditions, then recompute live.
+  // One-click preset: set logic + conditions (each with its own period), then recompute live.
   const applyPreset = (p: StrategyPreset) => {
-    const sp = splitPeriod(p.period);
-    setGHalf(sp.half); setGScope(sp.scope); setGSide('either');
+    setBuildMode('combined');
     setLogic(p.logic);
     setConditions(p.conditions.map((c) => ({ id: `c${(CONDITION_SEQ += 1)}`, dimensionId: c.dimensionId, period: p.period, methodId: c.methodId, options: { ...c.options }, side: 'either' as FixtureSide })));
     setFLeague(ALL); setFDimension(ALL); setFColor(ALL); setFMinGames(0); setFMinMatch(0);
@@ -275,8 +270,7 @@ export default function StrategyBuilderPanel() {
     const cfg = s.config;
     setConditions(cfg.conditions.map((c) => ({ ...c, id: `c${(CONDITION_SEQ += 1)}`, options: { ...c.options } })));
     setLogic(cfg.logic);
-    const sp = splitPeriod(cfg.conditions[0]?.period ?? cfg.period ?? 'overall');
-    setGHalf(sp.half); setGScope(sp.scope);
+    setBuildMode(cfg.conditions.some((c) => c.side === 'home' || c.side === 'away') ? 'split' : 'combined');
     setResultMode(cfg.resultMode);
     setFLeague(ALL); setFDimension(ALL); setFColor(ALL); setFMinGames(0); setFMinMatch(0);
     setActiveId(s.id);
@@ -323,49 +317,17 @@ export default function StrategyBuilderPanel() {
         </View>
       </View>
 
-      {/* Global period + venue panel — every condition is read here */}
-      <View style={styles.periodCard}>
-        <View style={styles.periodGroup}>
-          <Text style={styles.periodLabel}>Period</Text>
-          <View style={styles.segRow}>
-            {([['ft', 'Full time'], ['ht', '1st half'], ['2h', '2nd half']] as const).map(([v, label]) => {
-              const on = gHalf === v;
-              return (
-                <Pressable key={v} accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => setGHalf(v)} style={[styles.segBtn, on && styles.segBtnOn]}>
-                  <Text style={[styles.segText, on && styles.segTextOn]}>{label}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </View>
-        <View style={styles.periodGroup}>
-          <Text style={styles.periodLabel}>Venue</Text>
-          <View style={styles.segRow}>
-            {([['overall', 'Overall'], ['home', 'Home'], ['away', 'Away']] as const).map(([v, label]) => {
-              const on = gScope === v;
-              return (
-                <Pressable key={v} accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => setGScope(v)} style={[styles.segBtn, on && styles.segBtnOn]}>
-                  <Text style={[styles.segText, on && styles.segTextOn]}>{label}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </View>
-        <View style={styles.periodGroup}>
-          <Text style={styles.periodLabel}>Team (fixtures)</Text>
-          <View style={styles.segRow}>
-            {FIXTURE_SIDES.map(({ value, label }) => {
-              const on = gSide === value;
-              return (
-                <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => setGSide(value)} style={[styles.segBtn, on && styles.segBtnOn]}>
-                  <Text style={[styles.segText, on && styles.segTextOn]}>{label}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </View>
+      {/* Build mode: one combined builder, or separate Home | Away panels */}
+      <View style={styles.modeRow}>
+        {([['combined', 'Combined (either team)'], ['split', 'Home vs Away']] as const).map(([v, label]) => {
+          const on = buildMode === v;
+          return (
+            <Pressable key={v} accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => setBuildMode(v)} style={[styles.modeBtn, on && styles.modeBtnOn]}>
+              <Text style={[styles.modeBtnText, on && styles.modeBtnTextOn]}>{label}</Text>
+            </Pressable>
+          );
+        })}
       </View>
-      <Text style={styles.readNote}>Each condition you add captures the Period · Venue · Team above, so set them per condition (e.g. Away team · 2nd half · Away games) before adding.</Text>
 
       {/* Result mode */}
       <View style={styles.modeRow}>
@@ -380,7 +342,18 @@ export default function StrategyBuilderPanel() {
       </View>
 
       {/* A. Strategy configuration */}
-      <ConditionBuilder narrow={narrow} period={gPeriod} onAdd={addCondition} />
+      {buildMode === 'combined' ? (
+        <ConditionBuilder narrow={narrow} onAdd={addCondition} />
+      ) : (
+        <View style={[styles.splitRow, narrow && styles.filterCol]}>
+          <View style={wide ? styles.flex : styles.full}>
+            <ConditionBuilder narrow={narrow} fixedSide="home" title="🏠 Home team conditions" onAdd={addCondition} />
+          </View>
+          <View style={wide ? styles.flex : styles.full}>
+            <ConditionBuilder narrow={narrow} fixedSide="away" title="✈ Away team conditions" onAdd={addCondition} />
+          </View>
+        </View>
+      )}
 
       {/* B. Conditions + logic */}
       {conditions.length > 0 ? (
@@ -400,16 +373,27 @@ export default function StrategyBuilderPanel() {
             </View>
           </View>
           <Text style={styles.logicHint}>{logic === 'and' ? 'AND — a team must satisfy every condition.' : 'OR — a team must satisfy at least one condition.'} Tap NOT to exclude teams matching a condition.</Text>
-          <View style={styles.chips}>
-            {conditions.map((c) => (
-              <View key={c.id} style={[styles.chip, c.not && styles.chipNot]}>
-                <Pressable accessibilityRole="button" accessibilityLabel="Toggle NOT" accessibilityState={{ selected: !!c.not }} onPress={() => toggleNot(c.id)} style={[styles.chipNotBtn, c.not && styles.chipNotBtnOn]}>
-                  <Text style={[styles.chipNotText, c.not && styles.chipNotTextOn]}>NOT</Text>
-                </Pressable>
-                <Text style={styles.chipText}>{conditionLabel({ ...c, not: false })}</Text>
-                <Pressable accessibilityRole="button" accessibilityLabel="Remove condition" onPress={() => removeCondition(c.id)} style={styles.chipX}><Text style={styles.chipXText}>×</Text></Pressable>
-              </View>
-            ))}
+          <View style={styles.chipGroups}>
+            {([['home', '🏠 Home team'], ['away', '✈ Away team'], ['either', 'Either team']] as const).map(([sv, label]) => {
+              const group = conditions.filter((c) => (c.side ?? 'either') === sv);
+              if (!group.length) return null;
+              return (
+                <View key={sv} style={styles.chipGroup}>
+                  <Text style={styles.chipGroupLabel}>{label} · {group.length}</Text>
+                  <View style={styles.chips}>
+                    {group.map((c) => (
+                      <View key={c.id} style={[styles.chip, c.not && styles.chipNot]}>
+                        <Pressable accessibilityRole="button" accessibilityLabel="Toggle NOT" accessibilityState={{ selected: !!c.not }} onPress={() => toggleNot(c.id)} style={[styles.chipNotBtn, c.not && styles.chipNotBtnOn]}>
+                          <Text style={[styles.chipNotText, c.not && styles.chipNotTextOn]}>NOT</Text>
+                        </Pressable>
+                        <Text style={styles.chipText}>{conditionLabel({ ...c, not: false })}</Text>
+                        <Pressable accessibilityRole="button" accessibilityLabel="Remove condition" onPress={() => removeCondition(c.id)} style={styles.chipX}><Text style={styles.chipXText}>×</Text></Pressable>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              );
+            })}
           </View>
           {saving ? (
             <View style={styles.saveRow}>
@@ -711,18 +695,41 @@ function SummaryTile({ label, value, color }: { label: string; value: number; co
   );
 }
 
-/** A. Progressive selection: category → period → method → options → Add. */
-function ConditionBuilder({ narrow, period, onAdd }: { narrow: boolean; period: StrategyPeriod; onAdd: (c: Condition) => void }) {
+/** A segmented control group (Period / Venue / Team). */
+function SegGroup<T extends string>({ label, value, options, onChange }: { label: string; value: T; options: [T, string][]; onChange: (v: T) => void }) {
+  return (
+    <View style={styles.periodGroup}>
+      <Text style={styles.periodLabel}>{label}</Text>
+      <View style={styles.segRow}>
+        {options.map(([v, lab]) => {
+          const on = value === v;
+          return (
+            <Pressable key={v} accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => onChange(v)} style={[styles.segBtn, on && styles.segBtnOn]}>
+              <Text style={[styles.segText, on && styles.segTextOn]}>{lab}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+/** A. Self-contained builder: reads its own Period · Venue · Team, then Category → method → Add. */
+function ConditionBuilder({ narrow, fixedSide, title, onAdd }: { narrow: boolean; fixedSide?: FixtureSide; title?: string; onAdd: (c: Condition) => void }) {
   const DEFAULT_DIM = DIMENSIONS[0].id; // Stat filter · all tables — the unified entry
   const first = getDimension(DEFAULT_DIM)!;
   const [dimId, setDimId] = useState(DEFAULT_DIM);
   const [opts, setOpts] = useState<Record<string, string>>(defaultOptions(DEFAULT_DIM));
-  const [methodId, setMethodId] = useState<string>(methodsOf(first, period, defaultOptions(DEFAULT_DIM))[0]?.value ?? '');
+  const [half, setHalf] = useState<StatHalf>('ft');
+  const [scope, setScope] = useState<StatScope>('overall');
+  const [side, setSide] = useState<FixtureSide>('either');
+  const period = periodFrom(half, scope);
+  const [methodId, setMethodId] = useState<string>(methodsOf(first, periodFrom('ft', 'overall'), defaultOptions(DEFAULT_DIM))[0]?.value ?? '');
   const dim = getDimension(dimId)!;
   const methods = methodsOf(dim, period, opts);
 
-  // Period is global now; a new category resets method/options, an option that
-  // drives the feature list keeps the method only if it is still offered.
+  // A new category resets method/options; an option that drives the feature list
+  // keeps the method only if it is still offered.
   const changeDim = (v: string) => {
     const d = getDimension(v)!;
     const o = defaultOptions(v);
@@ -739,11 +746,16 @@ function ConditionBuilder({ narrow, period, onAdd }: { narrow: boolean; period: 
     }
   };
 
-  const add = () => onAdd({ id: `c${(CONDITION_SEQ += 1)}`, dimensionId: dimId, period, methodId, options: { ...opts } });
+  const add = () => onAdd({ id: `c${(CONDITION_SEQ += 1)}`, dimensionId: dimId, period, methodId, options: { ...opts }, side: fixedSide ?? side });
 
   return (
-    <View style={styles.builderCard}>
-      <Text style={styles.sectionLabel}>Strategy configuration</Text>
+    <View style={[styles.builderCard, fixedSide === 'home' && styles.builderHome, fixedSide === 'away' && styles.builderAway]}>
+      <Text style={styles.sectionLabel}>{title ?? 'Strategy configuration'}</Text>
+      <View style={styles.readRow}>
+        <SegGroup label="Period" value={half} options={[['ft', 'Full time'], ['ht', '1st half'], ['2h', '2nd half']]} onChange={setHalf} />
+        <SegGroup label="Venue" value={scope} options={[['overall', 'Overall'], ['home', 'Home'], ['away', 'Away']]} onChange={setScope} />
+        {!fixedSide ? <SegGroup label="Team (fixtures)" value={side} options={FIXTURE_SIDES.map((s) => [s.value, s.label] as [FixtureSide, string])} onChange={setSide} /> : null}
+      </View>
       <View style={[styles.filterRow, narrow && styles.filterCol]}>
         <FilterDropdown label="Category" value={dimId} options={DIMENSIONS.map((d) => ({ value: d.id, label: d.label }))} onChange={changeDim} style={narrow ? styles.full : styles.flex} />
         <FilterDropdown label="Method / feature" value={methodId} options={methods} onChange={setMethodId} style={narrow ? styles.full : styles.flex} />
@@ -771,6 +783,35 @@ function ConditionBuilder({ narrow, period, onAdd }: { narrow: boolean; period: 
       <Pressable accessibilityRole="button" onPress={add} style={({ pressed }) => [styles.addBtn, pressed && styles.addBtnPressed]}>
         <Text style={styles.addBtnText}>+ Add condition</Text>
       </Pressable>
+    </View>
+  );
+}
+
+/** A bold Difference-Alert flag, when the grade carries one. */
+function DaBadge({ grade }: { grade: string | null }) {
+  const lvl = daLevelOf(grade);
+  if (!lvl) return null;
+  return (
+    <View style={[styles.daBadge, lvl === 'lean' && styles.daBadgeLean]}>
+      <Text style={styles.daBadgeText}>{lvl === 'da' ? 'DA' : 'LEAN DA'}</Text>
+    </View>
+  );
+}
+
+/** One condition's reading: period/venue · feature · the stat % · grade · DA · why. */
+function EvalRow({ ev }: { ev: TeamEval }) {
+  const col = resultColour(ev.color);
+  return (
+    <View style={[styles.evalRow, { backgroundColor: resultBackground(ev.color) }]}>
+      <View style={styles.evalHead}>
+        <Text style={[styles.evalFeature, { color: col }]} numberOfLines={1}>{periodLabel(ev.period)} · {ev.dimensionLabel} · {ev.feature}</Text>
+        <View style={styles.evalGradeWrap}>
+          <DaBadge grade={ev.grade} />
+          {ev.grade ? <Text style={[styles.evalGrade, { color: col }]}>{ev.grade}</Text> : null}
+        </View>
+      </View>
+      <Text style={styles.evalMeta}><Text style={[styles.gradeStat, { color: col }]}>{ev.valueText}</Text> · {ev.method}{ev.sample != null ? ` · ${ev.sample}g` : ''}</Text>
+      <Text style={styles.evalReason} numberOfLines={2}>{ev.reason}</Text>
     </View>
   );
 }
@@ -806,16 +847,7 @@ function ResultCard({ result, upcoming, total, share }: { result: StrategyResult
         </Text>
       ) : null}
       <View style={styles.evalList}>
-        {result.conditions.map((ev, i) => (
-          <View key={i} style={[styles.evalRow, { backgroundColor: resultBackground(ev.color) }]}>
-            <View style={styles.evalHead}>
-              <Text style={[styles.evalFeature, { color: resultColour(ev.color) }]} numberOfLines={1}>{ev.dimensionLabel} · {ev.feature}</Text>
-              {ev.grade ? <Text style={[styles.evalGrade, { color: resultColour(ev.color) }]}>{ev.grade}</Text> : null}
-            </View>
-            <Text style={styles.evalMeta}>{periodLabel(ev.period)} · {ev.method} · {ev.valueText}{ev.sample != null ? ` · ${ev.sample}g` : ''}</Text>
-            <Text style={styles.evalReason} numberOfLines={2}>{ev.reason}</Text>
-          </View>
-        ))}
+        {result.conditions.map((ev, i) => (<EvalRow key={i} ev={ev} />))}
       </View>
     </View>
   );
@@ -896,7 +928,8 @@ function GradeChips({ sideLabel, evals }: { sideLabel: string; evals: TeamEval[]
       {evals.map((ev, i) => (
         <View key={i} style={[styles.gradeChip, { borderColor: resultColour(ev.color), backgroundColor: resultBackground(ev.color) }]}>
           <Text style={[styles.gradeChipSide, { color: resultColour(ev.color) }]}>{sideLabel}</Text>
-          <Text style={styles.gradeChipTxt} numberOfLines={1}>{periodLabel(ev.period)} · {ev.feature}{ev.grade ? ` · ${ev.grade}` : ''}</Text>
+          <Text style={styles.gradeChipTxt} numberOfLines={1}>{periodLabel(ev.period)} · {ev.feature} · {ev.valueText}{ev.grade ? ` · ${ev.grade}` : ''}</Text>
+          <DaBadge grade={ev.grade} />
         </View>
       ))}
     </View>
@@ -910,16 +943,7 @@ function SideEvals({ title, tint, evals }: { title: string; tint: string; evals:
     <View style={styles.sideEvalsWrap}>
       <Text style={[styles.sideEvalsTitle, { color: tint }]} numberOfLines={1}>{title}</Text>
       <View style={styles.evalList}>
-        {evals.map((ev, i) => (
-          <View key={i} style={[styles.evalRow, { backgroundColor: resultBackground(ev.color) }]}>
-            <View style={styles.evalHead}>
-              <Text style={[styles.evalFeature, { color: resultColour(ev.color) }]} numberOfLines={1}>{periodLabel(ev.period)} · {ev.dimensionLabel} · {ev.feature}</Text>
-              {ev.grade ? <Text style={[styles.evalGrade, { color: resultColour(ev.color) }]}>{ev.grade}</Text> : null}
-            </View>
-            <Text style={styles.evalMeta}>{ev.method} · {ev.valueText}{ev.sample != null ? ` · ${ev.sample}g` : ''}</Text>
-            <Text style={styles.evalReason} numberOfLines={2}>{ev.reason}</Text>
-          </View>
-        ))}
+        {evals.map((ev, i) => (<EvalRow key={i} ev={ev} />))}
       </View>
     </View>
   );
@@ -1210,4 +1234,22 @@ const styles = StyleSheet.create({
   readNote: { fontFamily: fonts.body, fontSize: 11, lineHeight: 16, color: theme.textMuted, marginBottom: spacing.sm },
   sideEvalsWrap: { marginTop: spacing.sm, gap: 4 },
   sideEvalsTitle: { fontFamily: fonts.bodySemiBold, fontSize: 13 },
+
+  // Split Home | Away builders + per-builder read row
+  splitRow: { flexDirection: 'row', gap: spacing.md, alignItems: 'flex-start', width: '100%' },
+  builderHome: { borderLeftWidth: 3, borderLeftColor: theme.accentGreen },
+  builderAway: { borderLeftWidth: 3, borderLeftColor: theme.accentBlue },
+  readRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, marginBottom: spacing.xs },
+
+  // Condition chips grouped by side
+  chipGroups: { gap: spacing.sm },
+  chipGroup: { gap: spacing.xs },
+  chipGroupLabel: { fontFamily: fonts.bodySemiBold, fontSize: 11, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
+
+  // Grade / DA emphasis
+  evalGradeWrap: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  gradeStat: { fontFamily: fonts.bodySemiBold, fontSize: 12 },
+  daBadge: { borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1, backgroundColor: theme.loss },
+  daBadgeLean: { backgroundColor: theme.yellow },
+  daBadgeText: { fontFamily: fonts.bodySemiBold, fontSize: 9, color: '#FFFFFF', letterSpacing: 0.5 },
 });

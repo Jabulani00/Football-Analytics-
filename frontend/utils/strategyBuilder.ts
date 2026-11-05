@@ -174,6 +174,13 @@ export function resultColour(c: ResultColor): string {
 export function resultBackground(c: ResultColor): string {
   return c === 'green' ? 'rgba(5,150,105,0.10)' : c === 'yellow' ? 'rgba(202,138,4,0.12)' : c === 'red' ? 'rgba(220,38,38,0.08)' : 'rgba(148,163,184,0.10)';
 }
+/** The Difference-Alert level carried in a grade string, if any (reuses existing grade text). */
+export function daLevelOf(grade: string | null | undefined): 'da' | 'lean' | null {
+  if (!grade) return null;
+  if (/lean/i.test(grade)) return 'lean';
+  if (/\bDA\b/.test(grade) && !/none\s*da/i.test(grade)) return 'da';
+  return null;
+}
 const COLOR_RANK: Record<ResultColor, number> = { green: 3, yellow: 2, red: 1, none: 0 };
 function strongestColor(colors: ResultColor[]): ResultColor {
   return colors.reduce<ResultColor>((best, c) => (COLOR_RANK[c] > COLOR_RANK[best] ? c : best), 'none');
