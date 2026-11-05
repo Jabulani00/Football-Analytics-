@@ -97,6 +97,8 @@ export type TeamEval = {
   period: StrategyPeriod;
   reason: string;
   sample: number | null;
+  /** The condition this eval proves — set when assembled into a result. */
+  conditionId?: string;
 };
 
 export type MethodOpt = { value: string; label: string };
@@ -165,6 +167,12 @@ function exportLoc(p: StrategyPeriod): { periodKey: string; scope: string } {
   return { periodKey: half, scope };
 }
 function pctText(v: number | null): string { return v == null ? '—' : `${Math.round(v)}%`; }
+/** The document's direction arrow for a percentage: ↑ strong · mid · ↓ weak. */
+function arrowOf(v: number | null): string {
+  if (v == null) return '—';
+  const d = directionOf(v);
+  return d === 'up' ? '↑' : d === 'down' ? '↓' : 'mid';
+}
 function avgText(v: number | null): string { return v == null ? '—' : v.toFixed(2); }
 function colourToResult(c: CharColour): ResultColor { return c === 'green' ? 'green' : c === 'red' ? 'red' : 'yellow'; }
 
@@ -173,6 +181,13 @@ export function resultColour(c: ResultColor): string {
 }
 export function resultBackground(c: ResultColor): string {
   return c === 'green' ? 'rgba(5,150,105,0.10)' : c === 'yellow' ? 'rgba(202,138,4,0.12)' : c === 'red' ? 'rgba(220,38,38,0.08)' : 'rgba(148,163,184,0.10)';
+}
+/** The Difference-Alert level carried in a grade string, if any (reuses existing grade text). */
+export function daLevelOf(grade: string | null | undefined): 'da' | 'lean' | null {
+  if (!grade) return null;
+  if (/lean/i.test(grade)) return 'lean';
+  if (/\bDA\b/.test(grade) && !/none\s*da/i.test(grade)) return 'da';
+  return null;
 }
 const COLOR_RANK: Record<ResultColor, number> = { green: 3, yellow: 2, red: 1, none: 0 };
 function strongestColor(colors: ResultColor[]): ResultColor {
@@ -289,7 +304,7 @@ const grading1: Dimension = {
   id: 'grading1',
   label: 'Stats Grading · Method 1',
   source: 'export',
-  periods: ['overall'],
+  periods: ['overall', 'firsthalf', 'secondhalf'],
   methods: () => GRADABLE_STATS.map((s) => ({ value: s.key, label: s.label })),
   options: [
     { key: 'source', label: 'Source list', options: SOURCE_LISTS.map((s) => ({ value: String(s.id), label: s.label })), default: '1' },
@@ -302,21 +317,27 @@ const grading1: Dimension = {
     const source = (Number(sel.options.source ?? '1') as SourceListId);
     const direction = sel.options.direction ?? ALL;
     const letter = sel.options.letter ?? ALL;
-    const graded = gradeAllTeamsForStat(stats, source, sel.methodId, b.competition);
+    const half = splitPeriod(sel.period).half; // 'ft' | 'ht' | '2h' — grade the chosen half
+    const graded = gradeAllTeamsForStat(stats, source, sel.methodId, b.competition, half);
+    const srcLabel = SOURCE_LISTS.find((s) => s.id === source)?.label ?? String(source);
+    const per = periodLabel(sel.period);
     const out: TeamEval[] = [];
     for (const g of graded) {
       if (g.grade == null || g.direction == null) continue;
       if (direction !== ALL && g.direction !== direction) continue;
       if (letter !== ALL && g.grade !== letter) continue;
+      const dirWord = g.direction === 'strong' ? 'Strong' : 'Weak';
+      const leagueNote = g.grade === 'C' ? ' (above league avg)' : g.grade === 'D' ? ' (below league avg)' : '';
       out.push({
         teamId: g.teamId, team: g.team, competition: b.competition, qualifies: true,
         value: g.overallValue, valueText: pctText(g.overallValue),
-        grade: `${g.grade}${g.roman ? ` · ${g.roman}` : ''}${g.da ? ' · DA' : ''}`, color: gradeColor(g.grade),
+        // Roman-forward, self-explaining — e.g. "II · B · DA" (daLevelOf still reads the DA).
+        grade: `${g.roman ? `${g.roman} · ` : ''}${g.grade}${g.da ? ' · DA' : ''}`, color: gradeColor(g.grade),
         dimensionId: 'grading1', dimensionLabel: 'Stats Grading · Method 1',
         feature: gradableStatLabel(sel.methodId),
-        method: `${g.direction} · ${SOURCE_LISTS.find((s) => s.id === source)?.label ?? source} · ${g.grade}`,
-        period: 'overall',
-        reason: `Home ${pctText(g.homeValue)} / Overall ${pctText(g.overallValue)} → grade ${g.grade}`,
+        method: `${dirWord} · ${srcLabel} · ${per}`,
+        period: sel.period,
+        reason: `Home ${pctText(g.homeValue)} ${arrowOf(g.homeValue)} / Overall ${pctText(g.overallValue)} ${arrowOf(g.overallValue)}${leagueNote} → Roman ${g.roman ?? '—'} · ${g.grade}`,
         sample: g.sample,
       });
     }
@@ -733,17 +754,31 @@ export function needsExport(conditions: { dimensionId: string }[]): boolean {
 
 /* ----------------------------------------------------------------- orchestration */
 
+/** Which team of the upcoming fixture a condition targets (Fixtures mode). */
+export type FixtureSide = 'either' | 'home' | 'away';
+export const FIXTURE_SIDES: { value: FixtureSide; label: string }[] = [
+  { value: 'either', label: 'Either team' },
+  { value: 'home', label: 'Home team' },
+  { value: 'away', label: 'Away team' },
+];
+export function fixtureSideLabel(s: FixtureSide | undefined): string {
+  return s === 'home' ? 'Home team' : s === 'away' ? 'Away team' : 'Either';
+}
+
 export type Condition = {
   id: string;
   dimensionId: string;
+  /** How the stat is read: FT/1H/2H × Overall/Home/Away (per condition). */
   period: StrategyPeriod;
   methodId: string;
   options: Record<string, string>;
+  /** Which fixture team must satisfy this (Fixtures mode); default 'either'. */
+  side?: FixtureSide;
   /** When true, a team matches this condition by NOT satisfying it (exclude). */
   not?: boolean;
 };
 
-/** How a strategy applies to a fixture's two sides. */
+/** How a strategy applies to a fixture's two sides (legacy coarse filter). */
 export type MatchScope = 'either' | 'home' | 'away' | 'both';
 export const MATCH_SCOPES: { value: MatchScope; label: string }[] = [
   { value: 'either', label: 'Either team' },
@@ -777,8 +812,9 @@ export function conditionLabel(cond: Condition): string {
       return o.options.find((x) => x.value === val)?.label;
     })
     .filter(Boolean);
-  // Period is global now (set by the FT/1H/2H + venue panel), so it is not shown per chip.
-  return `${cond.not ? 'NOT · ' : ''}${dim.label} → ${method}${opts.length ? ` · ${opts.join(' · ')}` : ''}`;
+  // Per-condition: show the fixture side, then the stat read (period/venue), then the method.
+  const sidePart = cond.side && cond.side !== 'either' ? `${fixtureSideLabel(cond.side)} · ` : '';
+  return `${cond.not ? 'NOT · ' : ''}${sidePart}${periodLabel(cond.period)} → ${dim.label} → ${method}${opts.length ? ` · ${opts.join(' · ')}` : ''}`;
 }
 
 /* ----------------------------------------------------------------- saved strategies */
@@ -792,9 +828,9 @@ export type SavedStrategyConfig = {
   conditions: Condition[];
   logic: StrategyLogic;
   /** Global FT/1H/2H + venue the whole strategy is read at (default 'overall'). */
+  /** Legacy global default period (new builds store period/side per condition). */
   period?: StrategyPeriod;
   resultMode: 'teams' | 'fixtures';
-  matchScope: MatchScope;
 };
 
 export type SavedStrategy = {
@@ -817,12 +853,10 @@ export function describeStrategy(cfg: SavedStrategyConfig): string {
   const body = conds.length
     ? `${cfg.logic.toUpperCase()} of ${conds.length}: ${conds.join(joiner)}`
     : 'No conditions yet';
-  const periodPart = `${periodLabel(cfg.period ?? 'overall')} · `;
   if (cfg.resultMode === 'fixtures') {
-    const scope = MATCH_SCOPES.find((s) => s.value === cfg.matchScope)?.label ?? cfg.matchScope;
-    return `${periodPart}Fixtures · grade qualification · ${scope}. ${body}`;
+    return `Fixtures · grade qualification · home/away targeting. ${body}`;
   }
-  return `${periodPart}Qualifying teams. ${body}`;
+  return `Qualifying teams. ${body}`;
 }
 
 /** The parts of the panel's live state that make up a saved strategy. */
@@ -830,9 +864,7 @@ export function buildStrategyConfig(s: SavedStrategyConfig): SavedStrategyConfig
   return {
     conditions: s.conditions.map((c) => ({ ...c, options: { ...c.options } })),
     logic: s.logic,
-    period: s.period ?? 'overall',
     resultMode: s.resultMode,
-    matchScope: s.matchScope,
   };
 }
 
@@ -847,10 +879,11 @@ function notEval(cond: Condition, info: { team: string; teamId: number | null; c
     dimensionId: cond.dimensionId, dimensionLabel: dim?.label ?? cond.dimensionId,
     feature: `NOT ${method}`, method: 'excluded', period,
     reason: `Does not match ${dim?.label ?? cond.dimensionId} · ${method}`, sample: null,
+    conditionId: cond.id,
   };
 }
 
-export function evaluateStrategy(bundles: LeagueBundle[], conditions: Condition[], logic: StrategyLogic, period: StrategyPeriod = 'overall'): StrategyResult[] {
+export function evaluateStrategy(bundles: LeagueBundle[], conditions: Condition[], logic: StrategyLogic): StrategyResult[] {
   if (!conditions.length) return [];
   // Per condition: a membership set of globalKeys and the eval that proves it.
   const condSet = new Map<string, Set<string>>();
@@ -862,11 +895,11 @@ export function evaluateStrategy(bundles: LeagueBundle[], conditions: Condition[
     const em = new Map<string, TeamEval>();
     if (dim) {
       for (const bundle of bundles) {
-        const evals = dim.evaluate(bundle, { period, methodId: cond.methodId, options: cond.options });
+        const evals = dim.evaluate(bundle, { period: cond.period, methodId: cond.methodId, options: cond.options });
         for (const ev of evals) {
           if (!ev.qualifies) continue;
           const key = `${bundle.competition}::${teamKeyOf(ev)}`;
-          set.add(key); em.set(key, ev);
+          set.add(key); em.set(key, { ...ev, conditionId: cond.id });
           if (!universe.has(key)) universe.set(key, { team: ev.team, teamId: ev.teamId, competition: ev.competition });
         }
       }
@@ -883,7 +916,7 @@ export function evaluateStrategy(bundles: LeagueBundle[], conditions: Condition[
     });
     const ok = logic === 'and' ? matched.length === conditions.length : matched.length >= 1;
     if (!ok) continue;
-    const evals = matched.map((c) => (c.not ? notEval(c, info, period) : condEval.get(c.id)!.get(key)!));
+    const evals = matched.map((c) => (c.not ? notEval(c, info, c.period) : condEval.get(c.id)!.get(key)!));
     results.push({ team: info.team, teamId: info.teamId, competition: info.competition, conditions: evals, color: strongestColor(evals.map((e) => e.color)) });
   }
   return results.sort((a, b) => COLOR_RANK[b.color] - COLOR_RANK[a.color] || a.team.localeCompare(b.team));
@@ -896,12 +929,244 @@ export function resultsByTeam(results: StrategyResult[]): Map<string, StrategyRe
   return m;
 }
 
+/* ----------------------------------------------------------------- half-by-half breakdown */
+
+/** One team's reading of a condition's stat on one half (FT / 1st / 2nd). */
+export type HalfReading = {
+  half: StatHalf;
+  label: string;
+  value: number | null;
+  valueText: string;
+  /** UP/MID/DOWN band for a % (null for averages); the live grading direction. */
+  band: string | null;
+  color: ResultColor;
+  sample: number | null;
+  /** The half the condition itself filters for. */
+  isCurrent: boolean;
+};
+
+/**
+ * The single live table column a condition reads, when it maps to one — so the
+ * same stat can be re-read on the other halves. Composite dimensions (dominance,
+ * opposite, gap, characters, omit) combine several readings and return null.
+ */
+function conditionStat(cond: Condition): { prefix: string; key: string; kind: StatKind; decimals: number } | null {
+  switch (cond.dimensionId) {
+    case 'statfilter': {
+      const fam = statFamily(cond.options.family);
+      const item = fam.items.find((i) => i.key === cond.methodId);
+      if (!item) return null;
+      const window = cond.options.window ?? 'season';
+      const prefix = fam.windowed && window !== 'season' ? window : fam.prefix;
+      return { prefix, key: item.key, kind: item.kind, decimals: 2 };
+    }
+    case 'statscall': {
+      const def = DOMINANCE_STATS.find((d) => d.key === cond.methodId);
+      if (!def) return null;
+      return { prefix: def.family, key: def.key, kind: def.pctBased ? 'pct' : 'avg', decimals: def.decimals };
+    }
+    case 'grading1':
+    case 'grading2':
+      // Every gradable stat is a percentage column in the ordinary family.
+      return { prefix: 'ordinary', key: cond.methodId, kind: 'pct', decimals: 0 };
+    default:
+      return null;
+  }
+}
+
+/**
+ * How one team reads a condition's stat across Full time / 1st half / 2nd half,
+ * at the condition's own venue scope. Reuses the live tables only — no new maths;
+ * the % band reuses the shared `directionOf`. Returns null for composite
+ * conditions that don't resolve to a single stat column, or when the league's
+ * export isn't loaded. "—" where a half has no table for that stat.
+ */
+export function teamHalfBreakdown(
+  bundles: LeagueBundle[],
+  cond: Condition,
+  team: { competition: string; team: string },
+): HalfReading[] | null {
+  const stat = conditionStat(cond);
+  if (!stat) return null;
+  const stats = bundles.find((b) => b.competition === team.competition)?.stats;
+  if (!stats) return null;
+  const { half: curHalf, scope } = splitPeriod(cond.period);
+  const halves: { half: StatHalf; label: string }[] = [
+    { half: 'ft', label: 'Full time' },
+    { half: 'ht', label: '1st half' },
+    { half: '2h', label: '2nd half' },
+  ];
+  return halves.map(({ half, label }) => {
+    const v = tableVal(stats, stat.prefix, half, scope, team.team, stat.key);
+    let valueText = '—';
+    let band: string | null = null;
+    let color: ResultColor = 'none';
+    if (v != null) {
+      if (stat.kind === 'pct') {
+        const dir = directionOf(v);
+        band = dir.toUpperCase();
+        color = dir === 'up' ? 'green' : dir === 'mid' ? 'yellow' : 'red';
+        valueText = pctText(v);
+      } else if (stat.kind === 'run') {
+        color = v >= 4 ? 'green' : v >= 2 ? 'yellow' : 'red';
+        valueText = `${v}×`;
+      } else {
+        valueText = v.toFixed(stat.decimals ?? 2);
+      }
+    }
+    const s = tableVal(stats, stat.prefix, half, scope, team.team, 'sample_size');
+    return { half, label, value: v, valueText, band, color, sample: s == null ? null : Math.round(s), isCurrent: half === curHalf };
+  });
+}
+
+/* ----------------------------------------------------------------- per-side fixture evaluation */
+
+export type CondMembership = { set: Set<string>; evalByKey: Map<string, TeamEval> };
+/** Per condition, the teams that satisfy it (at the condition's own period) + the proving eval. */
+export function conditionMembership(bundles: LeagueBundle[], conditions: Condition[]): Map<string, CondMembership> {
+  const out = new Map<string, CondMembership>();
+  for (const cond of conditions) {
+    const dim = getDimension(cond.dimensionId);
+    const set = new Set<string>();
+    const evalByKey = new Map<string, TeamEval>();
+    if (dim) {
+      for (const bundle of bundles) {
+        for (const ev of dim.evaluate(bundle, { period: cond.period, methodId: cond.methodId, options: cond.options })) {
+          if (!ev.qualifies) continue;
+          const key = `${bundle.competition}::${teamKeyOf(ev)}`;
+          set.add(key); evalByKey.set(key, { ...ev, conditionId: cond.id });
+        }
+      }
+    }
+    out.set(cond.id, { set, evalByKey });
+  }
+  return out;
+}
+
+export type FixtureTeam = { id: number | null; name: string };
+export type FixtureSideResult = { homeEvals: TeamEval[]; awayEvals: TeamEval[]; color: ResultColor; matched: number };
+
+/**
+ * Does a fixture (home H, away A) satisfy the strategy with per-condition side
+ * targeting? Each condition is checked against the team its `side` names (either
+ * = H or A); `not` inverts membership. AND needs all conditions, OR needs one.
+ * Returns the matched evals grouped by which team satisfied them, or null.
+ */
+export function evaluateFixtureSides(
+  membership: Map<string, CondMembership>,
+  conditions: Condition[],
+  logic: StrategyLogic,
+  competition: string,
+  home: FixtureTeam,
+  away: FixtureTeam,
+): FixtureSideResult | null {
+  if (!conditions.length) return null;
+  const hKey = `${competition}::${teamKeyOf({ teamId: home.id, team: home.name })}`;
+  const aKey = `${competition}::${teamKeyOf({ teamId: away.id, team: away.name })}`;
+  const hInfo = { team: home.name, teamId: home.id, competition };
+  const aInfo = { team: away.name, teamId: away.id, competition };
+  const homeEvals: TeamEval[] = [];
+  const awayEvals: TeamEval[] = [];
+  let matched = 0;
+  for (const c of conditions) {
+    const m = membership.get(c.id);
+    if (!m) continue;
+    const inH = c.not ? !m.set.has(hKey) : m.set.has(hKey);
+    const inA = c.not ? !m.set.has(aKey) : m.set.has(aKey);
+    const side = c.side ?? 'either';
+    const takeHome = (side === 'home' || side === 'either') && inH;
+    const takeAway = (side === 'away' || side === 'either') && inA;
+    if (takeHome) homeEvals.push(c.not ? notEval(c, hInfo, c.period) : m.evalByKey.get(hKey)!);
+    if (takeAway) awayEvals.push(c.not ? notEval(c, aInfo, c.period) : m.evalByKey.get(aKey)!);
+    if (side === 'home' ? inH : side === 'away' ? inA : inH || inA) matched += 1;
+  }
+  const ok = logic === 'and' ? matched === conditions.length : matched >= 1;
+  if (!ok) return null;
+  const color = strongestColor([...homeEvals, ...awayEvals].map((e) => e.color));
+  return { homeEvals, awayEvals, color, matched };
+}
+
 export type StrategySummary = { teams: number; leagues: number; green: number; yellow: number; red: number };
 export function summarize(results: StrategyResult[]): StrategySummary {
   const leagues = new Set(results.map((r) => r.competition));
   let green = 0, yellow = 0, red = 0;
   for (const r of results) { if (r.color === 'green') green += 1; else if (r.color === 'yellow') yellow += 1; else if (r.color === 'red') red += 1; }
   return { teams: results.length, leagues: leagues.size, green, yellow, red };
+}
+
+/* ----------------------------------------------------------------- quick strategy presets */
+
+export type PresetCondition = { dimensionId: string; methodId: string; options: Record<string, string> };
+export type StrategyPreset = { id: string; label: string; note: string; period: StrategyPeriod; logic: StrategyLogic; conditions: PresetCondition[] };
+
+/** A Stat-filter Limit (≥/≤) condition — the shape most presets use. */
+function sfLimit(methodId: string, value: number, o: { family?: string; window?: string; cmp?: 'gte' | 'lte' } = {}): PresetCondition {
+  return {
+    dimensionId: 'statfilter',
+    methodId,
+    options: { family: o.family ?? 'ordinary', window: o.window ?? 'season', mode: 'limit', level: ALL, cmp: o.cmp ?? 'gte', value: String(value) },
+  };
+}
+
+/**
+ * Ready-made strategies, ported from the Method 3 "Leaky Leaky" family
+ * (utils/strategyFilter.ts) plus a few more. Expressed as Stat-filter limits at a
+ * single global period/venue (the builder's model), so one click fills the build.
+ */
+export const STRATEGY_PRESETS: StrategyPreset[] = [
+  {
+    id: 'leaky', label: 'Leaky Leaky · BTTS & goals', note: 'Both teams concede often and both score.',
+    period: 'overall', logic: 'and',
+    conditions: [sfLimit('conceding_05', 80, { window: 'last10' }), sfLimit('btts_yes', 55), sfLimit('over25', 50)],
+  },
+  {
+    id: 'over25', label: 'Goals galore · Over 2.5', note: 'Free-scoring and leaky over the last 10.',
+    period: 'overall', logic: 'and',
+    conditions: [sfLimit('sc_avg', 1.5, { window: 'last10' }), sfLimit('conceding_05', 80, { window: 'last10' })],
+  },
+  {
+    id: 'secondhalf', label: '2nd-half goals', note: 'Goals arrive after the break.',
+    period: 'secondhalf', logic: 'and',
+    conditions: [sfLimit('over15', 55), sfLimit('scoring_05', 70, { window: 'last5' })],
+  },
+  {
+    id: 'tight', label: 'Tight & low-scoring', note: 'Unders and clean sheets.',
+    period: 'overall', logic: 'and',
+    conditions: [sfLimit('under25', 55), sfLimit('cs_pct', 40)],
+  },
+  {
+    id: 'stronghome', label: 'Strong at home', note: 'Wins and scores at home.',
+    period: 'home', logic: 'and',
+    conditions: [sfLimit('w_pct', 55), sfLimit('sc_pct', 80)],
+  },
+  {
+    id: 'bttsboth', label: 'BTTS both halves', note: 'Both teams score in each half.',
+    period: 'overall', logic: 'and',
+    conditions: [sfLimit('btts_both_halves', 40, { family: 'ftonly' })],
+  },
+];
+
+/* ----------------------------------------------------------------- match strength & grade share */
+
+/** How much of the strategy a result satisfies — matched vs total conditions. */
+export function matchStrength(result: StrategyResult, total: number): { matched: number; total: number; pct: number } {
+  const matched = result.conditions.length;
+  return { matched, total, pct: total > 0 ? Math.round((matched / total) * 100) : 0 };
+}
+
+export type LeagueGradeShare = { total: number; byColor: Record<ResultColor, number>; byGrade: Record<string, number> };
+/** Per competition, the share of each colour / grade across that league's qualifiers. */
+export function gradeShareByLeague(results: StrategyResult[]): Map<string, LeagueGradeShare> {
+  const m = new Map<string, LeagueGradeShare>();
+  for (const r of results) {
+    let s = m.get(r.competition);
+    if (!s) { s = { total: 0, byColor: { green: 0, yellow: 0, red: 0, none: 0 }, byGrade: {} }; m.set(r.competition, s); }
+    s.total += 1;
+    s.byColor[r.color] += 1;
+    const g = r.conditions.find((c) => c.grade)?.grade;
+    if (g) s.byGrade[g] = (s.byGrade[g] ?? 0) + 1;
+  }
+  return m;
 }
 
 /* ----------------------------------------------------------------- fixture recommendations */
@@ -949,7 +1214,7 @@ export function recommendFixture(
   return { prediction, rec };
 }
 
-export type ResultFilters = { league: string; dimension: string; color: string; minGames: number };
+export type ResultFilters = { league: string; dimension: string; color: string; minGames: number; minMatch?: number; total?: number };
 export function filterResults(results: StrategyResult[], f: ResultFilters): StrategyResult[] {
   return results.filter((r) => {
     if (f.league !== ALL && r.competition !== f.league) return false;
@@ -958,6 +1223,9 @@ export function filterResults(results: StrategyResult[], f: ResultFilters): Stra
     if (f.minGames > 0) {
       const samples = r.conditions.map((c) => c.sample).filter((s): s is number => s != null);
       if (samples.length && Math.min(...samples) < f.minGames) return false;
+    }
+    if (f.minMatch && f.minMatch > 0 && f.total && f.total > 0) {
+      if ((r.conditions.length / f.total) * 100 < f.minMatch) return false;
     }
     return true;
   });

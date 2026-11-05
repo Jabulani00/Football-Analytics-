@@ -31,6 +31,8 @@ export const MIN_PLAYED: Record<SourceListId, { overall: number; home: number }>
 };
 
 export type Direction = 'up' | 'mid' | 'down';
+/** Which half of the match the grade reads (document: Full time / 1st / 2nd). */
+export type GradePeriod = 'ft' | 'ht' | '2h';
 
 export function directionOf(value: number): Direction {
   if (value >= BAND_UP) return 'up';
@@ -242,14 +244,15 @@ export function gradeAllTeamsForStat(
   sourceList: SourceListId,
   statKey: string,
   competition: string,
+  half: GradePeriod = 'ft',
 ): TeamGradeRow[] {
   const source = sourceListById(sourceList);
   const statLabel = gradableStatLabel(statKey);
-  const leagueAvg = stats.tables['league_avg_ft_overall']?.[0];
+  const leagueAvg = stats.tables[`league_avg_${half}_overall`]?.[0];
   const leagueValue = numAt(leagueAvg, statKey);
 
-  const overallByWindow = source.windows.map((w) => stats.tables[`${w}_ft_overall`] ?? []);
-  const homeByWindow = source.windows.map((w) => new Map((stats.tables[`${w}_ft_home`] ?? []).map((r) => [teamKey(r), r])));
+  const overallByWindow = source.windows.map((w) => stats.tables[`${w}_${half}_overall`] ?? []);
+  const homeByWindow = source.windows.map((w) => new Map((stats.tables[`${w}_${half}_home`] ?? []).map((r) => [teamKey(r), r])));
   const overallMaps = overallByWindow.map((rows) => new Map(rows.map((r) => [teamKey(r), r])));
 
   // Union of teams across the source's windows.
