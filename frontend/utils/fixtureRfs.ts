@@ -249,6 +249,54 @@ function seriesRows(results: TeamResult[], side: RfsSide, minLength: number): Rf
   return rows;
 }
 
+/** Ordinary RFS for ONE stat, for a single team — the overlay a grade uses. */
+export type StatRfs = {
+  key: string;
+  /** "usually {usual}" — e.g. "scores". */
+  usual: string;
+  /** "{failed} …" — e.g. "drew a blank". */
+  failed: string;
+  /** Season rate for the stat (how usual the behaviour is). */
+  rate: number;
+  sample: number;
+  /** The most recent game, which went against the usual. */
+  lastScore: string;
+  lastOpponent: string;
+  lastHome: boolean;
+};
+
+/**
+ * Does ONE stat carry a recency-failure signal for a team? Reuses
+ * RFS_ORDINARY_DEFS: the season rate is "usual" (≥ `minRate`) but the most recent
+ * game went against it. `results` must be newest-first. Null when there is no
+ * signal, too few games, or the stat has no RFS definition. Cheap — meant to be
+ * called per team on demand (e.g. when a grade row is expanded).
+ */
+export function ordinaryRfsForStat(
+  results: TeamResult[],
+  statKey: string,
+  minRate: number = USUAL_MIN_RATE,
+): StatRfs | null {
+  if (results.length < MIN_RFS_SAMPLE) return null;
+  const def = RFS_ORDINARY_DEFS.find((d) => d.key === statKey);
+  if (!def) return null;
+  const newest = results[0];
+  if (def.hit(newest)) return null; // last game did the usual — no signal
+  const hits = results.filter(def.hit).length;
+  const rate = Math.round((100 * hits) / results.length);
+  if (rate < minRate) return null; // not usual enough for a failure to matter
+  return {
+    key: def.key,
+    usual: def.usual,
+    failed: def.failed,
+    rate,
+    sample: results.length,
+    lastScore: `${newest.gf}-${newest.ga}`,
+    lastOpponent: newest.opponentName,
+    lastHome: newest.isHome,
+  };
+}
+
 function bySide(a: RfsSide, b: RfsSide): number {
   return a === b ? 0 : a === 'home' ? -1 : 1;
 }

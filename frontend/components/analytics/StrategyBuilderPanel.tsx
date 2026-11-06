@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { Platform } from 'react-native';
 import type { StyleProp, ViewStyle } from 'react-native';
@@ -15,6 +15,8 @@ import { TARGET_MARKETS, backtestTeam, targetMarket, type BacktestResult, type B
 import { clientStaleTime } from '@/services/oddAlertsCachePolicy';
 import { buildLeagueStatsLive } from '@/services/statsBuilder';
 import { nextFixtureFor, type UpcomingLite } from '@/utils/statsGrading';
+import { ordinaryRfsForStat, type StatRfs } from '@/utils/fixtureRfs';
+import { teamResultsFromFixtures } from '@/utils/teamResults';
 import {
   DIMENSIONS, FIXTURE_SIDES, STRATEGY_PRESETS, buildStrategyConfig, conditionLabel, conditionMembership,
   daLevelOf, evaluateFixtureSides, evaluateStrategy, filterResults, getDimension, gradeShareByLeague,
@@ -106,6 +108,8 @@ export default function StrategyBuilderPanel() {
 
   const wantExport = conditions.length > 0 && needsExport(conditions);
   const teamsNeedFixtures = conditions.length > 0 && needsFixtures(conditions);
+  // The grading RFS overlay reads season fixtures; bounded to the capped leagues to limit load.
+  const rfsNeedsFixtures = conditions.some((c) => c.dimensionId === 'grading1');
   // A chosen target market needs the season fixtures to backtest (bounded to the capped leagues).
   const wantBacktest = resultMode === 'teams' && target !== ALL && conditions.length > 0;
   const targetDef = useMemo(() => (target !== ALL ? targetMarket(target) : undefined), [target]);
@@ -134,8 +138,8 @@ export default function StrategyBuilderPanel() {
   // season fixtures are fetched only for them — even for export/fixtures-based
   // conditions. Teams mode still spans every league.
   const needFixturesFor = (compId: number) => (resultMode === 'teams'
-    ? (teamsNeedFixtures || (wantBacktest && fixtureCompIds.has(compId)))
-    : (teamsNeedFixtures && fixtureCompIds.has(compId)));
+    ? (teamsNeedFixtures || ((wantBacktest || rfsNeedsFixtures) && fixtureCompIds.has(compId)))
+    : ((teamsNeedFixtures || rfsNeedsFixtures) && fixtureCompIds.has(compId)));
   const needExportFor = (compId: number) => (resultMode === 'teams' ? wantExport : wantExport && fixtureCompIds.has(compId));
 
   // ---- per-league data (reused engines; built only when a condition/mode needs it) ----
@@ -200,6 +204,23 @@ export default function StrategyBuilderPanel() {
       return teamHalfBreakdown(bundles, cond, { competition: ev.competition, team: ev.team });
     },
     [bundles, conditions],
+  );
+
+  // Recency-failure signal for a graded stat: is the team's usual behaviour there,
+  // but its last game went against it? Computed lazily for the expanded row only,
+  // from that league's season fixtures (reuses the RFS engine). Null otherwise.
+  const rfsFor = useCallback(
+    (ev: TeamEval): StatRfs | null => {
+      const cond = conditions.find((c) => c.id === ev.conditionId);
+      if (!cond || cond.not || cond.dimensionId !== 'grading1' || ev.teamId == null) return null;
+      const compId = compIdByName.get(ev.competition);
+      const fixtures = bundles.find((b) => b.competition === ev.competition)?.fixtures;
+      if (!fixtures) return null;
+      const results = teamResultsFromFixtures(fixtures, ev.teamId, null, { competitionId: compId ?? null })
+        .sort((a, b) => b.unix - a.unix);
+      return ordinaryRfsForStat(results, cond.methodId);
+    },
+    [bundles, conditions, compIdByName],
   );
 
   // ---- fixtures mode: per-condition side targeting (home-team vs away-team attributes) ----
@@ -477,7 +498,7 @@ export default function StrategyBuilderPanel() {
           ) : (
             <>
               <PageControls page={safe} pages={pages} total={filtered.length} from={start + 1} to={start + visible.length} onChange={setPage} />
-              <TeamsTable rows={visible} upcoming={upcoming} target={targetDef ?? null} fixturesByComp={fixturesByComp} compIdByName={compIdByName} total={conditions.length} share={leagueShare} breakdownFor={breakdownFor} />
+              <TeamsTable rows={visible} upcoming={upcoming} target={targetDef ?? null} fixturesByComp={fixturesByComp} compIdByName={compIdByName} total={conditions.length} share={leagueShare} breakdownFor={breakdownFor} rfsFor={rfsFor} />
               <PageControls page={safe} pages={pages} total={filtered.length} from={start + 1} to={start + visible.length} onChange={setPage} />
             </>
           )}
@@ -500,7 +521,7 @@ export default function StrategyBuilderPanel() {
           ) : (
             <>
               <PageControls page={fxSafe} pages={fxPages} total={fxFiltered.length} from={fxStart + 1} to={fxStart + fxVisible.length} onChange={setPage} />
-              <GradeFixtureTable rows={fxVisible} breakdownFor={breakdownFor} />
+              <GradeFixtureTable rows={fxVisible} breakdownFor={breakdownFor} rfsFor={rfsFor} />
               <PageControls page={fxSafe} pages={fxPages} total={fxFiltered.length} from={fxStart + 1} to={fxStart + fxVisible.length} onChange={setPage} />
             </>
           )}
@@ -524,7 +545,7 @@ const TEAM_SECTIONS: { color: ResultColor; label: string }[] = [
 
 type TeamRow = { result: StrategyResult; nf: ReturnType<typeof nextFixtureFor>; bt: BacktestResult | null };
 
-function TeamsTable({ rows, upcoming, target, fixturesByComp, compIdByName, total, share, breakdownFor }: {
+function TeamsTable({ rows, upcoming, target, fixturesByComp, compIdByName, total, share, breakdownFor, rfsFor }: {
   rows: StrategyResult[];
   upcoming: UpcomingLite[];
   target: TargetMarket | null;
@@ -533,6 +554,7 @@ function TeamsTable({ rows, upcoming, target, fixturesByComp, compIdByName, tota
   total: number;
   share: Map<string, LeagueGradeShare>;
   breakdownFor: (ev: TeamEval) => HalfReading[] | null;
+  rfsFor: (ev: TeamEval) => StatRfs | null;
 }) {
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const built: TeamRow[] = useMemo(() => rows.map((result) => {
@@ -550,7 +572,6 @@ function TeamsTable({ rows, upcoming, target, fixturesByComp, compIdByName, tota
   }), [rows, upcoming, target, fixturesByComp, compIdByName]);
 
   const keyOf = (r: StrategyResult) => `${r.competition}::${r.team}`;
-  const expanded = expandedKey != null ? built.find((b) => keyOf(b.result) === expandedKey) : undefined;
   const minW = target ? 920 : 820;
   return (
     <View>
@@ -573,21 +594,27 @@ function TeamsTable({ rows, upcoming, target, fixturesByComp, compIdByName, tota
                 <View style={[styles.fxSectionRow, { backgroundColor: resultBackground(sec.color) }]}>
                   <Text style={[styles.fxSectionTitle, { color: col }]}>{sec.label} · {group.length}</Text>
                 </View>
-                {group.map((b) => (
-                  <TeamsTableRow key={keyOf(b.result)} row={b} hasTarget={!!target} active={expandedKey === keyOf(b.result)} onPress={() => setExpandedKey((x) => (x === keyOf(b.result) ? null : keyOf(b.result)))} />
-                ))}
+                {group.map((b) => {
+                  const k = keyOf(b.result);
+                  const isActive = expandedKey === k;
+                  return (
+                    <Fragment key={k}>
+                      <TeamsTableRow row={b} hasTarget={!!target} active={isActive} onPress={() => setExpandedKey((x) => (x === k ? null : k))} />
+                      {isActive ? (
+                        <View style={[styles.fxDetailInline, { minWidth: minW, borderColor: resultColour(b.result.color) }]}>
+                          <ResultCard result={b.result} upcoming={upcoming} total={total} share={share.get(b.result.competition)} breakdownFor={breakdownFor} rfsFor={rfsFor} />
+                          {target ? <BacktestDetail bt={b.bt} target={target} /> : null}
+                        </View>
+                      ) : null}
+                    </Fragment>
+                  );
+                })}
               </View>
             );
           })}
         </View>
       </DragScroll>
-      {expanded ? (
-        <View style={[styles.fxDetail, { borderColor: resultColour(expanded.result.color) }]}>
-          <ResultCard result={expanded.result} upcoming={upcoming} total={total} share={share.get(expanded.result.competition)} breakdownFor={breakdownFor} />
-          {target ? <BacktestDetail bt={expanded.bt} target={target} /> : null}
-        </View>
-      ) : null}
-      <Text style={styles.hint}>Rows are grouped by the strongest qualifying colour. Tap a team for its per-condition grades{target ? ' and the matches behind its historical rate' : ''}.</Text>
+      <Text style={styles.hint}>Rows are grouped by the strongest qualifying colour. Tap a team to open its per-condition grades right below it{target ? ', with the matches behind its historical rate' : ''}.</Text>
     </View>
   );
 }
@@ -819,7 +846,7 @@ function DaBadge({ grade }: { grade: string | null }) {
 
 /** One condition's reading: period/venue · feature · the stat % · grade · DA · why,
  *  then how the same stat reads on each half (FT / 1st / 2nd). */
-function EvalRow({ ev, breakdown }: { ev: TeamEval; breakdown?: HalfReading[] | null }) {
+function EvalRow({ ev, breakdown, rfs }: { ev: TeamEval; breakdown?: HalfReading[] | null; rfs?: StatRfs | null }) {
   const col = resultColour(ev.color);
   const hasBreakdown = !!breakdown && breakdown.some((h) => h.value != null);
   return (
@@ -828,11 +855,17 @@ function EvalRow({ ev, breakdown }: { ev: TeamEval; breakdown?: HalfReading[] | 
         <Text style={[styles.evalFeature, { color: col }]} numberOfLines={1}>{periodLabel(ev.period)} · {ev.dimensionLabel} · {ev.feature}</Text>
         <View style={styles.evalGradeWrap}>
           <DaBadge grade={ev.grade} />
+          {rfs ? <View style={styles.rfsBadge}><Text style={styles.rfsBadgeText}>RFS</Text></View> : null}
           {ev.grade ? <Text style={[styles.evalGrade, { color: col }]}>{ev.grade}</Text> : null}
         </View>
       </View>
       <Text style={styles.evalMeta}><Text style={[styles.gradeStat, { color: col }]}>{ev.valueText}</Text> · {ev.method}{ev.sample != null ? ` · ${ev.sample}g` : ''}</Text>
       <Text style={styles.evalReason} numberOfLines={2}>{ev.reason}</Text>
+      {rfs ? (
+        <Text style={styles.rfsNote} numberOfLines={2}>
+          ⚠ Recently failed · usually {rfs.usual} ({rfs.rate}%), but last game {rfs.failed} ({rfs.lastScore} {rfs.lastHome ? 'vs' : '@'} {rfs.lastOpponent})
+        </Text>
+      ) : null}
       {hasBreakdown ? <HalfSplit readings={breakdown!} scope={splitPeriod(ev.period).scope} /> : null}
     </View>
   );
@@ -871,7 +904,7 @@ function HalfSplit({ readings, scope }: { readings: HalfReading[]; scope: StatSc
 }
 
 /** C. One qualifying team with its per-condition breakdown. */
-function ResultCard({ result, upcoming, total, share, breakdownFor }: { result: StrategyResult; upcoming: UpcomingLite[]; total?: number; share?: LeagueGradeShare; breakdownFor?: (ev: TeamEval) => HalfReading[] | null }) {
+function ResultCard({ result, upcoming, total, share, breakdownFor, rfsFor }: { result: StrategyResult; upcoming: UpcomingLite[]; total?: number; share?: LeagueGradeShare; breakdownFor?: (ev: TeamEval) => HalfReading[] | null; rfsFor?: (ev: TeamEval) => StatRfs | null }) {
   const tint = resultColour(result.color);
   const nf = nextFixtureFor(result.teamId, result.team, upcoming);
   const ms = total ? matchStrength(result, total) : null;
@@ -901,7 +934,7 @@ function ResultCard({ result, upcoming, total, share, breakdownFor }: { result: 
         </Text>
       ) : null}
       <View style={styles.evalList}>
-        {result.conditions.map((ev, i) => (<EvalRow key={i} ev={ev} breakdown={breakdownFor?.(ev) ?? null} />))}
+        {result.conditions.map((ev, i) => (<EvalRow key={i} ev={ev} breakdown={breakdownFor?.(ev) ?? null} rfs={rfsFor?.(ev) ?? null} />))}
       </View>
     </View>
   );
@@ -909,9 +942,8 @@ function ResultCard({ result, upcoming, total, share, breakdownFor }: { result: 
 
 /** Fixtures as a table split into three grade colours; each row shows the matched
  *  side(s) and the exact grade each feature qualified with. Tap for the breakdown. */
-function GradeFixtureTable({ rows, breakdownFor }: { rows: FxRow[]; breakdownFor: (ev: TeamEval) => HalfReading[] | null }) {
+function GradeFixtureTable({ rows, breakdownFor, rfsFor }: { rows: FxRow[]; breakdownFor: (ev: TeamEval) => HalfReading[] | null; rfsFor: (ev: TeamEval) => StatRfs | null }) {
   const [expandedId, setExpandedId] = useState<number | null>(null);
-  const expanded = expandedId != null ? rows.find((r) => r.fx.id === expandedId) : undefined;
   return (
     <View>
       <DragScroll horizontal style={styles.fxScroll} contentContainerStyle={styles.fxScrollContent}>
@@ -932,22 +964,27 @@ function GradeFixtureTable({ rows, breakdownFor }: { rows: FxRow[]; breakdownFor
                 <View style={[styles.fxSectionRow, { backgroundColor: resultBackground(sec.color) }]}>
                   <Text style={[styles.fxSectionTitle, { color: col }]}>{sec.label} · {group.length}</Text>
                 </View>
-                {group.map((r) => (
-                  <GradeFixtureRow key={r.fx.id} r={r} active={expandedId === r.fx.id} onPress={() => setExpandedId((x) => (x === r.fx.id ? null : r.fx.id))} />
-                ))}
+                {group.map((r) => {
+                  const isActive = expandedId === r.fx.id;
+                  return (
+                    <Fragment key={r.fx.id}>
+                      <GradeFixtureRow r={r} active={isActive} onPress={() => setExpandedId((x) => (x === r.fx.id ? null : r.fx.id))} />
+                      {isActive ? (
+                        <View style={[styles.fxDetailInline, { minWidth: 900, borderColor: resultColour(r.color) }]}>
+                          <Text style={styles.fxDetailTitle}>{r.fx.home.name} vs {r.fx.away.name} · {r.fx.competition.name}</Text>
+                          <SideEvals title={`Home team ✓ · ${r.fx.home.name}`} tint={theme.accentGreen} evals={r.homeEvals} breakdownFor={breakdownFor} rfsFor={rfsFor} />
+                          <SideEvals title={`Away team ✓ · ${r.fx.away.name}`} tint={theme.accentBlue} evals={r.awayEvals} breakdownFor={breakdownFor} rfsFor={rfsFor} />
+                        </View>
+                      ) : null}
+                    </Fragment>
+                  );
+                })}
               </View>
             );
           })}
         </View>
       </DragScroll>
-      {expanded ? (
-        <View style={[styles.fxDetail, { borderColor: resultColour(expanded.color) }]}>
-          <Text style={styles.fxDetailTitle}>{expanded.fx.home.name} vs {expanded.fx.away.name} · {expanded.fx.competition.name}</Text>
-          <SideEvals title={`Home team ✓ · ${expanded.fx.home.name}`} tint={theme.accentGreen} evals={expanded.homeEvals} breakdownFor={breakdownFor} />
-          <SideEvals title={`Away team ✓ · ${expanded.fx.away.name}`} tint={theme.accentBlue} evals={expanded.awayEvals} breakdownFor={breakdownFor} />
-        </View>
-      ) : null}
-      <Text style={styles.hint}>Grouped by the matched side's strongest grade. Tap a fixture to see which feature each team qualified on.</Text>
+      <Text style={styles.hint}>Grouped by the matched side's strongest grade. Tap a fixture to open which feature each team qualified on, right below it.</Text>
     </View>
   );
 }
@@ -991,13 +1028,13 @@ function GradeChips({ sideLabel, evals }: { sideLabel: string; evals: TeamEval[]
 }
 
 /** The conditions one fixture side satisfied, with period/venue/grade/reason. */
-function SideEvals({ title, tint, evals, breakdownFor }: { title: string; tint: string; evals: TeamEval[]; breakdownFor?: (ev: TeamEval) => HalfReading[] | null }) {
+function SideEvals({ title, tint, evals, breakdownFor, rfsFor }: { title: string; tint: string; evals: TeamEval[]; breakdownFor?: (ev: TeamEval) => HalfReading[] | null; rfsFor?: (ev: TeamEval) => StatRfs | null }) {
   if (!evals.length) return null;
   return (
     <View style={styles.sideEvalsWrap}>
       <Text style={[styles.sideEvalsTitle, { color: tint }]} numberOfLines={1}>{title}</Text>
       <View style={styles.evalList}>
-        {evals.map((ev, i) => (<EvalRow key={i} ev={ev} breakdown={breakdownFor?.(ev) ?? null} />))}
+        {evals.map((ev, i) => (<EvalRow key={i} ev={ev} breakdown={breakdownFor?.(ev) ?? null} rfs={rfsFor?.(ev) ?? null} />))}
       </View>
     </View>
   );
@@ -1178,6 +1215,8 @@ const styles = StyleSheet.create({
   riskScore: { fontFamily: fonts.body, fontSize: 10, color: theme.textFaint, marginTop: 2 },
   matchTick: { fontFamily: fonts.bodySemiBold, fontSize: 11, marginBottom: 1 },
   fxDetail: { marginTop: spacing.sm, borderWidth: 1.5, borderRadius: layout.borderRadius, backgroundColor: theme.surface, padding: spacing.md, gap: spacing.xs },
+  // Inline accordion: the detail opens directly under its row inside the table, not at the bottom.
+  fxDetailInline: { borderTopWidth: 2, borderLeftWidth: 3, backgroundColor: theme.surfaceHover, paddingVertical: spacing.sm, paddingHorizontal: spacing.md, gap: spacing.xs },
   fxDetailTitle: { fontFamily: fonts.bodySemiBold, fontSize: 14, color: theme.textPrimary },
   matchedWrap: { gap: 2, marginTop: 2 },
   matchedLine: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted },
@@ -1315,4 +1354,7 @@ const styles = StyleSheet.create({
   daBadge: { borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1, backgroundColor: theme.loss },
   daBadgeLean: { backgroundColor: theme.yellow },
   daBadgeText: { fontFamily: fonts.bodySemiBold, fontSize: 9, color: '#FFFFFF', letterSpacing: 0.5 },
+  rfsBadge: { borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1, backgroundColor: '#C2410C' },
+  rfsBadgeText: { fontFamily: fonts.bodySemiBold, fontSize: 9, color: '#FFFFFF', letterSpacing: 0.5 },
+  rfsNote: { fontFamily: fonts.body, fontSize: 11, lineHeight: 16, color: '#C2410C' },
 });
