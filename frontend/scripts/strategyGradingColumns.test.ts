@@ -6,7 +6,7 @@
  * (series & RFS), and that the "Series has no DA" rule excludes DA grades from the
  * Series columns. Pure — no network, synthetic stats + fixtures.
  */
-import { getDimension, type LeagueBundle } from '../utils/strategyBuilder';
+import { evaluateStrategy, getDimension, type Condition, type LeagueBundle } from '../utils/strategyBuilder';
 import type { TeamStatRow, TeamStatsExport } from '../types/data';
 import type { RawFixture } from '../services/oddAlerts';
 
@@ -101,6 +101,43 @@ console.log('\nGrading columns — qualifications are ranked strongest first');
   const b = by('Bravo');
   const ranks = (b?.qualifications ?? []).map((q) => q.overallRank);
   check('overall ranks are non-decreasing', ranks.every((r, i) => i === 0 || ranks[i - 1] <= r), ranks.join(','));
+}
+
+console.log('\nMulti-rule combine — a second Rule recalculates (OR / AND)');
+{
+  // A second stat column so two Rules can grade differently.
+  const r2 = (name: string, id: number, sc: number, over25: number, scH: number, over25H: number): { o: TeamStatRow; h: TeamStatRow } => ({
+    o: { team_name: name, team_id: id, league_id: '1', season: '2024', sc_pct: sc, over25, sample_size: 10 } as TeamStatRow,
+    h: { team_name: name, team_id: id, league_id: '1', season: '2024', sc_pct: scH, over25: over25H, sample_size: 6 } as TeamStatRow,
+  });
+  // Alpha: strong on sc_pct (A), weak on over25 (F). Bravo: strong on both (A / A).
+  const alpha = r2('Alpha', 1, 90, 20, 85, 20);
+  const bravo = r2('Bravo', 2, 88, 80, 82, 85);
+  const stats2: TeamStatsExport = {
+    meta: { tables: 3, statsPerTable: 2 },
+    tables: {
+      ordinary_ft_overall: [alpha.o, bravo.o],
+      ordinary_ft_home: [alpha.h, bravo.h],
+      league_avg_ft_overall: [{ team_name: 'League', team_id: 0, league_id: '1', season: '2024', sc_pct: 50, over25: 50, sample_size: 10 } as TeamStatRow],
+    },
+  };
+  const b2: LeagueBundle = { competition: 'L2', stats: stats2 };
+  const c1: Condition = { id: 'c1', dimensionId: 'grading1', period: 'overall', methodId: 'sc_pct', options: { show: 'strong' }, side: 'either' };
+  const c2: Condition = { id: 'c2', dimensionId: 'grading1', period: 'overall', methodId: 'over25', options: { show: 'strong' }, side: 'either' };
+
+  const one = evaluateStrategy([b2], [c1], 'and');
+  check('one Rule surfaces both strong-scorers', one.length === 2, `got ${one.length}`);
+
+  const orBoth = evaluateStrategy([b2], [c1, c2], 'or');
+  check('OR of two Rules keeps the union (2 teams)', orBoth.length === 2, `got ${orBoth.length}`);
+  const orAlpha = orBoth.find((r) => r.team === 'Alpha');
+  const orBravo = orBoth.find((r) => r.team === 'Bravo');
+  check('OR · Alpha passes only Rule 1', orAlpha?.conditions.length === 1, `got ${orAlpha?.conditions.length}`);
+  check('OR · Bravo passes both Rules', orBravo?.conditions.length === 2, `got ${orBravo?.conditions.length}`);
+
+  const andBoth = evaluateStrategy([b2], [c1, c2], 'and');
+  check('AND of two Rules keeps the intersection (Bravo only)', andBoth.length === 1 && andBoth[0].team === 'Bravo', `got ${andBoth.map((r) => r.team).join(',')}`);
+  check('AND · the one team shows both Rules', andBoth[0]?.conditions.length === 2, `got ${andBoth[0]?.conditions.length}`);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

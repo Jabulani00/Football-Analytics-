@@ -821,7 +821,13 @@ function ConditionBuilder({ narrow, fixedSide, title, onAdd }: { narrow: boolean
     }
   };
 
-  const add = () => onAdd({ id: `c${(CONDITION_SEQ += 1)}`, dimensionId: dimId, period, methodId, options: { ...opts }, side: fixedSide ?? side });
+  const add = () => {
+    onAdd({ id: `c${(CONDITION_SEQ += 1)}`, dimensionId: dimId, period, methodId, options: { ...opts }, side: fixedSide ?? side });
+    // Advance to the next stat so a second "+ Add Rule" is a different Rule, not a
+    // silent duplicate of the one just added (which would look like "nothing happened").
+    const i = methods.findIndex((m) => m.value === methodId);
+    if (i >= 0 && methods.length > 1) setMethodId(methods[(i + 1) % methods.length].value);
+  };
 
   return (
     <View style={[styles.builderCard, fixedSide === 'home' && styles.builderHome, fixedSide === 'away' && styles.builderAway]}>
