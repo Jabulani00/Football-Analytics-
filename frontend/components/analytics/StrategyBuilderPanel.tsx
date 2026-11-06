@@ -10,7 +10,7 @@ import PageControls, { PAGE_SIZE } from '@/components/shared/PageControls';
 import { useLiveCompetitionFeed } from '@/hooks/useLiveCompetitions';
 import { useLiveFixtures } from '@/hooks/useLiveFixtures';
 import { useSavedBuilderStrategies } from '@/hooks/useSavedBuilderStrategies';
-import { fetchAllFixturesBetween, seasonWindowUnix, type Fixture, type RawFixture } from '@/services/oddAlerts';
+import { fetchAllFixturesBetween, fetchSeasonStandings, seasonWindowUnix, type Fixture, type RawFixture } from '@/services/oddAlerts';
 import { TARGET_MARKETS, backtestTeam, targetMarket, type BacktestResult, type BacktestScope, type TargetMarket } from '@/utils/strategyBacktest';
 import { clientStaleTime } from '@/services/oddAlertsCachePolicy';
 import { buildLeagueStatsLive } from '@/services/statsBuilder';
@@ -122,6 +122,9 @@ export default function StrategyBuilderPanel() {
   const teamsNeedFixtures = conditions.length > 0 && needsFixtures(conditions);
   // The grading RFS overlay reads season fixtures; bounded to the capped leagues to limit load.
   const rfsNeedsFixtures = conditions.some((c) => c.dimensionId === 'grading1');
+  // Goal-timing stats (first-15 / last-20) read stats/season per league — fetched
+  // only when a timing Rule is in play, bounded to the capped leagues.
+  const timingNeeded = conditions.some((c) => c.dimensionId === 'grading1' && c.methodId.startsWith('tm_'));
   // A chosen target market needs the season fixtures to backtest (bounded to the capped leagues).
   const wantBacktest = resultMode === 'teams' && target !== ALL && conditions.length > 0;
   const targetDef = useMemo(() => (target !== ALL ? targetMarket(target) : undefined), [target]);
@@ -153,6 +156,7 @@ export default function StrategyBuilderPanel() {
     ? (teamsNeedFixtures || ((wantBacktest || rfsNeedsFixtures) && fixtureCompIds.has(compId)))
     : ((teamsNeedFixtures || rfsNeedsFixtures) && fixtureCompIds.has(compId)));
   const needExportFor = (compId: number) => (resultMode === 'teams' ? wantExport : wantExport && fixtureCompIds.has(compId));
+  const needTimingFor = (compId: number) => timingNeeded && fixtureCompIds.has(compId);
 
   // ---- per-league data (reused engines; built only when a condition/mode needs it) ----
   const exportResults = useQueries({
@@ -178,13 +182,26 @@ export default function StrategyBuilderPanel() {
     }),
   });
 
+  const timingResults = useQueries({
+    queries: liveLeagues.map((comp) => ({
+      queryKey: ['strategy-timing', comp.id, comp.seasonId] as const,
+      enabled: needTimingFor(comp.id) && comp.seasonId != null,
+      queryFn: ({ signal }: { signal: AbortSignal }) =>
+        fetchSeasonStandings(comp.seasonId as number, signal).then((rows) =>
+          rows.map((r) => ({ team: r.name, teamId: r.teamId, timing: r.timing })),
+        ),
+      staleTime: clientStaleTime('stats/season'),
+    })),
+  });
+
   const exportSig = exportResults.map((r, i) => (r.data ? `${liveLeagues[i]?.id}:${r.dataUpdatedAt}` : '')).join('|');
   const fixtureSig = fixtureResults.map((r, i) => (r.data ? `${liveLeagues[i]?.id}:${r.dataUpdatedAt}` : '')).join('|');
+  const timingSig = timingResults.map((r, i) => (r.data ? `${liveLeagues[i]?.id}:${r.dataUpdatedAt}` : '')).join('|');
 
   const bundles = useMemo<LeagueBundle[]>(
-    () => liveLeagues.map((comp, i) => ({ competition: comp.name, stats: exportResults[i]?.data, fixtures: fixtureResults[i]?.data })),
+    () => liveLeagues.map((comp, i) => ({ competition: comp.name, stats: exportResults[i]?.data, fixtures: fixtureResults[i]?.data, timing: timingResults[i]?.data })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [liveLeagues, exportSig, fixtureSig],
+    [liveLeagues, exportSig, fixtureSig, timingSig],
   );
 
   // Season fixtures per league + a name→id map, for the Teams-mode backtest.
@@ -200,9 +217,12 @@ export default function StrategyBuilderPanel() {
   const exportSettled = exportResults.filter((r) => r.isSuccess || r.isError).length;
   const fixtureEnabled = liveLeagues.filter((comp) => needFixturesFor(comp.id)).length;
   const fixtureSettled = fixtureResults.filter((r) => r.isSuccess || r.isError).length;
+  const timingEnabled = liveLeagues.filter((comp) => needTimingFor(comp.id) && comp.seasonId != null).length;
+  const timingSettled = timingResults.filter((r) => r.isSuccess || r.isError).length;
   const loading = feed.loading
     || (exportEnabled > 0 && exportSettled < exportEnabled)
-    || (fixtureEnabled > 0 && fixtureSettled < fixtureEnabled);
+    || (fixtureEnabled > 0 && fixtureSettled < fixtureEnabled)
+    || (timingEnabled > 0 && timingSettled < timingEnabled);
 
   // ---- results (Teams mode) — each condition at its own period ----
   const results = useMemo(() => evaluateStrategy(bundles, conditions, logic), [bundles, conditions, logic]);

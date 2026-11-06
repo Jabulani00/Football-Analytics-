@@ -103,6 +103,39 @@ console.log('\nGrading columns — qualifications are ranked strongest first');
   check('overall ranks are non-decreasing', ranks.every((r, i) => i === 0 || ranks[i - 1] <= r), ranks.join(','));
 }
 
+console.log('\nGoal-timing windows — first 15′ / last 20′ band on the overall %');
+{
+  const t = (sc15: number, after70: number, cov: number) => ({
+    firstGoalFor: null, firstGoalAgainst: null,
+    scoredIn15: { count: 0, pct: sc15 }, concededIn15: { count: 0, pct: 20 },
+    scoredAfter70: { count: 0, pct: after70 }, concededAfter70: { count: 0, pct: 20 },
+    coveragePct: cov,
+  });
+  const timing = [
+    { team: 'EarlyBird', teamId: 10, timing: t(70, 20, 90) }, // scores early (UP), late rarely (DOWN)
+    { team: 'LateShow', teamId: 11, timing: t(10, 65, 90) },  // scores early rarely (DOWN), late often (UP)
+    { team: 'NoData', teamId: 12, timing: t(0, 0, 0) },        // no timing coverage
+  ];
+  const tb: LeagueBundle = { competition: 'LT', timing };
+
+  check('timing stats are offered in the Rule', grading.methods('overall').some((m) => m.value === 'tm_sc_15'));
+
+  const sc15 = grading.evaluate(tb, { period: 'overall', methodId: 'tm_sc_15', options: { show: 'all' } });
+  check('first-15 bands every covered team', sc15.length === 2, `got ${sc15.length}`);
+  check('the no-coverage team is dropped', !sc15.some((e) => e.team === 'NoData'));
+  const early = sc15.find((e) => e.team === 'EarlyBird');
+  check('EarlyBird scores early → UP / green', early?.color === 'green' && early?.grade?.includes('Scores 0–15′ · UP') === true, early?.grade ?? '');
+  check('LateShow scores early → DOWN / red', sc15.find((e) => e.team === 'LateShow')?.color === 'red');
+
+  check('show=strong keeps only the UP band', grading.evaluate(tb, { period: 'overall', methodId: 'tm_sc_15', options: { show: 'strong' } }).every((e) => e.color === 'green'));
+
+  const late = grading.evaluate(tb, { period: 'overall', methodId: 'tm_sc_70', options: { show: 'strong' } });
+  check('last-20 strong surfaces the late scorer', late.length === 1 && late[0].team === 'LateShow', late.map((e) => e.team).join(','));
+  check('last-20 grade reads 70′+', late[0]?.grade?.includes('Scores 70′+ · UP') === true, late[0]?.grade ?? '');
+
+  check('no timing data on the bundle → no timing evals', grading.evaluate({ competition: 'LT' }, { period: 'overall', methodId: 'tm_sc_15', options: { show: 'all' } }).length === 0);
+}
+
 console.log('\nMulti-rule combine — a second Rule recalculates (OR / AND)');
 {
   // A second stat column so two Rules can grade differently.

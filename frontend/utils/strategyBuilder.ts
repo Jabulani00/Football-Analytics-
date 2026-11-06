@@ -10,7 +10,7 @@
  * TeamStatsExport and/or the season's raw fixtures) and the user's conditions.
  */
 import type { TeamStatRow, TeamStatsExport } from '@/types/data';
-import type { RawFixture } from '@/services/oddAlerts';
+import type { RawFixture, TeamGoalTiming } from '@/services/oddAlerts';
 import { differenceDaBand } from '@/utils/daBands';
 import {
   DOMINANCE_STATS, HALF_STATS, buildHalfDominance, buildHomeAwayDominance, type StatDef,
@@ -157,8 +157,12 @@ export type OptionDef = {
   visible?: (options: Record<string, string>) => boolean;
 };
 
-/** A league's prepared data: the built export and/or its season fixtures. */
-export type LeagueBundle = { competition: string; stats?: TeamStatsExport; fixtures?: RawFixture[] };
+/** One team's measured goal-timing for a season (overall only — the feed has no venue split). */
+export type TimingRow = { team: string; teamId: number | null; timing: TeamGoalTiming };
+
+/** A league's prepared data: the built export, its season fixtures, and/or the
+ *  per-team goal-timing windows (first-15 / last-20, from stats/season). */
+export type LeagueBundle = { competition: string; stats?: TeamStatsExport; fixtures?: RawFixture[]; timing?: TimingRow[] };
 
 export type Selection = { period: StrategyPeriod; methodId: string; options: Record<string, string> };
 
@@ -352,16 +356,67 @@ function letterCarriesDa(letter: Grade): boolean {
   return letter !== 'A' && letter !== 'F';
 }
 
+/**
+ * Goal-timing windows (doc "first 10/15 minutes · last 20 minutes"). The feed
+ * carries measured 15-minute buckets only — there is no per-minute data — so the
+ * finest honest windows are the opening 15′ and the closing phase from 70′ (the
+ * "last 20"), plus the overall-season share of matches each happens in. No venue
+ * split exists, so these band on the overall % (document's ↑/mid/↓) rather than
+ * the Home-vs-Overall A–F letter, and carry Ordinary only (no Series/RFS, which
+ * need per-game timing the feed lacks).
+ */
+type TimingStat = { key: string; label: string; short: string; pick: (t: TeamGoalTiming) => number | null };
+const TIMING_STATS: TimingStat[] = [
+  { key: 'tm_sc_15', label: 'Scores in first 15′', short: 'Scores 0–15′', pick: (t) => t.scoredIn15.pct },
+  { key: 'tm_cs_15', label: 'Concedes in first 15′', short: 'Concedes 0–15′', pick: (t) => t.concededIn15.pct },
+  { key: 'tm_sc_70', label: 'Scores in the last 20′ (70′+)', short: 'Scores 70′+', pick: (t) => t.scoredAfter70.pct },
+  { key: 'tm_cs_70', label: 'Concedes in the last 20′ (70′+)', short: 'Concedes 70′+', pick: (t) => t.concededAfter70.pct },
+];
+const isTimingStat = (id: string) => id.startsWith('tm_');
+export function timingStatLabel(key: string): string {
+  return TIMING_STATS.find((s) => s.key === key)?.label ?? key;
+}
+
 const grading1: Dimension = {
   id: 'grading1',
   label: 'Stats Grading · Method 1',
   source: 'export',
   periods: ['overall', 'firsthalf', 'secondhalf'],
-  methods: () => GRADABLE_STATS.map((s) => ({ value: s.key, label: s.label })),
+  methods: () => [
+    ...GRADABLE_STATS.map((s) => ({ value: s.key, label: s.label })),
+    ...TIMING_STATS.map((s) => ({ value: s.key, label: `⏱ ${s.label}` })),
+  ],
   options: [
     { key: 'show', label: 'Show', options: [{ value: ALL, label: 'Strong & weak' }, { value: 'strong', label: 'Strong only' }, { value: 'weak', label: 'Weak only' }], default: ALL },
   ],
   evaluate: (b, sel) => {
+    // Goal-timing windows: overall-only % banded ↑/mid/↓ (Ordinary column only).
+    if (isTimingStat(sel.methodId)) {
+      const def = TIMING_STATS.find((s) => s.key === sel.methodId);
+      if (!def || !b.timing) return [];
+      const show = sel.options.show ?? ALL;
+      const out: TeamEval[] = [];
+      for (const r of b.timing) {
+        if (r.timing.coveragePct <= 0) continue; // no timing data for this team
+        const v = def.pick(r.timing);
+        if (v == null) continue;
+        const dir = directionOf(v);
+        if (show === 'strong' && dir !== 'up') continue;
+        if (show === 'weak' && dir !== 'down') continue;
+        const color: ResultColor = dir === 'up' ? 'green' : dir === 'mid' ? 'yellow' : 'red';
+        const band = dir === 'up' ? 'UP' : dir === 'mid' ? 'MID' : 'DOWN';
+        out.push({
+          teamId: r.teamId, team: r.team, competition: b.competition, qualifies: true,
+          value: v, valueText: pctText(v), grade: `${def.short} · ${band}`, color,
+          dimensionId: 'grading1', dimensionLabel: 'Stats Grading · Method 1',
+          feature: def.label, method: `Goal timing · ${band} · ${pctText(v)}`,
+          period: sel.period,
+          reason: `${def.label}: ${pctText(v)} of matches this season (overall · timing coverage ${Math.round(r.timing.coveragePct)}%)`,
+          sample: null,
+        });
+      }
+      return out;
+    }
     const stats = b.stats;
     if (!stats) return [];
     const show = sel.options.show ?? ALL;
@@ -1076,6 +1131,8 @@ function conditionStat(cond: Condition): { prefix: string; key: string; kind: St
     }
     case 'grading1':
     case 'grading2':
+      // Goal-timing windows have no FT/1H/2H table column — no half split.
+      if (isTimingStat(cond.methodId)) return null;
       // Every gradable stat is a percentage column in the ordinary family.
       return { prefix: 'ordinary', key: cond.methodId, kind: 'pct', decimals: 0 };
     default:
