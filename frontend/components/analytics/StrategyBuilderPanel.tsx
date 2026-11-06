@@ -67,6 +67,15 @@ const COLOR_GROUPS: { value: ResultColor; label: string }[] = [
 /** Combined-list grade groups (I strongest → VII weakest) for the grading filter. */
 const GRADE_GROUPS: { value: string; label: string }[] =
   (['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'] as const).map((r) => ({ value: r, label: `Group (${r})` }));
+/** The A–F letter grades (document's grading list). */
+const GRADE_LETTERS: { value: string; label: string }[] = [
+  { value: 'A', label: 'A · Home↑ Overall↑' }, { value: 'B', label: 'B · Home↑ Overall mid · DA' }, { value: 'C', label: 'C · mid, above league · DA' },
+  { value: 'D', label: 'D · mid, below league' }, { value: 'E', label: 'E · Home↓ Overall mid · DA' }, { value: 'F', label: 'F · Home↓ Overall↓' },
+];
+/** The source lists (game windows). */
+const GRADE_SOURCES: { value: string; label: string }[] = [
+  { value: '1', label: '1 · All games' }, { value: '2', label: '2 · Last 10 & 8' }, { value: '3', label: '3 · Last 6 & 5' },
+];
 
 /** A qualifying fixture: the conditions each team satisfied, and the strongest colour. */
 type FxRow = { fx: Fixture; homeEvals: TeamEval[]; awayEvals: TeamEval[]; color: ResultColor; rank?: number };
@@ -257,18 +266,20 @@ export default function StrategyBuilderPanel() {
   const [fColor, setFColor] = useState(ALL);
   const [fMinGames, setFMinGames] = useState(0);
   const [fMinMatch, setFMinMatch] = useState(0);
-  // Grade-group · column filters (doc "add group filter when data is displayed").
+  // Grade facets (doc "add group filter when data is displayed" · "filter by groups, grades and more").
   const [fGroup, setFGroup] = useState(ALL);
   const [fColumn, setFColumn] = useState(ALL);
+  const [fLetter, setFLetter] = useState(ALL);
+  const [fSource, setFSource] = useState(ALL);
   const hasGrading = conditions.some((c) => c.dimensionId === 'grading1');
   const [page, setPage] = useState(1);
 
-  const filtered = useMemo(() => filterResults(results, { league: fLeague, dimension: fDimension, color: fColor, minGames: fMinGames, minMatch: fMinMatch, total: conditions.length, group: hasGrading ? fGroup : ALL, column: hasGrading ? fColumn : ALL }), [results, fLeague, fDimension, fColor, fMinGames, fMinMatch, conditions.length, hasGrading, fGroup, fColumn]);
+  const filtered = useMemo(() => filterResults(results, { league: fLeague, dimension: fDimension, color: fColor, minGames: fMinGames, minMatch: fMinMatch, total: conditions.length, group: hasGrading ? fGroup : ALL, column: hasGrading ? fColumn : ALL, letter: hasGrading ? fLetter : ALL, source: hasGrading ? fSource : ALL }), [results, fLeague, fDimension, fColor, fMinGames, fMinMatch, conditions.length, hasGrading, fGroup, fColumn, fLetter, fSource]);
   const summary = useMemo(() => summarize(filtered), [filtered]);
   // Per-league grade distribution across the qualifiers, so each row can show its grade's share.
   const leagueShare = useMemo(() => gradeShareByLeague(results), [results]);
 
-  useEffect(() => setPage(1), [resultMode, conditions, logic, fLeague, fDimension, fColor, fMinGames, fMinMatch, fGroup, fColumn, target]);
+  useEffect(() => setPage(1), [resultMode, conditions, logic, fLeague, fDimension, fColor, fMinGames, fMinMatch, fGroup, fColumn, fLetter, fSource, target]);
 
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safe = Math.min(page, pages);
@@ -291,14 +302,14 @@ export default function StrategyBuilderPanel() {
   const addCondition = (c: Condition) => { setConditions((cur) => [...cur, c]); setActiveId(null); };
   const removeCondition = (id: string) => { setConditions((cur) => cur.filter((c) => c.id !== id)); setActiveId(null); };
   const toggleNot = (id: string) => { setConditions((cur) => cur.map((c) => (c.id === id ? { ...c, not: !c.not } : c))); setActiveId(null); };
-  const clearAll = () => { setConditions([]); setFLeague(ALL); setFDimension(ALL); setFColor(ALL); setFMinGames(0); setFMinMatch(0); setFGroup(ALL); setFColumn(ALL); setActiveId(null); };
+  const clearAll = () => { setConditions([]); setFLeague(ALL); setFDimension(ALL); setFColor(ALL); setFMinGames(0); setFMinMatch(0); setFGroup(ALL); setFColumn(ALL); setFLetter(ALL); setFSource(ALL); setActiveId(null); };
 
   // One-click preset: set logic + conditions (each with its own period), then recompute live.
   const applyPreset = (p: StrategyPreset) => {
     setBuildMode('combined');
     setLogic(p.logic);
     setConditions(p.conditions.map((c) => ({ id: `c${(CONDITION_SEQ += 1)}`, dimensionId: c.dimensionId, period: p.period, methodId: c.methodId, options: { ...c.options }, side: 'either' as FixtureSide })));
-    setFLeague(ALL); setFDimension(ALL); setFColor(ALL); setFMinGames(0); setFMinMatch(0); setFGroup(ALL); setFColumn(ALL);
+    setFLeague(ALL); setFDimension(ALL); setFColor(ALL); setFMinGames(0); setFMinMatch(0); setFGroup(ALL); setFColumn(ALL); setFLetter(ALL); setFSource(ALL);
     setActiveId(null);
   };
 
@@ -317,7 +328,7 @@ export default function StrategyBuilderPanel() {
     setLogic(cfg.logic);
     setBuildMode(cfg.conditions.some((c) => c.side === 'home' || c.side === 'away') ? 'split' : 'combined');
     setResultMode(cfg.resultMode);
-    setFLeague(ALL); setFDimension(ALL); setFColor(ALL); setFMinGames(0); setFMinMatch(0); setFGroup(ALL); setFColumn(ALL);
+    setFLeague(ALL); setFDimension(ALL); setFColor(ALL); setFMinGames(0); setFMinMatch(0); setFGroup(ALL); setFColumn(ALL); setFLetter(ALL); setFSource(ALL);
     setActiveId(s.id);
     setSaving(false);
   };
@@ -496,6 +507,8 @@ export default function StrategyBuilderPanel() {
                 {hasGrading ? (
                   <>
                     <FilterDropdown label="Group" value={fGroup} options={[{ value: ALL, label: 'All groups (I–VII)' }, ...GRADE_GROUPS]} onChange={setFGroup} style={narrow ? styles.full : styles.flex} />
+                    <FilterDropdown label="Grade" value={fLetter} options={[{ value: ALL, label: 'All grades (A–F)' }, ...GRADE_LETTERS]} onChange={setFLetter} style={narrow ? styles.full : styles.flex} />
+                    <FilterDropdown label="Source" value={fSource} options={[{ value: ALL, label: 'All sources' }, ...GRADE_SOURCES]} onChange={setFSource} style={narrow ? styles.full : styles.flex} />
                     <FilterDropdown label="Column" value={fColumn} options={[{ value: ALL, label: 'All columns' }, ...QUAL_COLUMNS]} onChange={setFColumn} style={narrow ? styles.full : styles.flex} />
                   </>
                 ) : null}
@@ -637,6 +650,10 @@ function TeamsTableRow({ row, hasTarget, active, onPress }: { row: TeamRow; hasT
   const tint = resultColour(result.color);
   const graded = result.conditions.find((c) => c.grade);
   const primary = result.conditions[0];
+  // Every column this team qualifies in (Ordinary / + Series / Ordinary + RFS / …),
+  // in rank order — so Series & RFS are visible on the row, not only on expand.
+  const gradingEval = result.conditions.find((c) => c.dimensionId === 'grading1' && (c.qualifications?.length ?? 0) > 0);
+  const columns = gradingEval ? [...new Set(gradingEval.qualifications!.map((q) => q.column))] : [];
   const rateCol = bt ? (bt.rate >= 60 ? theme.accentGreen : bt.rate >= 45 ? theme.yellow : theme.loss) : theme.textFaint;
   return (
     <Pressable accessibilityRole="button" accessibilityState={{ expanded: active }} onPress={onPress} style={[styles.fxTRow, { backgroundColor: active ? theme.surfaceHover : resultBackground(result.color) }]}>
@@ -657,7 +674,15 @@ function TeamsTableRow({ row, hasTarget, active, onPress }: { row: TeamRow; hasT
         {graded ? (
           <>
             <Text style={[styles.gradeTxt, { color: resultColour(graded.color) }]} numberOfLines={1}>{graded.grade}</Text>
-            <Text style={styles.fxCellFaint} numberOfLines={1}>{graded.dimensionLabel}</Text>
+            {columns.length ? (
+              <View style={styles.colChips}>
+                {columns.map((c) => (
+                  <View key={c} style={[styles.colChip, c === 'series' && styles.colChipSeries, (c === 'ordinary_rfs' || c === 'series_rfs') && styles.colChipRfs]}>
+                    <Text style={[styles.colChipText, c === 'series' && styles.colChipTextOn, (c === 'ordinary_rfs' || c === 'series_rfs') && styles.colChipTextOn]} numberOfLines={1}>{COLUMN_LABEL[c]}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : <Text style={styles.fxCellFaint} numberOfLines={1}>{graded.dimensionLabel}</Text>}
           </>
         ) : <Text style={styles.fxNone}>—</Text>}
       </View>
@@ -772,30 +797,21 @@ function SegGroup<T extends string>({ label, value, options, onChange }: { label
   );
 }
 
-/** A. Self-contained builder: reads its own Period · Venue · Team, then Category → method → Add. */
+/** A. Self-contained Rule builder: reads its own Period · Venue · Team, then
+ *  picks the stat (always graded on the combined list) and its options. */
 function ConditionBuilder({ narrow, fixedSide, title, onAdd }: { narrow: boolean; fixedSide?: FixtureSide; title?: string; onAdd: (c: Condition) => void }) {
-  // Default to the combined-list grading (Roman I·1·A … VII·3·F), not the raw Stat-filter band.
-  const DEFAULT_DIM = getDimension('grading1') ? 'grading1' : DIMENSIONS[0].id;
-  const first = getDimension(DEFAULT_DIM)!;
-  const [dimId, setDimId] = useState(DEFAULT_DIM);
-  const [opts, setOpts] = useState<Record<string, string>>(defaultOptions(DEFAULT_DIM));
+  // A Rule is always the combined-list grading (Roman I·1·A … VII·3·F) with the
+  // Ordinary / Series / RFS columns — the category is fixed, so there is no picker.
+  const dimId = getDimension('grading1') ? 'grading1' : DIMENSIONS[0].id;
+  const dim = getDimension(dimId)!;
+  const [opts, setOpts] = useState<Record<string, string>>(defaultOptions(dimId));
   const [half, setHalf] = useState<StatHalf>('ft');
   const [scope, setScope] = useState<StatScope>('overall');
   const [side, setSide] = useState<FixtureSide>('either');
   const period = periodFrom(half, scope);
-  const [methodId, setMethodId] = useState<string>(methodsOf(first, periodFrom('ft', 'overall'), defaultOptions(DEFAULT_DIM))[0]?.value ?? '');
-  const dim = getDimension(dimId)!;
+  const [methodId, setMethodId] = useState<string>(methodsOf(dim, periodFrom('ft', 'overall'), defaultOptions(dimId))[0]?.value ?? '');
   const methods = methodsOf(dim, period, opts);
 
-  // A new category resets method/options; an option that drives the feature list
-  // keeps the method only if it is still offered.
-  const changeDim = (v: string) => {
-    const d = getDimension(v)!;
-    const o = defaultOptions(v);
-    setDimId(v);
-    setOpts(o);
-    setMethodId(methodsOf(d, period, o)[0]?.value ?? '');
-  };
   const changeOpt = (key: string, v: string) => {
     const next = { ...opts, [key]: v };
     setOpts(next);
@@ -816,8 +832,7 @@ function ConditionBuilder({ narrow, fixedSide, title, onAdd }: { narrow: boolean
         {!fixedSide ? <SegGroup label="Team (fixtures)" value={side} options={FIXTURE_SIDES.map((s) => [s.value, s.label] as [FixtureSide, string])} onChange={setSide} /> : null}
       </View>
       <View style={[styles.filterRow, narrow && styles.filterCol]}>
-        <FilterDropdown label="Category" value={dimId} options={DIMENSIONS.map((d) => ({ value: d.id, label: d.label }))} onChange={changeDim} style={narrow ? styles.full : styles.flex} />
-        <FilterDropdown label="Method / feature" value={methodId} options={methods} onChange={setMethodId} style={narrow ? styles.full : styles.flex} />
+        <FilterDropdown label="Stat / feature" value={methodId} options={methods} onChange={setMethodId} style={styles.full} />
       </View>
       {dim.options && dim.options.length > 0 ? (
         <View style={[styles.filterRow, narrow && styles.filterCol]}>
@@ -1401,4 +1416,12 @@ const styles = StyleSheet.create({
   qualGrade: { fontFamily: fonts.bodySemiBold, fontSize: 12, flexShrink: 1 },
   qualColBadge: { borderRadius: 4, paddingHorizontal: 6, paddingVertical: 1, backgroundColor: theme.surfaceHover, borderWidth: 1, borderColor: theme.border },
   qualColText: { fontFamily: fonts.bodySemiBold, fontSize: 10, color: theme.textMuted },
+
+  // Column chips on a team row (Ordinary / + Series / RFS)
+  colChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 3, marginTop: 2 },
+  colChip: { borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1, backgroundColor: theme.surfaceHover, borderWidth: 1, borderColor: theme.border },
+  colChipSeries: { backgroundColor: 'rgba(5,150,105,0.14)', borderColor: theme.accentGreen },
+  colChipRfs: { backgroundColor: 'rgba(194,65,12,0.14)', borderColor: '#C2410C' },
+  colChipText: { fontFamily: fonts.bodySemiBold, fontSize: 9, color: theme.textMuted, letterSpacing: 0.3 },
+  colChipTextOn: { color: theme.textPrimary },
 });

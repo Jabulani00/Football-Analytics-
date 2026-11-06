@@ -1331,19 +1331,32 @@ export function gradingHead(result: StrategyResult): TeamEval | null {
   return result.conditions.find((c) => c.dimensionId === 'grading1' && (c.qualifications?.length ?? 0) > 0) ?? null;
 }
 
-export type ResultFilters = { league: string; dimension: string; color: string; minGames: number; minMatch?: number; total?: number; group?: string; column?: string };
+export type ResultFilters = {
+  league: string; dimension: string; color: string; minGames: number; minMatch?: number; total?: number;
+  /** Grading-only facets — match ANY of a team's qualifications (not just the headline). */
+  group?: string; column?: string; letter?: string; source?: string;
+};
 export function filterResults(results: StrategyResult[], f: ResultFilters): StrategyResult[] {
   return results.filter((r) => {
     if (f.league !== ALL && r.competition !== f.league) return false;
     if (f.color !== ALL && r.color !== f.color) return false;
     if (f.dimension !== ALL && !r.conditions.some((c) => c.dimensionId === f.dimension)) return false;
+    // Grading facets look across every qualification a team holds, so filtering by
+    // e.g. the "Ordinary + RFS" column surfaces teams that have that signal even
+    // when a stronger column headlines the row.
+    const wantsGrading = (f.group && f.group !== ALL) || (f.column && f.column !== ALL) || (f.letter && f.letter !== ALL) || (f.source && f.source !== ALL);
+    const quals = wantsGrading ? gradingHead(r)?.qualifications ?? null : null;
     if (f.group && f.group !== ALL) {
-      const head = gradingHead(r);
-      if (!head || head.qualifications![0].roman !== f.group) return false;
+      if (!quals || !quals.some((q) => q.roman === f.group)) return false;
     }
     if (f.column && f.column !== ALL) {
-      const head = gradingHead(r);
-      if (!head || head.gradeColumn !== f.column) return false;
+      if (!quals || !quals.some((q) => q.column === f.column)) return false;
+    }
+    if (f.letter && f.letter !== ALL) {
+      if (!quals || !quals.some((q) => q.letter === f.letter)) return false;
+    }
+    if (f.source && f.source !== ALL) {
+      if (!quals || !quals.some((q) => String(q.source) === f.source)) return false;
     }
     if (f.minGames > 0) {
       const samples = r.conditions.map((c) => c.sample).filter((s): s is number => s != null);
