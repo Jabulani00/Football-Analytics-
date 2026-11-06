@@ -58,6 +58,14 @@ function kickoffLabel(unix: number, fallback: string): string {
     return new Date(unix * 1000).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   } catch { return fallback; }
 }
+/** The Home vs Overall numbers that quantify a DA (Double Agent), when the grade carries one. */
+function daQuantText(ev: TeamEval | null | undefined): string | null {
+  if (!ev || !daLevelOf(ev.grade) || !ev.daInfo) return null;
+  const { home, overall } = ev.daInfo;
+  if (home == null || overall == null) return null;
+  return `H ${Math.round(home)}% · O ${Math.round(overall)}% · Δ${Math.round(Math.abs(home - overall))}`;
+}
+
 const COLOR_GROUPS: { value: ResultColor; label: string }[] = [
   { value: 'green', label: 'Green · strongest' },
   { value: 'yellow', label: 'Yellow · middle' },
@@ -674,6 +682,8 @@ function TeamsTableRow({ row, hasTarget, active, onPress }: { row: TeamRow; hasT
   // in rank order — so Series & RFS are visible on the row, not only on expand.
   const gradingEval = result.conditions.find((c) => c.dimensionId === 'grading1' && (c.qualifications?.length ?? 0) > 0);
   const columns = gradingEval ? [...new Set(gradingEval.qualifications!.map((q) => q.column))] : [];
+  // DA (Double Agent) belongs on the outside too: the Home-vs-Overall divergence.
+  const daQuant = daQuantText(graded);
   const rateCol = bt ? (bt.rate >= 60 ? theme.accentGreen : bt.rate >= 45 ? theme.yellow : theme.loss) : theme.textFaint;
   return (
     <Pressable accessibilityRole="button" accessibilityState={{ expanded: active }} onPress={onPress} style={[styles.fxTRow, { backgroundColor: active ? theme.surfaceHover : resultBackground(result.color) }]}>
@@ -693,7 +703,11 @@ function TeamsTableRow({ row, hasTarget, active, onPress }: { row: TeamRow; hasT
       <View style={styles.tGrade}>
         {graded ? (
           <>
-            <Text style={[styles.gradeTxt, { color: resultColour(graded.color) }]} numberOfLines={1}>{graded.grade}</Text>
+            <View style={styles.gradeLine}>
+              {daLevelOf(graded.grade) ? <DaBadge grade={graded.grade} /> : null}
+              <Text style={[styles.gradeTxt, { color: resultColour(graded.color) }]} numberOfLines={1}>{graded.grade}</Text>
+            </View>
+            {daQuant ? <Text style={styles.daQuant} numberOfLines={1}>{daQuant}</Text> : null}
             {columns.length ? (
               <View style={styles.colChips}>
                 {columns.map((c) => (
@@ -702,7 +716,7 @@ function TeamsTableRow({ row, hasTarget, active, onPress }: { row: TeamRow; hasT
                   </View>
                 ))}
               </View>
-            ) : <Text style={styles.fxCellFaint} numberOfLines={1}>{graded.dimensionLabel}</Text>}
+            ) : (!daQuant ? <Text style={styles.fxCellFaint} numberOfLines={1}>{graded.dimensionLabel}</Text> : null)}
           </>
         ) : <Text style={styles.fxNone}>—</Text>}
       </View>
@@ -917,6 +931,7 @@ function DaBadge({ grade }: { grade: string | null }) {
 function EvalRow({ ev, breakdown, rfs }: { ev: TeamEval; breakdown?: HalfReading[] | null; rfs?: StatRfs | null }) {
   const col = resultColour(ev.color);
   const hasBreakdown = !!breakdown && breakdown.some((h) => h.value != null);
+  const daQ = daQuantText(ev);
   return (
     <View style={[styles.evalRow, { backgroundColor: resultBackground(ev.color) }]}>
       <View style={styles.evalHead}>
@@ -929,6 +944,7 @@ function EvalRow({ ev, breakdown, rfs }: { ev: TeamEval; breakdown?: HalfReading
       </View>
       <Text style={styles.evalMeta}><Text style={[styles.gradeStat, { color: col }]}>{ev.valueText}</Text> · {ev.method}{ev.sample != null ? ` · ${ev.sample}g` : ''}</Text>
       <Text style={styles.evalReason} numberOfLines={2}>{ev.reason}</Text>
+      {daQ ? <Text style={styles.daQuantRow} numberOfLines={1}>⚠ DA (Double Agent) · Home vs Overall diverge — {daQ}</Text> : null}
       {rfs ? (
         <Text style={styles.rfsNote} numberOfLines={2}>
           ⚠ Recently failed · usually {rfs.usual} ({rfs.rate}%), but last game {rfs.failed} ({rfs.lastScore} {rfs.lastHome ? 'vs' : '@'} {rfs.lastOpponent})
@@ -1464,4 +1480,9 @@ const styles = StyleSheet.create({
   colChipRfs: { backgroundColor: 'rgba(194,65,12,0.14)', borderColor: '#C2410C' },
   colChipText: { fontFamily: fonts.bodySemiBold, fontSize: 9, color: theme.textMuted, letterSpacing: 0.3 },
   colChipTextOn: { color: theme.textPrimary },
+
+  // DA (Double Agent) surfaced on the row + its quantifier
+  gradeLine: { flexDirection: 'row', alignItems: 'center', gap: 4, flexWrap: 'wrap' },
+  daQuant: { fontFamily: fonts.bodySemiBold, fontSize: 9, color: theme.loss, marginTop: 1 },
+  daQuantRow: { fontFamily: fonts.bodySemiBold, fontSize: 11, lineHeight: 16, color: theme.loss },
 });

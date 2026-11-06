@@ -83,6 +83,7 @@ console.log('\nGrading columns — "Series has no DA" excludes DA grades');
 {
   const c = by('Charlie');
   check('Charlie is graded B (DA)', c?.grade?.includes('1·B') === true && c?.grade?.includes('DA') === true, c?.grade ?? '');
+  check('a DA grade carries the Home/Overall quantifier', c?.daInfo?.home === 85 && c?.daInfo?.overall === 55, JSON.stringify(c?.daInfo));
   check('a DA grade never gets the + Series column', !(c?.qualifications ?? []).some((q) => q.column === 'series'));
   check('a DA grade never gets the Series + RFS column', !(c?.qualifications ?? []).some((q) => q.column === 'series_rfs'));
   check('a DA grade is Ordinary only here', (c?.qualifications ?? []).every((q) => q.column === 'ordinary'));

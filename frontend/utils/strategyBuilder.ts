@@ -115,6 +115,9 @@ export type TeamEval = {
   gradeColumn?: QualColumn;
   /** Grading only: every grade-group · column this team qualifies for, strongest first. */
   qualifications?: GradeQualification[];
+  /** The Home vs Overall readings that quantify a DA (Double Agent) — their
+   *  divergence is what makes a B/E grade a DA. Set for every combined-list grade. */
+  daInfo?: { home: number | null; overall: number | null };
 };
 
 /* ---- grading grade-group × column qualifications (doc Page 1) ---- */
@@ -572,6 +575,7 @@ const grading1: Dimension = {
         rank: head.groupRank,
         gradeColumn: head.column,
         qualifications: quals,
+        daInfo: { home: g.homeValue, overall: g.overallValue },
       });
     }
     return out;
