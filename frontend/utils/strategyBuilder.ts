@@ -20,7 +20,7 @@ import {
   type Grade, type RomanGrade, type SourceListId, type TeamGradeRow,
 } from '@/utils/statsGrading';
 import { statStreaksFor, type StatStreaks } from '@/utils/fixtureRfs';
-import { teamResultsFromFixtures, type TeamResult } from '@/utils/teamResults';
+import { filterScope, teamResultsFromFixtures, type TeamResult } from '@/utils/teamResults';
 import { buildMethod2Grid } from '@/utils/statsGradingMethod2';
 import { OPPOSITE_PAIRS, buildOppositeStats, type OppositeScope } from '@/utils/oppositeStats';
 import {
@@ -377,6 +377,40 @@ export function timingStatLabel(key: string): string {
   return TIMING_STATS.find((s) => s.key === key)?.label ?? key;
 }
 
+/**
+ * Betting-market stats derived from the season's own results (final score +
+ * half-time score) — handicaps, the higher/lower-scoring half, and the first-half
+ * clean-sheet / BTTS markets. Everything here is computed from goals the feed
+ * already reports (nothing invented); the per-game predicate runs over each team's
+ * scoped results, and the % of games banded ↑/mid/↓ like every other stat.
+ */
+const firstHalfGoals = (r: TeamResult) => (r.htGf ?? 0) + (r.htGa ?? 0);
+const secondHalfGoals = (r: TeamResult) => (r.gf - (r.htGf ?? 0)) + (r.ga - (r.htGa ?? 0));
+const hasHalfTime = (r: TeamResult) => r.htGf != null && r.htGa != null;
+
+type MarketStat = { key: string; label: string; short: string; needsHt?: boolean; hit: (r: TeamResult) => boolean };
+const MARKET_STATS: MarketStat[] = [
+  // Handicaps (margins off the final score).
+  { key: 'mk_win1', label: 'Wins by 1+ (−0.5 handicap)', short: 'Win −0.5', hit: (r) => r.gf - r.ga >= 1 },
+  { key: 'mk_win2', label: 'Wins by 2+ (−1.5 handicap)', short: 'Win −1.5', hit: (r) => r.gf - r.ga >= 2 },
+  { key: 'mk_win3', label: 'Wins by 3+ (−2.5 handicap)', short: 'Win −2.5', hit: (r) => r.gf - r.ga >= 3 },
+  { key: 'mk_unbeaten', label: 'Unbeaten (+0.5 handicap)', short: '+0.5', hit: (r) => r.gf >= r.ga },
+  { key: 'mk_lose2', label: 'Loses by 2+ goals', short: 'Lose 2+', hit: (r) => r.ga - r.gf >= 2 },
+  // Higher / lower-scoring half (from the half-time score).
+  { key: 'mk_2h_higher', label: '2nd half is the higher-scoring half', short: '2H higher', needsHt: true, hit: (r) => secondHalfGoals(r) > firstHalfGoals(r) },
+  { key: 'mk_1h_higher', label: '1st half is the higher-scoring half', short: '1H higher', needsHt: true, hit: (r) => firstHalfGoals(r) > secondHalfGoals(r) },
+  // First-half markets.
+  { key: 'mk_cs_1h', label: 'Clean sheet in the 1st half', short: 'CS 1H', needsHt: true, hit: (r) => (r.htGa ?? 0) === 0 },
+  { key: 'mk_btts_no_1h', label: 'BTTS No in the 1st half', short: 'BTTS No 1H', needsHt: true, hit: (r) => !((r.htGf ?? 0) > 0 && (r.htGa ?? 0) > 0) },
+  { key: 'mk_scored_1h', label: 'Scores in the 1st half', short: 'Score 1H', needsHt: true, hit: (r) => (r.htGf ?? 0) > 0 },
+];
+const isMarketStat = (id: string) => id.startsWith('mk_');
+/** Fewer scoped games than this and a market % is not worth banding. */
+const MARKET_MIN_GAMES = 5;
+export function marketStatLabel(key: string): string {
+  return MARKET_STATS.find((s) => s.key === key)?.label ?? key;
+}
+
 const grading1: Dimension = {
   id: 'grading1',
   label: 'Stats Grading · Method 1',
@@ -384,6 +418,7 @@ const grading1: Dimension = {
   periods: ['overall', 'firsthalf', 'secondhalf'],
   methods: () => [
     ...GRADABLE_STATS.map((s) => ({ value: s.key, label: s.label })),
+    ...MARKET_STATS.map((s) => ({ value: s.key, label: `🎯 ${s.label}` })),
     ...TIMING_STATS.map((s) => ({ value: s.key, label: `⏱ ${s.label}` })),
   ],
   options: [
@@ -413,6 +448,38 @@ const grading1: Dimension = {
           period: sel.period,
           reason: `${def.label}: ${pctText(v)} of matches this season (overall · timing coverage ${Math.round(r.timing.coveragePct)}%)`,
           sample: null,
+        });
+      }
+      return out;
+    }
+    // Betting-market stats: computed from the team's own scoped results (handicaps
+    // and the half-scoring / first-half markets), banded ↑/mid/↓ on the % of games.
+    if (isMarketStat(sel.methodId)) {
+      const def = MARKET_STATS.find((s) => s.key === sel.methodId);
+      if (!def || !b.fixtures || !b.stats) return [];
+      const show = sel.options.show ?? ALL;
+      const scope = splitPeriod(sel.period).scope;
+      const scopeLabel = scope === 'home' ? 'Home' : scope === 'away' ? 'Away' : 'Overall';
+      const out: TeamEval[] = [];
+      for (const t of roster(b.stats)) {
+        if (t.teamId == null) continue;
+        const scoped = filterScope(teamResultsFromFixtures(b.fixtures, t.teamId, null, {}), scope);
+        const usable = def.needsHt ? scoped.filter(hasHalfTime) : scoped;
+        if (usable.length < MARKET_MIN_GAMES) continue;
+        const pct = Math.round((100 * usable.filter(def.hit).length) / usable.length);
+        const dir = directionOf(pct);
+        if (show === 'strong' && dir !== 'up') continue;
+        if (show === 'weak' && dir !== 'down') continue;
+        const color: ResultColor = dir === 'up' ? 'green' : dir === 'mid' ? 'yellow' : 'red';
+        const band = dir === 'up' ? 'UP' : dir === 'mid' ? 'MID' : 'DOWN';
+        out.push({
+          teamId: t.teamId, team: t.team, competition: b.competition, qualifies: true,
+          value: pct, valueText: pctText(pct), grade: `${def.short} · ${band}`, color,
+          dimensionId: 'grading1', dimensionLabel: 'Stats Grading · Method 1',
+          feature: def.label, method: `Market · ${scopeLabel} · ${band} · ${pctText(pct)}`,
+          period: sel.period,
+          reason: `${def.label}: ${pctText(pct)} of ${scopeLabel.toLowerCase()} games (${usable.length}g)`,
+          sample: usable.length,
         });
       }
       return out;
@@ -1131,8 +1198,8 @@ function conditionStat(cond: Condition): { prefix: string; key: string; kind: St
     }
     case 'grading1':
     case 'grading2':
-      // Goal-timing windows have no FT/1H/2H table column — no half split.
-      if (isTimingStat(cond.methodId)) return null;
+      // Goal-timing & market stats have no single FT/1H/2H table column — no half split.
+      if (isTimingStat(cond.methodId) || isMarketStat(cond.methodId)) return null;
       // Every gradable stat is a percentage column in the ordinary family.
       return { prefix: 'ordinary', key: cond.methodId, kind: 'pct', decimals: 0 };
     default:

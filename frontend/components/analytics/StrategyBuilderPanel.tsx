@@ -499,7 +499,7 @@ export default function StrategyBuilderPanel() {
           <><ActivityIndicator size="small" color={theme.accentGreen} /><Text style={styles.statusMuted}>Querying {liveLeagues.length} ongoing leagues…</Text></>
         ) : resultMode === 'teams' ? (
           conditions.length > 0
-            ? <Text style={styles.statusLive}>● {summary.teams} teams · {summary.leagues} leagues · {logic.toUpperCase()} of {conditions.length} condition{conditions.length > 1 ? 's' : ''}</Text>
+            ? <Text style={styles.statusLive}>● {summary.teams} teams · {summary.leagues} leagues · {logic.toUpperCase()} of {conditions.length} rule{conditions.length > 1 ? 's' : ''}</Text>
             : <Text style={styles.statusMuted}>Add a Rule to see the qualifying teams.</Text>
         ) : (
           <Text style={styles.statusLive}>● {fxFiltered.length} qualifying fixtures{conditions.length > 0 ? ' · home/away attributes matched' : ''}</Text>
@@ -626,7 +626,7 @@ function TeamsTable({ rows, upcoming, target, fixturesByComp, compIdByName, tota
           <View style={[styles.fxTRow, styles.fxTHeadRow]}>
             <Text style={[styles.tTeam, styles.fxTHead]}>Team</Text>
             <Text style={[styles.tNext, styles.fxTHead]}>Next fixture</Text>
-            <Text style={[styles.tCond, styles.fxTHead]}>Conditions</Text>
+            <Text style={[styles.tCond, styles.fxTHead]}>Rules</Text>
             <Text style={[styles.tGrade, styles.fxTHead]}>Grade</Text>
             <Text style={[styles.tRead, styles.fxTHead]}>Reading</Text>
             {target ? <Text style={[styles.tRate, styles.fxTHead]}>Hist. {target.label}</Text> : null}
@@ -1001,7 +1001,7 @@ function ResultCard({ result, upcoming, total, share, breakdownFor, rfsFor }: { 
         <Text style={styles.resultNext} numberOfLines={1}>Next: {nf.side === 'home' ? 'vs ' : '@ '}{nf.opponentName} · {nf.side === 'home' ? 'Home' : 'Away'} · {kickoffLabel(nf.fixture.kickoffUnix, nf.fixture.kickoff)}</Text>
       ) : <Text style={styles.resultNextNone}>No upcoming fixture</Text>}
       {ms ? (
-        <Text style={styles.resultStrength}>Passes {ms.matched} of {ms.total} condition{ms.total > 1 ? 's' : ''} ({ms.pct}%)</Text>
+        <Text style={styles.resultStrength}>Passes {ms.matched} of {ms.total} rule{ms.total > 1 ? 's' : ''} ({ms.pct}%)</Text>
       ) : null}
       {colorPct != null && share ? (
         <Text style={styles.resultShare} numberOfLines={2}>

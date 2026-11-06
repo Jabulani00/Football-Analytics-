@@ -136,6 +136,44 @@ console.log('\nGoal-timing windows — first 15′ / last 20′ band on the over
   check('no timing data on the bundle → no timing evals', grading.evaluate({ competition: 'LT' }, { period: 'overall', methodId: 'tm_sc_15', options: { show: 'all' } }).length === 0);
 }
 
+console.log('\nBetting-market stats — handicaps & scoring-half (from results)');
+{
+  const fxH = (teamId: number, name: string, gf: number, ga: number, htGf: number, htGa: number, unix: number): RawFixture => {
+    fid += 1;
+    return { id: fid, unix, status: 'FT', home_id: teamId, away_id: 900 + teamId, home_name: name, away_name: 'Opp', home_goals: gf, away_goals: ga, ht_score: `${htGf}-${htGa}` } as unknown as RawFixture;
+  };
+  const mStats: TeamStatsExport = {
+    meta: { tables: 1, statsPerTable: 1 },
+    tables: {
+      ordinary_ft_overall: [
+        { team_name: 'Crusher', team_id: 20, league_id: '1', season: '2024', sc_pct: 0, sample_size: 6 } as TeamStatRow,
+        { team_name: 'Flat', team_id: 21, league_id: '1', season: '2024', sc_pct: 0, sample_size: 6 } as TeamStatRow,
+      ],
+    },
+  };
+  const mFx: RawFixture[] = [
+    ...Array.from({ length: 6 }, (_, i) => fxH(20, 'Crusher', 3, 0, 2, 0, 1000 - i)), // win by 3; 1H(2) > 2H(1); CS 1H
+    ...Array.from({ length: 6 }, (_, i) => fxH(21, 'Flat', 1, 1, 0, 0, 2000 - i)),    // unbeaten; 2H(2) > 1H(0); CS 1H
+  ];
+  const mb: LeagueBundle = { competition: 'LM', stats: mStats, fixtures: mFx };
+
+  check('market stats are offered in the Rule', grading.methods('overall').some((m) => m.value === 'mk_win2'));
+
+  const win2 = grading.evaluate(mb, { period: 'overall', methodId: 'mk_win2', options: { show: 'all' } });
+  const crush = win2.find((e) => e.team === 'Crusher');
+  check('Crusher wins by 2+ → UP / green', crush?.color === 'green' && crush?.grade?.includes('Win −1.5 · UP') === true, crush?.grade ?? '');
+  check('Flat never wins by 2+ → DOWN / red', win2.find((e) => e.team === 'Flat')?.color === 'red');
+
+  const hh = grading.evaluate(mb, { period: 'overall', methodId: 'mk_2h_higher', options: { show: 'all' } });
+  check('Flat has the higher-scoring 2nd half → UP', hh.find((e) => e.team === 'Flat')?.color === 'green');
+  check('Crusher does not → DOWN', hh.find((e) => e.team === 'Crusher')?.color === 'red');
+
+  check('both keep a 1st-half clean sheet (strong)', grading.evaluate(mb, { period: 'overall', methodId: 'mk_cs_1h', options: { show: 'strong' } }).length === 2);
+
+  const noHt: LeagueBundle = { competition: 'LM', stats: mStats, fixtures: Array.from({ length: 6 }, (_, i) => fx(20, 'Crusher', 3, 0, 1000 - i)) };
+  check('a half-market with no HT data yields nothing', grading.evaluate(noHt, { period: 'overall', methodId: 'mk_2h_higher', options: { show: 'all' } }).length === 0);
+}
+
 console.log('\nMulti-rule combine — a second Rule recalculates (OR / AND)');
 {
   // A second stat column so two Rules can grade differently.
