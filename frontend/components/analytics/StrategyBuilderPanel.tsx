@@ -18,11 +18,11 @@ import { nextFixtureFor, type UpcomingLite } from '@/utils/statsGrading';
 import { ordinaryRfsForStat, type StatRfs } from '@/utils/fixtureRfs';
 import { teamResultsFromFixtures } from '@/utils/teamResults';
 import {
-  DIMENSIONS, FIXTURE_SIDES, STRATEGY_PRESETS, buildStrategyConfig, conditionLabel, conditionMembership,
+  COLUMN_LABEL, DIMENSIONS, FIXTURE_SIDES, QUAL_COLUMNS, STRATEGY_PRESETS, buildStrategyConfig, conditionLabel, conditionMembership,
   daLevelOf, evaluateFixtureSides, evaluateStrategy, filterResults, getDimension, gradeShareByLeague,
   matchStrength, needsExport, needsFixtures, periodFrom, periodLabel, resultBackground, resultColour,
   splitPeriod, summarize, teamHalfBreakdown,
-  type CondMembership, type Condition, type Dimension, type FixtureSide, type HalfReading, type LeagueBundle, type LeagueGradeShare,
+  type CondMembership, type Condition, type Dimension, type FixtureSide, type GradeQualification, type HalfReading, type LeagueBundle, type LeagueGradeShare,
   type ResultColor, type SavedStrategy, type StatHalf, type StatScope, type StrategyLogic, type StrategyPeriod,
   type StrategyPreset, type StrategyResult, type TeamEval,
 } from '@/utils/strategyBuilder';
@@ -64,6 +64,9 @@ const COLOR_GROUPS: { value: ResultColor; label: string }[] = [
   { value: 'red', label: 'Red · weakest' },
   { value: 'none', label: 'Ungraded' },
 ];
+/** Combined-list grade groups (I strongest → VII weakest) for the grading filter. */
+const GRADE_GROUPS: { value: string; label: string }[] =
+  (['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'] as const).map((r) => ({ value: r, label: `Group (${r})` }));
 
 /** A qualifying fixture: the conditions each team satisfied, and the strongest colour. */
 type FxRow = { fx: Fixture; homeEvals: TeamEval[]; awayEvals: TeamEval[]; color: ResultColor; rank?: number };
@@ -254,14 +257,18 @@ export default function StrategyBuilderPanel() {
   const [fColor, setFColor] = useState(ALL);
   const [fMinGames, setFMinGames] = useState(0);
   const [fMinMatch, setFMinMatch] = useState(0);
+  // Grade-group · column filters (doc "add group filter when data is displayed").
+  const [fGroup, setFGroup] = useState(ALL);
+  const [fColumn, setFColumn] = useState(ALL);
+  const hasGrading = conditions.some((c) => c.dimensionId === 'grading1');
   const [page, setPage] = useState(1);
 
-  const filtered = useMemo(() => filterResults(results, { league: fLeague, dimension: fDimension, color: fColor, minGames: fMinGames, minMatch: fMinMatch, total: conditions.length }), [results, fLeague, fDimension, fColor, fMinGames, fMinMatch, conditions.length]);
+  const filtered = useMemo(() => filterResults(results, { league: fLeague, dimension: fDimension, color: fColor, minGames: fMinGames, minMatch: fMinMatch, total: conditions.length, group: hasGrading ? fGroup : ALL, column: hasGrading ? fColumn : ALL }), [results, fLeague, fDimension, fColor, fMinGames, fMinMatch, conditions.length, hasGrading, fGroup, fColumn]);
   const summary = useMemo(() => summarize(filtered), [filtered]);
   // Per-league grade distribution across the qualifiers, so each row can show its grade's share.
   const leagueShare = useMemo(() => gradeShareByLeague(results), [results]);
 
-  useEffect(() => setPage(1), [resultMode, conditions, logic, fLeague, fDimension, fColor, fMinGames, fMinMatch, target]);
+  useEffect(() => setPage(1), [resultMode, conditions, logic, fLeague, fDimension, fColor, fMinGames, fMinMatch, fGroup, fColumn, target]);
 
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safe = Math.min(page, pages);
@@ -284,14 +291,14 @@ export default function StrategyBuilderPanel() {
   const addCondition = (c: Condition) => { setConditions((cur) => [...cur, c]); setActiveId(null); };
   const removeCondition = (id: string) => { setConditions((cur) => cur.filter((c) => c.id !== id)); setActiveId(null); };
   const toggleNot = (id: string) => { setConditions((cur) => cur.map((c) => (c.id === id ? { ...c, not: !c.not } : c))); setActiveId(null); };
-  const clearAll = () => { setConditions([]); setFLeague(ALL); setFDimension(ALL); setFColor(ALL); setFMinGames(0); setFMinMatch(0); setActiveId(null); };
+  const clearAll = () => { setConditions([]); setFLeague(ALL); setFDimension(ALL); setFColor(ALL); setFMinGames(0); setFMinMatch(0); setFGroup(ALL); setFColumn(ALL); setActiveId(null); };
 
   // One-click preset: set logic + conditions (each with its own period), then recompute live.
   const applyPreset = (p: StrategyPreset) => {
     setBuildMode('combined');
     setLogic(p.logic);
     setConditions(p.conditions.map((c) => ({ id: `c${(CONDITION_SEQ += 1)}`, dimensionId: c.dimensionId, period: p.period, methodId: c.methodId, options: { ...c.options }, side: 'either' as FixtureSide })));
-    setFLeague(ALL); setFDimension(ALL); setFColor(ALL); setFMinGames(0); setFMinMatch(0);
+    setFLeague(ALL); setFDimension(ALL); setFColor(ALL); setFMinGames(0); setFMinMatch(0); setFGroup(ALL); setFColumn(ALL);
     setActiveId(null);
   };
 
@@ -310,7 +317,7 @@ export default function StrategyBuilderPanel() {
     setLogic(cfg.logic);
     setBuildMode(cfg.conditions.some((c) => c.side === 'home' || c.side === 'away') ? 'split' : 'combined');
     setResultMode(cfg.resultMode);
-    setFLeague(ALL); setFDimension(ALL); setFColor(ALL); setFMinGames(0); setFMinMatch(0);
+    setFLeague(ALL); setFDimension(ALL); setFColor(ALL); setFMinGames(0); setFMinMatch(0); setFGroup(ALL); setFColumn(ALL);
     setActiveId(s.id);
     setSaving(false);
   };
@@ -385,10 +392,10 @@ export default function StrategyBuilderPanel() {
       ) : (
         <View style={[styles.splitRow, narrow && styles.filterCol]}>
           <View style={wide ? styles.flex : styles.full}>
-            <ConditionBuilder narrow={narrow} fixedSide="home" title="🏠 Home team conditions" onAdd={addCondition} />
+            <ConditionBuilder narrow={narrow} fixedSide="home" title="🏠 Home team · Rule" onAdd={addCondition} />
           </View>
           <View style={wide ? styles.flex : styles.full}>
-            <ConditionBuilder narrow={narrow} fixedSide="away" title="✈ Away team conditions" onAdd={addCondition} />
+            <ConditionBuilder narrow={narrow} fixedSide="away" title="✈ Away team · Rule" onAdd={addCondition} />
           </View>
         </View>
       )}
@@ -397,7 +404,7 @@ export default function StrategyBuilderPanel() {
       {conditions.length > 0 ? (
         <View style={styles.conditionsCard}>
           <View style={styles.conditionsHead}>
-            <Text style={styles.sectionLabel}>Query conditions</Text>
+            <Text style={styles.sectionLabel}>Rules</Text>
             <View style={styles.logicRow}>
               {(['and', 'or'] as StrategyLogic[]).map((l) => (
                 <Pressable key={l} onPress={() => setLogic(l)} style={[styles.logicBtn, logic === l && styles.logicBtnOn]}>
@@ -452,7 +459,7 @@ export default function StrategyBuilderPanel() {
           ) : null}
         </View>
       ) : (
-        <Text style={styles.empty}>Add a condition above to build your strategy.</Text>
+        <Text style={styles.empty}>Add a Rule above to build your strategy.</Text>
       )}
 
       {/* Status */}
@@ -462,7 +469,7 @@ export default function StrategyBuilderPanel() {
         ) : resultMode === 'teams' ? (
           conditions.length > 0
             ? <Text style={styles.statusLive}>● {summary.teams} teams · {summary.leagues} leagues · {logic.toUpperCase()} of {conditions.length} condition{conditions.length > 1 ? 's' : ''}</Text>
-            : <Text style={styles.statusMuted}>Add a condition to see the qualifying teams.</Text>
+            : <Text style={styles.statusMuted}>Add a Rule to see the qualifying teams.</Text>
         ) : (
           <Text style={styles.statusLive}>● {fxFiltered.length} qualifying fixtures{conditions.length > 0 ? ' · home/away attributes matched' : ''}</Text>
         )}
@@ -486,6 +493,12 @@ export default function StrategyBuilderPanel() {
                 <FilterDropdown label="Colour" value={fColor} options={[{ value: ALL, label: 'All colours' }, ...COLOR_GROUPS.map((c) => ({ value: c.value, label: c.label }))]} onChange={setFColor} style={narrow ? styles.full : styles.flex} />
                 <FilterDropdown label="Min games" value={String(fMinGames)} options={[{ value: '0', label: 'Any games' }, { value: '5', label: '5+ games' }, { value: '8', label: '8+ games' }]} onChange={(v) => setFMinGames(Number(v))} style={narrow ? styles.full : styles.flex} />
                 <FilterDropdown label="Min match" value={String(fMinMatch)} options={[{ value: '0', label: 'Any match' }, { value: '50', label: '50%+ conditions' }, { value: '75', label: '75%+ conditions' }, { value: '100', label: 'All conditions' }]} onChange={(v) => setFMinMatch(Number(v))} style={narrow ? styles.full : styles.flex} />
+                {hasGrading ? (
+                  <>
+                    <FilterDropdown label="Group" value={fGroup} options={[{ value: ALL, label: 'All groups (I–VII)' }, ...GRADE_GROUPS]} onChange={setFGroup} style={narrow ? styles.full : styles.flex} />
+                    <FilterDropdown label="Column" value={fColumn} options={[{ value: ALL, label: 'All columns' }, ...QUAL_COLUMNS]} onChange={setFColumn} style={narrow ? styles.full : styles.flex} />
+                  </>
+                ) : null}
                 <FilterDropdown label="Historical outcome" value={target} options={[{ value: ALL, label: 'Off · no backtest' }, ...TARGET_MARKETS.map((m) => ({ value: m.key, label: `${m.group} · ${m.label}` }))]} onChange={setTarget} style={narrow ? styles.full : styles.flex} />
               </View>
               {target !== ALL ? (
@@ -515,7 +528,7 @@ export default function StrategyBuilderPanel() {
             <Text style={styles.backtestNote}>Every upcoming fixture whose home team meets the home-side conditions and away team the away-side ones, showing the exact grade each feature qualified with.</Text>
           </View>
           {conditions.length === 0 ? (
-            <Text style={styles.empty}>Add a condition above to see the qualifying fixtures.</Text>
+            <Text style={styles.empty}>Add a Rule above to see the qualifying fixtures.</Text>
           ) : fxFiltered.length === 0 ? (
             <Text style={styles.empty}>No upcoming fixture matches this strategy. Try OR logic, relax a condition, or change which side it applies to.</Text>
           ) : (
@@ -796,7 +809,7 @@ function ConditionBuilder({ narrow, fixedSide, title, onAdd }: { narrow: boolean
 
   return (
     <View style={[styles.builderCard, fixedSide === 'home' && styles.builderHome, fixedSide === 'away' && styles.builderAway]}>
-      <Text style={styles.sectionLabel}>{title ?? 'Strategy configuration'}</Text>
+      <Text style={styles.sectionLabel}>{title ?? 'Rule'}</Text>
       <View style={styles.readRow}>
         <SegGroup label="Period" value={half} options={[['ft', 'Full time'], ['ht', '1st half'], ['2h', '2nd half']]} onChange={setHalf} />
         <SegGroup label="Venue" value={scope} options={[['overall', 'Overall'], ['home', 'Home'], ['away', 'Away']]} onChange={setScope} />
@@ -827,7 +840,7 @@ function ConditionBuilder({ narrow, fixedSide, title, onAdd }: { narrow: boolean
         </View>
       ) : null}
       <Pressable accessibilityRole="button" onPress={add} style={({ pressed }) => [styles.addBtn, pressed && styles.addBtnPressed]}>
-        <Text style={styles.addBtnText}>+ Add condition</Text>
+        <Text style={styles.addBtnText}>+ Add Rule</Text>
       </Pressable>
     </View>
   );
@@ -866,7 +879,28 @@ function EvalRow({ ev, breakdown, rfs }: { ev: TeamEval; breakdown?: HalfReading
           ⚠ Recently failed · usually {rfs.usual} ({rfs.rate}%), but last game {rfs.failed} ({rfs.lastScore} {rfs.lastHome ? 'vs' : '@'} {rfs.lastOpponent})
         </Text>
       ) : null}
+      {ev.qualifications && ev.qualifications.length ? <QualList quals={ev.qualifications} /> : null}
       {hasBreakdown ? <HalfSplit readings={breakdown!} scope={splitPeriod(ev.period).scope} /> : null}
+    </View>
+  );
+}
+
+/** Every grade-group · column this team qualified for, strongest first (doc:
+ *  "show which groups qualified for too in rankings"). The headline is ringed. */
+function QualList({ quals }: { quals: GradeQualification[] }) {
+  return (
+    <View style={styles.qualList}>
+      <Text style={styles.qualTitle} numberOfLines={1}>Qualifications · strongest first</Text>
+      {quals.map((q, i) => {
+        const c = q.direction === 'strong' ? theme.accentGreen : theme.loss;
+        return (
+          <View key={`${q.source}-${q.column}-${i}`} style={[styles.qualItem, i === 0 && styles.qualItemHead]}>
+            <Text style={styles.qualRank}>{i + 1}</Text>
+            <Text style={[styles.qualGrade, { color: c }]} numberOfLines={1}>({q.roman}) {q.combined}{q.da ? ' · DA' : ''}</Text>
+            <View style={styles.qualColBadge}><Text style={styles.qualColText} numberOfLines={1}>{COLUMN_LABEL[q.column]}</Text></View>
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -1357,4 +1391,14 @@ const styles = StyleSheet.create({
   rfsBadge: { borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1, backgroundColor: '#C2410C' },
   rfsBadgeText: { fontFamily: fonts.bodySemiBold, fontSize: 9, color: '#FFFFFF', letterSpacing: 0.5 },
   rfsNote: { fontFamily: fonts.body, fontSize: 11, lineHeight: 16, color: '#C2410C' },
+
+  // Grade-group · column qualifications (ranked)
+  qualList: { marginTop: spacing.sm, gap: 3 },
+  qualTitle: { fontFamily: fonts.bodySemiBold, fontSize: 10, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
+  qualItem: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 2 },
+  qualItemHead: { borderLeftWidth: 2, borderLeftColor: theme.accentBlue, paddingLeft: 5 },
+  qualRank: { fontFamily: fonts.bodySemiBold, fontSize: 10, color: theme.textFaint, minWidth: 12, textAlign: 'center' },
+  qualGrade: { fontFamily: fonts.bodySemiBold, fontSize: 12, flexShrink: 1 },
+  qualColBadge: { borderRadius: 4, paddingHorizontal: 6, paddingVertical: 1, backgroundColor: theme.surfaceHover, borderWidth: 1, borderColor: theme.border },
+  qualColText: { fontFamily: fonts.bodySemiBold, fontSize: 10, color: theme.textMuted },
 });

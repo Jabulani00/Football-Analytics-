@@ -17,8 +17,10 @@ import {
 } from '@/utils/dominance';
 import {
   GRADABLE_STATS, SOURCE_LISTS, directionOf, gradableStatLabel, gradeAllTeamsForStat,
-  type RomanGrade, type SourceListId, type TeamGradeRow,
+  type Grade, type RomanGrade, type SourceListId, type TeamGradeRow,
 } from '@/utils/statsGrading';
+import { statStreaksFor, type StatStreaks } from '@/utils/fixtureRfs';
+import { teamResultsFromFixtures, type TeamResult } from '@/utils/teamResults';
 import { buildMethod2Grid } from '@/utils/statsGradingMethod2';
 import { OPPOSITE_PAIRS, buildOppositeStats, type OppositeScope } from '@/utils/oppositeStats';
 import {
@@ -101,6 +103,43 @@ export type TeamEval = {
   conditionId?: string;
   /** Combined-list rank for grading (1 = strongest · Strong I … 14 = weakest · Weak VII). */
   rank?: number;
+  /** Grading only: which column (Ordinary / +Series / …) the headline qualified in. */
+  gradeColumn?: QualColumn;
+  /** Grading only: every grade-group · column this team qualifies for, strongest first. */
+  qualifications?: GradeQualification[];
+};
+
+/* ---- grading grade-group × column qualifications (doc Page 1) ---- */
+
+/** The four columns a graded stat can qualify in (doc Page 1, exact terms). */
+export type QualColumn = 'ordinary' | 'series' | 'ordinary_rfs' | 'series_rfs';
+export const COLUMN_LABEL: Record<QualColumn, string> = {
+  ordinary: 'Ordinary',
+  series: '+ Series',
+  ordinary_rfs: 'Ordinary + RFS',
+  series_rfs: 'Series + RFS',
+};
+/** Column preference within a grade group (best → worst): a confirmed live run is
+ *  the premium signal, then a clean ordinary read, then the recency-failure
+ *  columns (cautionary — the usual just broke). */
+const COLUMN_RANK: Record<QualColumn, number> = { series: 0, ordinary: 1, ordinary_rfs: 2, series_rfs: 3 };
+export const QUAL_COLUMNS: { value: QualColumn; label: string }[] =
+  (['ordinary', 'series', 'ordinary_rfs', 'series_rfs'] as QualColumn[]).map((c) => ({ value: c, label: COLUMN_LABEL[c] }));
+
+/** One grade-group · column a team qualifies for (doc: "grade + column"). */
+export type GradeQualification = {
+  source: SourceListId;
+  roman: RomanGrade;
+  letter: Grade;
+  direction: 'strong' | 'weak';
+  da: boolean;
+  column: QualColumn;
+  /** Combined-list group rank (1 = Strong I … 14 = Weak VII). */
+  groupRank: number;
+  /** Lower = stronger overall — group rank first, then column preference. */
+  overallRank: number;
+  /** Combined-list identity, e.g. "1·A". */
+  combined: string;
 };
 
 export type MethodOpt = { value: string; label: string };
@@ -304,6 +343,14 @@ const ROMAN_INDEX: Record<RomanGrade, number> = { I: 1, II: 2, III: 3, IV: 4, V:
 function combinedRank(direction: 'strong' | 'weak', roman: RomanGrade): number {
   return (direction === 'weak' ? 7 : 0) + ROMAN_INDEX[roman];
 }
+/**
+ * The combined list's only non-DA letters are A (strong) and F (weak); every
+ * other letter is a Double Agent. The document's rule "Series has no DA" means a
+ * DA grade group can never qualify in the Series / Series + RFS columns.
+ */
+function letterCarriesDa(letter: Grade): boolean {
+  return letter !== 'A' && letter !== 'F';
+}
 
 const grading1: Dimension = {
   id: 'grading1',
@@ -320,41 +367,78 @@ const grading1: Dimension = {
     const show = sel.options.show ?? ALL;
     const half = splitPeriod(sel.period).half; // 'ft' | 'ht' | '2h' — grade the chosen half
     const per = periodLabel(sel.period);
-    // Combine the source lists: grade each team at all-games, last 10 & 8 and
-    // last 6 & 5, map each (source · letter) to its combined-list figure, and keep
-    // the team's STRONGEST (lowest-rank) combination — the document's ranking.
-    const best = new Map<string, { g: TeamGradeRow; source: SourceListId; rank: number }>();
+
+    // The Ordinary / Series / RFS columns read a team's season games; built once
+    // per team, league-scoped (the fixtures feed is already one league's), and only
+    // when that league's fixtures are loaded — otherwise a team shows Ordinary only.
+    const resultsByTeam = new Map<string, TeamResult[]>();
+    const streakOf = (g: TeamGradeRow): StatStreaks | null => {
+      if (!b.fixtures || g.teamId == null) return null;
+      const key = teamKeyOf(g);
+      let res = resultsByTeam.get(key);
+      if (!res) {
+        res = teamResultsFromFixtures(b.fixtures, g.teamId, null, {}).sort((x, y) => y.unix - x.unix);
+        resultsByTeam.set(key, res);
+      }
+      return statStreaksFor(res, g.statKey);
+    };
+
+    // Grade each team at all three source lists; for each grade, add every column
+    // the team qualifies in. A team may hold several grade-group · column
+    // qualifications — the document says to keep them all and headline the
+    // strongest (lowest overall rank: group first, then column preference).
+    const byTeam = new Map<string, { rows: Map<SourceListId, TeamGradeRow>; quals: GradeQualification[] }>();
     for (const sid of [1, 2, 3] as SourceListId[]) {
       for (const g of gradeAllTeamsForStat(stats, sid, sel.methodId, b.competition, half)) {
         if (g.grade == null || g.direction == null || g.roman == null) continue;
-        const rank = combinedRank(g.direction, g.roman);
+        if (show === 'strong' && g.direction !== 'strong') continue;
+        if (show === 'weak' && g.direction !== 'weak') continue;
         const key = teamKeyOf(g);
-        const cur = best.get(key);
-        if (!cur || rank < cur.rank) best.set(key, { g, source: sid, rank });
+        const entry = byTeam.get(key) ?? { rows: new Map<SourceListId, TeamGradeRow>(), quals: [] };
+        entry.rows.set(sid, g);
+        const groupRank = combinedRank(g.direction, g.roman);
+        const combined = `${sid}·${g.grade}`; // combined-list entry, e.g. "1·A" / "3·F"
+        const streaks = streakOf(g);
+        const seriesOk = !letterCarriesDa(g.grade); // "Series has no DA"
+        const columns: QualColumn[] = ['ordinary'];
+        if (streaks?.ordinaryRfs) columns.push('ordinary_rfs');
+        if (seriesOk && (streaks?.seriesRun ?? 0) > 0) columns.push('series');
+        if (seriesOk && (streaks?.brokeRun ?? 0) > 0) columns.push('series_rfs');
+        for (const column of columns) {
+          entry.quals.push({
+            source: sid, roman: g.roman, letter: g.grade, direction: g.direction, da: g.da,
+            column, groupRank, combined, overallRank: groupRank * 10 + COLUMN_RANK[column],
+          });
+        }
+        byTeam.set(key, entry);
       }
     }
+
     const out: TeamEval[] = [];
-    for (const { g, source, rank } of best.values()) {
-      if (g.grade == null || g.direction == null || g.roman == null) continue; // (narrowing)
-      if (show === 'strong' && g.direction !== 'strong') continue;
-      if (show === 'weak' && g.direction !== 'weak') continue;
-      const dirWord = g.direction === 'strong' ? 'Strong' : 'Weak';
-      const srcLabel = SOURCE_LISTS.find((s) => s.id === source)?.label ?? String(source);
-      const leagueNote = g.grade === 'C' ? ' (above league avg)' : g.grade === 'D' ? ' (below league avg)' : '';
-      const combined = `${source}·${g.grade}`; // the combined-list entry, e.g. "1·A" / "3·F"
+    for (const { rows, quals } of byTeam.values()) {
+      if (!quals.length) continue;
+      quals.sort((a, c) => a.overallRank - c.overallRank);
+      const head = quals[0];
+      const g = rows.get(head.source)!; // the headline source's row carries its %s
+      const dirWord = head.direction === 'strong' ? 'Strong' : 'Weak';
+      const srcLabel = SOURCE_LISTS.find((s) => s.id === head.source)?.label ?? String(head.source);
+      const leagueNote = head.letter === 'C' ? ' (above league avg)' : head.letter === 'D' ? ' (below league avg)' : '';
+      const colLabel = COLUMN_LABEL[head.column];
       out.push({
         teamId: g.teamId, team: g.team, competition: b.competition, qualifies: true,
         value: g.overallValue, valueText: pctText(g.overallValue),
-        // Combined-list identity: Roman figure · source·letter, e.g. "I · 1·A", "VII · 3·F" (daLevelOf still reads the DA).
-        grade: `${g.roman} · ${combined}${g.da ? ' · DA' : ''}`,
-        color: g.direction === 'strong' ? 'green' : 'red',
+        // Combined-list identity + column: "(I) 1·A · Ordinary", "(IV) 2·B · Ordinary + RFS · DA".
+        grade: `${head.roman} · ${head.combined} · ${colLabel}${head.da ? ' · DA' : ''}`,
+        color: head.direction === 'strong' ? 'green' : 'red',
         dimensionId: 'grading1', dimensionLabel: 'Stats Grading · Method 1',
         feature: gradableStatLabel(sel.methodId),
-        method: `${dirWord} · ${srcLabel} · ${per}`,
+        method: `${dirWord} · ${srcLabel} · ${colLabel} · ${per}`,
         period: sel.period,
-        reason: `Home ${pctText(g.homeValue)} ${arrowOf(g.homeValue)} / Overall ${pctText(g.overallValue)} ${arrowOf(g.overallValue)}${leagueNote} → (${g.roman}) ${combined}`,
+        reason: `Home ${pctText(g.homeValue)} ${arrowOf(g.homeValue)} / Overall ${pctText(g.overallValue)} ${arrowOf(g.overallValue)}${leagueNote} → (${head.roman}) ${head.combined} · ${colLabel}`,
         sample: g.sample,
-        rank,
+        rank: head.groupRank,
+        gradeColumn: head.column,
+        qualifications: quals,
       });
     }
     return out;
@@ -1242,12 +1326,25 @@ export function recommendFixture(
   return { prediction, rec };
 }
 
-export type ResultFilters = { league: string; dimension: string; color: string; minGames: number; minMatch?: number; total?: number };
+/** The grading condition whose grade+column headlines a result (the first one). */
+export function gradingHead(result: StrategyResult): TeamEval | null {
+  return result.conditions.find((c) => c.dimensionId === 'grading1' && (c.qualifications?.length ?? 0) > 0) ?? null;
+}
+
+export type ResultFilters = { league: string; dimension: string; color: string; minGames: number; minMatch?: number; total?: number; group?: string; column?: string };
 export function filterResults(results: StrategyResult[], f: ResultFilters): StrategyResult[] {
   return results.filter((r) => {
     if (f.league !== ALL && r.competition !== f.league) return false;
     if (f.color !== ALL && r.color !== f.color) return false;
     if (f.dimension !== ALL && !r.conditions.some((c) => c.dimensionId === f.dimension)) return false;
+    if (f.group && f.group !== ALL) {
+      const head = gradingHead(r);
+      if (!head || head.qualifications![0].roman !== f.group) return false;
+    }
+    if (f.column && f.column !== ALL) {
+      const head = gradingHead(r);
+      if (!head || head.gradeColumn !== f.column) return false;
+    }
     if (f.minGames > 0) {
       const samples = r.conditions.map((c) => c.sample).filter((s): s is number => s != null);
       if (samples.length && Math.min(...samples) < f.minGames) return false;

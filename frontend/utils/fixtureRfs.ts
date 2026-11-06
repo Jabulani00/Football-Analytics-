@@ -297,6 +297,50 @@ export function ordinaryRfsForStat(
   };
 }
 
+/**
+ * The Ordinary / Series / RFS "columns" for ONE stat, one team (doc Page 1's
+ * grade-group × column table). All four read the SAME stat predicate, so a grade
+ * and its column stay consistent:
+ *  - `seriesRun` — the current unbroken run of the usual (newest-first), when it
+ *    reaches `minSeries`; 0 otherwise or when the last game went against it.
+ *  - `brokeRun` — the run that was alive going INTO the last game when that game
+ *    ended it (Series + RFS); 0 otherwise.
+ *  - `ordinaryRfs` — the ordinary recency-failure signal (usual, but last game
+ *    failed it).
+ * `results` must be newest-first. Null when the stat has no RFS definition or
+ * there are no games. Cheap — reuses `RFS_ORDINARY_DEFS` predicates.
+ */
+export type StatStreaks = {
+  seriesRun: number;
+  brokeRun: number;
+  ordinaryRfs: StatRfs | null;
+};
+
+export function statStreaksFor(
+  results: TeamResult[],
+  statKey: string,
+  opts?: { minRate?: number; minSeries?: number },
+): StatStreaks | null {
+  const def = RFS_ORDINARY_DEFS.find((d) => d.key === statKey);
+  if (!def || results.length === 0) return null;
+  const minSeries = opts?.minSeries ?? MIN_SERIES;
+  const didLast = def.hit(results[0]);
+
+  // Current run of the usual, from the newest game back until it breaks.
+  let seriesRun = 0;
+  for (const r of results) { if (!def.hit(r)) break; seriesRun += 1; }
+
+  // The run alive going into the last game — only counts when that game broke it.
+  let brokeRun = 0;
+  if (!didLast) { for (const r of results.slice(1)) { if (!def.hit(r)) break; brokeRun += 1; } }
+
+  return {
+    seriesRun: seriesRun >= minSeries ? seriesRun : 0,
+    brokeRun: brokeRun >= minSeries ? brokeRun : 0,
+    ordinaryRfs: ordinaryRfsForStat(results, statKey, opts?.minRate ?? USUAL_MIN_RATE),
+  };
+}
+
 function bySide(a: RfsSide, b: RfsSide): number {
   return a === b ? 0 : a === 'home' ? -1 : 1;
 }
