@@ -16,8 +16,8 @@ import {
   DOMINANCE_STATS, HALF_STATS, buildHalfDominance, buildHomeAwayDominance, type StatDef,
 } from '@/utils/dominance';
 import {
-  DA_GRADES, GRADABLE_STATS, SOURCE_LISTS, directionOf, gradableStatLabel, gradeAllTeamsForStat,
-  isStrong, type Grade, type SourceListId,
+  GRADABLE_STATS, SOURCE_LISTS, directionOf, gradableStatLabel, gradeAllTeamsForStat,
+  type RomanGrade, type SourceListId, type TeamGradeRow,
 } from '@/utils/statsGrading';
 import { buildMethod2Grid } from '@/utils/statsGradingMethod2';
 import { OPPOSITE_PAIRS, buildOppositeStats, type OppositeScope } from '@/utils/oppositeStats';
@@ -99,6 +99,8 @@ export type TeamEval = {
   sample: number | null;
   /** The condition this eval proves — set when assembled into a result. */
   conditionId?: string;
+  /** Combined-list rank for grading (1 = strongest · Strong I … 14 = weakest · Weak VII). */
+  rank?: number;
 };
 
 export type MethodOpt = { value: string; label: string };
@@ -297,8 +299,11 @@ const characters: Dimension = {
 
 /* ----------------------------------------------------------------- 3 · Stats Grading · Method 1 */
 
-const GRADE_LETTERS: MethodOpt[] = ['A', 'B', 'C', 'D', 'E', 'F'].map((g) => ({ value: g, label: g }));
-const gradeColor = (letter: Grade): ResultColor => (DA_GRADES.includes(letter) ? 'yellow' : isStrong(letter) ? 'green' : 'red');
+const ROMAN_INDEX: Record<RomanGrade, number> = { I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6, VII: 7 };
+/** Combined-list rank: Strong I=1 … Strong VII=7, then Weak I=8 … Weak VII=14 (weakest). */
+function combinedRank(direction: 'strong' | 'weak', roman: RomanGrade): number {
+  return (direction === 'weak' ? 7 : 0) + ROMAN_INDEX[roman];
+}
 
 const grading1: Dimension = {
   id: 'grading1',
@@ -307,38 +312,49 @@ const grading1: Dimension = {
   periods: ['overall', 'firsthalf', 'secondhalf'],
   methods: () => GRADABLE_STATS.map((s) => ({ value: s.key, label: s.label })),
   options: [
-    { key: 'source', label: 'Source list', options: SOURCE_LISTS.map((s) => ({ value: String(s.id), label: s.label })), default: '1' },
-    { key: 'direction', label: 'Direction', options: [{ value: ALL, label: 'Strong or weak' }, { value: 'strong', label: 'Strong (A–C)' }, { value: 'weak', label: 'Weak (D–F)' }], default: ALL },
-    { key: 'letter', label: 'Grade', options: [{ value: ALL, label: 'Any grade' }, ...GRADE_LETTERS], default: ALL },
+    { key: 'show', label: 'Show', options: [{ value: ALL, label: 'Strong & weak' }, { value: 'strong', label: 'Strong only' }, { value: 'weak', label: 'Weak only' }], default: ALL },
   ],
   evaluate: (b, sel) => {
     const stats = b.stats;
     if (!stats) return [];
-    const source = (Number(sel.options.source ?? '1') as SourceListId);
-    const direction = sel.options.direction ?? ALL;
-    const letter = sel.options.letter ?? ALL;
+    const show = sel.options.show ?? ALL;
     const half = splitPeriod(sel.period).half; // 'ft' | 'ht' | '2h' — grade the chosen half
-    const graded = gradeAllTeamsForStat(stats, source, sel.methodId, b.competition, half);
-    const srcLabel = SOURCE_LISTS.find((s) => s.id === source)?.label ?? String(source);
     const per = periodLabel(sel.period);
+    // Combine the source lists: grade each team at all-games, last 10 & 8 and
+    // last 6 & 5, map each (source · letter) to its combined-list figure, and keep
+    // the team's STRONGEST (lowest-rank) combination — the document's ranking.
+    const best = new Map<string, { g: TeamGradeRow; source: SourceListId; rank: number }>();
+    for (const sid of [1, 2, 3] as SourceListId[]) {
+      for (const g of gradeAllTeamsForStat(stats, sid, sel.methodId, b.competition, half)) {
+        if (g.grade == null || g.direction == null || g.roman == null) continue;
+        const rank = combinedRank(g.direction, g.roman);
+        const key = teamKeyOf(g);
+        const cur = best.get(key);
+        if (!cur || rank < cur.rank) best.set(key, { g, source: sid, rank });
+      }
+    }
     const out: TeamEval[] = [];
-    for (const g of graded) {
-      if (g.grade == null || g.direction == null) continue;
-      if (direction !== ALL && g.direction !== direction) continue;
-      if (letter !== ALL && g.grade !== letter) continue;
+    for (const { g, source, rank } of best.values()) {
+      if (g.grade == null || g.direction == null || g.roman == null) continue; // (narrowing)
+      if (show === 'strong' && g.direction !== 'strong') continue;
+      if (show === 'weak' && g.direction !== 'weak') continue;
       const dirWord = g.direction === 'strong' ? 'Strong' : 'Weak';
+      const srcLabel = SOURCE_LISTS.find((s) => s.id === source)?.label ?? String(source);
       const leagueNote = g.grade === 'C' ? ' (above league avg)' : g.grade === 'D' ? ' (below league avg)' : '';
+      const combined = `${source}·${g.grade}`; // the combined-list entry, e.g. "1·A" / "3·F"
       out.push({
         teamId: g.teamId, team: g.team, competition: b.competition, qualifies: true,
         value: g.overallValue, valueText: pctText(g.overallValue),
-        // Roman-forward, self-explaining — e.g. "II · B · DA" (daLevelOf still reads the DA).
-        grade: `${g.roman ? `${g.roman} · ` : ''}${g.grade}${g.da ? ' · DA' : ''}`, color: gradeColor(g.grade),
+        // Combined-list identity: Roman figure · source·letter, e.g. "I · 1·A", "VII · 3·F" (daLevelOf still reads the DA).
+        grade: `${g.roman} · ${combined}${g.da ? ' · DA' : ''}`,
+        color: g.direction === 'strong' ? 'green' : 'red',
         dimensionId: 'grading1', dimensionLabel: 'Stats Grading · Method 1',
         feature: gradableStatLabel(sel.methodId),
         method: `${dirWord} · ${srcLabel} · ${per}`,
         period: sel.period,
-        reason: `Home ${pctText(g.homeValue)} ${arrowOf(g.homeValue)} / Overall ${pctText(g.overallValue)} ${arrowOf(g.overallValue)}${leagueNote} → Roman ${g.roman ?? '—'} · ${g.grade}`,
+        reason: `Home ${pctText(g.homeValue)} ${arrowOf(g.homeValue)} / Overall ${pctText(g.overallValue)} ${arrowOf(g.overallValue)}${leagueNote} → (${g.roman}) ${combined}`,
         sample: g.sample,
+        rank,
       });
     }
     return out;
@@ -794,6 +810,8 @@ export type StrategyResult = {
   /** One eval per matched condition. */
   conditions: TeamEval[];
   color: ResultColor;
+  /** Best (lowest) grading rank among its conditions — for strongest-first ordering. */
+  rank?: number;
 };
 
 export type StrategyLogic = 'and' | 'or';
@@ -917,9 +935,16 @@ export function evaluateStrategy(bundles: LeagueBundle[], conditions: Condition[
     const ok = logic === 'and' ? matched.length === conditions.length : matched.length >= 1;
     if (!ok) continue;
     const evals = matched.map((c) => (c.not ? notEval(c, info, c.period) : condEval.get(c.id)!.get(key)!));
-    results.push({ team: info.team, teamId: info.teamId, competition: info.competition, conditions: evals, color: strongestColor(evals.map((e) => e.color)) });
+    const ranks = evals.map((e) => e.rank).filter((r): r is number => r != null);
+    const rank = ranks.length ? Math.min(...ranks) : undefined;
+    results.push({ team: info.team, teamId: info.teamId, competition: info.competition, conditions: evals, color: strongestColor(evals.map((e) => e.color)), rank });
   }
-  return results.sort((a, b) => COLOR_RANK[b.color] - COLOR_RANK[a.color] || a.team.localeCompare(b.team));
+  // Strongest first: by colour (green→red), then the combined-list rank (Strong I … Weak VII), then name.
+  return results.sort((a, b) =>
+    COLOR_RANK[b.color] - COLOR_RANK[a.color] ||
+    (a.rank ?? Infinity) - (b.rank ?? Infinity) ||
+    a.team.localeCompare(b.team),
+  );
 }
 
 /** Index results by `competition::teamKey` so a fixture's sides can be looked up. */
@@ -1044,7 +1069,7 @@ export function conditionMembership(bundles: LeagueBundle[], conditions: Conditi
 }
 
 export type FixtureTeam = { id: number | null; name: string };
-export type FixtureSideResult = { homeEvals: TeamEval[]; awayEvals: TeamEval[]; color: ResultColor; matched: number };
+export type FixtureSideResult = { homeEvals: TeamEval[]; awayEvals: TeamEval[]; color: ResultColor; matched: number; rank?: number };
 
 /**
  * Does a fixture (home H, away A) satisfy the strategy with per-condition side
@@ -1082,8 +1107,11 @@ export function evaluateFixtureSides(
   }
   const ok = logic === 'and' ? matched === conditions.length : matched >= 1;
   if (!ok) return null;
-  const color = strongestColor([...homeEvals, ...awayEvals].map((e) => e.color));
-  return { homeEvals, awayEvals, color, matched };
+  const all = [...homeEvals, ...awayEvals];
+  const color = strongestColor(all.map((e) => e.color));
+  const ranks = all.map((e) => e.rank).filter((r): r is number => r != null);
+  const rank = ranks.length ? Math.min(...ranks) : undefined;
+  return { homeEvals, awayEvals, color, matched, rank };
 }
 
 export type StrategySummary = { teams: number; leagues: number; green: number; yellow: number; red: number };

@@ -64,7 +64,8 @@ const COLOR_GROUPS: { value: ResultColor; label: string }[] = [
 ];
 
 /** A qualifying fixture: the conditions each team satisfied, and the strongest colour. */
-type FxRow = { fx: Fixture; homeEvals: TeamEval[]; awayEvals: TeamEval[]; color: ResultColor };
+type FxRow = { fx: Fixture; homeEvals: TeamEval[]; awayEvals: TeamEval[]; color: ResultColor; rank?: number };
+const FX_COLOR_RANK: Record<ResultColor, number> = { green: 3, yellow: 2, red: 1, none: 0 };
 /** The three-colour split for the results — by the matched side's strongest grade. */
 const COLOR_SECTIONS: { color: ResultColor; label: string }[] = [
   { color: 'green', label: 'GREEN · strongest' },
@@ -215,9 +216,14 @@ export default function StrategyBuilderPanel() {
       if (!comp) continue;
       const r = evaluateFixtureSides(membership, conditions, logic, comp.name, { id: fx.home.id, name: fx.home.name }, { id: fx.away.id, name: fx.away.name });
       if (!r) continue;
-      rows.push({ fx, homeEvals: r.homeEvals, awayEvals: r.awayEvals, color: r.color });
+      rows.push({ fx, homeEvals: r.homeEvals, awayEvals: r.awayEvals, color: r.color, rank: r.rank });
     }
-    rows.sort((a, b) => a.fx.kickoffUnix - b.fx.kickoffUnix);
+    // Strongest combination first: colour, then the combined-list rank, then kickoff.
+    rows.sort((a, b) =>
+      FX_COLOR_RANK[b.color] - FX_COLOR_RANK[a.color] ||
+      (a.rank ?? Infinity) - (b.rank ?? Infinity) ||
+      a.fx.kickoffUnix - b.fx.kickoffUnix,
+    );
     return rows;
   }, [resultMode, up.fixtures, liveLeagues, membership, conditions, logic]);
 
