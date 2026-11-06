@@ -38,12 +38,10 @@ const CORE_SECTORS: [string, string][] = [
   ['form', 'Form'],
   ['h2h', 'H2H'],
   ['problem_causer', 'Problem causer'],
+  ['imbangi', 'Imbangi'],
 ];
 
-const SEMI_SECTORS: [string, string][] = [
-  ['imbangi', 'Imbangi'],
-  ['home_away_strong', 'Home/Away strong'],
-];
+const SEMI_SECTORS: [string, string][] = [['home_away_strong', 'Home/Away strong']];
 
 const Y_SECTORS: [string, string][] = [
   ['indlela', 'Indlela'],
@@ -209,8 +207,8 @@ export const CALCULATION_CALL: PowerDynamicCallDef = {
     { id: 'calc1', label: 'Calculation 1', detail: 'Sectors of 6 or more.' },
     { id: 'calc2', label: 'Calculation 2', detail: 'Total of every numbered sector.' },
     { id: 'calc3', label: 'Calculation 3', detail: 'Sectors each side won, and the gap.' },
-    { id: 'core', label: 'Core sectors', detail: 'Baseline, importance of 3 points, last 5, form, H2H, and problem causer.' },
-    { id: 'semi', label: 'Semi-core', detail: 'Imbangi and Home/Away strong.' },
+    { id: 'core', label: 'Core sectors', detail: 'Baseline, importance of 3 points, last 5, form, H2H, problem causer, and imbangi.' },
+    { id: 'semi', label: 'Semi-core', detail: 'Home/Away strong.' },
     { id: 'y', label: 'Y sectors', detail: 'Indlela, Bhozoma, child beater, sudden drop, and sudden pick up.' },
     { id: 'ticks', label: 'Ticks', detail: 'Lost 6, won 6, never twice, and contested league.' },
   ],

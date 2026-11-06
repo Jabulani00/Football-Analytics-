@@ -36,6 +36,7 @@ import {
   VenueCards,
 } from '@/components/match-detail/PowerDynamicsSectors';
 import ProblemCauserView from '@/components/match-detail/ProblemCauserView';
+import { sectorSeparationLabel } from '@/utils/importanceOf3Engine';
 import SubTabBar from '@/components/shared/SubTabBar';
 import BhozomaView from '@/components/standings/BhozomaView';
 import ImbangiView from '@/components/standings/ImbangiView';
@@ -725,6 +726,7 @@ export default function MatchPowerDynamicsPanel({
               t1Name={pd.t1.name}
               t2Name={pd.t2.name}
               competitionName={competitionName}
+              separationNote={sectorSeparationLabel(pd.baselineGap.t1.score, pd.baselineGap.t2.score)}
               initialSplit={h2hSplit(focus?.functionId)}
               lockSplit={focus?.tabId === 'h2h'}
             />

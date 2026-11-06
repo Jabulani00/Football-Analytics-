@@ -975,6 +975,27 @@ function emptyBaselineSide(): BaselineSideGap {
   };
 }
 
+/** Gap-analysis scores: the stronger side keeps the G-grade value, the other side is 0. */
+export function gapSideScores(
+  t1Rank: number | null,
+  t2Rank: number | null,
+  tableSize: number,
+): { t1: number; t2: number } | null {
+  const positionGap = evaluatePositionGap({
+    tableSize,
+    t1Rank,
+    t2Rank,
+    t1Label: 'T1',
+    t2Label: 'T2',
+  });
+  const value =
+    positionGap.gradeIndex != null ? gapValueFromPositionGrade(positionGap.gradeIndex, positionGap.tableSize) : null;
+  if (value == null) return null;
+  const stronger: 't1' | 't2' | 'level' =
+    value <= 0 || positionGap.higher === 'level' || positionGap.higher == null ? 'level' : positionGap.higher;
+  return { t1: stronger === 't1' ? value : 0, t2: stronger === 't2' ? value : 0 };
+}
+
 export function baselineGapFor(
   t1: SideSnapshot,
   t2: SideSnapshot,

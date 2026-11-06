@@ -4,7 +4,7 @@
  */
 import { parseSavedPowerDynamicLibrary } from '../utils/powerDynamicLibraryDisk';
 import { POWER_DYNAMIC_CALLS } from '../utils/powerDynamicCalls';
-import { callAspectsFor } from '../utils/powerDynamicCallSearch';
+import { callAspectsFor, scoreCallFixture } from '../utils/powerDynamicCallSearch';
 import { scorePowerDynamicPacks, type PowerDynamicLeaguePack } from '../utils/powerDynamicLibraryScore';
 import type { CallTableRow } from '../utils/powerDynamicCallSearch';
 
@@ -97,6 +97,10 @@ console.log('\nevery option has in-options');
   check('importance of 3 lists the three separators', separators.join(' · ') === 'Clear separation · Mediocre separation · Poor separation');
   const changes = callAspectsFor('last5', 'label_change').filter((item) => item.mark === 'tick').map((item) => item.label);
   check('each positive change code is its own in-option', changes.includes('Positive · A1 · 5 positives, 0 negatives') && changes.includes('Positive · D3 · 2 positives, 1 negative'));
+  check(
+    'hierarchy gap is callable',
+    changes.includes('Clear separation') && changes.includes('Mediocre separation') && changes.includes('Poor separation'),
+  );
   check('each negative change code is separate', changes.includes('Negative · A1 · 5 negatives, 0 positives') && changes.includes('Negative · B2 · 4 negatives, 1 positive'));
   check('no change and cancel are their own in-options', changes.includes('No change · G1 · No positive or negative changes') && changes.includes('Cancel · F1 · 2 positives and 2 negatives cancel') && changes.includes('Cancel · F2 · 1 positive and 1 negative cancel'));
   const homeAway = callAspectsFor('home_away_strong', 'read').map((item) => item.label);
@@ -116,6 +120,34 @@ console.log('\nevery option has in-options');
     sector.functions.filter((option) => callAspectsFor(sector.id, option.id).length === 0).map((option) => `${sector.name} · ${option.label}`),
   );
   check('every sector option has in-options', missing.length === 0, missing.join(', '));
+}
+
+console.log('\nseparation on a called fixture');
+{
+  const saved = pack([]);
+  const top = saved.table[0]!;
+  const next = saved.table[1]!;
+  const low = saved.table[2]!;
+  const baseline = scoreCallFixture('compliant-stronger', top, next, saved.table, { matches: [] });
+  check('baseline fixture names the gap separation', (baseline?.reason ?? '').includes('separation'), baseline?.reason ?? 'none');
+  const meetings = [1, 2, 3, 4, 5].map((unix) => ({
+    homeId: top.teamId,
+    awayId: low.teamId,
+    homeGoals: 1,
+    awayGoals: 1,
+    unix,
+  }));
+  const opposite = scoreCallFixture('problem-extreme::wrong', top, low, saved.table, { matches: meetings });
+  check('opposite problem causer is labelled clear separation', (opposite?.reason ?? '').includes('Clear separation'), opposite?.reason ?? 'none');
+  const major = scoreCallFixture('problem-major::tick', top, low, saved.table, { matches: meetings });
+  check('a stronger problem causer is labelled poor separation', major?.percent === 100 && (major.reason ?? '').includes('Poor separation'), major?.reason ?? 'none');
+  const quiet = [{ homeId: 99, awayId: 98, homeGoals: 1, awayGoals: 0, unix: 1 }];
+  const hierarchy = scoreCallFixture('label-no_change-G1::tick', top, low, saved.table, { matches: quiet });
+  check('a label-change call names the hierarchy gap', (hierarchy?.reason ?? '').includes('6 v 6') && (hierarchy?.reason ?? '').includes('Poor separation'), hierarchy?.reason ?? 'none');
+  const poor = scoreCallFixture('label-sep-C::tick', top, low, saved.table, { matches: quiet });
+  check('poor hierarchy separation is callable', poor?.percent === 100 && (poor.reason ?? '').includes('C · Poor separation'), poor?.reason ?? 'none');
+  const clear = scoreCallFixture('label-sep-A::wrong', top, low, saved.table, { matches: quiet });
+  check('the opposite of a clear hierarchy gap still names the gap', clear?.percent === 100 && (clear.reason ?? '').includes('Poor separation'), clear?.reason ?? 'none');
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

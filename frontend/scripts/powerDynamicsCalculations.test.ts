@@ -2,7 +2,8 @@
  * Power dynamics calculations + contested-league spread.
  * Run: npx tsx scripts/powerDynamicsCalculations.test.ts
  */
-import { evaluatePowerDynamics, type IndlelaPath, type PpgSwing, type StreakSide } from '../utils/powerDynamicsEngine';
+import { problemSeparationLabel, sectorSeparationLabel } from '../utils/importanceOf3Engine';
+import { evaluatePowerDynamics, gapSideScores, type IndlelaPath, type PpgSwing, type StreakSide } from '../utils/powerDynamicsEngine';
 import {
   buildPowerDynamicsCalculations,
   summariseSectorScores,
@@ -203,6 +204,9 @@ console.log('\nlive sector values');
   check('never lost twice ticks T2', tick('never_lost_twice')?.t2 === true);
   check('contested pack includes 1st only of these two', tick('contested_league')?.t1 === true && tick('contested_league')?.t2 === false);
   check('home/away strong copies the baseline', value('home_away_strong', 't1') === value('baseline', 't1'));
+  check('baseline names a separation', (calc.sectors.find((s) => s.id === 'baseline')?.detail ?? '').includes('separation'));
+  check('h2h separation uses the gap values', (calc.sectors.find((s) => s.id === 'h2h')?.detail ?? '').includes('separation'));
+  check('imbangi sits with the core sectors', calc.sectors.find((s) => s.id === 'imbangi')?.group === 'core');
   check('totals include the numbered sectors', calc.calc2.t1 > calc.calc2.t2);
 }
 
@@ -241,8 +245,22 @@ console.log('\nimbangi is 1st or 2nd only');
   const imbangi = calc.sectors.find((sector) => sector.id === 'imbangi');
   const drop = calc.sectors.find((sector) => sector.id === 'sudden_drop');
   check('2nd place is imbangi even with a wide gap', pd.t1.rank === 2 && imbangi?.t1 === 6);
-  check('3rd place is not imbangi even when the neighbour is close', pd.t2.rank === 3 && imbangi?.t2 === 0);
+  check('3rd becomes imbangi when a win lands them at 2nd', pd.t2.rank === 3 && imbangi?.t2 === 6 && imbangi?.group === 'core');
+  check('the win into 2nd is named', (imbangi?.detail ?? '').includes('lands them at #2'));
   check('both sudden drops award 2 to each opponent', drop?.t1 === 2 && drop?.t2 === 2);
+}
+
+console.log('\nseparation from two scores');
+{
+  const wide = gapSideScores(1, 6, 6);
+  const close = gapSideScores(1, 2, 6);
+  check('a wide gap is high against low', wide != null && sectorSeparationLabel(wide.t1, wide.t2)?.startsWith('Clear separation') === true);
+  check('neighbours in the same band are poor', close != null && sectorSeparationLabel(close.t1, close.t2)?.startsWith('Poor separation') === true);
+  check('medium against low is mediocre', sectorSeparationLabel(5, 0)?.startsWith('Mediocre separation') === true);
+  check('an opposite problem causer is clear', problemSeparationLabel(10, true) === 'Clear separation');
+  check('a strong problem causer is poor', problemSeparationLabel(10, false) === 'Poor separation');
+  check('a moderate problem causer is mediocre', problemSeparationLabel(5, false) === 'Mediocre separation');
+  check('an entry problem causer is clear', problemSeparationLabel(3, false) === 'Clear separation');
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

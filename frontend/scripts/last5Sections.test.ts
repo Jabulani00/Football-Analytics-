@@ -4,8 +4,11 @@
  */
 import {
   changeHierarchy,
+  changePlaceIsNeutral,
+  changePlaceMark,
   changeScaleGap,
   changeScalePlace,
+  changeSeparation,
   colourPairId,
   labelChange,
   last5LabelChanges,
@@ -306,6 +309,7 @@ console.log('\nhierarchy of changes');
   const ends = changeScaleGap(changeHierarchy(5, 0), changeHierarchy(0, 5));
   check('A1 versus A1 weakness is the widest gap', ends.grade === 'G1' && ends.t1Place === 1 && ends.t2Place === 14);
   check('positive side keeps the gap type', ends.stronger === 't1' && (ends.t1.score ?? 0) > 0 && ends.t2.score === 0);
+  check('1 versus 14 is clear separation', ends.match === 'A');
 
   const standings: StandingLike[] = [
     { teamId: 1, name: 'Alpha', rank: 1, points: 20, played: 10, zone: 'top' },
@@ -339,6 +343,46 @@ console.log('\nhierarchy of changes');
     read.left?.games.every((g) => g.section1 != null && g.section4Label !== '—') === true,
   );
   check('counts add up to the sample', (read.left?.positives ?? 0) + (read.left?.negatives ?? 0) + (read.left?.unchanged ?? 0) === 5);
+}
+
+console.log('\nhierarchy gap analysis');
+{
+  const pair = (a: number, b: number, letter: string) =>
+    check(`${a} v ${b} is ${letter}`, changeSeparation(a, b) === letter && changeSeparation(b, a) === letter);
+  pair(1, 1, 'C');
+  pair(1, 2, 'C');
+  pair(1, 3, 'B');
+  pair(1, 4, 'B');
+  pair(1, 5, 'A');
+  pair(1, 14, 'A');
+  pair(2, 4, 'C');
+  pair(2, 5, 'B');
+  pair(2, 6, 'A');
+  pair(3, 6, 'B');
+  pair(3, 7, 'A');
+  pair(5, 8, 'B');
+  pair(5, 9, 'A');
+  pair(6, 8, 'B');
+  pair(6, 10, 'B');
+  pair(6, 11, 'A');
+  pair(7, 8, 'C');
+  pair(7, 9, 'A');
+  pair(8, 10, 'C');
+  pair(8, 11, 'B');
+  pair(8, 12, 'A');
+  pair(9, 10, 'C');
+  pair(9, 11, 'B');
+  pair(9, 12, 'A');
+  pair(10, 12, 'B');
+  pair(11, 12, 'C');
+  pair(11, 13, 'B');
+  pair(12, 14, 'B');
+  pair(13, 14, 'C');
+  pair(14, 14, 'C');
+  check('places 6 to 9 are neutral', [6, 7, 8, 9].every(changePlaceIsNeutral) && !changePlaceIsNeutral(5) && !changePlaceIsNeutral(10));
+  check('1 is +5 and 14 is -5', changePlaceMark(1) === '+5' && changePlaceMark(5) === '+1' && changePlaceMark(6) === 'Neutral' && changePlaceMark(10) === '-1' && changePlaceMark(14) === '-5');
+  const same = changeScaleGap(changeHierarchy(5, 0), changeHierarchy(5, 0));
+  check('the same hierarchy is poor separation', same.t1Place === 1 && same.match === 'C');
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
