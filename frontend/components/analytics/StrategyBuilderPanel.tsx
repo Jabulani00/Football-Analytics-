@@ -734,7 +734,8 @@ function SegGroup<T extends string>({ label, value, options, onChange }: { label
 
 /** A. Self-contained builder: reads its own Period · Venue · Team, then Category → method → Add. */
 function ConditionBuilder({ narrow, fixedSide, title, onAdd }: { narrow: boolean; fixedSide?: FixtureSide; title?: string; onAdd: (c: Condition) => void }) {
-  const DEFAULT_DIM = DIMENSIONS[0].id; // Stat filter · all tables — the unified entry
+  // Default to the combined-list grading (Roman I·1·A … VII·3·F), not the raw Stat-filter band.
+  const DEFAULT_DIM = getDimension('grading1') ? 'grading1' : DIMENSIONS[0].id;
   const first = getDimension(DEFAULT_DIM)!;
   const [dimId, setDimId] = useState(DEFAULT_DIM);
   const [opts, setOpts] = useState<Record<string, string>>(defaultOptions(DEFAULT_DIM));
