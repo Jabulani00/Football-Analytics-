@@ -118,22 +118,24 @@ console.log('\nGoal-timing windows — first 15′ / last 20′ band on the over
   ];
   const tb: LeagueBundle = { competition: 'LT', timing };
 
-  check('timing stats are offered in the Rule', grading.methods('overall').some((m) => m.value === 'tm_sc_15'));
+  check('Scored/Conceded states are offered', grading.methods('first15').some((m) => m.value === 'tm_sc') && grading.methods('first15').some((m) => m.value === 'tm_cs'));
 
-  const sc15 = grading.evaluate(tb, { period: 'overall', methodId: 'tm_sc_15', options: { show: 'all' } });
-  check('first-15 bands every covered team', sc15.length === 2, `got ${sc15.length}`);
+  // The TIME is the Period (first15), the state is just Scored (tm_sc).
+  const sc15 = grading.evaluate(tb, { period: 'first15', methodId: 'tm_sc', options: { show: 'all' } });
+  check('first-15 window bands every covered team', sc15.length === 2, `got ${sc15.length}`);
   check('the no-coverage team is dropped', !sc15.some((e) => e.team === 'NoData'));
   const early = sc15.find((e) => e.team === 'EarlyBird');
-  check('EarlyBird scores early → UP / green', early?.color === 'green' && early?.grade?.includes('Scores 0–15′ · UP') === true, early?.grade ?? '');
+  check('EarlyBird scores early → UP / green', early?.color === 'green' && early?.grade?.includes('Scored 0–15′ · UP') === true, early?.grade ?? '');
   check('LateShow scores early → DOWN / red', sc15.find((e) => e.team === 'LateShow')?.color === 'red');
 
-  check('show=strong keeps only the UP band', grading.evaluate(tb, { period: 'overall', methodId: 'tm_sc_15', options: { show: 'strong' } }).every((e) => e.color === 'green'));
+  check('show=strong keeps only the UP band', grading.evaluate(tb, { period: 'first15', methodId: 'tm_sc', options: { show: 'strong' } }).every((e) => e.color === 'green'));
 
-  const late = grading.evaluate(tb, { period: 'overall', methodId: 'tm_sc_70', options: { show: 'strong' } });
-  check('last-20 strong surfaces the late scorer', late.length === 1 && late[0].team === 'LateShow', late.map((e) => e.team).join(','));
-  check('last-20 grade reads 70′+', late[0]?.grade?.includes('Scores 70′+ · UP') === true, late[0]?.grade ?? '');
+  const late = grading.evaluate(tb, { period: 'last20', methodId: 'tm_sc', options: { show: 'strong' } });
+  check('last-20 window surfaces the late scorer', late.length === 1 && late[0].team === 'LateShow', late.map((e) => e.team).join(','));
+  check('last-20 grade reads 70′+', late[0]?.grade?.includes('Scored 70′+ · UP') === true, late[0]?.grade ?? '');
 
-  check('no timing data on the bundle → no timing evals', grading.evaluate({ competition: 'LT' }, { period: 'overall', methodId: 'tm_sc_15', options: { show: 'all' } }).length === 0);
+  check('a window state outside a window Period yields nothing', grading.evaluate(tb, { period: 'overall', methodId: 'tm_sc', options: { show: 'all' } }).length === 0);
+  check('no timing data on the bundle → no timing evals', grading.evaluate({ competition: 'LT' }, { period: 'first15', methodId: 'tm_sc', options: { show: 'all' } }).length === 0);
 }
 
 console.log('\nBetting-market stats — handicaps & scoring-half (from results)');

@@ -18,7 +18,7 @@ import { nextFixtureFor, type UpcomingLite } from '@/utils/statsGrading';
 import { ordinaryRfsForStat, type StatRfs } from '@/utils/fixtureRfs';
 import { teamResultsFromFixtures } from '@/utils/teamResults';
 import {
-  COLUMN_LABEL, DIMENSIONS, FIXTURE_SIDES, QUAL_COLUMNS, STRATEGY_PRESETS, buildStrategyConfig, conditionLabel, conditionMembership,
+  COLUMN_LABEL, DIMENSIONS, FIXTURE_SIDES, QUAL_COLUMNS, STRATEGY_PRESETS, TIMING_STATE_OPTIONS, buildStrategyConfig, conditionLabel, conditionMembership,
   daLevelOf, evaluateFixtureSides, evaluateStrategy, filterResults, getDimension, gradeShareByLeague,
   matchStrength, needsExport, needsFixtures, periodFrom, periodLabel, resultBackground, resultColour,
   splitPeriod, summarize, teamHalfBreakdown,
@@ -825,12 +825,25 @@ function ConditionBuilder({ narrow, fixedSide, title, onAdd }: { narrow: boolean
   const dimId = getDimension('grading1') ? 'grading1' : DIMENSIONS[0].id;
   const dim = getDimension(dimId)!;
   const [opts, setOpts] = useState<Record<string, string>>(defaultOptions(dimId));
-  const [half, setHalf] = useState<StatHalf>('ft');
+  // The time axis: Full time / 1st / 2nd half, OR a goal-timing window (First 15′ /
+  // Last 20′). Windows are measured 15-min buckets — overall only, Scored/Conceded.
+  const [timeSel, setTimeSel] = useState<'ft' | 'ht' | '2h' | 'first15' | 'last20'>('ft');
+  const isWin = timeSel === 'first15' || timeSel === 'last20';
   const [scope, setScope] = useState<StatScope>('overall');
   const [side, setSide] = useState<FixtureSide>('either');
-  const period = periodFrom(half, scope);
-  const [methodId, setMethodId] = useState<string>(methodsOf(dim, periodFrom('ft', 'overall'), defaultOptions(dimId))[0]?.value ?? '');
-  const methods = methodsOf(dim, period, opts);
+  const period: StrategyPeriod = isWin ? timeSel : periodFrom(timeSel, scope);
+  const normalMethods = methodsOf(dim, period, opts).filter((m) => !m.value.startsWith('tm_'));
+  const methods = isWin ? TIMING_STATE_OPTIONS : normalMethods;
+  const [methodId, setMethodId] = useState<string>(normalMethods[0]?.value ?? '');
+
+  // Switching to/from a timing window swaps the stat list (Scored/Conceded vs the
+  // graded stats), so keep the selected stat valid for the current list.
+  const changeTime = (v: 'ft' | 'ht' | '2h' | 'first15' | 'last20') => {
+    setTimeSel(v);
+    const win = v === 'first15' || v === 'last20';
+    if (win && methodId !== 'tm_sc' && methodId !== 'tm_cs') setMethodId('tm_sc');
+    if (!win && (methodId === 'tm_sc' || methodId === 'tm_cs')) setMethodId(normalMethods[0]?.value ?? '');
+  };
 
   const changeOpt = (key: string, v: string) => {
     const next = { ...opts, [key]: v };
@@ -853,13 +866,14 @@ function ConditionBuilder({ narrow, fixedSide, title, onAdd }: { narrow: boolean
     <View style={[styles.builderCard, fixedSide === 'home' && styles.builderHome, fixedSide === 'away' && styles.builderAway]}>
       <Text style={styles.sectionLabel}>{title ?? 'Rule'}</Text>
       <View style={styles.readRow}>
-        <SegGroup label="Period" value={half} options={[['ft', 'Full time'], ['ht', '1st half'], ['2h', '2nd half']]} onChange={setHalf} />
-        <SegGroup label="Venue" value={scope} options={[['overall', 'Overall'], ['home', 'Home'], ['away', 'Away']]} onChange={setScope} />
+        <SegGroup label="Period" value={timeSel} options={[['ft', 'Full time'], ['ht', '1st half'], ['2h', '2nd half'], ['first15', 'First 15′'], ['last20', 'Last 20′']]} onChange={changeTime} />
+        {!isWin ? <SegGroup label="Venue" value={scope} options={[['overall', 'Overall'], ['home', 'Home'], ['away', 'Away']]} onChange={setScope} /> : null}
         {!fixedSide ? <SegGroup label="Team (fixtures)" value={side} options={FIXTURE_SIDES.map((s) => [s.value, s.label] as [FixtureSide, string])} onChange={setSide} /> : null}
       </View>
       <View style={[styles.filterRow, narrow && styles.filterCol]}>
-        <FilterDropdown label="Stat / feature" value={methodId} options={methods} onChange={setMethodId} style={styles.full} />
+        <FilterDropdown label={isWin ? 'State (scored / conceded)' : 'Stat / feature'} value={methodId} options={methods} onChange={setMethodId} style={styles.full} />
       </View>
+      {isWin ? <Text style={styles.readNote}>Goal-timing windows use the feed&apos;s measured 15-minute data — overall only, Scored or Conceded. (Per-minute data for an exact first-10′ isn&apos;t available.)</Text> : null}
       {dim.options && dim.options.length > 0 ? (
         <View style={[styles.filterRow, narrow && styles.filterCol]}>
           {dim.options.filter((o) => (o.visible ? o.visible(opts) : true)).map((o) => (
