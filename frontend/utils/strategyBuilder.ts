@@ -1290,7 +1290,10 @@ export function rankTeamsForStat(bundles: LeagueBundle[], cond: Condition): Map<
   const stat = conditionStat(cond);
   if (!stat || stat.kind !== 'pct') return out;
   const { periodKey, scope } = exportLoc(cond.period);
-  type Row = { key: string; value: number };
+  // Each row carries BOTH an id key and a name key, and its StatRank is stored
+  // under both — a team is looked up by id OR by name, so a table that reports a
+  // team_id while the result has none (or vice versa) never loses its rank.
+  type Row = { idKey: string | null; nameKey: string; value: number; rank?: StatRank };
   const all: Row[] = [];
   const byComp = new Map<string, Row[]>();
   for (const b of bundles) {
@@ -1302,21 +1305,28 @@ export function rankTeamsForStat(bundles: LeagueBundle[], cond: Condition): Map<
       if (typeof v !== 'number' || !Number.isFinite(v)) continue;
       const s = r['sample_size'];
       if (typeof s === 'number' && Number.isFinite(s) && s < RANK_MIN_GAMES) continue;
-      const row = { key: `${b.competition}::${teamKeyOf({ teamId: numTeamId(r), team: String(r.team_name) })}`, value: v };
+      const id = numTeamId(r);
+      const row: Row = {
+        idKey: id == null ? null : `${b.competition}::id:${id}`,
+        nameKey: `${b.competition}::name:${norm(String(r.team_name))}`,
+        value: v,
+      };
       list.push(row);
       all.push(row);
     }
     byComp.set(b.competition, list);
   }
+  const place = (row: Row) => {
+    const rank = row.rank!;
+    if (row.idKey) out.set(row.idKey, rank);
+    out.set(row.nameKey, rank);
+  };
   for (const list of byComp.values()) {
-    const sorted = [...list].sort((a, b) => b.value - a.value || a.key.localeCompare(b.key));
-    sorted.forEach((row, i) => out.set(row.key, { value: row.value, leagueRank: i + 1, leagueTotal: sorted.length, worldRank: 0, worldTotal: 0 }));
+    const sorted = [...list].sort((a, b) => b.value - a.value || a.nameKey.localeCompare(b.nameKey));
+    sorted.forEach((row, i) => { row.rank = { value: row.value, leagueRank: i + 1, leagueTotal: sorted.length, worldRank: 0, worldTotal: 0 }; place(row); });
   }
-  const sortedAll = [...all].sort((a, b) => b.value - a.value || a.key.localeCompare(b.key));
-  sortedAll.forEach((row, i) => {
-    const cur = out.get(row.key);
-    if (cur) { cur.worldRank = i + 1; cur.worldTotal = sortedAll.length; }
-  });
+  const sortedAll = [...all].sort((a, b) => b.value - a.value || a.nameKey.localeCompare(b.nameKey));
+  sortedAll.forEach((row, i) => { if (row.rank) { row.rank.worldRank = i + 1; row.rank.worldTotal = sortedAll.length; } });
   return out;
 }
 

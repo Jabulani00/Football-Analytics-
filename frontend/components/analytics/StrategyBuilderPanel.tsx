@@ -21,7 +21,7 @@ import {
   COLUMN_LABEL, DIMENSIONS, FIXTURE_SIDES, QUAL_COLUMNS, STRATEGY_PRESETS, TIMING_STATE_OPTIONS, buildStrategyConfig, conditionLabel, conditionMembership,
   daLevelOf, evaluateFixtureSides, evaluateStrategy, filterResults, getDimension, gradeShareByLeague,
   matchStrength, needsExport, needsFixtures, periodFrom, periodLabel, rankTeamsForStat, resultBackground, resultColour,
-  splitPeriod, summarize, teamHalfBreakdown, teamKeyOf,
+  splitPeriod, summarize, teamHalfBreakdown,
   type CondMembership, type Condition, type Dimension, type FixtureSide, type GradeQualification, type HalfReading, type LeagueBundle, type LeagueGradeShare,
   type ResultColor, type SavedStrategy, type StatHalf, type StatRank, type StatScope, type StrategyLogic, type StrategyPeriod,
   type StrategyPreset, type StrategyResult, type TeamEval,
@@ -242,7 +242,11 @@ export default function StrategyBuilderPanel() {
     const rc = conditions.find((c) => c.dimensionId === 'grading1' && !c.methodId.startsWith('tm_') && !c.methodId.startsWith('mk_'));
     return rc ? rankTeamsForStat(bundles, rc) : null;
   }, [bundles, conditions]);
-  const rankFor = useCallback((r: StrategyResult): StatRank | null => statRanks?.get(`${r.competition}::${teamKeyOf(r)}`) ?? null, [statRanks]);
+  const rankFor = useCallback((r: StrategyResult): StatRank | null => {
+    if (!statRanks) return null;
+    if (r.teamId != null) { const byId = statRanks.get(`${r.competition}::id:${r.teamId}`); if (byId) return byId; }
+    return statRanks.get(`${r.competition}::name:${r.team.trim().toLowerCase()}`) ?? null;
+  }, [statRanks]);
 
   // One team's FT / 1st-half / 2nd-half reading of the condition an eval proves —
   // computed lazily for the expanded row only (its own league), so it stays cheap.

@@ -231,6 +231,8 @@ console.log('\nStat rank — own league vs across leagues');
   check('A2 is 2nd in its league, 3rd across leagues', a2?.leagueRank === 2 && a2?.worldRank === 3, JSON.stringify(a2));
   check('B1 is 1st in LB but 2nd across leagues (80)', b1?.leagueRank === 1 && b1?.worldRank === 2, JSON.stringify(b1));
   check('thin-sample team is left out of the ranking', ranks.get('LA::id:3') == null);
+  // The fix for "rank not showing for some": a team is retrievable by id OR by name.
+  check('a team ranks under both its id key and its name key', ranks.get('LA::name:a1') === ranks.get('LA::id:1') && ranks.get('LA::name:a1') != null);
 
   const timingCond: Condition = { id: 'c2', dimensionId: 'grading1', period: 'first15', methodId: 'tm_sc', options: {}, side: 'either' };
   check('timing/market Rules do not rank (no single column)', rankTeamsForStat([la, lb], timingCond).size === 0);
