@@ -67,7 +67,7 @@ console.log('\nGrading columns — Series shows (strong A, live run)');
   check('Alpha is group (I) 1·A', a?.grade?.startsWith('I · 1·A') === true, a?.grade ?? '');
   check('Alpha qualifies in the + Series column', (a?.qualifications ?? []).some((q) => q.column === 'series'));
   check('+ Series headlines the row (strongest column)', a?.gradeColumn === 'series', a?.gradeColumn);
-  check('the grade text shows the column', a?.grade?.includes('+ Series') === true, a?.grade ?? '');
+  check('the grade text is clean (column shown as a chip, not repeated)', a?.grade === 'I · 1·A' && a?.gradeColumn === 'series', a?.grade ?? '');
 }
 
 console.log('\nGrading columns — RFS shows (strong A, usual just failed)');

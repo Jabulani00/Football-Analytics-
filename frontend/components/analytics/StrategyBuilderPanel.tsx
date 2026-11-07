@@ -681,7 +681,9 @@ function TeamsTableRow({ row, hasTarget, active, onPress }: { row: TeamRow; hasT
   // Every column this team qualifies in (Ordinary / + Series / Ordinary + RFS / …),
   // in rank order — so Series & RFS are visible on the row, not only on expand.
   const gradingEval = result.conditions.find((c) => c.dimensionId === 'grading1' && (c.qualifications?.length ?? 0) > 0);
-  const columns = gradingEval ? [...new Set(gradingEval.qualifications!.map((q) => q.column))] : [];
+  // Only the extra signals get a chip — every graded team is Ordinary by default,
+  // so an "Ordinary" chip would just repeat the grade.
+  const extraColumns = gradingEval ? [...new Set(gradingEval.qualifications!.map((q) => q.column))].filter((c) => c !== 'ordinary') : [];
   // DA (Double Agent) belongs on the outside too: the Home-vs-Overall divergence.
   const daQuant = daQuantText(graded);
   const rateCol = bt ? (bt.rate >= 60 ? theme.accentGreen : bt.rate >= 45 ? theme.yellow : theme.loss) : theme.textFaint;
@@ -708,9 +710,9 @@ function TeamsTableRow({ row, hasTarget, active, onPress }: { row: TeamRow; hasT
               <Text style={[styles.gradeTxt, { color: resultColour(graded.color) }]} numberOfLines={1}>{graded.grade}</Text>
             </View>
             {daQuant ? <Text style={styles.daQuant} numberOfLines={1}>{daQuant}</Text> : null}
-            {columns.length ? (
+            {extraColumns.length ? (
               <View style={styles.colChips}>
-                {columns.map((c) => (
+                {extraColumns.map((c) => (
                   <View key={c} style={[styles.colChip, c === 'series' && styles.colChipSeries, (c === 'ordinary_rfs' || c === 'series_rfs') && styles.colChipRfs]}>
                     <Text style={[styles.colChipText, c === 'series' && styles.colChipTextOn, (c === 'ordinary_rfs' || c === 'series_rfs') && styles.colChipTextOn]} numberOfLines={1}>{COLUMN_LABEL[c]}</Text>
                   </View>

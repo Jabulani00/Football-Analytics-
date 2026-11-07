@@ -563,8 +563,9 @@ const grading1: Dimension = {
       out.push({
         teamId: g.teamId, team: g.team, competition: b.competition, qualifies: true,
         value: g.overallValue, valueText: pctText(g.overallValue),
-        // Combined-list identity + column: "(I) 1·A · Ordinary", "(IV) 2·B · Ordinary + RFS · DA".
-        grade: `${head.roman} · ${head.combined} · ${colLabel}${head.da ? ' · DA' : ''}`,
+        // Combined-list identity: "(I) 1·A", "(IV) 2·B · DA". The column(s) show as
+        // chips on the row, so they are not repeated in the grade text.
+        grade: `${head.roman} · ${head.combined}${head.da ? ' · DA' : ''}`,
         color: head.direction === 'strong' ? 'green' : 'red',
         dimensionId: 'grading1', dimensionLabel: 'Stats Grading · Method 1',
         feature: gradableStatLabel(sel.methodId),
