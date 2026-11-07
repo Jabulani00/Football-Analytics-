@@ -1270,13 +1270,42 @@ export function teamHalfBreakdown(
 
 /* ----------------------------------------------------------------- stat ranking (own league vs across leagues) */
 
-/** A team's position on one stat, in its own league and across all loaded leagues
- *  — the same idea as Gap Analytics' Stat rank (L) and World #. Ranked by the stat
- *  %, higher = #1. */
-export type StatRank = { value: number; leagueRank: number; leagueTotal: number; worldRank: number; worldTotal: number };
+/** The third of a ranked list a team falls in — top (green), middle (yellow),
+ *  bottom (red). */
+export type StatTier = 'top' | 'mid' | 'bottom';
+
+/**
+ * A team's standing on one stat, two ways:
+ *  - Method 1 (stat %): rank by the stat percentage itself, higher = #1.
+ *  - Method 2 (gap / DA): rank by the Home–Away gap (|home % − away %|, Gap
+ *    Analytics' DA), then split the ranked list into equal thirds — top / mid /
+ *    bottom — in its own league AND across all loaded leagues.
+ */
+export type StatRank = {
+  // Method 1 — the stat % itself.
+  value: number;
+  leagueRank: number; leagueTotal: number;
+  worldRank: number; worldTotal: number;
+  // Method 2 — the Home–Away gap (DA).
+  gap: number | null;
+  gapLeagueRank: number | null; gapLeagueTotal: number;
+  gapWorldRank: number | null; gapWorldTotal: number;
+  leagueTier: StatTier | null; worldTier: StatTier | null;
+};
 
 /** Minimum counted games for a stat rank (mirrors Gap Analytics / grading source 1). */
 const RANK_MIN_GAMES = 8;
+/** Minimum games at each venue for the Home–Away gap (Gap Analytics' rule). */
+const RANK_MIN_VENUE = 4;
+
+/** Which third of a ranked list a 1-based position falls in. */
+function tierOf(rank: number, total: number): StatTier {
+  if (total <= 0) return 'mid';
+  const third = total / 3;
+  if (rank <= Math.ceil(third)) return 'top';
+  if (rank <= Math.ceil(2 * third)) return 'mid';
+  return 'bottom';
+}
 
 /**
  * For a grading condition's stat (an ordinary % column), rank every eligible team
@@ -1293,12 +1322,22 @@ export function rankTeamsForStat(bundles: LeagueBundle[], cond: Condition): Map<
   // Each row carries BOTH an id key and a name key, and its StatRank is stored
   // under both — a team is looked up by id OR by name, so a table that reports a
   // team_id while the result has none (or vice versa) never loses its rank.
-  type Row = { idKey: string | null; nameKey: string; value: number; rank?: StatRank };
+  type Row = { idKey: string | null; nameKey: string; value: number; gap: number | null; rank?: StatRank };
   const all: Row[] = [];
   const byComp = new Map<string, Row[]>();
   for (const b of bundles) {
     if (!b.stats) continue;
     const rows = b.stats.tables[`${stat.prefix}_${periodKey}_${scope}`] ?? [];
+    // Home / away readings for the Home–Away gap (Method 2), keyed by team name.
+    const venue = (vScope: string) => {
+      const m = new Map<string, { v: number; g: number }>();
+      for (const r of b.stats!.tables[`${stat.prefix}_${periodKey}_${vScope}`] ?? []) {
+        const v = r[stat.key]; const g = r['sample_size'];
+        if (typeof v === 'number' && Number.isFinite(v)) m.set(norm(String(r.team_name)), { v, g: typeof g === 'number' && Number.isFinite(g) ? g : 0 });
+      }
+      return m;
+    };
+    const homeMap = venue('home'); const awayMap = venue('away');
     const list: Row[] = [];
     for (const r of rows) {
       const v = r[stat.key];
@@ -1306,10 +1345,14 @@ export function rankTeamsForStat(bundles: LeagueBundle[], cond: Condition): Map<
       const s = r['sample_size'];
       if (typeof s === 'number' && Number.isFinite(s) && s < RANK_MIN_GAMES) continue;
       const id = numTeamId(r);
+      const nk = norm(String(r.team_name));
+      const h = homeMap.get(nk); const a = awayMap.get(nk);
+      const gap = h && a && h.g >= RANK_MIN_VENUE && a.g >= RANK_MIN_VENUE && h.g + a.g >= RANK_MIN_GAMES
+        ? Math.abs(h.v - a.v) : null;
       const row: Row = {
         idKey: id == null ? null : `${b.competition}::id:${id}`,
-        nameKey: `${b.competition}::name:${norm(String(r.team_name))}`,
-        value: v,
+        nameKey: `${b.competition}::name:${nk}`,
+        value: v, gap,
       };
       list.push(row);
       all.push(row);
@@ -1321,12 +1364,27 @@ export function rankTeamsForStat(bundles: LeagueBundle[], cond: Condition): Map<
     if (row.idKey) out.set(row.idKey, rank);
     out.set(row.nameKey, rank);
   };
+  // Method 1 — rank by the stat %, per league then across leagues.
   for (const list of byComp.values()) {
     const sorted = [...list].sort((a, b) => b.value - a.value || a.nameKey.localeCompare(b.nameKey));
-    sorted.forEach((row, i) => { row.rank = { value: row.value, leagueRank: i + 1, leagueTotal: sorted.length, worldRank: 0, worldTotal: 0 }; place(row); });
+    sorted.forEach((row, i) => {
+      row.rank = {
+        value: row.value, leagueRank: i + 1, leagueTotal: sorted.length, worldRank: 0, worldTotal: 0,
+        gap: row.gap, gapLeagueRank: null, gapLeagueTotal: 0, gapWorldRank: null, gapWorldTotal: 0, leagueTier: null, worldTier: null,
+      };
+      place(row);
+    });
   }
   const sortedAll = [...all].sort((a, b) => b.value - a.value || a.nameKey.localeCompare(b.nameKey));
   sortedAll.forEach((row, i) => { if (row.rank) { row.rank.worldRank = i + 1; row.rank.worldTotal = sortedAll.length; } });
+  // Method 2 — rank by the Home–Away gap (DA), per league then across leagues, and
+  // split each ranked list into top / mid / bottom thirds.
+  for (const list of byComp.values()) {
+    const gapped = list.filter((r) => r.gap != null).sort((a, b) => (b.gap! - a.gap!) || a.nameKey.localeCompare(b.nameKey));
+    gapped.forEach((row, i) => { if (row.rank) { row.rank.gapLeagueRank = i + 1; row.rank.gapLeagueTotal = gapped.length; row.rank.leagueTier = tierOf(i + 1, gapped.length); } });
+  }
+  const gappedAll = all.filter((r) => r.gap != null).sort((a, b) => (b.gap! - a.gap!) || a.nameKey.localeCompare(b.nameKey));
+  gappedAll.forEach((row, i) => { if (row.rank) { row.rank.gapWorldRank = i + 1; row.rank.gapWorldTotal = gappedAll.length; row.rank.worldTier = tierOf(i + 1, gappedAll.length); } });
   return out;
 }
 

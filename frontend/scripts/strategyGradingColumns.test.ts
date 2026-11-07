@@ -238,5 +238,27 @@ console.log('\nStat rank — own league vs across leagues');
   check('timing/market Rules do not rank (no single column)', rankTeamsForStat([la, lb], timingCond).size === 0);
 }
 
+console.log('\nStat rank — Method 2: Home–Away gap split into thirds (top/mid/bottom)');
+{
+  const o = (name: string, id: number, ov: number): TeamStatRow => ({ team_name: name, team_id: id, league_id: '1', season: '2024', sc_pct: ov, sample_size: 10 } as TeamStatRow);
+  const hv = (name: string, id: number, val: number, sample = 6): TeamStatRow => ({ team_name: name, team_id: id, league_id: '1', season: '2024', sc_pct: val, sample_size: sample } as TeamStatRow);
+  // Gaps: T1 40, T2 30, T3 20, T4 15, T5 10, T6 5 (T7 has a thin home sample → no gap).
+  const lg: LeagueBundle = { competition: 'LG', stats: { meta: { tables: 3, statsPerTable: 1 }, tables: {
+    ordinary_ft_overall: [o('T1', 1, 60), o('T2', 2, 60), o('T3', 3, 60), o('T4', 4, 60), o('T5', 5, 60), o('T6', 6, 60), o('T7', 7, 60)],
+    ordinary_ft_home: [hv('T1', 1, 80), hv('T2', 2, 70), hv('T3', 3, 60), hv('T4', 4, 55), hv('T5', 5, 50), hv('T6', 6, 45), hv('T7', 7, 90, 2)],
+    ordinary_ft_away: [hv('T1', 1, 40), hv('T2', 2, 40), hv('T3', 3, 40), hv('T4', 4, 40), hv('T5', 5, 40), hv('T6', 6, 40), hv('T7', 7, 40)],
+  } } };
+  const cond: Condition = { id: 'g', dimensionId: 'grading1', period: 'overall', methodId: 'sc_pct', options: { show: 'all' }, side: 'either' };
+  const ranks = rankTeamsForStat([lg], cond);
+  const t1 = ranks.get('LG::id:1'); const t3 = ranks.get('LG::id:3'); const t6 = ranks.get('LG::id:6'); const t7 = ranks.get('LG::id:7');
+
+  check('T1 has the biggest gap (40) and tops the gap list', t1?.gap === 40 && t1?.gapLeagueRank === 1 && t1?.gapLeagueTotal === 6, JSON.stringify({ gap: t1?.gap, r: t1?.gapLeagueRank }));
+  check('T1 is in the TOP third (green)', t1?.leagueTier === 'top');
+  check('T3 is in the MID third (yellow)', t3?.leagueTier === 'mid' && t3?.gapLeagueRank === 3, JSON.stringify({ tier: t3?.leagueTier, r: t3?.gapLeagueRank }));
+  check('T6 is in the BOTTOM third (red)', t6?.leagueTier === 'bottom' && t6?.gapLeagueRank === 6);
+  check('with one league the world tier matches the league tier', t1?.worldTier === 'top' && t1?.gapWorldTotal === 6);
+  check('a thin-venue team has no gap tier but keeps its stat-% rank', t7?.leagueTier == null && t7?.gap == null && typeof t7?.leagueRank === 'number');
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

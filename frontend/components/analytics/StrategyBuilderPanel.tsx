@@ -23,7 +23,7 @@ import {
   matchStrength, needsExport, needsFixtures, periodFrom, periodLabel, rankTeamsForStat, resultBackground, resultColour,
   splitPeriod, summarize, teamHalfBreakdown,
   type CondMembership, type Condition, type Dimension, type FixtureSide, type GradeQualification, type HalfReading, type LeagueBundle, type LeagueGradeShare,
-  type ResultColor, type SavedStrategy, type StatHalf, type StatRank, type StatScope, type StrategyLogic, type StrategyPeriod,
+  type ResultColor, type SavedStrategy, type StatHalf, type StatRank, type StatScope, type StatTier, type StrategyLogic, type StrategyPeriod,
   type StrategyPreset, type StrategyResult, type TeamEval,
 } from '@/utils/strategyBuilder';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
@@ -58,6 +58,12 @@ function kickoffLabel(unix: number, fallback: string): string {
     return new Date(unix * 1000).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   } catch { return fallback; }
 }
+/** Gap/DA tier (top/mid/bottom third of the ranked list) → label + traffic-light colour. */
+const TIER_LABEL: Record<StatTier, string> = { top: 'TOP', mid: 'MID', bottom: 'BOT' };
+function tierColor(t: StatTier): string {
+  return t === 'top' ? theme.accentGreen : t === 'mid' ? theme.yellow : theme.loss;
+}
+
 /** The Home vs Overall numbers that quantify a DA (Double Agent), when the grade carries one. */
 function daQuantText(ev: TeamEval | null | undefined): string | null {
   if (!ev || !daLevelOf(ev.grade) || !ev.daInfo) return null;
@@ -739,6 +745,12 @@ function TeamsTableRow({ row, hasTarget, active, rank, onPress }: { row: TeamRow
       <View style={styles.tRead}>
         <Text style={styles.fxCellMuted} numberOfLines={1}>{primary?.valueText ?? '—'}</Text>
         {rank ? <Text style={styles.rankLine} numberOfLines={1}>L #{rank.leagueRank}/{rank.leagueTotal} · W #{rank.worldRank}/{rank.worldTotal}</Text> : null}
+        {rank && rank.leagueTier ? (
+          <Text style={styles.gapLine} numberOfLines={1}>
+            Gap <Text style={{ color: tierColor(rank.leagueTier) }}>L#{rank.gapLeagueRank} {TIER_LABEL[rank.leagueTier]}</Text>
+            {rank.worldTier ? <Text> · <Text style={{ color: tierColor(rank.worldTier) }}>W#{rank.gapWorldRank} {TIER_LABEL[rank.worldTier]}</Text></Text> : null}
+          </Text>
+        ) : null}
       </View>
       {hasTarget ? (
         <View style={styles.tRate}>
@@ -1060,6 +1072,12 @@ function ResultCard({ result, upcoming, total, share, breakdownFor, rfsFor, rank
       {rank ? (
         <Text style={styles.rankDetail} numberOfLines={2}>
           On this stat: <Text style={styles.rankStrong}>#{rank.leagueRank}</Text> of {rank.leagueTotal} in {result.competition} ({rank.value}%) · <Text style={styles.rankStrong}>#{rank.worldRank}</Text> of {rank.worldTotal} across all loaded leagues
+        </Text>
+      ) : null}
+      {rank && rank.leagueTier ? (
+        <Text style={styles.rankDetail} numberOfLines={2}>
+          Gap/DA ({Math.round(rank.gap ?? 0)}pt): <Text style={styles.rankStrong}>#{rank.gapLeagueRank}</Text> of {rank.gapLeagueTotal} in league · <Text style={[styles.rankStrong, { color: tierColor(rank.leagueTier) }]}>{TIER_LABEL[rank.leagueTier]} third</Text>
+          {rank.worldTier ? <Text> · <Text style={styles.rankStrong}>#{rank.gapWorldRank}</Text> of {rank.gapWorldTotal} world · <Text style={[styles.rankStrong, { color: tierColor(rank.worldTier) }]}>{TIER_LABEL[rank.worldTier]} third</Text></Text> : null}
         </Text>
       ) : null}
       <View style={styles.evalList}>
@@ -1507,6 +1525,7 @@ const styles = StyleSheet.create({
 
   // Stat rank — own league vs across leagues
   rankLine: { fontFamily: fonts.bodySemiBold, fontSize: 9, color: theme.accentBlue, marginTop: 1 },
+  gapLine: { fontFamily: fonts.bodySemiBold, fontSize: 9, color: theme.textMuted, marginTop: 1 },
   rankDetail: { fontFamily: fonts.body, fontSize: 11, lineHeight: 16, color: theme.textMuted },
   rankStrong: { fontFamily: fonts.bodySemiBold, color: theme.accentBlue },
 
