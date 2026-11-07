@@ -6,7 +6,7 @@
  * (series & RFS), and that the "Series has no DA" rule excludes DA grades from the
  * Series columns. Pure — no network, synthetic stats + fixtures.
  */
-import { evaluateStrategy, getDimension, type Condition, type LeagueBundle } from '../utils/strategyBuilder';
+import { evaluateStrategy, getDimension, rankTeamsForStat, type Condition, type LeagueBundle } from '../utils/strategyBuilder';
 import type { TeamStatRow, TeamStatsExport } from '../types/data';
 import type { RawFixture } from '../services/oddAlerts';
 
@@ -212,6 +212,28 @@ console.log('\nMulti-rule combine — a second Rule recalculates (OR / AND)');
   const andBoth = evaluateStrategy([b2], [c1, c2], 'and');
   check('AND of two Rules keeps the intersection (Bravo only)', andBoth.length === 1 && andBoth[0].team === 'Bravo', `got ${andBoth.map((r) => r.team).join(',')}`);
   check('AND · the one team shows both Rules', andBoth[0]?.conditions.length === 2, `got ${andBoth[0]?.conditions.length}`);
+}
+
+console.log('\nStat rank — own league vs across leagues');
+{
+  const la: LeagueBundle = { competition: 'LA', stats: { meta: { tables: 1, statsPerTable: 1 }, tables: {
+    ordinary_ft_overall: [row('A1', 1, 90, 10), row('A2', 2, 70, 10), row('A3', 3, 50, 3)], // A3 below the 8-game rank floor
+  } } };
+  const lb: LeagueBundle = { competition: 'LB', stats: { meta: { tables: 1, statsPerTable: 1 }, tables: {
+    ordinary_ft_overall: [row('B1', 4, 80, 10), row('B2', 5, 60, 10)],
+  } } };
+  const cond: Condition = { id: 'c1', dimensionId: 'grading1', period: 'overall', methodId: 'sc_pct', options: { show: 'all' }, side: 'either' };
+  const ranks = rankTeamsForStat([la, lb], cond);
+
+  const a1 = ranks.get('LA::id:1'); const a2 = ranks.get('LA::id:2'); const b1 = ranks.get('LB::id:4');
+  check('A1 tops its own league', a1?.leagueRank === 1 && a1?.leagueTotal === 2, JSON.stringify(a1));
+  check('A1 tops the world list too (90 is highest)', a1?.worldRank === 1 && a1?.worldTotal === 4, JSON.stringify(a1));
+  check('A2 is 2nd in its league, 3rd across leagues', a2?.leagueRank === 2 && a2?.worldRank === 3, JSON.stringify(a2));
+  check('B1 is 1st in LB but 2nd across leagues (80)', b1?.leagueRank === 1 && b1?.worldRank === 2, JSON.stringify(b1));
+  check('thin-sample team is left out of the ranking', ranks.get('LA::id:3') == null);
+
+  const timingCond: Condition = { id: 'c2', dimensionId: 'grading1', period: 'first15', methodId: 'tm_sc', options: {}, side: 'either' };
+  check('timing/market Rules do not rank (no single column)', rankTeamsForStat([la, lb], timingCond).size === 0);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

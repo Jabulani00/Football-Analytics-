@@ -1268,6 +1268,58 @@ export function teamHalfBreakdown(
   });
 }
 
+/* ----------------------------------------------------------------- stat ranking (own league vs across leagues) */
+
+/** A team's position on one stat, in its own league and across all loaded leagues
+ *  — the same idea as Gap Analytics' Stat rank (L) and World #. Ranked by the stat
+ *  %, higher = #1. */
+export type StatRank = { value: number; leagueRank: number; leagueTotal: number; worldRank: number; worldTotal: number };
+
+/** Minimum counted games for a stat rank (mirrors Gap Analytics / grading source 1). */
+const RANK_MIN_GAMES = 8;
+
+/**
+ * For a grading condition's stat (an ordinary % column), rank every eligible team
+ * within its own league AND across every loaded league, keyed by
+ * `competition::teamKey`. Only percentage grading stats rank — the goal-timing and
+ * market Rules resolve to no single column, so they return an empty map. Reads the
+ * live tables only; no new maths.
+ */
+export function rankTeamsForStat(bundles: LeagueBundle[], cond: Condition): Map<string, StatRank> {
+  const out = new Map<string, StatRank>();
+  const stat = conditionStat(cond);
+  if (!stat || stat.kind !== 'pct') return out;
+  const { periodKey, scope } = exportLoc(cond.period);
+  type Row = { key: string; value: number };
+  const all: Row[] = [];
+  const byComp = new Map<string, Row[]>();
+  for (const b of bundles) {
+    if (!b.stats) continue;
+    const rows = b.stats.tables[`${stat.prefix}_${periodKey}_${scope}`] ?? [];
+    const list: Row[] = [];
+    for (const r of rows) {
+      const v = r[stat.key];
+      if (typeof v !== 'number' || !Number.isFinite(v)) continue;
+      const s = r['sample_size'];
+      if (typeof s === 'number' && Number.isFinite(s) && s < RANK_MIN_GAMES) continue;
+      const row = { key: `${b.competition}::${teamKeyOf({ teamId: numTeamId(r), team: String(r.team_name) })}`, value: v };
+      list.push(row);
+      all.push(row);
+    }
+    byComp.set(b.competition, list);
+  }
+  for (const list of byComp.values()) {
+    const sorted = [...list].sort((a, b) => b.value - a.value || a.key.localeCompare(b.key));
+    sorted.forEach((row, i) => out.set(row.key, { value: row.value, leagueRank: i + 1, leagueTotal: sorted.length, worldRank: 0, worldTotal: 0 }));
+  }
+  const sortedAll = [...all].sort((a, b) => b.value - a.value || a.key.localeCompare(b.key));
+  sortedAll.forEach((row, i) => {
+    const cur = out.get(row.key);
+    if (cur) { cur.worldRank = i + 1; cur.worldTotal = sortedAll.length; }
+  });
+  return out;
+}
+
 /* ----------------------------------------------------------------- per-side fixture evaluation */
 
 export type CondMembership = { set: Set<string>; evalByKey: Map<string, TeamEval> };

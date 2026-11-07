@@ -20,10 +20,10 @@ import { teamResultsFromFixtures } from '@/utils/teamResults';
 import {
   COLUMN_LABEL, DIMENSIONS, FIXTURE_SIDES, QUAL_COLUMNS, STRATEGY_PRESETS, TIMING_STATE_OPTIONS, buildStrategyConfig, conditionLabel, conditionMembership,
   daLevelOf, evaluateFixtureSides, evaluateStrategy, filterResults, getDimension, gradeShareByLeague,
-  matchStrength, needsExport, needsFixtures, periodFrom, periodLabel, resultBackground, resultColour,
-  splitPeriod, summarize, teamHalfBreakdown,
+  matchStrength, needsExport, needsFixtures, periodFrom, periodLabel, rankTeamsForStat, resultBackground, resultColour,
+  splitPeriod, summarize, teamHalfBreakdown, teamKeyOf,
   type CondMembership, type Condition, type Dimension, type FixtureSide, type GradeQualification, type HalfReading, type LeagueBundle, type LeagueGradeShare,
-  type ResultColor, type SavedStrategy, type StatHalf, type StatScope, type StrategyLogic, type StrategyPeriod,
+  type ResultColor, type SavedStrategy, type StatHalf, type StatRank, type StatScope, type StrategyLogic, type StrategyPeriod,
   type StrategyPreset, type StrategyResult, type TeamEval,
 } from '@/utils/strategyBuilder';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
@@ -234,6 +234,15 @@ export default function StrategyBuilderPanel() {
 
   // ---- results (Teams mode) — each condition at its own period ----
   const results = useMemo(() => evaluateStrategy(bundles, conditions, logic), [bundles, conditions, logic]);
+
+  // Where each team sits on the grading stat — in its own league and across every
+  // loaded league (Gap Analytics' Stat rank (L) / World #), so a DA team's standing
+  // is visible. Computed for the first graded (non-timing/market) Rule.
+  const statRanks = useMemo(() => {
+    const rc = conditions.find((c) => c.dimensionId === 'grading1' && !c.methodId.startsWith('tm_') && !c.methodId.startsWith('mk_'));
+    return rc ? rankTeamsForStat(bundles, rc) : null;
+  }, [bundles, conditions]);
+  const rankFor = useCallback((r: StrategyResult): StatRank | null => statRanks?.get(`${r.competition}::${teamKeyOf(r)}`) ?? null, [statRanks]);
 
   // One team's FT / 1st-half / 2nd-half reading of the condition an eval proves —
   // computed lazily for the expanded row only (its own league), so it stays cheap.
@@ -552,7 +561,7 @@ export default function StrategyBuilderPanel() {
           ) : (
             <>
               <PageControls page={safe} pages={pages} total={filtered.length} from={start + 1} to={start + visible.length} onChange={setPage} />
-              <TeamsTable rows={visible} upcoming={upcoming} target={targetDef ?? null} fixturesByComp={fixturesByComp} compIdByName={compIdByName} total={conditions.length} share={leagueShare} breakdownFor={breakdownFor} rfsFor={rfsFor} />
+              <TeamsTable rows={visible} upcoming={upcoming} target={targetDef ?? null} fixturesByComp={fixturesByComp} compIdByName={compIdByName} total={conditions.length} share={leagueShare} breakdownFor={breakdownFor} rfsFor={rfsFor} rankFor={rankFor} />
               <PageControls page={safe} pages={pages} total={filtered.length} from={start + 1} to={start + visible.length} onChange={setPage} />
             </>
           )}
@@ -599,7 +608,7 @@ const TEAM_SECTIONS: { color: ResultColor; label: string }[] = [
 
 type TeamRow = { result: StrategyResult; nf: ReturnType<typeof nextFixtureFor>; bt: BacktestResult | null };
 
-function TeamsTable({ rows, upcoming, target, fixturesByComp, compIdByName, total, share, breakdownFor, rfsFor }: {
+function TeamsTable({ rows, upcoming, target, fixturesByComp, compIdByName, total, share, breakdownFor, rfsFor, rankFor }: {
   rows: StrategyResult[];
   upcoming: UpcomingLite[];
   target: TargetMarket | null;
@@ -609,6 +618,7 @@ function TeamsTable({ rows, upcoming, target, fixturesByComp, compIdByName, tota
   share: Map<string, LeagueGradeShare>;
   breakdownFor: (ev: TeamEval) => HalfReading[] | null;
   rfsFor: (ev: TeamEval) => StatRfs | null;
+  rankFor: (r: StrategyResult) => StatRank | null;
 }) {
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const built: TeamRow[] = useMemo(() => rows.map((result) => {
@@ -653,10 +663,10 @@ function TeamsTable({ rows, upcoming, target, fixturesByComp, compIdByName, tota
                   const isActive = expandedKey === k;
                   return (
                     <Fragment key={k}>
-                      <TeamsTableRow row={b} hasTarget={!!target} active={isActive} onPress={() => setExpandedKey((x) => (x === k ? null : k))} />
+                      <TeamsTableRow row={b} hasTarget={!!target} active={isActive} rank={rankFor(b.result)} onPress={() => setExpandedKey((x) => (x === k ? null : k))} />
                       {isActive ? (
                         <View style={[styles.fxDetailInline, { minWidth: minW, borderColor: resultColour(b.result.color) }]}>
-                          <ResultCard result={b.result} upcoming={upcoming} total={total} share={share.get(b.result.competition)} breakdownFor={breakdownFor} rfsFor={rfsFor} />
+                          <ResultCard result={b.result} upcoming={upcoming} total={total} share={share.get(b.result.competition)} breakdownFor={breakdownFor} rfsFor={rfsFor} rank={rankFor(b.result)} />
                           {target ? <BacktestDetail bt={b.bt} target={target} /> : null}
                         </View>
                       ) : null}
@@ -673,7 +683,7 @@ function TeamsTable({ rows, upcoming, target, fixturesByComp, compIdByName, tota
   );
 }
 
-function TeamsTableRow({ row, hasTarget, active, onPress }: { row: TeamRow; hasTarget: boolean; active: boolean; onPress: () => void }) {
+function TeamsTableRow({ row, hasTarget, active, rank, onPress }: { row: TeamRow; hasTarget: boolean; active: boolean; rank: StatRank | null; onPress: () => void }) {
   const { result, nf, bt } = row;
   const tint = resultColour(result.color);
   const graded = result.conditions.find((c) => c.grade);
@@ -722,7 +732,10 @@ function TeamsTableRow({ row, hasTarget, active, onPress }: { row: TeamRow; hasT
           </>
         ) : <Text style={styles.fxNone}>—</Text>}
       </View>
-      <Text style={[styles.tRead, styles.fxCellMuted]} numberOfLines={2}>{primary?.valueText ?? '—'}</Text>
+      <View style={styles.tRead}>
+        <Text style={styles.fxCellMuted} numberOfLines={1}>{primary?.valueText ?? '—'}</Text>
+        {rank ? <Text style={styles.rankLine} numberOfLines={1}>L #{rank.leagueRank}/{rank.leagueTotal} · W #{rank.worldRank}/{rank.worldTotal}</Text> : null}
+      </View>
       {hasTarget ? (
         <View style={styles.tRate}>
           {bt ? (
@@ -1011,7 +1024,7 @@ function HalfSplit({ readings, scope }: { readings: HalfReading[]; scope: StatSc
 }
 
 /** C. One qualifying team with its per-condition breakdown. */
-function ResultCard({ result, upcoming, total, share, breakdownFor, rfsFor }: { result: StrategyResult; upcoming: UpcomingLite[]; total?: number; share?: LeagueGradeShare; breakdownFor?: (ev: TeamEval) => HalfReading[] | null; rfsFor?: (ev: TeamEval) => StatRfs | null }) {
+function ResultCard({ result, upcoming, total, share, breakdownFor, rfsFor, rank }: { result: StrategyResult; upcoming: UpcomingLite[]; total?: number; share?: LeagueGradeShare; breakdownFor?: (ev: TeamEval) => HalfReading[] | null; rfsFor?: (ev: TeamEval) => StatRfs | null; rank?: StatRank | null }) {
   const tint = resultColour(result.color);
   const nf = nextFixtureFor(result.teamId, result.team, upcoming);
   const ms = total ? matchStrength(result, total) : null;
@@ -1038,6 +1051,11 @@ function ResultCard({ result, upcoming, total, share, breakdownFor, rfsFor }: { 
       {colorPct != null && share ? (
         <Text style={styles.resultShare} numberOfLines={2}>
           <Text style={{ color: tint }}>{colorLabel}</Text> grade · {colorCount} of {share.total} {result.competition} qualifier{share.total > 1 ? 's' : ''} ({colorPct}%){gradePct != null && primaryGrade ? `  ·  “${primaryGrade}” = ${gradePct}%` : ''}
+        </Text>
+      ) : null}
+      {rank ? (
+        <Text style={styles.rankDetail} numberOfLines={2}>
+          On this stat: <Text style={styles.rankStrong}>#{rank.leagueRank}</Text> of {rank.leagueTotal} in {result.competition} ({rank.value}%) · <Text style={styles.rankStrong}>#{rank.worldRank}</Text> of {rank.worldTotal} across all loaded leagues
         </Text>
       ) : null}
       <View style={styles.evalList}>
@@ -1482,6 +1500,11 @@ const styles = StyleSheet.create({
   colChipRfs: { backgroundColor: 'rgba(194,65,12,0.14)', borderColor: '#C2410C' },
   colChipText: { fontFamily: fonts.bodySemiBold, fontSize: 9, color: theme.textMuted, letterSpacing: 0.3 },
   colChipTextOn: { color: theme.textPrimary },
+
+  // Stat rank — own league vs across leagues
+  rankLine: { fontFamily: fonts.bodySemiBold, fontSize: 9, color: theme.accentBlue, marginTop: 1 },
+  rankDetail: { fontFamily: fonts.body, fontSize: 11, lineHeight: 16, color: theme.textMuted },
+  rankStrong: { fontFamily: fonts.bodySemiBold, color: theme.accentBlue },
 
   // DA (Double Agent) surfaced on the row + its quantifier
   gradeLine: { flexDirection: 'row', alignItems: 'center', gap: 4, flexWrap: 'wrap' },
