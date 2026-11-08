@@ -429,12 +429,63 @@ const grading1: Dimension = {
   methods: () => [
     ...GRADABLE_STATS.map((s) => ({ value: s.key, label: s.label })),
     ...MARKET_STATS.map((s) => ({ value: s.key, label: `🎯 ${s.label}` })),
+    // Additional analytics stats gathered into the Rule (banded on their %/value):
+    // the extra Ordinary stats, the FT-only patterns, and Points-per-game.
+    ...ORD_FILTER.filter((i) => !GRADABLE_STATS.some((g) => g.key === i.key)).map((i) => ({ value: `sf:ordinary:${i.key}`, label: `📊 ${i.label}` })),
+    ...FT_ONLY_FILTER.map((i) => ({ value: `sf:ftonly:${i.key}`, label: `📈 ${i.label}` })),
+    ...PPG_FILTER.map((i) => ({ value: `sf:ppg:${i.key}`, label: `📐 ${i.label}` })),
+    { value: 'pd:placeholder', label: '⚡ Power Dynamics (added separately)' },
     ...TIMING_STATS.map((s) => ({ value: s.key, label: s.label })),
   ],
   options: [
     { key: 'show', label: 'Show', options: [{ value: ALL, label: 'Strong & weak' }, { value: 'strong', label: 'Strong only' }, { value: 'weak', label: 'Weak only' }], default: ALL },
   ],
   evaluate: (b, sel) => {
+    // Power Dynamics — placeholder; the real stats are added separately.
+    if (sel.methodId.startsWith('pd:')) return [];
+    // Additional analytics stats (📊/📈/📐): read any family column at the chosen
+    // period/venue and band it ↑/mid/↓ (pct), by run length (series) or as a value.
+    if (sel.methodId.startsWith('sf:')) {
+      if (!b.stats) return [];
+      const [, fam, key] = sel.methodId.split(':');
+      const family = statFamily(fam);
+      const item = family.items.find((i) => i.key === key);
+      if (!item) return [];
+      const loc = exportLoc(sel.period);
+      const rows = b.stats.tables[`${family.prefix}_${loc.periodKey}_${loc.scope}`] ?? [];
+      const show = sel.options.show ?? ALL;
+      const out: TeamEval[] = [];
+      for (const r of rows) {
+        const raw = r[item.key];
+        if (typeof raw !== 'number' || !Number.isFinite(raw)) continue;
+        let color: ResultColor; let band: string | null; let valueText: string;
+        if (item.kind === 'pct') {
+          const dir = directionOf(raw);
+          if (show === 'strong' && dir !== 'up') continue;
+          if (show === 'weak' && dir !== 'down') continue;
+          band = dir === 'up' ? 'UP' : dir === 'mid' ? 'MID' : 'DOWN';
+          color = dir === 'up' ? 'green' : dir === 'mid' ? 'yellow' : 'red';
+          valueText = pctText(raw);
+        } else if (item.kind === 'run') {
+          color = raw >= 4 ? 'green' : raw >= 2 ? 'yellow' : 'red';
+          band = `${raw}×`; valueText = `${raw} in a row`;
+        } else {
+          color = 'none'; band = null; valueText = raw.toFixed(2);
+        }
+        const sampleRaw = r['sample_size'];
+        const sample = typeof sampleRaw === 'number' && Number.isFinite(sampleRaw) ? sampleRaw : null;
+        out.push({
+          teamId: numTeamId(r), team: String(r.team_name), competition: b.competition, qualifies: true,
+          value: raw, valueText, grade: band ? `${item.label} · ${band}` : item.label, color,
+          dimensionId: 'grading1', dimensionLabel: 'Stats Grading · Method 1',
+          feature: `${family.label} · ${item.label}`, method: `${family.label}${band ? ` · ${band}` : ''} · ${periodLabel(sel.period)}`,
+          period: sel.period,
+          reason: `${item.label}: ${valueText} (${periodLabel(sel.period)})`,
+          sample,
+        });
+      }
+      return out;
+    }
     // Goal-timing window Period (First 15′ / Last 20′): the stat is just Scored or
     // Conceded, read from the window the Period names — overall-only % banded ↑/mid/↓.
     if (isWindowPeriod(sel.period) || isTimingStat(sel.methodId)) {
@@ -1214,8 +1265,9 @@ function conditionStat(cond: Condition): { prefix: string; key: string; kind: St
     }
     case 'grading1':
     case 'grading2':
-      // Goal-timing & market stats have no single FT/1H/2H table column — no half split.
-      if (isTimingStat(cond.methodId) || isMarketStat(cond.methodId)) return null;
+      // Goal-timing, market, additional-family & placeholder stats have no single
+      // combined-list FT/1H/2H column — no half split.
+      if (isTimingStat(cond.methodId) || isMarketStat(cond.methodId) || cond.methodId.startsWith('sf:') || cond.methodId.startsWith('pd:')) return null;
       // Every gradable stat is a percentage column in the ordinary family.
       return { prefix: 'ordinary', key: cond.methodId, kind: 'pct', decimals: 0 };
     default:

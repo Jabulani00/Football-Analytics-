@@ -177,6 +177,31 @@ console.log('\nBetting-market stats — handicaps & scoring-half (from results)'
   check('a half-market with no HT data yields nothing', grading.evaluate(noHt, { period: 'overall', methodId: 'mk_2h_higher', options: { show: 'all' } }).length === 0);
 }
 
+console.log('\nAdditional analytics stats on the Rule (📊 Ordinary extras / 📈 FT-only / 📐 PPG) + ⚡ placeholder');
+{
+  const sb: LeagueBundle = { competition: 'LS', stats: { meta: { tables: 3, statsPerTable: 1 }, tables: {
+    ordinary_ft_overall: [{ team_name: 'X', team_id: 1, league_id: '1', season: '2024', over05: 90, sample_size: 10 } as TeamStatRow],
+    ft_only_ft_overall: [{ team_name: 'X', team_id: 1, league_id: '1', season: '2024', btts_both_halves: 70, sample_size: 10 } as TeamStatRow],
+    ppg_ft_overall: [{ team_name: 'X', team_id: 1, league_id: '1', season: '2024', ppg: 2.1, sample_size: 10 } as TeamStatRow],
+  } } };
+
+  check('additional stats are offered in the Rule', grading.methods('overall').some((m) => m.value === 'sf:ftonly:btts_both_halves') && grading.methods('overall').some((m) => m.value === 'sf:ppg:ppg'));
+  check('the Power Dynamics placeholder is offered', grading.methods('overall').some((m) => m.value === 'pd:placeholder'));
+
+  const over05 = grading.evaluate(sb, { period: 'overall', methodId: 'sf:ordinary:over05', options: { show: 'all' } });
+  check('an extra Ordinary stat bands on its %', over05.length === 1 && over05[0].color === 'green' && over05[0].grade?.includes('· UP') === true, over05[0]?.grade ?? '');
+
+  const bbh = grading.evaluate(sb, { period: 'overall', methodId: 'sf:ftonly:btts_both_halves', options: { show: 'all' } });
+  check('an FT-only pattern is read and banded', bbh.length === 1 && bbh[0].value === 70 && bbh[0].feature.includes('BTTS both halves'), bbh[0]?.feature ?? '');
+
+  const ppg = grading.evaluate(sb, { period: 'overall', methodId: 'sf:ppg:ppg', options: { show: 'all' } });
+  check('PPG shows as a value (no band)', ppg.length === 1 && ppg[0].valueText === '2.10' && ppg[0].color === 'none', ppg[0]?.valueText ?? '');
+
+  check('strong filter drops a non-UP extra stat', grading.evaluate({ competition: 'LS', stats: { meta: { tables: 1, statsPerTable: 1 }, tables: { ordinary_ft_overall: [{ team_name: 'Y', team_id: 2, league_id: '1', season: '2024', over05: 30, sample_size: 10 } as TeamStatRow] } } }, { period: 'overall', methodId: 'sf:ordinary:over05', options: { show: 'strong' } }).length === 0);
+
+  check('the Power Dynamics placeholder surfaces no teams', grading.evaluate(sb, { period: 'overall', methodId: 'pd:placeholder', options: {} }).length === 0);
+}
+
 console.log('\nMulti-rule combine — a second Rule recalculates (OR / AND)');
 {
   // A second stat column so two Rules can grade differently.

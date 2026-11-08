@@ -948,6 +948,7 @@ function ConditionBuilder({ narrow, fixedSide, title, onAdd }: { narrow: boolean
         <FilterDropdown label={isWin ? 'State (scored / conceded)' : 'Stat / feature'} value={methodId} options={methods} onChange={setMethodId} style={styles.full} />
       </View>
       {isWin ? <Text style={styles.readNote}>Goal-timing windows use the feed&apos;s measured 15-minute data — overall only, Scored or Conceded. (Per-minute data for an exact first-10′ isn&apos;t available.)</Text> : null}
+      {methodId.startsWith('pd:') ? <Text style={styles.readNote}>⚡ Power Dynamics is a placeholder — those stats are added separately by someone else. This Rule won&apos;t surface teams yet.</Text> : null}
       {dim.options && dim.options.length > 0 ? (
         <View style={[styles.filterRow, narrow && styles.filterCol]}>
           {dim.options.filter((o) => (o.visible ? o.visible(opts) : true)).map((o) => (
