@@ -1211,6 +1211,8 @@ export type SavedStrategy = {
   name: string;
   /** Auto-written from the chosen methods/terminology — see describeStrategy. */
   description: string;
+  /** The user's own description, entered when saving. Optional (older saves have none). */
+  note?: string;
   createdAt: string;
   config: SavedStrategyConfig;
 };

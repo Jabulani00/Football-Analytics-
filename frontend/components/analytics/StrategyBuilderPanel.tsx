@@ -173,6 +173,7 @@ export default function StrategyBuilderPanel() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [draftName, setDraftName] = useState('');
+  const [draftNote, setDraftNote] = useState('');
 
   const wantExport = conditions.length > 0 && needsExport(conditions);
   const teamsNeedFixtures = conditions.length > 0 && needsFixtures(conditions);
@@ -426,10 +427,11 @@ export default function StrategyBuilderPanel() {
 
   // Save the current build (conditions + logic + global period + view), never its results.
   const commitSave = () => {
-    if (!conditions.length) return;
-    const entry = save(draftName, buildStrategyConfig({ conditions, logic, resultMode }));
+    if (!conditions.length || !draftName.trim()) return; // a strategy needs a name
+    const entry = save(draftName, buildStrategyConfig({ conditions, logic, resultMode }), draftNote);
     setActiveId(entry.id);
     setDraftName('');
+    setDraftNote('');
     setSaving(false);
   };
   // Replay a saved strategy: restore the build and let the live engines recompute.
@@ -533,7 +535,7 @@ export default function StrategyBuilderPanel() {
                   <Text style={[styles.logicBtnText, logic === l && styles.logicBtnTextOn]}>{l.toUpperCase()}</Text>
                 </Pressable>
               ))}
-              <Pressable onPress={() => { setSaving((s) => !s); setDraftName(''); }} style={[styles.saveBtn, saving && styles.saveBtnOn]}>
+              <Pressable onPress={() => { setSaving((s) => !s); setDraftName(''); setDraftNote(''); }} style={[styles.saveBtn, saving && styles.saveBtnOn]}>
                 <Text style={[styles.saveBtnText, saving && styles.saveBtnTextOn]}>{saving ? 'Cancel' : '★ Save'}</Text>
               </Pressable>
               <Pressable onPress={clearAll} style={styles.clearBtn}><Text style={styles.clearBtnText}>Clear</Text></Pressable>
@@ -563,20 +565,39 @@ export default function StrategyBuilderPanel() {
             })}
           </View>
           {saving ? (
-            <View style={styles.saveRow}>
+            <View style={styles.saveBox}>
+              <Text style={styles.saveFieldLabel}>Name *</Text>
               <TextInput
                 value={draftName}
                 onChangeText={setDraftName}
                 placeholder="Name this strategy — e.g. Away goal suppressors"
                 placeholderTextColor={theme.textFaint}
                 style={styles.saveInput}
-                onSubmitEditing={commitSave}
-                returnKeyType="done"
+                returnKeyType="next"
                 autoFocus
               />
-              <Pressable accessibilityRole="button" onPress={commitSave} style={({ pressed }) => [styles.saveConfirm, pressed && styles.addBtnPressed]}>
-                <Text style={styles.saveConfirmText}>Save strategy</Text>
-              </Pressable>
+              <Text style={styles.saveFieldLabel}>Description</Text>
+              <TextInput
+                value={draftNote}
+                onChangeText={setDraftNote}
+                placeholder="What is this strategy for? When would you use it?"
+                placeholderTextColor={theme.textFaint}
+                style={[styles.saveInput, styles.saveInputMultiline]}
+                multiline
+                numberOfLines={3}
+                textAlignVertical="top"
+              />
+              <View style={styles.saveActionsRow}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: !draftName.trim() }}
+                  onPress={commitSave}
+                  disabled={!draftName.trim()}
+                  style={({ pressed }) => [styles.saveConfirm, !draftName.trim() && styles.saveConfirmDisabled, pressed && styles.addBtnPressed]}>
+                  <Text style={styles.saveConfirmText}>Save strategy</Text>
+                </Pressable>
+                {!draftName.trim() ? <Text style={styles.saveHintText}>Give it a name to save.</Text> : null}
+              </View>
             </View>
           ) : null}
         </View>
@@ -1358,6 +1379,7 @@ function SavedStrategiesPanel({ saved, activeId, onLoad, onRemove, style }: {
                     <View style={[styles.savedDot, { backgroundColor: active ? theme.accentGreen : theme.accentPurple }]} />
                     <Text style={styles.savedName} numberOfLines={1}>{s.name}</Text>
                   </View>
+                  {s.note ? <Text style={styles.savedNote} numberOfLines={3}>{s.note}</Text> : null}
                   <Text style={styles.savedDesc} numberOfLines={4}>{s.description}</Text>
                 </Pressable>
                 <View style={styles.savedActions}>
@@ -1518,8 +1540,14 @@ const styles = StyleSheet.create({
   saveBtnText: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: theme.accentPurple },
   saveBtnTextOn: { color: theme.accentPurple },
   saveRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.xs, flexWrap: 'wrap' },
-  saveInput: { flexGrow: 1, flexBasis: 220, minWidth: 160, borderWidth: layout.borderWidth, borderColor: theme.borderStrong, borderRadius: layout.borderRadius, paddingHorizontal: spacing.sm, paddingVertical: 8, fontFamily: fonts.body, fontSize: 13, color: theme.textPrimary, backgroundColor: theme.surface },
+  saveBox: { marginTop: spacing.sm, gap: spacing.xs, borderWidth: layout.borderWidth, borderColor: theme.border, borderRadius: layout.borderRadius, backgroundColor: theme.bg, padding: spacing.md },
+  saveFieldLabel: { fontFamily: fonts.bodySemiBold, fontSize: 10, letterSpacing: 0.6, color: theme.textMuted, textTransform: 'uppercase' },
+  saveInput: { width: '100%', borderWidth: layout.borderWidth, borderColor: theme.borderStrong, borderRadius: layout.borderRadius, paddingHorizontal: spacing.sm, paddingVertical: 8, fontFamily: fonts.body, fontSize: 13, color: theme.textPrimary, backgroundColor: theme.surface },
+  saveInputMultiline: { minHeight: 64 },
+  saveActionsRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.xs, flexWrap: 'wrap' },
   saveConfirm: { borderRadius: 999, paddingHorizontal: spacing.lg, paddingVertical: 9, backgroundColor: theme.accentPurple },
+  saveConfirmDisabled: { opacity: 0.45 },
+  saveHintText: { fontFamily: fonts.body, fontSize: 11, color: theme.textFaint },
   saveConfirmText: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: '#FFFFFF' },
 
   // Saved-strategies side panel
@@ -1539,6 +1567,7 @@ const styles = StyleSheet.create({
   savedNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   savedDot: { width: 8, height: 8, borderRadius: 4 },
   savedName: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: theme.textPrimary, flexShrink: 1 },
+  savedNote: { fontFamily: fonts.bodyMedium, fontSize: 12, lineHeight: 17, color: theme.textPrimary },
   savedDesc: { fontFamily: fonts.body, fontSize: 11, lineHeight: 16, color: theme.textMuted },
   savedActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginTop: 2 },
   savedLoad: { flexGrow: 1, borderWidth: 1.5, borderColor: theme.accentBlue, borderRadius: 999, paddingVertical: 6, alignItems: 'center', backgroundColor: 'rgba(37,99,235,0.08)' },
