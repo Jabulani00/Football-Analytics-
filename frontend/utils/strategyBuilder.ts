@@ -1273,6 +1273,8 @@ export function teamHalfBreakdown(
 /** The third of a ranked list a team falls in — top (green), middle (yellow),
  *  bottom (red). */
 export type StatTier = 'top' | 'mid' | 'bottom';
+/** Which venue the stat is stronger (higher) at — the sign of the Home–Away gap. */
+export type DominantVenue = 'home' | 'away' | 'balanced';
 
 /**
  * A team's standing on one stat, two ways:
@@ -1291,6 +1293,8 @@ export type StatRank = {
   gapLeagueRank: number | null; gapLeagueTotal: number;
   gapWorldRank: number | null; gapWorldTotal: number;
   leagueTier: StatTier | null; worldTier: StatTier | null;
+  /** Where the stat is stronger — home or away (null when the gap can't be measured). */
+  dominantVenue: DominantVenue | null;
 };
 
 /** Minimum counted games for a stat rank (mirrors Gap Analytics / grading source 1). */
@@ -1322,7 +1326,7 @@ export function rankTeamsForStat(bundles: LeagueBundle[], cond: Condition): Map<
   // Each row carries BOTH an id key and a name key, and its StatRank is stored
   // under both — a team is looked up by id OR by name, so a table that reports a
   // team_id while the result has none (or vice versa) never loses its rank.
-  type Row = { idKey: string | null; nameKey: string; value: number; gap: number | null; rank?: StatRank };
+  type Row = { idKey: string | null; nameKey: string; value: number; gap: number | null; dom: DominantVenue | null; rank?: StatRank };
   const all: Row[] = [];
   const byComp = new Map<string, Row[]>();
   for (const b of bundles) {
@@ -1347,12 +1351,13 @@ export function rankTeamsForStat(bundles: LeagueBundle[], cond: Condition): Map<
       const id = numTeamId(r);
       const nk = norm(String(r.team_name));
       const h = homeMap.get(nk); const a = awayMap.get(nk);
-      const gap = h && a && h.g >= RANK_MIN_VENUE && a.g >= RANK_MIN_VENUE && h.g + a.g >= RANK_MIN_GAMES
-        ? Math.abs(h.v - a.v) : null;
+      const measurable = !!h && !!a && h.g >= RANK_MIN_VENUE && a.g >= RANK_MIN_VENUE && h.g + a.g >= RANK_MIN_GAMES;
+      const gap = measurable ? Math.abs(h!.v - a!.v) : null;
+      const dom: DominantVenue | null = !measurable ? null : h!.v > a!.v ? 'home' : a!.v > h!.v ? 'away' : 'balanced';
       const row: Row = {
         idKey: id == null ? null : `${b.competition}::id:${id}`,
         nameKey: `${b.competition}::name:${nk}`,
-        value: v, gap,
+        value: v, gap, dom,
       };
       list.push(row);
       all.push(row);
@@ -1371,6 +1376,7 @@ export function rankTeamsForStat(bundles: LeagueBundle[], cond: Condition): Map<
       row.rank = {
         value: row.value, leagueRank: i + 1, leagueTotal: sorted.length, worldRank: 0, worldTotal: 0,
         gap: row.gap, gapLeagueRank: null, gapLeagueTotal: 0, gapWorldRank: null, gapWorldTotal: 0, leagueTier: null, worldTier: null,
+        dominantVenue: row.dom,
       };
       place(row);
     });

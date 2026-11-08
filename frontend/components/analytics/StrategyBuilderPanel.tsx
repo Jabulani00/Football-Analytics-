@@ -23,7 +23,7 @@ import {
   matchStrength, needsExport, needsFixtures, periodFrom, periodLabel, rankTeamsForStat, resultBackground, resultColour,
   splitPeriod, summarize, teamHalfBreakdown,
   type CondMembership, type Condition, type Dimension, type FixtureSide, type GradeQualification, type HalfReading, type LeagueBundle, type LeagueGradeShare,
-  type ResultColor, type SavedStrategy, type StatHalf, type StatRank, type StatScope, type StatTier, type StrategyLogic, type StrategyPeriod,
+  type DominantVenue, type ResultColor, type SavedStrategy, type StatHalf, type StatRank, type StatScope, type StatTier, type StrategyLogic, type StrategyPeriod,
   type StrategyPreset, type StrategyResult, type TeamEval,
 } from '@/utils/strategyBuilder';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
@@ -62,6 +62,10 @@ function kickoffLabel(unix: number, fallback: string): string {
 const TIER_LABEL: Record<StatTier, string> = { top: 'TOP', mid: 'MID', bottom: 'BOT' };
 function tierColor(t: StatTier): string {
   return t === 'top' ? theme.accentGreen : t === 'mid' ? theme.yellow : theme.loss;
+}
+/** Short label for the venue the stat is stronger at. */
+function domText(d: DominantVenue | null | undefined): string | null {
+  return d === 'home' ? '🏠 Home' : d === 'away' ? '✈ Away' : null;
 }
 
 /** The Home vs Overall numbers that quantify a DA (Double Agent), when the grade carries one. */
@@ -318,15 +322,21 @@ export default function StrategyBuilderPanel() {
   const [fColumn, setFColumn] = useState(ALL);
   const [fLetter, setFLetter] = useState(ALL);
   const [fSource, setFSource] = useState(ALL);
+  // Gap/DA dominance (Method 2): home-dominant vs away-dominant.
+  const [fDominance, setFDominance] = useState(ALL);
   const hasGrading = conditions.some((c) => c.dimensionId === 'grading1');
   const [page, setPage] = useState(1);
 
-  const filtered = useMemo(() => filterResults(results, { league: fLeague, dimension: fDimension, color: fColor, minGames: fMinGames, minMatch: fMinMatch, total: conditions.length, group: hasGrading ? fGroup : ALL, column: hasGrading ? fColumn : ALL, letter: hasGrading ? fLetter : ALL, source: hasGrading ? fSource : ALL }), [results, fLeague, fDimension, fColor, fMinGames, fMinMatch, conditions.length, hasGrading, fGroup, fColumn, fLetter, fSource]);
+  const filtered = useMemo(() => {
+    const base = filterResults(results, { league: fLeague, dimension: fDimension, color: fColor, minGames: fMinGames, minMatch: fMinMatch, total: conditions.length, group: hasGrading ? fGroup : ALL, column: hasGrading ? fColumn : ALL, letter: hasGrading ? fLetter : ALL, source: hasGrading ? fSource : ALL });
+    if (fDominance === ALL) return base;
+    return base.filter((r) => rankFor(r)?.dominantVenue === fDominance);
+  }, [results, fLeague, fDimension, fColor, fMinGames, fMinMatch, conditions.length, hasGrading, fGroup, fColumn, fLetter, fSource, fDominance, rankFor]);
   const summary = useMemo(() => summarize(filtered), [filtered]);
   // Per-league grade distribution across the qualifiers, so each row can show its grade's share.
   const leagueShare = useMemo(() => gradeShareByLeague(results), [results]);
 
-  useEffect(() => setPage(1), [resultMode, conditions, logic, fLeague, fDimension, fColor, fMinGames, fMinMatch, fGroup, fColumn, fLetter, fSource, target]);
+  useEffect(() => setPage(1), [resultMode, conditions, logic, fLeague, fDimension, fColor, fMinGames, fMinMatch, fGroup, fColumn, fLetter, fSource, fDominance, target]);
 
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safe = Math.min(page, pages);
@@ -349,14 +359,14 @@ export default function StrategyBuilderPanel() {
   const addCondition = (c: Condition) => { setConditions((cur) => [...cur, c]); setActiveId(null); };
   const removeCondition = (id: string) => { setConditions((cur) => cur.filter((c) => c.id !== id)); setActiveId(null); };
   const toggleNot = (id: string) => { setConditions((cur) => cur.map((c) => (c.id === id ? { ...c, not: !c.not } : c))); setActiveId(null); };
-  const clearAll = () => { setConditions([]); setFLeague(ALL); setFDimension(ALL); setFColor(ALL); setFMinGames(0); setFMinMatch(0); setFGroup(ALL); setFColumn(ALL); setFLetter(ALL); setFSource(ALL); setActiveId(null); };
+  const clearAll = () => { setConditions([]); setFLeague(ALL); setFDimension(ALL); setFColor(ALL); setFMinGames(0); setFMinMatch(0); setFGroup(ALL); setFColumn(ALL); setFLetter(ALL); setFSource(ALL); setFDominance(ALL); setActiveId(null); };
 
   // One-click preset: set logic + conditions (each with its own period), then recompute live.
   const applyPreset = (p: StrategyPreset) => {
     setBuildMode('combined');
     setLogic(p.logic);
     setConditions(p.conditions.map((c) => ({ id: `c${(CONDITION_SEQ += 1)}`, dimensionId: c.dimensionId, period: p.period, methodId: c.methodId, options: { ...c.options }, side: 'either' as FixtureSide })));
-    setFLeague(ALL); setFDimension(ALL); setFColor(ALL); setFMinGames(0); setFMinMatch(0); setFGroup(ALL); setFColumn(ALL); setFLetter(ALL); setFSource(ALL);
+    setFLeague(ALL); setFDimension(ALL); setFColor(ALL); setFMinGames(0); setFMinMatch(0); setFGroup(ALL); setFColumn(ALL); setFLetter(ALL); setFSource(ALL); setFDominance(ALL);
     setActiveId(null);
   };
 
@@ -375,7 +385,7 @@ export default function StrategyBuilderPanel() {
     setLogic(cfg.logic);
     setBuildMode(cfg.conditions.some((c) => c.side === 'home' || c.side === 'away') ? 'split' : 'combined');
     setResultMode(cfg.resultMode);
-    setFLeague(ALL); setFDimension(ALL); setFColor(ALL); setFMinGames(0); setFMinMatch(0); setFGroup(ALL); setFColumn(ALL); setFLetter(ALL); setFSource(ALL);
+    setFLeague(ALL); setFDimension(ALL); setFColor(ALL); setFMinGames(0); setFMinMatch(0); setFGroup(ALL); setFColumn(ALL); setFLetter(ALL); setFSource(ALL); setFDominance(ALL);
     setActiveId(s.id);
     setSaving(false);
   };
@@ -557,6 +567,7 @@ export default function StrategyBuilderPanel() {
                     <FilterDropdown label="Grade" value={fLetter} options={[{ value: ALL, label: 'All grades (A–F)' }, ...GRADE_LETTERS]} onChange={setFLetter} style={narrow ? styles.full : styles.flex} />
                     <FilterDropdown label="Source" value={fSource} options={[{ value: ALL, label: 'All sources' }, ...GRADE_SOURCES]} onChange={setFSource} style={narrow ? styles.full : styles.flex} />
                     <FilterDropdown label="Column" value={fColumn} options={[{ value: ALL, label: 'All columns' }, ...QUAL_COLUMNS]} onChange={setFColumn} style={narrow ? styles.full : styles.flex} />
+                    <FilterDropdown label="Dominance" value={fDominance} options={[{ value: ALL, label: 'Home & away' }, { value: 'home', label: '🏠 Home-dominant' }, { value: 'away', label: '✈ Away-dominant' }]} onChange={setFDominance} style={narrow ? styles.full : styles.flex} />
                   </>
                 ) : null}
                 <FilterDropdown label="Historical outcome" value={target} options={[{ value: ALL, label: 'Off · no backtest' }, ...TARGET_MARKETS.map((m) => ({ value: m.key, label: `${m.group} · ${m.label}` }))]} onChange={setTarget} style={narrow ? styles.full : styles.flex} />
@@ -749,6 +760,7 @@ function TeamsTableRow({ row, hasTarget, active, rank, onPress }: { row: TeamRow
           <Text style={styles.gapLine} numberOfLines={1}>
             Gap <Text style={{ color: tierColor(rank.leagueTier) }}>L#{rank.gapLeagueRank} {TIER_LABEL[rank.leagueTier]}</Text>
             {rank.worldTier ? <Text> · <Text style={{ color: tierColor(rank.worldTier) }}>W#{rank.gapWorldRank} {TIER_LABEL[rank.worldTier]}</Text></Text> : null}
+            {domText(rank.dominantVenue) ? <Text style={styles.domText}> · {domText(rank.dominantVenue)}</Text> : null}
           </Text>
         ) : null}
       </View>
@@ -1076,7 +1088,7 @@ function ResultCard({ result, upcoming, total, share, breakdownFor, rfsFor, rank
       ) : null}
       {rank && rank.leagueTier ? (
         <Text style={styles.rankDetail} numberOfLines={2}>
-          Gap/DA ({Math.round(rank.gap ?? 0)}pt): <Text style={styles.rankStrong}>#{rank.gapLeagueRank}</Text> of {rank.gapLeagueTotal} in league · <Text style={[styles.rankStrong, { color: tierColor(rank.leagueTier) }]}>{TIER_LABEL[rank.leagueTier]} third</Text>
+          Gap/DA ({Math.round(rank.gap ?? 0)}pt{domText(rank.dominantVenue) ? ` · dominant ${rank.dominantVenue}` : ''}): <Text style={styles.rankStrong}>#{rank.gapLeagueRank}</Text> of {rank.gapLeagueTotal} in league · <Text style={[styles.rankStrong, { color: tierColor(rank.leagueTier) }]}>{TIER_LABEL[rank.leagueTier]} third</Text>
           {rank.worldTier ? <Text> · <Text style={styles.rankStrong}>#{rank.gapWorldRank}</Text> of {rank.gapWorldTotal} world · <Text style={[styles.rankStrong, { color: tierColor(rank.worldTier) }]}>{TIER_LABEL[rank.worldTier]} third</Text></Text> : null}
         </Text>
       ) : null}
@@ -1526,6 +1538,7 @@ const styles = StyleSheet.create({
   // Stat rank — own league vs across leagues
   rankLine: { fontFamily: fonts.bodySemiBold, fontSize: 9, color: theme.accentBlue, marginTop: 1 },
   gapLine: { fontFamily: fonts.bodySemiBold, fontSize: 9, color: theme.textMuted, marginTop: 1 },
+  domText: { color: theme.accentBlue },
   rankDetail: { fontFamily: fonts.body, fontSize: 11, lineHeight: 16, color: theme.textMuted },
   rankStrong: { fontFamily: fonts.bodySemiBold, color: theme.accentBlue },
 

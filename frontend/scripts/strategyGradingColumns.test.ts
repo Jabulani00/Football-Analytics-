@@ -258,6 +258,18 @@ console.log('\nStat rank — Method 2: Home–Away gap split into thirds (top/mi
   check('T6 is in the BOTTOM third (red)', t6?.leagueTier === 'bottom' && t6?.gapLeagueRank === 6);
   check('with one league the world tier matches the league tier', t1?.worldTier === 'top' && t1?.gapWorldTotal === 6);
   check('a thin-venue team has no gap tier but keeps its stat-% rank', t7?.leagueTier == null && t7?.gap == null && typeof t7?.leagueRank === 'number');
+  // Dominant venue = where the stat is higher (home 80 vs away 40 → home).
+  check('T1 is home-dominant (higher at home)', t1?.dominantVenue === 'home', t1?.dominantVenue ?? 'null');
+  check('a thin-venue team has no dominant venue', t7?.dominantVenue == null);
+
+  // Flip T2 so away is higher → away-dominant.
+  const lg2: LeagueBundle = { competition: 'LG2', stats: { meta: { tables: 3, statsPerTable: 1 }, tables: {
+    ordinary_ft_overall: [o('A', 1, 60), o('B', 2, 60)],
+    ordinary_ft_home: [hv('A', 1, 30), hv('B', 2, 55)],
+    ordinary_ft_away: [hv('A', 1, 75), hv('B', 2, 50)],
+  } } };
+  const r2 = rankTeamsForStat([lg2], cond);
+  check('away-higher team is away-dominant', r2.get('LG2::id:1')?.dominantVenue === 'away', r2.get('LG2::id:1')?.dominantVenue ?? 'null');
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
