@@ -52,6 +52,22 @@ function defaultOptions(dimensionId: string): Record<string, string> {
 function methodsOf(dim: Dimension, period: StrategyPeriod, options: Record<string, string>) {
   return dim.methodsFor ? dim.methodsFor(period, options) : dim.methods(period);
 }
+
+/**
+ * Featured Rules — one-tap shortcuts to the high-value recently-added tests so they
+ * don't have to be hunted in the long stat dropdown. Each sets the Rule's stat
+ * (all are overall-friendly, non-window); the user then tunes options and Adds.
+ */
+const FEATURED_RULES: { value: string; label: string }[] = [
+  { value: 'op:all', label: '🪞 Opposite' },
+  { value: 'ch:all', label: '🎭 Character' },
+  { value: 'om:scoring', label: '🧪 Omit test' },
+  { value: 'mk_win2', label: '🎯 Win by 2+' },
+  { value: 'mk_cs_1h', label: '🎯 1H clean sheet' },
+  { value: 'mk_scored_1h', label: '🎯 Scores 1H' },
+  { value: 'mx:best_form', label: '🧮 Best form' },
+  { value: 'mx:scored_both_halves', label: '🧮 Both halves' },
+];
 function kickoffLabel(unix: number, fallback: string): string {
   if (!Number.isFinite(unix) || unix <= 0) return fallback;
   try {
@@ -928,6 +944,13 @@ function ConditionBuilder({ narrow, fixedSide, title, onAdd }: { narrow: boolean
     }
   };
 
+  // One-tap featured stat: leave a goal-timing window first (those lists are
+  // Scored/Conceded only), then select the featured stat so it reads on the dropdown.
+  const pickFeatured = (value: string) => {
+    if (isWin) setTimeSel('ft');
+    setMethodId(value);
+  };
+
   const add = () => {
     onAdd({ id: `c${(CONDITION_SEQ += 1)}`, dimensionId: dimId, period, methodId, options: { ...opts }, side: fixedSide ?? side });
     // Advance to the next stat so a second "+ Add Rule" is a different Rule, not a
@@ -943,6 +966,25 @@ function ConditionBuilder({ narrow, fixedSide, title, onAdd }: { narrow: boolean
         <SegGroup label="Period" value={timeSel} options={[['ft', 'Full time'], ['ht', '1st half'], ['2h', '2nd half'], ['first15', 'First 15′'], ['last20', 'Last 20′']]} onChange={changeTime} />
         {!isWin ? <SegGroup label="Venue" value={scope} options={[['overall', 'Overall'], ['home', 'Home'], ['away', 'Away']]} onChange={setScope} /> : null}
         {!fixedSide ? <SegGroup label="Team (fixtures)" value={side} options={FIXTURE_SIDES.map((s) => [s.value, s.label] as [FixtureSide, string])} onChange={setSide} /> : null}
+      </View>
+      <View style={styles.featuredWrap}>
+        <Text style={styles.featuredLabel}>Featured rules</Text>
+        <View style={styles.featuredRow}>
+          {FEATURED_RULES.map((f) => {
+            const active = methodId === f.value;
+            return (
+              <Pressable
+                key={f.value}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+                accessibilityLabel={`Pick ${f.label}`}
+                onPress={() => pickFeatured(f.value)}
+                style={({ pressed }) => [styles.featuredChip, active && styles.featuredChipActive, pressed && styles.addBtnPressed]}>
+                <Text style={[styles.featuredChipText, active && styles.featuredChipTextActive]}>{f.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
       </View>
       <View style={[styles.filterRow, narrow && styles.filterCol]}>
         <FilterDropdown label={isWin ? 'State (scored / conceded)' : 'Stat / feature'} value={methodId} options={methods} onChange={setMethodId} style={styles.full} />
@@ -1536,6 +1578,14 @@ const styles = StyleSheet.create({
   presetRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
   presetChip: { borderWidth: 1.5, borderColor: theme.accentOrange, borderRadius: 999, paddingHorizontal: spacing.md, paddingVertical: 6, backgroundColor: 'rgba(234,88,12,0.07)' },
   presetChipText: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: theme.accentOrange },
+  // Featured rules — one-tap shortcuts to the high-value tests inside the builder.
+  featuredWrap: { gap: 6, marginBottom: spacing.xs },
+  featuredLabel: { fontFamily: fonts.bodySemiBold, fontSize: 10, letterSpacing: 0.6, color: theme.textMuted, textTransform: 'uppercase' },
+  featuredRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  featuredChip: { borderWidth: 1, borderColor: theme.border, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: theme.bg },
+  featuredChipActive: { borderColor: theme.accentGreen, backgroundColor: 'rgba(5,150,105,0.10)' },
+  featuredChipText: { fontFamily: fonts.bodyMedium, fontSize: 11, color: theme.textMuted },
+  featuredChipTextActive: { color: theme.accentGreen, fontFamily: fonts.bodySemiBold },
 
   // Self-explaining result lines
   resultStrength: { fontFamily: fonts.bodySemiBold, fontSize: 11, color: theme.accentBlue },

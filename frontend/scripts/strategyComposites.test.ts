@@ -6,7 +6,7 @@
  * existing engine. These checks prove the Rule routes to the same engine output
  * (identical teams + native dimensionId), never a re-implementation. Pure.
  */
-import { getDimension, type LeagueBundle } from '../utils/strategyBuilder';
+import { getDimension, STRATEGY_PRESETS, type LeagueBundle } from '../utils/strategyBuilder';
 import type { TeamStatRow, TeamStatsExport } from '../types/data';
 import type { RawFixture } from '../services/oddAlerts';
 
@@ -89,6 +89,32 @@ console.log('\nComposites — the Rule delegates to the existing engines');
   check('all Opposite pairs are callable', op.length === opposite.methods('overall').length, String(op.length));
   check('Omit is callable', om.length === omit.methods('overall').length, String(om.length));
   check('composite methods carry their glyphs', ch.every((m) => m.label.startsWith('🎭')) && op.every((m) => m.label.startsWith('🪞')) && om.every((m) => m.label.startsWith('🧪')));
+}
+
+{
+  // Option pass-through: a preset can sharpen a composite via the engine's own
+  // option, while the plain Rule (only `show`) keeps the surfacing default.
+  const dflt = grading.evaluate(bundle, { period: 'overall', methodId: 'op:all', options: { show: 'all' } });
+  const forced = grading.evaluate(bundle, { period: 'overall', methodId: 'op:all', options: { show: 'all', allocation: 'long' } });
+  const nativeLong = opposite.evaluate(bundle, { period: 'overall', methodId: 'all', options: { allocation: 'long' } });
+  check('a Rule passes an engine option through to the composite', sameTeams(forced, nativeLong), `${forced.length} vs ${nativeLong.length}`);
+  check('the plain Rule keeps the surface-any default', dflt.some((e) => e.team === 'Even FC'));
+}
+{
+  // Every preset references a real dimension + resolvable method.
+  const bad: string[] = [];
+  for (const p of STRATEGY_PRESETS) {
+    for (const c of p.conditions) {
+      const dim = getDimension(c.dimensionId);
+      if (!dim) { bad.push(`${p.id}:${c.dimensionId}`); continue; }
+      const list = dim.methodsFor ? dim.methodsFor(p.period, c.options) : dim.methods(p.period);
+      if (!list.some((m) => m.value === c.methodId)) bad.push(`${p.id}:${c.methodId}`);
+    }
+  }
+  check('every preset condition resolves to a real dimension + method', bad.length === 0, bad.join(', '));
+  const usesTests = STRATEGY_PRESETS.filter((p) => p.conditions.some((c) =>
+    c.dimensionId === 'grading1' && /^(op:|ch:|om:|mk_|mx:)/.test(c.methodId)));
+  check('new presets put the recently-added tests to work', usesTests.length >= 3, String(usesTests.length));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

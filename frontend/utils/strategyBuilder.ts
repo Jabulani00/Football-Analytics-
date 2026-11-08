@@ -513,14 +513,16 @@ const grading1: Dimension = {
     // engine with sensible defaults (Characters on Method 1 fixed bands, Opposite
     // surfacing any triggered pair, Omit classifying any sensitivity) and returns
     // the engine's own evals unchanged — no statistic is re-implemented here.
+    // Defaults surface teams from the Rule UI (which carries only `show`); a preset
+    // can pass the engine's own option (allocation / direction / method) to sharpen it.
     if (sel.methodId.startsWith('ch:')) {
-      return characters.evaluate(b, { period: sel.period, methodId: sel.methodId.slice(3), options: { method: 'method1' } });
+      return characters.evaluate(b, { period: sel.period, methodId: sel.methodId.slice(3), options: { method: 'method1', ...sel.options } });
     }
     if (sel.methodId.startsWith('op:')) {
-      return opposite.evaluate(b, { period: sel.period, methodId: sel.methodId.slice(3), options: { allocation: ALL } });
+      return opposite.evaluate(b, { period: sel.period, methodId: sel.methodId.slice(3), options: { allocation: ALL, ...sel.options } });
     }
     if (sel.methodId.startsWith('om:')) {
-      return omit.evaluate(b, { period: 'overall', methodId: sel.methodId.slice(3), options: { direction: ALL } });
+      return omit.evaluate(b, { period: 'overall', methodId: sel.methodId.slice(3), options: { direction: ALL, ...sel.options } });
     }
     // Additional analytics stats (📊/📈/📐): read any family column at the chosen
     // period/venue and band it ↑/mid/↓ (pct), by run length (series) or as a value.
@@ -1619,6 +1621,12 @@ function sfLimit(methodId: string, value: number, o: { family?: string; window?:
   };
 }
 
+/** A Rule (grading1) condition — a gradable stat, a 🎯 market, or a composite
+ *  (op: / ch: / om:). `show`/engine options sharpen it into a filter. */
+function gRule(methodId: string, options: Record<string, string> = {}): PresetCondition {
+  return { dimensionId: 'grading1', methodId, options: { show: ALL, ...options } };
+}
+
 /**
  * Ready-made strategies, ported from the Method 3 "Leaky Leaky" family
  * (utils/strategyFilter.ts) plus a few more. Expressed as Stat-filter limits at a
@@ -1654,6 +1662,27 @@ export const STRATEGY_PRESETS: StrategyPreset[] = [
     id: 'bttsboth', label: 'BTTS both halves', note: 'Both teams score in each half.',
     period: 'overall', logic: 'and',
     conditions: [sfLimit('btts_both_halves', 40, { family: 'ftonly' })],
+  },
+  // Composite + market rules — the recently-added tests put to work as filters.
+  {
+    id: 'onesided', label: 'One-sided DA · scorers', note: 'A clear Opposite DA split, free-scoring, goals flow.',
+    period: 'overall', logic: 'and',
+    conditions: [gRule('op:all', { allocation: 'long' }), sfLimit('sc_pct', 70), sfLimit('over25', 50)],
+  },
+  {
+    id: 'winmargin', label: 'Home win-margins', note: 'Wins by 2+ at home and keeps it clean.',
+    period: 'home', logic: 'and',
+    conditions: [gRule('mk_win2', { show: 'strong' }), sfLimit('cs_pct', 45)],
+  },
+  {
+    id: 'firsthalfkings', label: '1st-half kings', note: 'Scores early and shuts out the 1st half.',
+    period: 'overall', logic: 'and',
+    conditions: [gRule('mk_scored_1h', { show: 'strong' }), gRule('mk_cs_1h', { show: 'strong' })],
+  },
+  {
+    id: 'sensitivegoals', label: 'Sensitive scorers · watch', note: 'Big-win-inflated scoring average that still produces goals.',
+    period: 'overall', logic: 'and',
+    conditions: [gRule('om:scoring', { direction: 'up' }), sfLimit('over25', 50)],
   },
 ];
 
