@@ -434,6 +434,7 @@ const grading1: Dimension = {
     ...ORD_FILTER.filter((i) => !GRADABLE_STATS.some((g) => g.key === i.key)).map((i) => ({ value: `sf:ordinary:${i.key}`, label: `📊 ${i.label}` })),
     ...FT_ONLY_FILTER.map((i) => ({ value: `sf:ftonly:${i.key}`, label: `📈 ${i.label}` })),
     ...PPG_FILTER.map((i) => ({ value: `sf:ppg:${i.key}`, label: `📐 ${i.label}` })),
+    ...SERIES_FILTER.map((i) => ({ value: `sf:series:${i.key}`, label: `🔥 Series · ${i.label}` })),
     { value: 'pd:placeholder', label: '⚡ Power Dynamics (added separately)' },
     ...TIMING_STATS.map((s) => ({ value: s.key, label: s.label })),
   ],
@@ -467,6 +468,7 @@ const grading1: Dimension = {
           color = dir === 'up' ? 'green' : dir === 'mid' ? 'yellow' : 'red';
           valueText = pctText(raw);
         } else if (item.kind === 'run') {
+          if (raw < 1) continue; // only teams on an active run
           color = raw >= 4 ? 'green' : raw >= 2 ? 'yellow' : 'red';
           band = `${raw}×`; valueText = `${raw} in a row`;
         } else {

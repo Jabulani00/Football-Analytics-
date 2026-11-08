@@ -200,6 +200,17 @@ console.log('\nAdditional analytics stats on the Rule (📊 Ordinary extras / �
   check('strong filter drops a non-UP extra stat', grading.evaluate({ competition: 'LS', stats: { meta: { tables: 1, statsPerTable: 1 }, tables: { ordinary_ft_overall: [{ team_name: 'Y', team_id: 2, league_id: '1', season: '2024', over05: 30, sample_size: 10 } as TeamStatRow] } } }, { period: 'overall', methodId: 'sf:ordinary:over05', options: { show: 'strong' } }).length === 0);
 
   check('the Power Dynamics placeholder surfaces no teams', grading.evaluate(sb, { period: 'overall', methodId: 'pd:placeholder', options: {} }).length === 0);
+
+  // Series runs are callable too (run length, active runs only).
+  const seriesB: LeagueBundle = { competition: 'LS', stats: { meta: { tables: 1, statsPerTable: 1 }, tables: {
+    series_ft_overall: [
+      { team_name: 'OnRun', team_id: 3, league_id: '1', season: '2024', w: 5, sample_size: 10 } as TeamStatRow,
+      { team_name: 'NoRun', team_id: 4, league_id: '1', season: '2024', w: 0, sample_size: 10 } as TeamStatRow,
+    ],
+  } } };
+  check('series runs are offered', grading.methods('overall').some((m) => m.value === 'sf:series:w'));
+  const series = grading.evaluate(seriesB, { period: 'overall', methodId: 'sf:series:w', options: { show: 'all' } });
+  check('a team on a 5-game run shows it, a team with no run is dropped', series.length === 1 && series[0].team === 'OnRun' && series[0].valueText === '5 in a row', JSON.stringify(series.map((e) => e.team)));
 }
 
 console.log('\nMulti-rule combine — a second Rule recalculates (OR / AND)');
