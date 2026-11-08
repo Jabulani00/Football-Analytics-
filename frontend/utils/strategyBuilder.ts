@@ -28,6 +28,10 @@ import {
   type GapMarket, type GapPeriod, type GoalTeamAnalysis,
 } from '@/utils/gapAnalytics';
 import { SERIES_DEFS } from '@/utils/fixtureSeries';
+import { liveRowsToDisplay } from '@/utils/statsTableAdapter';
+import {
+  TRANSCRIBED_STATS, HALF_CHOICE_KEYS, renderMixedValue, transcribedTeamRows, type TranscribedSources,
+} from '@/utils/mixedTranscribed';
 import { buildOmitTestFromExport, type OmitDirection } from '@/utils/omitTest';
 import {
   STATS_CHARACTERS, characterFor, levelForAvgM1, levelForRankM2,
@@ -435,6 +439,9 @@ const grading1: Dimension = {
     ...FT_ONLY_FILTER.map((i) => ({ value: `sf:ftonly:${i.key}`, label: `📈 ${i.label}` })),
     ...PPG_FILTER.map((i) => ({ value: `sf:ppg:${i.key}`, label: `📐 ${i.label}` })),
     ...SERIES_FILTER.map((i) => ({ value: `sf:series:${i.key}`, label: `🔥 Series · ${i.label}` })),
+    // Mixed Stats · Last left-over stats (1–23) — the derived half-share / second-half /
+    // BTTS-outcome / form / performance views, each callable on its own.
+    ...TRANSCRIBED_STATS.map(([key, label]) => ({ value: `mx:${key}`, label: `🧮 ${label}` })),
     { value: 'pd:placeholder', label: '⚡ Power Dynamics (added separately)' },
     ...TIMING_STATS.map((s) => ({ value: s.key, label: s.label })),
   ],
@@ -444,6 +451,59 @@ const grading1: Dimension = {
   evaluate: (b, sel) => {
     // Power Dynamics — placeholder; the real stats are added separately.
     if (sel.methodId.startsWith('pd:')) return [];
+    // Mixed Stats · Last left-over stats (1–23). These are derived from the Ordinary
+    // FT/1H/2H tables (with their attached season games + half-time scores), the
+    // FT-only patterns and the PPG table — data the export already carries — so the
+    // builder rebuilds those source tables from its own export and runs the shared
+    // transcription engine. Overall-only by nature; a missing half-time / ppg / ft-only
+    // table just yields a null value for that team (skipped), never a crash.
+    if (sel.methodId.startsWith('mx:')) {
+      if (!b.stats) return [];
+      const key = sel.methodId.slice(3);
+      const meta = TRANSCRIBED_STATS.find(([k]) => k === key);
+      if (!meta) return [];
+      const [, statLabel, formula] = meta;
+      const toRows = (name: string, fam: 'ordinary' | 'ppg' | 'ft_only') =>
+        liveRowsToDisplay(b.stats!.tables[name] ?? [], fam);
+      const sources: TranscribedSources = {
+        ordinaryByPeriod: {
+          fulltime: toRows('ordinary_ft_overall', 'ordinary'),
+          firsthalf: toRows('ordinary_ht_overall', 'ordinary'),
+          secondhalf: toRows('ordinary_2h_overall', 'ordinary'),
+        },
+        ftOnly: toRows('ft_only_ft_overall', 'ft_only'),
+        ppgFt: toRows('ppg_ft_overall', 'ppg'),
+      };
+      const idByTeam = new Map(roster(b.stats).map((t) => [norm(t.team), t.teamId]));
+      const isHalfChoice = HALF_CHOICE_KEYS.includes(key);
+      const out: TeamEval[] = [];
+      for (const row of transcribedTeamRows(sources)) {
+        const metric = row.metrics.find((m) => m.key === key);
+        if (metric?.value == null) continue; // unavailable data for this team
+        const raw = metric.raw === true;
+        const valueText = renderMixedValue(key, metric.value, raw);
+        let color: ResultColor; let band: string;
+        if (isHalfChoice) {
+          color = 'none'; band = valueText; // "1st Half" / "2nd Half" / "Tie"
+        } else if (raw) {
+          color = 'none'; band = valueText; // raw average — carried as-is, no band
+        } else {
+          const dir = directionOf(metric.value);
+          color = dir === 'up' ? 'green' : dir === 'mid' ? 'yellow' : 'red';
+          band = dir === 'up' ? 'UP' : dir === 'mid' ? 'MID' : 'DOWN';
+        }
+        out.push({
+          teamId: idByTeam.get(norm(row.team)) ?? null, team: row.team, competition: b.competition, qualifies: true,
+          value: metric.value, valueText, grade: `${statLabel} · ${band}`, color,
+          dimensionId: 'grading1', dimensionLabel: 'Stats Grading · Method 1',
+          feature: `Mixed · ${statLabel}`, method: `Mixed stats · ${band}`,
+          period: 'overall',
+          reason: `${statLabel}: ${valueText} (${formula})`,
+          sample: null,
+        });
+      }
+      return out;
+    }
     // Additional analytics stats (📊/📈/📐): read any family column at the chosen
     // period/venue and band it ↑/mid/↓ (pct), by run length (series) or as a value.
     if (sel.methodId.startsWith('sf:')) {
@@ -1269,7 +1329,7 @@ function conditionStat(cond: Condition): { prefix: string; key: string; kind: St
     case 'grading2':
       // Goal-timing, market, additional-family & placeholder stats have no single
       // combined-list FT/1H/2H column — no half split.
-      if (isTimingStat(cond.methodId) || isMarketStat(cond.methodId) || cond.methodId.startsWith('sf:') || cond.methodId.startsWith('pd:')) return null;
+      if (isTimingStat(cond.methodId) || isMarketStat(cond.methodId) || cond.methodId.startsWith('sf:') || cond.methodId.startsWith('mx:') || cond.methodId.startsWith('pd:')) return null;
       // Every gradable stat is a percentage column in the ordinary family.
       return { prefix: 'ordinary', key: cond.methodId, kind: 'pct', decimals: 0 };
     default:
