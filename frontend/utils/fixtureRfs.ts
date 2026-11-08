@@ -341,6 +341,34 @@ export function statStreaksFor(
   };
 }
 
+/**
+ * Recent form for ONE stat — how often a team has done it over the last 5 / 10 / 15
+ * games, plus the most recent game cards (hit/miss, score, opponent). Reuses the
+ * same per-game predicate as RFS, so "form" and "grade" read consistently.
+ * `results` must be newest-first. Null when the stat has no per-game definition.
+ */
+export type RecentGame = { hit: boolean; score: string; opponent: string; home: boolean; outcome: ResultOutcome };
+export type RecentFormWindow = { window: number; games: number; hits: number; rate: number };
+export type RecentForm = { key: string; usual: string; windows: RecentFormWindow[]; games: RecentGame[] };
+
+export function recentFormForStat(
+  results: TeamResult[],
+  statKey: string,
+  windows: number[] = [5, 10, 15],
+): RecentForm | null {
+  const def = RFS_ORDINARY_DEFS.find((d) => d.key === statKey);
+  if (!def || results.length === 0) return null;
+  const wins = windows.map((w) => {
+    const slice = results.slice(0, w);
+    const hits = slice.filter(def.hit).length;
+    return { window: w, games: slice.length, hits, rate: slice.length ? Math.round((100 * hits) / slice.length) : 0 };
+  });
+  const games: RecentGame[] = results.slice(0, 10).map((r) => ({
+    hit: def.hit(r), score: `${r.gf}-${r.ga}`, opponent: r.opponentName, home: r.isHome, outcome: r.outcome,
+  }));
+  return { key: statKey, usual: def.usual, windows: wins, games };
+}
+
 function bySide(a: RfsSide, b: RfsSide): number {
   return a === b ? 0 : a === 'home' ? -1 : 1;
 }

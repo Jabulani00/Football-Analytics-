@@ -15,7 +15,7 @@ import { TARGET_MARKETS, backtestTeam, targetMarket, type BacktestResult, type B
 import { clientStaleTime } from '@/services/oddAlertsCachePolicy';
 import { buildLeagueStatsLive } from '@/services/statsBuilder';
 import { nextFixtureFor, type UpcomingLite } from '@/utils/statsGrading';
-import { ordinaryRfsForStat, type StatRfs } from '@/utils/fixtureRfs';
+import { ordinaryRfsForStat, recentFormForStat, type RecentForm, type StatRfs } from '@/utils/fixtureRfs';
 import { teamResultsFromFixtures } from '@/utils/teamResults';
 import {
   COLUMN_LABEL, DIMENSIONS, FIXTURE_SIDES, QUAL_COLUMNS, STRATEGY_PRESETS, TIMING_STATE_OPTIONS, buildStrategyConfig, conditionLabel, conditionMembership,
@@ -282,6 +282,22 @@ export default function StrategyBuilderPanel() {
       const results = teamResultsFromFixtures(fixtures, ev.teamId, null, { competitionId: compId ?? null })
         .sort((a, b) => b.unix - a.unix);
       return ordinaryRfsForStat(results, cond.methodId);
+    },
+    [bundles, conditions, compIdByName],
+  );
+
+  // Recent form for the graded stat: how often the team has done it over the last
+  // 5 / 10 / 15 games, plus the latest results. Lazy per expanded row (its league).
+  const recentFormFor = useCallback(
+    (ev: TeamEval): RecentForm | null => {
+      const cond = conditions.find((c) => c.id === ev.conditionId);
+      if (!cond || cond.not || cond.dimensionId !== 'grading1' || ev.teamId == null) return null;
+      const compId = compIdByName.get(ev.competition);
+      const fixtures = bundles.find((b) => b.competition === ev.competition)?.fixtures;
+      if (!fixtures) return null;
+      const results = teamResultsFromFixtures(fixtures, ev.teamId, null, { competitionId: compId ?? null })
+        .sort((a, b) => b.unix - a.unix);
+      return recentFormForStat(results, cond.methodId);
     },
     [bundles, conditions, compIdByName],
   );
@@ -582,7 +598,7 @@ export default function StrategyBuilderPanel() {
           ) : (
             <>
               <PageControls page={safe} pages={pages} total={filtered.length} from={start + 1} to={start + visible.length} onChange={setPage} />
-              <TeamsTable rows={visible} upcoming={upcoming} target={targetDef ?? null} fixturesByComp={fixturesByComp} compIdByName={compIdByName} total={conditions.length} share={leagueShare} breakdownFor={breakdownFor} rfsFor={rfsFor} rankFor={rankFor} />
+              <TeamsTable rows={visible} upcoming={upcoming} target={targetDef ?? null} fixturesByComp={fixturesByComp} compIdByName={compIdByName} total={conditions.length} share={leagueShare} breakdownFor={breakdownFor} rfsFor={rfsFor} recentFormFor={recentFormFor} rankFor={rankFor} />
               <PageControls page={safe} pages={pages} total={filtered.length} from={start + 1} to={start + visible.length} onChange={setPage} />
             </>
           )}
@@ -605,7 +621,7 @@ export default function StrategyBuilderPanel() {
           ) : (
             <>
               <PageControls page={fxSafe} pages={fxPages} total={fxFiltered.length} from={fxStart + 1} to={fxStart + fxVisible.length} onChange={setPage} />
-              <GradeFixtureTable rows={fxVisible} breakdownFor={breakdownFor} rfsFor={rfsFor} />
+              <GradeFixtureTable rows={fxVisible} breakdownFor={breakdownFor} rfsFor={rfsFor} recentFormFor={recentFormFor} />
               <PageControls page={fxSafe} pages={fxPages} total={fxFiltered.length} from={fxStart + 1} to={fxStart + fxVisible.length} onChange={setPage} />
             </>
           )}
@@ -629,7 +645,7 @@ const TEAM_SECTIONS: { color: ResultColor; label: string }[] = [
 
 type TeamRow = { result: StrategyResult; nf: ReturnType<typeof nextFixtureFor>; bt: BacktestResult | null };
 
-function TeamsTable({ rows, upcoming, target, fixturesByComp, compIdByName, total, share, breakdownFor, rfsFor, rankFor }: {
+function TeamsTable({ rows, upcoming, target, fixturesByComp, compIdByName, total, share, breakdownFor, rfsFor, recentFormFor, rankFor }: {
   rows: StrategyResult[];
   upcoming: UpcomingLite[];
   target: TargetMarket | null;
@@ -639,6 +655,7 @@ function TeamsTable({ rows, upcoming, target, fixturesByComp, compIdByName, tota
   share: Map<string, LeagueGradeShare>;
   breakdownFor: (ev: TeamEval) => HalfReading[] | null;
   rfsFor: (ev: TeamEval) => StatRfs | null;
+  recentFormFor: (ev: TeamEval) => RecentForm | null;
   rankFor: (r: StrategyResult) => StatRank | null;
 }) {
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
@@ -687,7 +704,7 @@ function TeamsTable({ rows, upcoming, target, fixturesByComp, compIdByName, tota
                       <TeamsTableRow row={b} hasTarget={!!target} active={isActive} rank={rankFor(b.result)} onPress={() => setExpandedKey((x) => (x === k ? null : k))} />
                       {isActive ? (
                         <View style={[styles.fxDetailInline, { minWidth: minW, borderColor: resultColour(b.result.color) }]}>
-                          <ResultCard result={b.result} upcoming={upcoming} total={total} share={share.get(b.result.competition)} breakdownFor={breakdownFor} rfsFor={rfsFor} rank={rankFor(b.result)} />
+                          <ResultCard result={b.result} upcoming={upcoming} total={total} share={share.get(b.result.competition)} breakdownFor={breakdownFor} rfsFor={rfsFor} recentFormFor={recentFormFor} rank={rankFor(b.result)} />
                           {target ? <BacktestDetail bt={b.bt} target={target} /> : null}
                         </View>
                       ) : null}
@@ -971,7 +988,7 @@ function DaBadge({ grade }: { grade: string | null }) {
 
 /** One condition's reading: period/venue · feature · the stat % · grade · DA · why,
  *  then how the same stat reads on each half (FT / 1st / 2nd). */
-function EvalRow({ ev, breakdown, rfs }: { ev: TeamEval; breakdown?: HalfReading[] | null; rfs?: StatRfs | null }) {
+function EvalRow({ ev, breakdown, rfs, recentForm }: { ev: TeamEval; breakdown?: HalfReading[] | null; rfs?: StatRfs | null; recentForm?: RecentForm | null }) {
   const col = resultColour(ev.color);
   const hasBreakdown = !!breakdown && breakdown.some((h) => h.value != null);
   const daQ = daQuantText(ev);
@@ -994,7 +1011,39 @@ function EvalRow({ ev, breakdown, rfs }: { ev: TeamEval; breakdown?: HalfReading
         </Text>
       ) : null}
       {ev.qualifications && ev.qualifications.length ? <QualList quals={ev.qualifications} /> : null}
+      {recentForm ? <RecentFormStrip form={recentForm} /> : null}
       {hasBreakdown ? <HalfSplit readings={breakdown!} scope={splitPeriod(ev.period).scope} /> : null}
+    </View>
+  );
+}
+
+/** Recent form for the stat: the last 5 / 10 / 15 hit-rates plus the latest game
+ *  cards (green = the team did the stat that game, muted = it didn't). */
+function RecentFormStrip({ form }: { form: RecentForm }) {
+  return (
+    <View style={styles.formWrap}>
+      <Text style={styles.formTitle} numberOfLines={1}>Recent form · {form.usual}</Text>
+      <View style={styles.formWindows}>
+        {form.windows.map((w) => {
+          const c = w.rate >= 65 ? theme.accentGreen : w.rate >= 40 ? theme.yellow : theme.loss;
+          return (
+            <View key={w.window} style={styles.formWindow}>
+              <Text style={styles.formWindowLabel} numberOfLines={1}>L{w.window}</Text>
+              <Text style={[styles.formWindowRate, { color: c }]} numberOfLines={1}>{w.rate}%</Text>
+              <Text style={styles.formWindowCount} numberOfLines={1}>{w.hits}/{w.games}</Text>
+            </View>
+          );
+        })}
+      </View>
+      <Text style={styles.formGamesLabel} numberOfLines={1}>Last results (newest first)</Text>
+      <View style={styles.formGames}>
+        {form.games.map((g, i) => (
+          <View key={i} style={[styles.formGame, { backgroundColor: g.hit ? 'rgba(5,150,105,0.14)' : 'rgba(148,163,184,0.12)', borderColor: g.hit ? theme.accentGreen : theme.border }]}>
+            <Text style={[styles.formGameScore, { color: g.hit ? theme.accentGreen : theme.textMuted }]} numberOfLines={1}>{g.score}</Text>
+            <Text style={styles.formGameOpp} numberOfLines={1}>{g.home ? 'vs' : '@'} {g.opponent}</Text>
+          </View>
+        ))}
+      </View>
     </View>
   );
 }
@@ -1052,7 +1101,7 @@ function HalfSplit({ readings, scope }: { readings: HalfReading[]; scope: StatSc
 }
 
 /** C. One qualifying team with its per-condition breakdown. */
-function ResultCard({ result, upcoming, total, share, breakdownFor, rfsFor, rank }: { result: StrategyResult; upcoming: UpcomingLite[]; total?: number; share?: LeagueGradeShare; breakdownFor?: (ev: TeamEval) => HalfReading[] | null; rfsFor?: (ev: TeamEval) => StatRfs | null; rank?: StatRank | null }) {
+function ResultCard({ result, upcoming, total, share, breakdownFor, rfsFor, recentFormFor, rank }: { result: StrategyResult; upcoming: UpcomingLite[]; total?: number; share?: LeagueGradeShare; breakdownFor?: (ev: TeamEval) => HalfReading[] | null; rfsFor?: (ev: TeamEval) => StatRfs | null; recentFormFor?: (ev: TeamEval) => RecentForm | null; rank?: StatRank | null }) {
   const tint = resultColour(result.color);
   const nf = nextFixtureFor(result.teamId, result.team, upcoming);
   const ms = total ? matchStrength(result, total) : null;
@@ -1093,7 +1142,7 @@ function ResultCard({ result, upcoming, total, share, breakdownFor, rfsFor, rank
         </Text>
       ) : null}
       <View style={styles.evalList}>
-        {result.conditions.map((ev, i) => (<EvalRow key={i} ev={ev} breakdown={breakdownFor?.(ev) ?? null} rfs={rfsFor?.(ev) ?? null} />))}
+        {result.conditions.map((ev, i) => (<EvalRow key={i} ev={ev} breakdown={breakdownFor?.(ev) ?? null} rfs={rfsFor?.(ev) ?? null} recentForm={recentFormFor?.(ev) ?? null} />))}
       </View>
     </View>
   );
@@ -1101,7 +1150,7 @@ function ResultCard({ result, upcoming, total, share, breakdownFor, rfsFor, rank
 
 /** Fixtures as a table split into three grade colours; each row shows the matched
  *  side(s) and the exact grade each feature qualified with. Tap for the breakdown. */
-function GradeFixtureTable({ rows, breakdownFor, rfsFor }: { rows: FxRow[]; breakdownFor: (ev: TeamEval) => HalfReading[] | null; rfsFor: (ev: TeamEval) => StatRfs | null }) {
+function GradeFixtureTable({ rows, breakdownFor, rfsFor, recentFormFor }: { rows: FxRow[]; breakdownFor: (ev: TeamEval) => HalfReading[] | null; rfsFor: (ev: TeamEval) => StatRfs | null; recentFormFor: (ev: TeamEval) => RecentForm | null }) {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   return (
     <View>
@@ -1131,8 +1180,8 @@ function GradeFixtureTable({ rows, breakdownFor, rfsFor }: { rows: FxRow[]; brea
                       {isActive ? (
                         <View style={[styles.fxDetailInline, { minWidth: 900, borderColor: resultColour(r.color) }]}>
                           <Text style={styles.fxDetailTitle}>{r.fx.home.name} vs {r.fx.away.name} · {r.fx.competition.name}</Text>
-                          <SideEvals title={`Home team ✓ · ${r.fx.home.name}`} tint={theme.accentGreen} evals={r.homeEvals} breakdownFor={breakdownFor} rfsFor={rfsFor} />
-                          <SideEvals title={`Away team ✓ · ${r.fx.away.name}`} tint={theme.accentBlue} evals={r.awayEvals} breakdownFor={breakdownFor} rfsFor={rfsFor} />
+                          <SideEvals title={`Home team ✓ · ${r.fx.home.name}`} tint={theme.accentGreen} evals={r.homeEvals} breakdownFor={breakdownFor} rfsFor={rfsFor} recentFormFor={recentFormFor} />
+                          <SideEvals title={`Away team ✓ · ${r.fx.away.name}`} tint={theme.accentBlue} evals={r.awayEvals} breakdownFor={breakdownFor} rfsFor={rfsFor} recentFormFor={recentFormFor} />
                         </View>
                       ) : null}
                     </Fragment>
@@ -1187,13 +1236,13 @@ function GradeChips({ sideLabel, evals }: { sideLabel: string; evals: TeamEval[]
 }
 
 /** The conditions one fixture side satisfied, with period/venue/grade/reason. */
-function SideEvals({ title, tint, evals, breakdownFor, rfsFor }: { title: string; tint: string; evals: TeamEval[]; breakdownFor?: (ev: TeamEval) => HalfReading[] | null; rfsFor?: (ev: TeamEval) => StatRfs | null }) {
+function SideEvals({ title, tint, evals, breakdownFor, rfsFor, recentFormFor }: { title: string; tint: string; evals: TeamEval[]; breakdownFor?: (ev: TeamEval) => HalfReading[] | null; rfsFor?: (ev: TeamEval) => StatRfs | null; recentFormFor?: (ev: TeamEval) => RecentForm | null }) {
   if (!evals.length) return null;
   return (
     <View style={styles.sideEvalsWrap}>
       <Text style={[styles.sideEvalsTitle, { color: tint }]} numberOfLines={1}>{title}</Text>
       <View style={styles.evalList}>
-        {evals.map((ev, i) => (<EvalRow key={i} ev={ev} breakdown={breakdownFor?.(ev) ?? null} rfs={rfsFor?.(ev) ?? null} />))}
+        {evals.map((ev, i) => (<EvalRow key={i} ev={ev} breakdown={breakdownFor?.(ev) ?? null} rfs={rfsFor?.(ev) ?? null} recentForm={recentFormFor?.(ev) ?? null} />))}
       </View>
     </View>
   );
@@ -1516,6 +1565,20 @@ const styles = StyleSheet.create({
   rfsBadge: { borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1, backgroundColor: '#C2410C' },
   rfsBadgeText: { fontFamily: fonts.bodySemiBold, fontSize: 9, color: '#FFFFFF', letterSpacing: 0.5 },
   rfsNote: { fontFamily: fonts.body, fontSize: 11, lineHeight: 16, color: '#C2410C' },
+
+  // Recent form (last 5/10/15 + latest results)
+  formWrap: { marginTop: spacing.sm, gap: 4 },
+  formTitle: { fontFamily: fonts.bodySemiBold, fontSize: 10, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
+  formWindows: { flexDirection: 'row', gap: spacing.xs },
+  formWindow: { flex: 1, borderWidth: layout.borderWidth, borderColor: theme.border, borderRadius: layout.borderRadius, paddingVertical: 4, alignItems: 'center', backgroundColor: theme.surface },
+  formWindowLabel: { fontFamily: fonts.bodySemiBold, fontSize: 10, color: theme.textMuted },
+  formWindowRate: { fontFamily: fonts.bodySemiBold, fontSize: 14 },
+  formWindowCount: { fontFamily: fonts.body, fontSize: 9, color: theme.textFaint },
+  formGamesLabel: { fontFamily: fonts.body, fontSize: 9, color: theme.textFaint, marginTop: 2 },
+  formGames: { flexDirection: 'row', flexWrap: 'wrap', gap: 3 },
+  formGame: { borderWidth: 1, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2, minWidth: 54 },
+  formGameScore: { fontFamily: fonts.bodySemiBold, fontSize: 11 },
+  formGameOpp: { fontFamily: fonts.body, fontSize: 8, color: theme.textFaint },
 
   // Grade-group · column qualifications (ranked)
   qualList: { marginTop: spacing.sm, gap: 3 },
