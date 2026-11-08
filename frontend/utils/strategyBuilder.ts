@@ -442,6 +442,11 @@ const grading1: Dimension = {
     // Mixed Stats · Last left-over stats (1–23) — the derived half-share / second-half /
     // BTTS-outcome / form / performance views, each callable on its own.
     ...TRANSCRIBED_STATS.map(([key, label]) => ({ value: `mx:${key}`, label: `🧮 ${label}` })),
+    // Composite analyses folded into the Rule, each callable on its own — they
+    // delegate to their existing engines (Stats Characters / Opposite Stats / Omit Test).
+    ...characters.methods('overall').map((m) => ({ value: `ch:${m.value}`, label: `🎭 Character · ${m.label}` })),
+    ...opposite.methods('overall').map((m) => ({ value: `op:${m.value}`, label: `🪞 Opposite · ${m.label}` })),
+    ...omit.methods('overall').map((m) => ({ value: `om:${m.value}`, label: `🧪 Omit · ${m.label}` })),
     { value: 'pd:placeholder', label: '⚡ Power Dynamics (added separately)' },
     ...TIMING_STATS.map((s) => ({ value: s.key, label: s.label })),
   ],
@@ -503,6 +508,19 @@ const grading1: Dimension = {
         });
       }
       return out;
+    }
+    // Composite analyses folded into the Rule. Each delegates to its existing
+    // engine with sensible defaults (Characters on Method 1 fixed bands, Opposite
+    // surfacing any triggered pair, Omit classifying any sensitivity) and returns
+    // the engine's own evals unchanged — no statistic is re-implemented here.
+    if (sel.methodId.startsWith('ch:')) {
+      return characters.evaluate(b, { period: sel.period, methodId: sel.methodId.slice(3), options: { method: 'method1' } });
+    }
+    if (sel.methodId.startsWith('op:')) {
+      return opposite.evaluate(b, { period: sel.period, methodId: sel.methodId.slice(3), options: { allocation: ALL } });
+    }
+    if (sel.methodId.startsWith('om:')) {
+      return omit.evaluate(b, { period: 'overall', methodId: sel.methodId.slice(3), options: { direction: ALL } });
     }
     // Additional analytics stats (📊/📈/📐): read any family column at the chosen
     // period/venue and band it ↑/mid/↓ (pct), by run length (series) or as a value.
@@ -1329,7 +1347,8 @@ function conditionStat(cond: Condition): { prefix: string; key: string; kind: St
     case 'grading2':
       // Goal-timing, market, additional-family & placeholder stats have no single
       // combined-list FT/1H/2H column — no half split.
-      if (isTimingStat(cond.methodId) || isMarketStat(cond.methodId) || cond.methodId.startsWith('sf:') || cond.methodId.startsWith('mx:') || cond.methodId.startsWith('pd:')) return null;
+      if (isTimingStat(cond.methodId) || isMarketStat(cond.methodId) || cond.methodId.startsWith('sf:') || cond.methodId.startsWith('mx:') || cond.methodId.startsWith('pd:')
+        || cond.methodId.startsWith('ch:') || cond.methodId.startsWith('op:') || cond.methodId.startsWith('om:')) return null;
       // Every gradable stat is a percentage column in the ordinary family.
       return { prefix: 'ordinary', key: cond.methodId, kind: 'pct', decimals: 0 };
     default:
