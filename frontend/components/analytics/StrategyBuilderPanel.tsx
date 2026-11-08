@@ -54,20 +54,42 @@ function methodsOf(dim: Dimension, period: StrategyPeriod, options: Record<strin
 }
 
 /**
- * Featured Rules — one-tap shortcuts to the high-value recently-added tests so they
- * don't have to be hunted in the long stat dropdown. Each sets the Rule's stat
- * (all are overall-friendly, non-window); the user then tunes options and Adds.
+ * Rule categories — chips that group the long stat list by family (Grading,
+ * Mixed, Ordinary, PPG, Series, FT-only, Markets, Characters, Opposite, Omit…).
+ * Tapping one filters the stat dropdown to just that family's options, so every
+ * stat under it is one pick away instead of being hunted in one huge list.
  */
-const FEATURED_RULES: { value: string; label: string }[] = [
-  { value: 'op:all', label: '🪞 Opposite' },
-  { value: 'ch:all', label: '🎭 Character' },
-  { value: 'om:scoring', label: '🧪 Omit test' },
-  { value: 'mk_win2', label: '🎯 Win by 2+' },
-  { value: 'mk_cs_1h', label: '🎯 1H clean sheet' },
-  { value: 'mk_scored_1h', label: '🎯 Scores 1H' },
-  { value: 'mx:best_form', label: '🧮 Best form' },
-  { value: 'mx:scored_both_halves', label: '🧮 Both halves' },
+const RULE_CATEGORIES: { id: string; label: string }[] = [
+  { id: 'all', label: 'All stats' },
+  { id: 'grading', label: '⭐ Grading' },
+  { id: 'mixed', label: '🧮 Mixed stats' },
+  { id: 'ordinary', label: '📊 Ordinary' },
+  { id: 'ppg', label: '📐 PPG' },
+  { id: 'series', label: '🔥 Series' },
+  { id: 'ftonly', label: '📈 FT-only' },
+  { id: 'markets', label: '🎯 Markets' },
+  { id: 'characters', label: '🎭 Characters' },
+  { id: 'opposite', label: '🪞 Opposite' },
+  { id: 'omit', label: '🧪 Omit' },
+  { id: 'power', label: '⚡ Power Dynamics' },
 ];
+/** Which category a Rule stat value belongs to (by its method-id prefix). */
+function inCategory(id: string, value: string): boolean {
+  switch (id) {
+    case 'grading': return !value.includes(':') && !value.startsWith('mk_'); // plain gradable columns
+    case 'markets': return value.startsWith('mk_');
+    case 'mixed': return value.startsWith('mx:');
+    case 'ordinary': return value.startsWith('sf:ordinary:');
+    case 'ppg': return value.startsWith('sf:ppg:');
+    case 'series': return value.startsWith('sf:series:');
+    case 'ftonly': return value.startsWith('sf:ftonly:');
+    case 'characters': return value.startsWith('ch:');
+    case 'opposite': return value.startsWith('op:');
+    case 'omit': return value.startsWith('om:');
+    case 'power': return value.startsWith('pd:');
+    default: return true; // 'all'
+  }
+}
 function kickoffLabel(unix: number, fallback: string): string {
   if (!Number.isFinite(unix) || unix <= 0) return fallback;
   try {
@@ -923,7 +945,10 @@ function ConditionBuilder({ narrow, fixedSide, title, onAdd }: { narrow: boolean
   const [side, setSide] = useState<FixtureSide>('either');
   const period: StrategyPeriod = isWin ? timeSel : periodFrom(timeSel, scope);
   const normalMethods = methodsOf(dim, period, opts).filter((m) => !m.value.startsWith('tm_'));
-  const methods = isWin ? TIMING_STATE_OPTIONS : normalMethods;
+  // The stat dropdown is narrowed to the chosen category (All = everything).
+  const [category, setCategory] = useState<string>('all');
+  const categoryMethods = category === 'all' ? normalMethods : normalMethods.filter((m) => inCategory(category, m.value));
+  const methods = isWin ? TIMING_STATE_OPTIONS : (categoryMethods.length ? categoryMethods : normalMethods);
   const [methodId, setMethodId] = useState<string>(normalMethods[0]?.value ?? '');
 
   // Switching to/from a timing window swaps the stat list (Scored/Conceded vs the
@@ -932,7 +957,7 @@ function ConditionBuilder({ narrow, fixedSide, title, onAdd }: { narrow: boolean
     setTimeSel(v);
     const win = v === 'first15' || v === 'last20';
     if (win && methodId !== 'tm_sc' && methodId !== 'tm_cs') setMethodId('tm_sc');
-    if (!win && (methodId === 'tm_sc' || methodId === 'tm_cs')) setMethodId(normalMethods[0]?.value ?? '');
+    if (!win && (methodId === 'tm_sc' || methodId === 'tm_cs')) setMethodId((categoryMethods[0] ?? normalMethods[0])?.value ?? '');
   };
 
   const changeOpt = (key: string, v: string) => {
@@ -944,11 +969,14 @@ function ConditionBuilder({ narrow, fixedSide, title, onAdd }: { narrow: boolean
     }
   };
 
-  // One-tap featured stat: leave a goal-timing window first (those lists are
-  // Scored/Conceded only), then select the featured stat so it reads on the dropdown.
-  const pickFeatured = (value: string) => {
+  // Pick a category: leave a goal-timing window first (those lists are
+  // Scored/Conceded only), filter the dropdown to that family, and jump the
+  // selected stat to the first one in it so the dropdown always shows a valid pick.
+  const pickCategory = (id: string) => {
     if (isWin) setTimeSel('ft');
-    setMethodId(value);
+    setCategory(id);
+    const list = id === 'all' ? normalMethods : normalMethods.filter((m) => inCategory(id, m.value));
+    if (!list.some((m) => m.value === methodId)) setMethodId((list[0] ?? normalMethods[0])?.value ?? '');
   };
 
   const add = () => {
@@ -967,27 +995,37 @@ function ConditionBuilder({ narrow, fixedSide, title, onAdd }: { narrow: boolean
         {!isWin ? <SegGroup label="Venue" value={scope} options={[['overall', 'Overall'], ['home', 'Home'], ['away', 'Away']]} onChange={setScope} /> : null}
         {!fixedSide ? <SegGroup label="Team (fixtures)" value={side} options={FIXTURE_SIDES.map((s) => [s.value, s.label] as [FixtureSide, string])} onChange={setSide} /> : null}
       </View>
-      <View style={styles.featuredWrap}>
-        <Text style={styles.featuredLabel}>Featured rules</Text>
-        <View style={styles.featuredRow}>
-          {FEATURED_RULES.map((f) => {
-            const active = methodId === f.value;
-            return (
-              <Pressable
-                key={f.value}
-                accessibilityRole="button"
-                accessibilityState={{ selected: active }}
-                accessibilityLabel={`Pick ${f.label}`}
-                onPress={() => pickFeatured(f.value)}
-                style={({ pressed }) => [styles.featuredChip, active && styles.featuredChipActive, pressed && styles.addBtnPressed]}>
-                <Text style={[styles.featuredChipText, active && styles.featuredChipTextActive]}>{f.label}</Text>
-              </Pressable>
-            );
-          })}
+      {!isWin ? (
+        <View style={styles.featuredWrap}>
+          <Text style={styles.featuredLabel}>Categories</Text>
+          <View style={styles.featuredRow}>
+            {RULE_CATEGORIES.map((c) => {
+              const count = c.id === 'all' ? normalMethods.length : normalMethods.filter((m) => inCategory(c.id, m.value)).length;
+              if (count === 0) return null;
+              const active = category === c.id;
+              return (
+                <Pressable
+                  key={c.id}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  accessibilityLabel={`Show ${c.label} stats`}
+                  onPress={() => pickCategory(c.id)}
+                  style={({ pressed }) => [styles.featuredChip, active && styles.featuredChipActive, pressed && styles.addBtnPressed]}>
+                  <Text style={[styles.featuredChipText, active && styles.featuredChipTextActive]}>{c.label}{c.id === 'all' ? '' : ` · ${count}`}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
         </View>
-      </View>
+      ) : null}
       <View style={[styles.filterRow, narrow && styles.filterCol]}>
-        <FilterDropdown label={isWin ? 'State (scored / conceded)' : 'Stat / feature'} value={methodId} options={methods} onChange={setMethodId} style={styles.full} />
+        <FilterDropdown
+          label={isWin ? 'State (scored / conceded)' : `Stat / feature${category === 'all' ? '' : ` · ${methods.length}`}`}
+          value={methodId}
+          options={methods}
+          onChange={setMethodId}
+          style={styles.full}
+        />
       </View>
       {isWin ? <Text style={styles.readNote}>Goal-timing windows use the feed&apos;s measured 15-minute data — overall only, Scored or Conceded. (Per-minute data for an exact first-10′ isn&apos;t available.)</Text> : null}
       {methodId.startsWith('pd:') ? <Text style={styles.readNote}>⚡ Power Dynamics is a placeholder — those stats are added separately by someone else. This Rule won&apos;t surface teams yet.</Text> : null}
