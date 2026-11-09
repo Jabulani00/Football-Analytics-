@@ -43,6 +43,8 @@ yarn-error.*
 frontend/.env
 frontend/.env.*
 !frontend/.env.example
+# This root file holds live Supabase secrets — never commit it.
+env.example
 
 # typescript
 *.tsbuildinfo

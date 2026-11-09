@@ -169,7 +169,7 @@ export default function StrategyBuilderPanel() {
   const [target, setTarget] = useState<string>(ALL);
 
   // ---- saved strategies (the HOW only — recomputed live on load) ----
-  const { saved, save, remove } = useSavedBuilderStrategies();
+  const { saved, save, remove, cloud, syncError } = useSavedBuilderStrategies();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [draftName, setDraftName] = useState('');
@@ -453,6 +453,8 @@ export default function StrategyBuilderPanel() {
       activeId={activeId}
       onLoad={loadStrategy}
       onRemove={removeStrategy}
+      cloud={cloud}
+      syncError={syncError}
       style={wide ? styles.asideWide : styles.asideStacked}
     />
   );
@@ -1352,11 +1354,13 @@ function SideEvals({ title, tint, evals, breakdownFor, rfsFor, recentFormFor }: 
 
 /** Side panel: the user's saved strategies. Each opens a build (not its results)
  *  and the live engines recompute the latest qualifying teams / fixtures. */
-function SavedStrategiesPanel({ saved, activeId, onLoad, onRemove, style }: {
+function SavedStrategiesPanel({ saved, activeId, onLoad, onRemove, cloud, syncError, style }: {
   saved: SavedStrategy[];
   activeId: string | null;
   onLoad: (s: SavedStrategy) => void;
   onRemove: (id: string) => void;
+  cloud?: boolean;
+  syncError?: string | null;
   style?: StyleProp<ViewStyle>;
 }) {
   return (
@@ -1365,6 +1369,12 @@ function SavedStrategiesPanel({ saved, activeId, onLoad, onRemove, style }: {
         <Text style={styles.asideTitle}>★ Saved strategies</Text>
         <View style={styles.asideCount}><Text style={styles.asideCountText}>{saved.length}</Text></View>
       </View>
+      <View style={[styles.cloudTag, cloud ? styles.cloudTagOn : styles.cloudTagOff]}>
+        <Text style={[styles.cloudTagText, cloud ? styles.cloudTagTextOn : styles.cloudTagTextOff]}>
+          {cloud ? '☁ Synced to Supabase' : '⦿ Saved on this device only'}
+        </Text>
+      </View>
+      {syncError ? <Text style={styles.cloudError}>Cloud sync issue: {syncError}</Text> : null}
       <Text style={styles.asideHint}>Only the build is saved — open one to recompute the latest teams & fixtures.</Text>
       {saved.length === 0 ? (
         <Text style={styles.asideEmpty}>No saved strategies yet. Build your conditions, then tap ★ Save to keep the recipe.</Text>
@@ -1559,6 +1569,13 @@ const styles = StyleSheet.create({
   asideCount: { minWidth: 24, height: 22, paddingHorizontal: 7, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(124,58,237,0.12)' },
   asideCountText: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: theme.accentPurple },
   asideHint: { fontFamily: fonts.body, fontSize: 11, lineHeight: 16, color: theme.textMuted },
+  cloudTag: { alignSelf: 'flex-start', borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: 3, marginBottom: spacing.xs, borderWidth: 1 },
+  cloudTagOn: { borderColor: theme.accentGreen, backgroundColor: 'rgba(5,150,105,0.10)' },
+  cloudTagOff: { borderColor: theme.border, backgroundColor: theme.bg },
+  cloudTagText: { fontFamily: fonts.bodySemiBold, fontSize: 10, letterSpacing: 0.3 },
+  cloudTagTextOn: { color: theme.accentGreen },
+  cloudTagTextOff: { color: theme.textMuted },
+  cloudError: { fontFamily: fonts.body, fontSize: 10, color: theme.loss, marginBottom: spacing.xs },
   asideEmpty: { fontFamily: fonts.body, fontSize: 12, lineHeight: 18, color: theme.textFaint, paddingVertical: spacing.md, textAlign: 'center' },
   asideList: { gap: spacing.sm },
   savedItem: { borderWidth: layout.borderWidth, borderColor: theme.border, borderLeftWidth: 3, borderLeftColor: theme.accentPurple, borderRadius: layout.borderRadius, backgroundColor: theme.surfaceHover, padding: spacing.sm, gap: 6 },
