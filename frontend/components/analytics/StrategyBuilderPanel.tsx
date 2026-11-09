@@ -497,8 +497,8 @@ export default function StrategyBuilderPanel() {
       </View>
       <Text style={styles.callHint}>
         {callMode === 'peg'
-          ? 'Peg — combine several rules into one strategy (AND / OR). Open a qualifying team to see its last 5 · 8 · 10 · 15 · 20 results and how it did on the stat.'
-          : 'Single — one call: pick a featured stat, or filter teams by their last-game results.'}
+          ? 'Peg — the graded strategy: combine several rules (AND / OR) on the combined-list grades. Open a qualifying team to see its last 5 · 8 · 10 · 15 · 20 results and how it did on the stat.'
+          : 'Single — one call by the numbers: a stat at a ≥ / ≤ threshold (e.g. Home BTTS ≥ 20%, PPG ≥ 2.0, last 5 scoring ≥ 50%), or filter teams by their last-game results.'}
       </Text>
 
       {callMode === 'peg' ? (
@@ -567,7 +567,14 @@ export default function StrategyBuilderPanel() {
             })}
           </View>
           {singleMode === 'stat' ? (
-            <ConditionBuilder narrow={narrow} title="① Single stat · one call" onAdd={addSingle} />
+            <ConditionBuilder
+              narrow={narrow}
+              title="① Single stat · one call (by the numbers)"
+              onAdd={addSingle}
+              dimId="statfilter"
+              addLabel="Call this stat"
+              defaultOpts={{ mode: 'limit', cmp: 'gte', value: '50' }}
+            />
           ) : (
             <LastResultsExplorer narrow={narrow} bundles={bundles} upcoming={upcoming} loading={loading} />
           )}
@@ -1004,12 +1011,14 @@ function SegGroup<T extends string>({ label, value, options, onChange }: { label
 
 /** A. Self-contained Rule builder: reads its own Period · Venue · Team, then
  *  picks the stat (always graded on the combined list) and its options. */
-function ConditionBuilder({ narrow, fixedSide, title, onAdd }: { narrow: boolean; fixedSide?: FixtureSide; title?: string; onAdd: (c: Condition) => void }) {
-  // A Rule is always the combined-list grading (Roman I·1·A … VII·3·F) with the
-  // Ordinary / Series / RFS columns — the category is fixed, so there is no picker.
-  const dimId = getDimension('grading1') ? 'grading1' : DIMENSIONS[0].id;
+function ConditionBuilder({ narrow, fixedSide, title, onAdd, dimId: dimIdProp, addLabel, defaultOpts }: { narrow: boolean; fixedSide?: FixtureSide; title?: string; onAdd: (c: Condition) => void; dimId?: string; addLabel?: string; defaultOpts?: Record<string, string> }) {
+  // A Peg Rule is the combined-list grading (Roman I·1·A … VII·3·F). A Single call
+  // instead drives the numeric Stat filter (percentages / averages / PPG) with a
+  // ≥/≤ threshold, so `dimId` selects which engine this builder speaks to.
+  const dimId = dimIdProp ?? (getDimension('grading1') ? 'grading1' : DIMENSIONS[0].id);
+  const isGrading = dimId === 'grading1';
   const dim = getDimension(dimId)!;
-  const [opts, setOpts] = useState<Record<string, string>>(defaultOptions(dimId));
+  const [opts, setOpts] = useState<Record<string, string>>({ ...defaultOptions(dimId), ...(defaultOpts ?? {}) });
   // The time axis: Full time / 1st / 2nd half, OR a goal-timing window (First 15′ /
   // Last 20′). Windows are measured 15-min buckets — overall only, Scored/Conceded.
   const [timeSel, setTimeSel] = useState<'ft' | 'ht' | '2h' | 'first15' | 'last20'>('ft');
@@ -1064,11 +1073,11 @@ function ConditionBuilder({ narrow, fixedSide, title, onAdd }: { narrow: boolean
     <View style={[styles.builderCard, fixedSide === 'home' && styles.builderHome, fixedSide === 'away' && styles.builderAway]}>
       <Text style={styles.sectionLabel}>{title ?? 'Rule'}</Text>
       <View style={styles.readRow}>
-        <SegGroup label="Period" value={timeSel} options={[['ft', 'Full time'], ['ht', '1st half'], ['2h', '2nd half'], ['first15', 'First 15′'], ['last20', 'Last 20′']]} onChange={changeTime} />
+        <SegGroup label="Period" value={timeSel} options={isGrading ? [['ft', 'Full time'], ['ht', '1st half'], ['2h', '2nd half'], ['first15', 'First 15′'], ['last20', 'Last 20′']] : [['ft', 'Full time'], ['ht', '1st half'], ['2h', '2nd half']]} onChange={changeTime} />
         {!isWin ? <SegGroup label="Venue" value={scope} options={[['overall', 'Overall'], ['home', 'Home'], ['away', 'Away']]} onChange={setScope} /> : null}
         {!fixedSide ? <SegGroup label="Team (fixtures)" value={side} options={FIXTURE_SIDES.map((s) => [s.value, s.label] as [FixtureSide, string])} onChange={setSide} /> : null}
       </View>
-      {!isWin ? (
+      {!isWin && isGrading ? (
         <View style={styles.featuredWrap}>
           <Text style={styles.featuredLabel}>Categories</Text>
           <View style={styles.featuredRow}>
@@ -1123,7 +1132,7 @@ function ConditionBuilder({ narrow, fixedSide, title, onAdd }: { narrow: boolean
         </View>
       ) : null}
       <Pressable accessibilityRole="button" onPress={add} style={({ pressed }) => [styles.addBtn, pressed && styles.addBtnPressed]}>
-        <Text style={styles.addBtnText}>+ Add Rule</Text>
+        <Text style={styles.addBtnText}>{addLabel ?? '+ Add Rule'}</Text>
       </Pressable>
     </View>
   );
