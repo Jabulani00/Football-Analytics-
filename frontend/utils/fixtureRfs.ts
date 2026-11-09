@@ -249,6 +249,126 @@ function seriesRows(results: TeamResult[], side: RfsSide, minLength: number): Rf
   return rows;
 }
 
+/** Ordinary RFS for ONE stat, for a single team — the overlay a grade uses. */
+export type StatRfs = {
+  key: string;
+  /** "usually {usual}" — e.g. "scores". */
+  usual: string;
+  /** "{failed} …" — e.g. "drew a blank". */
+  failed: string;
+  /** Season rate for the stat (how usual the behaviour is). */
+  rate: number;
+  sample: number;
+  /** The most recent game, which went against the usual. */
+  lastScore: string;
+  lastOpponent: string;
+  lastHome: boolean;
+};
+
+/**
+ * Does ONE stat carry a recency-failure signal for a team? Reuses
+ * RFS_ORDINARY_DEFS: the season rate is "usual" (≥ `minRate`) but the most recent
+ * game went against it. `results` must be newest-first. Null when there is no
+ * signal, too few games, or the stat has no RFS definition. Cheap — meant to be
+ * called per team on demand (e.g. when a grade row is expanded).
+ */
+export function ordinaryRfsForStat(
+  results: TeamResult[],
+  statKey: string,
+  minRate: number = USUAL_MIN_RATE,
+): StatRfs | null {
+  if (results.length < MIN_RFS_SAMPLE) return null;
+  const def = RFS_ORDINARY_DEFS.find((d) => d.key === statKey);
+  if (!def) return null;
+  const newest = results[0];
+  if (def.hit(newest)) return null; // last game did the usual — no signal
+  const hits = results.filter(def.hit).length;
+  const rate = Math.round((100 * hits) / results.length);
+  if (rate < minRate) return null; // not usual enough for a failure to matter
+  return {
+    key: def.key,
+    usual: def.usual,
+    failed: def.failed,
+    rate,
+    sample: results.length,
+    lastScore: `${newest.gf}-${newest.ga}`,
+    lastOpponent: newest.opponentName,
+    lastHome: newest.isHome,
+  };
+}
+
+/**
+ * The Ordinary / Series / RFS "columns" for ONE stat, one team (doc Page 1's
+ * grade-group × column table). All four read the SAME stat predicate, so a grade
+ * and its column stay consistent:
+ *  - `seriesRun` — the current unbroken run of the usual (newest-first), when it
+ *    reaches `minSeries`; 0 otherwise or when the last game went against it.
+ *  - `brokeRun` — the run that was alive going INTO the last game when that game
+ *    ended it (Series + RFS); 0 otherwise.
+ *  - `ordinaryRfs` — the ordinary recency-failure signal (usual, but last game
+ *    failed it).
+ * `results` must be newest-first. Null when the stat has no RFS definition or
+ * there are no games. Cheap — reuses `RFS_ORDINARY_DEFS` predicates.
+ */
+export type StatStreaks = {
+  seriesRun: number;
+  brokeRun: number;
+  ordinaryRfs: StatRfs | null;
+};
+
+export function statStreaksFor(
+  results: TeamResult[],
+  statKey: string,
+  opts?: { minRate?: number; minSeries?: number },
+): StatStreaks | null {
+  const def = RFS_ORDINARY_DEFS.find((d) => d.key === statKey);
+  if (!def || results.length === 0) return null;
+  const minSeries = opts?.minSeries ?? MIN_SERIES;
+  const didLast = def.hit(results[0]);
+
+  // Current run of the usual, from the newest game back until it breaks.
+  let seriesRun = 0;
+  for (const r of results) { if (!def.hit(r)) break; seriesRun += 1; }
+
+  // The run alive going into the last game — only counts when that game broke it.
+  let brokeRun = 0;
+  if (!didLast) { for (const r of results.slice(1)) { if (!def.hit(r)) break; brokeRun += 1; } }
+
+  return {
+    seriesRun: seriesRun >= minSeries ? seriesRun : 0,
+    brokeRun: brokeRun >= minSeries ? brokeRun : 0,
+    ordinaryRfs: ordinaryRfsForStat(results, statKey, opts?.minRate ?? USUAL_MIN_RATE),
+  };
+}
+
+/**
+ * Recent form for ONE stat — how often a team has done it over the last 5 / 10 / 15
+ * games, plus the most recent game cards (hit/miss, score, opponent). Reuses the
+ * same per-game predicate as RFS, so "form" and "grade" read consistently.
+ * `results` must be newest-first. Null when the stat has no per-game definition.
+ */
+export type RecentGame = { hit: boolean; score: string; opponent: string; home: boolean; outcome: ResultOutcome };
+export type RecentFormWindow = { window: number; games: number; hits: number; rate: number };
+export type RecentForm = { key: string; usual: string; windows: RecentFormWindow[]; games: RecentGame[] };
+
+export function recentFormForStat(
+  results: TeamResult[],
+  statKey: string,
+  windows: number[] = [5, 10, 15],
+): RecentForm | null {
+  const def = RFS_ORDINARY_DEFS.find((d) => d.key === statKey);
+  if (!def || results.length === 0) return null;
+  const wins = windows.map((w) => {
+    const slice = results.slice(0, w);
+    const hits = slice.filter(def.hit).length;
+    return { window: w, games: slice.length, hits, rate: slice.length ? Math.round((100 * hits) / slice.length) : 0 };
+  });
+  const games: RecentGame[] = results.slice(0, 10).map((r) => ({
+    hit: def.hit(r), score: `${r.gf}-${r.ga}`, opponent: r.opponentName, home: r.isHome, outcome: r.outcome,
+  }));
+  return { key: statKey, usual: def.usual, windows: wins, games };
+}
+
 function bySide(a: RfsSide, b: RfsSide): number {
   return a === b ? 0 : a === 'home' ? -1 : 1;
 }

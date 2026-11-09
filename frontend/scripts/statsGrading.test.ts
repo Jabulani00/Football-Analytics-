@@ -23,7 +23,7 @@ const cases: [number, number, number | null, string | null, boolean][] = [
   [80, 50, 50, 'B', true],
   [50, 50, 40, 'C', false],
   [50, 50, 70, 'D', false],
-  [20, 80, 50, 'E', true], // H↓ & overall↑
+  [20, 50, 50, 'E', true], // H↓ & overall-mid (mirrors B)
   [20, 20, 50, 'F', false],
 ];
 for (const [home, overall, league, grade, da] of cases) {
@@ -33,7 +33,7 @@ for (const [home, overall, league, grade, da] of cases) {
   }
 }
 if (gradeFor(80, 20, 50) !== null) throw new Error('H↑/overall↓ is undefined and must not grade.');
-if (gradeFor(20, 50, 50) !== null) throw new Error('H↓/overall-mid is undefined and must not grade.');
+if (gradeFor(20, 80, 50) !== null) throw new Error('H↓/overall↑ is undefined and must not grade.');
 
 // ---- Roman resolution (source list × letter) ----
 if (resolveRoman('strong', 1, 'A') !== 'I') throw new Error('strong 1.A → I');
@@ -50,8 +50,8 @@ const stats: TeamStatsExport = {
   meta: { tables: 1, statsPerTable: 1 },
   tables: {
     // source 2 windows — Alpha home ↑ both windows, overall ↑ both → A
-    last10_ft_overall: [row('Alpha', 1, 10, 80), row('Beta', 2, 10, 50)],
-    last8_ft_overall: [row('Alpha', 1, 8, 70), row('Beta', 2, 8, 50)],
+    last10_ft_overall: [row('Alpha', 1, 10, 80), row('Beta', 2, 10, 70)],
+    last8_ft_overall: [row('Alpha', 1, 8, 70), row('Beta', 2, 8, 70)],
     last10_ft_home: [row('Alpha', 1, 6, 80), row('Beta', 2, 6, 20)],
     last8_ft_home: [row('Alpha', 1, 5, 80), row('Beta', 2, 5, 20)],
     league_avg_ft_overall: [row('League', 0, 10, 50)],
@@ -63,8 +63,8 @@ const beta = graded.find((t) => t.team === 'Beta');
 if (!alpha || alpha.grade !== 'A' || alpha.roman !== 'III' || alpha.direction !== 'strong') {
   throw new Error(`Alpha should be strong A / Grade III on source 2: ${JSON.stringify(alpha)}`);
 }
-// Beta: home ↓ (avg 20), overall mid (avg 50) → undefined, must not grade.
-if (beta) throw new Error('Beta (H↓ / overall-mid) must not be graded.');
+// Beta: home ↓ (avg 20), overall ↑ (avg 70) → undefined (H↓/O↑ not named), must not grade.
+if (beta) throw new Error('Beta (H↓ / overall↑) must not be graded.');
 
 // averaging: Alpha overall = mean(80,70)=75 (↑), home = mean(80,80)=80 (↑)
 if (Math.round(alpha.overallValue) !== 75 || Math.round(alpha.homeValue) !== 80) {

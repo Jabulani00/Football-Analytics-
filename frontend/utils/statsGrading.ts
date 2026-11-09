@@ -58,7 +58,7 @@ export function isStrong(grade: Grade): boolean {
  *           B = H↑ & overall MID            (DA)
  *           C = H MID & overall MID, above the league average
  *   Weak    D = H MID & overall MID, below the league average
- *           E = H↓ & overall↑              (DA)
+ *           E = H↓ & overall MID            (DA)  — mirrors B (H↑ & overall MID)
  *           F = H↓ & overall↓
  * A combination the document does not name returns null (not graded).
  */
@@ -76,7 +76,7 @@ export function gradeFor(
     const aboveLeague = leagueValue == null ? overallValue >= BAND_MID : overallValue >= leagueValue;
     return aboveLeague ? { grade: 'C', da: false } : { grade: 'D', da: false };
   }
-  if (h === 'down' && o === 'up') return { grade: 'E', da: true };
+  if (h === 'down' && o === 'mid') return { grade: 'E', da: true };
   if (h === 'down' && o === 'down') return { grade: 'F', da: false };
   return null;
 }

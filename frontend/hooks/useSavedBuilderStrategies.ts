@@ -37,11 +37,13 @@ export function useSavedBuilderStrategies() {
 
   useEffect(() => writeJson(KEY, saved), [saved]);
 
-  const save = useCallback((name: string, config: SavedStrategyConfig) => {
+  const save = useCallback((name: string, config: SavedStrategyConfig, note?: string) => {
+    const trimmedNote = note?.trim();
     const entry: SavedStrategy = {
       id: uid(),
       name: name.trim() || 'Untitled strategy',
       description: describeStrategy(config),
+      note: trimmedNote ? trimmedNote : undefined,
       createdAt: new Date().toISOString(),
       config,
     };

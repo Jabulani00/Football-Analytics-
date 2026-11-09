@@ -6,6 +6,8 @@ import {
   levelForRate,
   MIN_RFS_SAMPLE,
   RFS_ORDINARY_DEFS,
+  recentFormForStat,
+  statStreaksFor,
   USUAL_MIN_RATE,
   type RfsOrdinaryRow,
   type RfsSeriesRow,
@@ -213,6 +215,46 @@ console.log('\nRFS Table 4 — both sides, scope and ordering');
   const scoped = buildFixtureRfs({ homeResults: home, awayResults: away, scope: 'home' });
   check('home scope keeps home games only', scoped.homeSample === 6 && scoped.awaySample === 0);
   check('home scope reports the home side only', scoped.series.every((r) => r.side === 'home'));
+}
+
+console.log('\nStat streaks — Ordinary / Series / RFS columns for one stat');
+{
+  // Scored in all of the last 8 — a live scoring run, nothing failed.
+  const live = wins(8);
+  const s1 = statStreaksFor(live, 'sc_pct');
+  check('a live scoring run is reported', (s1?.seriesRun ?? 0) >= MIN_SERIES, `run=${s1?.seriesRun}`);
+  check('a live run has no broken run', s1?.brokeRun === 0);
+  check('a live run carries no ordinary RFS', s1?.ordinaryRfs == null);
+
+  // Scored 9 of 10 but blanked the last game — the run broke and the usual failed.
+  const broke = [result(0, 2, false, 'Newcastle'), ...wins(9)];
+  const s2 = statStreaksFor(broke, 'sc_pct');
+  check('a broken scoring run has no live run', s2?.seriesRun === 0, `run=${s2?.seriesRun}`);
+  check('the run alive going into the last game is reported', s2?.brokeRun === 9, `broke=${s2?.brokeRun}`);
+  check('the ordinary RFS is carried', s2?.ordinaryRfs != null && s2.ordinaryRfs.rate === 90, `rate=${s2?.ordinaryRfs?.rate}`);
+
+  // A 2-game run is below the series threshold, so no series column.
+  const shortRun = [result(2, 0), result(2, 0), result(0, 0), result(0, 0), result(0, 0)];
+  check(`a ${MIN_SERIES - 1}-game run is not a series`, statStreaksFor(shortRun, 'sc_pct')?.seriesRun === 0);
+
+  check('no definition means no streaks', statStreaksFor(live, 'not_a_stat') == null);
+  check('no games means no streaks', statStreaksFor([], 'sc_pct') == null);
+}
+
+console.log('\nRecent form — last 5 / 10 / 15 + latest results');
+{
+  // Newest-first: 5 scored, then 5 blank, then 5 scored.
+  const results = [...Array.from({ length: 5 }, () => result(2, 0)), ...Array.from({ length: 5 }, () => result(0, 1)), ...Array.from({ length: 5 }, () => result(2, 0))];
+  const form = recentFormForStat(results, 'sc_pct');
+  check('a form reading is produced', form != null);
+  const w = (n: number) => form?.windows.find((x) => x.window === n);
+  check('last 5 is 100%', w(5)?.rate === 100 && w(5)?.hits === 5, JSON.stringify(w(5)));
+  check('last 10 is 50%', w(10)?.rate === 50 && w(10)?.hits === 5, JSON.stringify(w(10)));
+  check('last 15 is 67%', w(15)?.rate === 67 && w(15)?.hits === 10, JSON.stringify(w(15)));
+  check('up to 10 latest games are returned, newest first', form?.games.length === 10 && form.games[0].hit === true && form.games[0].score === '2-0');
+  check('the 6th latest game is a miss', form?.games[5].hit === false && form.games[5].score === '0-1');
+  check('an unknown stat has no form', recentFormForStat(results, 'not_a_stat') == null);
+  check('no games means no form', recentFormForStat([], 'sc_pct') == null);
 }
 
 console.log('\nRFS — empty input');

@@ -10,15 +10,17 @@
  * TeamStatsExport and/or the season's raw fixtures) and the user's conditions.
  */
 import type { TeamStatRow, TeamStatsExport } from '@/types/data';
-import type { RawFixture } from '@/services/oddAlerts';
+import type { RawFixture, TeamGoalTiming } from '@/services/oddAlerts';
 import { differenceDaBand } from '@/utils/daBands';
 import {
   DOMINANCE_STATS, HALF_STATS, buildHalfDominance, buildHomeAwayDominance, type StatDef,
 } from '@/utils/dominance';
 import {
-  DA_GRADES, GRADABLE_STATS, SOURCE_LISTS, directionOf, gradableStatLabel, gradeAllTeamsForStat,
-  isStrong, type Grade, type SourceListId,
+  GRADABLE_STATS, SOURCE_LISTS, directionOf, gradableStatLabel, gradeAllTeamsForStat,
+  type Grade, type RomanGrade, type SourceListId, type TeamGradeRow,
 } from '@/utils/statsGrading';
+import { statStreaksFor, type StatStreaks } from '@/utils/fixtureRfs';
+import { filterScope, teamResultsFromFixtures, type TeamResult } from '@/utils/teamResults';
 import { buildMethod2Grid } from '@/utils/statsGradingMethod2';
 import { OPPOSITE_PAIRS, buildOppositeStats, type OppositeScope } from '@/utils/oppositeStats';
 import {
@@ -26,6 +28,10 @@ import {
   type GapMarket, type GapPeriod, type GoalTeamAnalysis,
 } from '@/utils/gapAnalytics';
 import { SERIES_DEFS } from '@/utils/fixtureSeries';
+import { liveRowsToDisplay } from '@/utils/statsTableAdapter';
+import {
+  TRANSCRIBED_STATS, HALF_CHOICE_KEYS, renderMixedValue, transcribedTeamRows, type TranscribedSources,
+} from '@/utils/mixedTranscribed';
 import { buildOmitTestFromExport, type OmitDirection } from '@/utils/omitTest';
 import {
   STATS_CHARACTERS, characterFor, levelForAvgM1, levelForRankM2,
@@ -42,7 +48,9 @@ import { theme } from '@/styles/theme';
 export type StrategyPeriod =
   | 'overall' | 'home' | 'away'
   | 'firsthalf' | 'firsthalf_home' | 'firsthalf_away'
-  | 'secondhalf' | 'secondhalf_home' | 'secondhalf_away';
+  | 'secondhalf' | 'secondhalf_home' | 'secondhalf_away'
+  /** Goal-timing windows — the measured 15-minute buckets (overall only). */
+  | 'first15' | 'last20';
 export type StatHalf = 'ft' | 'ht' | '2h';
 export type StatScope = 'overall' | 'home' | 'away';
 export type ResultColor = 'green' | 'yellow' | 'red' | 'none';
@@ -73,9 +81,15 @@ export const PERIODS: { value: StrategyPeriod; label: string }[] = [
   { value: 'overall', label: 'Overall' }, { value: 'home', label: 'Home' }, { value: 'away', label: 'Away' },
 ];
 export function periodLabel(p: StrategyPeriod): string {
+  if (p === 'first15') return 'First 15′';
+  if (p === 'last20') return 'Last 20′';
   const { half, scope } = splitPeriod(p);
   const h = half === 'ft' ? 'FT' : half === 'ht' ? '1H' : '2H';
   return `${h}${scope === 'home' ? ' Home' : scope === 'away' ? ' Away' : ''}`;
+}
+/** A goal-timing window period (measured 15-min buckets). */
+export function isWindowPeriod(p: StrategyPeriod): boolean {
+  return p === 'first15' || p === 'last20';
 }
 
 /** One team's reading for one condition, in a shape common to every engine. */
@@ -99,6 +113,48 @@ export type TeamEval = {
   sample: number | null;
   /** The condition this eval proves — set when assembled into a result. */
   conditionId?: string;
+  /** Combined-list rank for grading (1 = strongest · Strong I … 14 = weakest · Weak VII). */
+  rank?: number;
+  /** Grading only: which column (Ordinary / +Series / …) the headline qualified in. */
+  gradeColumn?: QualColumn;
+  /** Grading only: every grade-group · column this team qualifies for, strongest first. */
+  qualifications?: GradeQualification[];
+  /** The Home vs Overall readings that quantify a DA (Double Agent) — their
+   *  divergence is what makes a B/E grade a DA. Set for every combined-list grade. */
+  daInfo?: { home: number | null; overall: number | null };
+};
+
+/* ---- grading grade-group × column qualifications (doc Page 1) ---- */
+
+/** The four columns a graded stat can qualify in (doc Page 1, exact terms). */
+export type QualColumn = 'ordinary' | 'series' | 'ordinary_rfs' | 'series_rfs';
+export const COLUMN_LABEL: Record<QualColumn, string> = {
+  ordinary: 'Ordinary',
+  series: '+ Series',
+  ordinary_rfs: 'Ordinary + RFS',
+  series_rfs: 'Series + RFS',
+};
+/** Column preference within a grade group (best → worst): a confirmed live run is
+ *  the premium signal, then a clean ordinary read, then the recency-failure
+ *  columns (cautionary — the usual just broke). */
+const COLUMN_RANK: Record<QualColumn, number> = { series: 0, ordinary: 1, ordinary_rfs: 2, series_rfs: 3 };
+export const QUAL_COLUMNS: { value: QualColumn; label: string }[] =
+  (['ordinary', 'series', 'ordinary_rfs', 'series_rfs'] as QualColumn[]).map((c) => ({ value: c, label: COLUMN_LABEL[c] }));
+
+/** One grade-group · column a team qualifies for (doc: "grade + column"). */
+export type GradeQualification = {
+  source: SourceListId;
+  roman: RomanGrade;
+  letter: Grade;
+  direction: 'strong' | 'weak';
+  da: boolean;
+  column: QualColumn;
+  /** Combined-list group rank (1 = Strong I … 14 = Weak VII). */
+  groupRank: number;
+  /** Lower = stronger overall — group rank first, then column preference. */
+  overallRank: number;
+  /** Combined-list identity, e.g. "1·A". */
+  combined: string;
 };
 
 export type MethodOpt = { value: string; label: string };
@@ -116,8 +172,12 @@ export type OptionDef = {
   visible?: (options: Record<string, string>) => boolean;
 };
 
-/** A league's prepared data: the built export and/or its season fixtures. */
-export type LeagueBundle = { competition: string; stats?: TeamStatsExport; fixtures?: RawFixture[] };
+/** One team's measured goal-timing for a season (overall only — the feed has no venue split). */
+export type TimingRow = { team: string; teamId: number | null; timing: TeamGoalTiming };
+
+/** A league's prepared data: the built export, its season fixtures, and/or the
+ *  per-team goal-timing windows (first-15 / last-20, from stats/season). */
+export type LeagueBundle = { competition: string; stats?: TeamStatsExport; fixtures?: RawFixture[]; timing?: TimingRow[] };
 
 export type Selection = { period: StrategyPeriod; methodId: string; options: Record<string, string> };
 
@@ -297,48 +357,359 @@ const characters: Dimension = {
 
 /* ----------------------------------------------------------------- 3 · Stats Grading · Method 1 */
 
-const GRADE_LETTERS: MethodOpt[] = ['A', 'B', 'C', 'D', 'E', 'F'].map((g) => ({ value: g, label: g }));
-const gradeColor = (letter: Grade): ResultColor => (DA_GRADES.includes(letter) ? 'yellow' : isStrong(letter) ? 'green' : 'red');
+const ROMAN_INDEX: Record<RomanGrade, number> = { I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6, VII: 7 };
+/** Combined-list rank: Strong I=1 … Strong VII=7, then Weak I=8 … Weak VII=14 (weakest). */
+function combinedRank(direction: 'strong' | 'weak', roman: RomanGrade): number {
+  return (direction === 'weak' ? 7 : 0) + ROMAN_INDEX[roman];
+}
+/**
+ * The combined list's only non-DA letters are A (strong) and F (weak); every
+ * other letter is a Double Agent. The document's rule "Series has no DA" means a
+ * DA grade group can never qualify in the Series / Series + RFS columns.
+ */
+function letterCarriesDa(letter: Grade): boolean {
+  return letter !== 'A' && letter !== 'F';
+}
+
+/**
+ * Goal-timing states. The TIME is a Period (First 15′ / Last 20′), not part of the
+ * stat — exactly like 1st/2nd half — so the stat here is just Scored or Conceded,
+ * read from whichever window the Period names. The feed carries measured 15-minute
+ * buckets only (no per-minute data), so the windows are the opening 15′ and the
+ * closing phase from 70′ ("last 20"); there is no venue split, so these band on
+ * the overall % (↑/mid/↓) and carry no A–F letter or Series/RFS columns.
+ */
+type TimingStat = { key: string; label: string; early: (t: TeamGoalTiming) => number; late: (t: TeamGoalTiming) => number };
+const TIMING_STATS: TimingStat[] = [
+  { key: 'tm_sc', label: 'Scored', early: (t) => t.scoredIn15.pct, late: (t) => t.scoredAfter70.pct },
+  { key: 'tm_cs', label: 'Conceded', early: (t) => t.concededIn15.pct, late: (t) => t.concededAfter70.pct },
+];
+const isTimingStat = (id: string) => id.startsWith('tm_');
+/** The Scored/Conceded states available on a goal-timing window Period. */
+export const TIMING_STATE_OPTIONS: MethodOpt[] = TIMING_STATS.map((s) => ({ value: s.key, label: s.label }));
+export function timingStatLabel(key: string): string {
+  return TIMING_STATS.find((s) => s.key === key)?.label ?? key;
+}
+
+/**
+ * Betting-market stats derived from the season's own results (final score +
+ * half-time score) — handicaps, the higher/lower-scoring half, and the first-half
+ * clean-sheet / BTTS markets. Everything here is computed from goals the feed
+ * already reports (nothing invented); the per-game predicate runs over each team's
+ * scoped results, and the % of games banded ↑/mid/↓ like every other stat.
+ */
+const firstHalfGoals = (r: TeamResult) => (r.htGf ?? 0) + (r.htGa ?? 0);
+const secondHalfGoals = (r: TeamResult) => (r.gf - (r.htGf ?? 0)) + (r.ga - (r.htGa ?? 0));
+const hasHalfTime = (r: TeamResult) => r.htGf != null && r.htGa != null;
+
+type MarketStat = { key: string; label: string; short: string; needsHt?: boolean; hit: (r: TeamResult) => boolean };
+const MARKET_STATS: MarketStat[] = [
+  // Handicaps (margins off the final score).
+  { key: 'mk_win1', label: 'Wins by 1+ (−0.5 handicap)', short: 'Win −0.5', hit: (r) => r.gf - r.ga >= 1 },
+  { key: 'mk_win2', label: 'Wins by 2+ (−1.5 handicap)', short: 'Win −1.5', hit: (r) => r.gf - r.ga >= 2 },
+  { key: 'mk_win3', label: 'Wins by 3+ (−2.5 handicap)', short: 'Win −2.5', hit: (r) => r.gf - r.ga >= 3 },
+  { key: 'mk_unbeaten', label: 'Unbeaten (+0.5 handicap)', short: '+0.5', hit: (r) => r.gf >= r.ga },
+  { key: 'mk_lose2', label: 'Loses by 2+ goals', short: 'Lose 2+', hit: (r) => r.ga - r.gf >= 2 },
+  // Higher / lower-scoring half (from the half-time score).
+  { key: 'mk_2h_higher', label: '2nd half is the higher-scoring half', short: '2H higher', needsHt: true, hit: (r) => secondHalfGoals(r) > firstHalfGoals(r) },
+  { key: 'mk_1h_higher', label: '1st half is the higher-scoring half', short: '1H higher', needsHt: true, hit: (r) => firstHalfGoals(r) > secondHalfGoals(r) },
+  // First-half markets.
+  { key: 'mk_cs_1h', label: 'Clean sheet in the 1st half', short: 'CS 1H', needsHt: true, hit: (r) => (r.htGa ?? 0) === 0 },
+  { key: 'mk_btts_no_1h', label: 'BTTS No in the 1st half', short: 'BTTS No 1H', needsHt: true, hit: (r) => !((r.htGf ?? 0) > 0 && (r.htGa ?? 0) > 0) },
+  { key: 'mk_scored_1h', label: 'Scores in the 1st half', short: 'Score 1H', needsHt: true, hit: (r) => (r.htGf ?? 0) > 0 },
+];
+const isMarketStat = (id: string) => id.startsWith('mk_');
+/** Fewer scoped games than this and a market % is not worth banding. */
+const MARKET_MIN_GAMES = 5;
+export function marketStatLabel(key: string): string {
+  return MARKET_STATS.find((s) => s.key === key)?.label ?? key;
+}
 
 const grading1: Dimension = {
   id: 'grading1',
   label: 'Stats Grading · Method 1',
   source: 'export',
-  periods: ['overall', 'firsthalf', 'secondhalf'],
-  methods: () => GRADABLE_STATS.map((s) => ({ value: s.key, label: s.label })),
+  periods: ['overall', 'firsthalf', 'secondhalf', 'first15', 'last20'],
+  methods: () => [
+    ...GRADABLE_STATS.map((s) => ({ value: s.key, label: s.label })),
+    ...MARKET_STATS.map((s) => ({ value: s.key, label: `🎯 ${s.label}` })),
+    // Additional analytics stats gathered into the Rule (banded on their %/value):
+    // the extra Ordinary stats, the FT-only patterns, and Points-per-game.
+    ...ORD_FILTER.filter((i) => !GRADABLE_STATS.some((g) => g.key === i.key)).map((i) => ({ value: `sf:ordinary:${i.key}`, label: `📊 ${i.label}` })),
+    ...FT_ONLY_FILTER.map((i) => ({ value: `sf:ftonly:${i.key}`, label: `📈 ${i.label}` })),
+    ...PPG_FILTER.map((i) => ({ value: `sf:ppg:${i.key}`, label: `📐 ${i.label}` })),
+    ...SERIES_FILTER.map((i) => ({ value: `sf:series:${i.key}`, label: `🔥 Series · ${i.label}` })),
+    // Mixed Stats · Last left-over stats (1–23) — the derived half-share / second-half /
+    // BTTS-outcome / form / performance views, each callable on its own.
+    ...TRANSCRIBED_STATS.map(([key, label]) => ({ value: `mx:${key}`, label: `🧮 ${label}` })),
+    // Composite analyses folded into the Rule, each callable on its own — they
+    // delegate to their existing engines (Stats Characters / Opposite Stats / Omit Test).
+    ...characters.methods('overall').map((m) => ({ value: `ch:${m.value}`, label: `🎭 Character · ${m.label}` })),
+    ...opposite.methods('overall').map((m) => ({ value: `op:${m.value}`, label: `🪞 Opposite · ${m.label}` })),
+    ...omit.methods('overall').map((m) => ({ value: `om:${m.value}`, label: `🧪 Omit · ${m.label}` })),
+    { value: 'pd:placeholder', label: '⚡ Power Dynamics (added separately)' },
+    ...TIMING_STATS.map((s) => ({ value: s.key, label: s.label })),
+  ],
   options: [
-    { key: 'source', label: 'Source list', options: SOURCE_LISTS.map((s) => ({ value: String(s.id), label: s.label })), default: '1' },
-    { key: 'direction', label: 'Direction', options: [{ value: ALL, label: 'Strong or weak' }, { value: 'strong', label: 'Strong (A–C)' }, { value: 'weak', label: 'Weak (D–F)' }], default: ALL },
-    { key: 'letter', label: 'Grade', options: [{ value: ALL, label: 'Any grade' }, ...GRADE_LETTERS], default: ALL },
+    { key: 'show', label: 'Show', options: [{ value: ALL, label: 'Strong & weak' }, { value: 'strong', label: 'Strong only' }, { value: 'weak', label: 'Weak only' }], default: ALL },
   ],
   evaluate: (b, sel) => {
+    // Power Dynamics — placeholder; the real stats are added separately.
+    if (sel.methodId.startsWith('pd:')) return [];
+    // Mixed Stats · Last left-over stats (1–23). These are derived from the Ordinary
+    // FT/1H/2H tables (with their attached season games + half-time scores), the
+    // FT-only patterns and the PPG table — data the export already carries — so the
+    // builder rebuilds those source tables from its own export and runs the shared
+    // transcription engine. Overall-only by nature; a missing half-time / ppg / ft-only
+    // table just yields a null value for that team (skipped), never a crash.
+    if (sel.methodId.startsWith('mx:')) {
+      if (!b.stats) return [];
+      const key = sel.methodId.slice(3);
+      const meta = TRANSCRIBED_STATS.find(([k]) => k === key);
+      if (!meta) return [];
+      const [, statLabel, formula] = meta;
+      const toRows = (name: string, fam: 'ordinary' | 'ppg' | 'ft_only') =>
+        liveRowsToDisplay(b.stats!.tables[name] ?? [], fam);
+      const sources: TranscribedSources = {
+        ordinaryByPeriod: {
+          fulltime: toRows('ordinary_ft_overall', 'ordinary'),
+          firsthalf: toRows('ordinary_ht_overall', 'ordinary'),
+          secondhalf: toRows('ordinary_2h_overall', 'ordinary'),
+        },
+        ftOnly: toRows('ft_only_ft_overall', 'ft_only'),
+        ppgFt: toRows('ppg_ft_overall', 'ppg'),
+      };
+      const idByTeam = new Map(roster(b.stats).map((t) => [norm(t.team), t.teamId]));
+      const isHalfChoice = HALF_CHOICE_KEYS.includes(key);
+      const out: TeamEval[] = [];
+      for (const row of transcribedTeamRows(sources)) {
+        const metric = row.metrics.find((m) => m.key === key);
+        if (metric?.value == null) continue; // unavailable data for this team
+        const raw = metric.raw === true;
+        const valueText = renderMixedValue(key, metric.value, raw);
+        let color: ResultColor; let band: string;
+        if (isHalfChoice) {
+          color = 'none'; band = valueText; // "1st Half" / "2nd Half" / "Tie"
+        } else if (raw) {
+          color = 'none'; band = valueText; // raw average — carried as-is, no band
+        } else {
+          const dir = directionOf(metric.value);
+          color = dir === 'up' ? 'green' : dir === 'mid' ? 'yellow' : 'red';
+          band = dir === 'up' ? 'UP' : dir === 'mid' ? 'MID' : 'DOWN';
+        }
+        out.push({
+          teamId: idByTeam.get(norm(row.team)) ?? null, team: row.team, competition: b.competition, qualifies: true,
+          value: metric.value, valueText, grade: `${statLabel} · ${band}`, color,
+          dimensionId: 'grading1', dimensionLabel: 'Stats Grading · Method 1',
+          feature: `Mixed · ${statLabel}`, method: `Mixed stats · ${band}`,
+          period: 'overall',
+          reason: `${statLabel}: ${valueText} (${formula})`,
+          sample: null,
+        });
+      }
+      return out;
+    }
+    // Composite analyses folded into the Rule. Each delegates to its existing
+    // engine with sensible defaults (Characters on Method 1 fixed bands, Opposite
+    // surfacing any triggered pair, Omit classifying any sensitivity) and returns
+    // the engine's own evals unchanged — no statistic is re-implemented here.
+    // Defaults surface teams from the Rule UI (which carries only `show`); a preset
+    // can pass the engine's own option (allocation / direction / method) to sharpen it.
+    if (sel.methodId.startsWith('ch:')) {
+      return characters.evaluate(b, { period: sel.period, methodId: sel.methodId.slice(3), options: { method: 'method1', ...sel.options } });
+    }
+    if (sel.methodId.startsWith('op:')) {
+      return opposite.evaluate(b, { period: sel.period, methodId: sel.methodId.slice(3), options: { allocation: ALL, ...sel.options } });
+    }
+    if (sel.methodId.startsWith('om:')) {
+      return omit.evaluate(b, { period: 'overall', methodId: sel.methodId.slice(3), options: { direction: ALL, ...sel.options } });
+    }
+    // Additional analytics stats (📊/📈/📐): read any family column at the chosen
+    // period/venue and band it ↑/mid/↓ (pct), by run length (series) or as a value.
+    if (sel.methodId.startsWith('sf:')) {
+      if (!b.stats) return [];
+      const [, fam, key] = sel.methodId.split(':');
+      const family = statFamily(fam);
+      const item = family.items.find((i) => i.key === key);
+      if (!item) return [];
+      const loc = exportLoc(sel.period);
+      const rows = b.stats.tables[`${family.prefix}_${loc.periodKey}_${loc.scope}`] ?? [];
+      const show = sel.options.show ?? ALL;
+      const out: TeamEval[] = [];
+      for (const r of rows) {
+        const raw = r[item.key];
+        if (typeof raw !== 'number' || !Number.isFinite(raw)) continue;
+        let color: ResultColor; let band: string | null; let valueText: string;
+        if (item.kind === 'pct') {
+          const dir = directionOf(raw);
+          if (show === 'strong' && dir !== 'up') continue;
+          if (show === 'weak' && dir !== 'down') continue;
+          band = dir === 'up' ? 'UP' : dir === 'mid' ? 'MID' : 'DOWN';
+          color = dir === 'up' ? 'green' : dir === 'mid' ? 'yellow' : 'red';
+          valueText = pctText(raw);
+        } else if (item.kind === 'run') {
+          if (raw < 1) continue; // only teams on an active run
+          color = raw >= 4 ? 'green' : raw >= 2 ? 'yellow' : 'red';
+          band = `${raw}×`; valueText = `${raw} in a row`;
+        } else {
+          color = 'none'; band = null; valueText = raw.toFixed(2);
+        }
+        const sampleRaw = r['sample_size'];
+        const sample = typeof sampleRaw === 'number' && Number.isFinite(sampleRaw) ? sampleRaw : null;
+        out.push({
+          teamId: numTeamId(r), team: String(r.team_name), competition: b.competition, qualifies: true,
+          value: raw, valueText, grade: band ? `${item.label} · ${band}` : item.label, color,
+          dimensionId: 'grading1', dimensionLabel: 'Stats Grading · Method 1',
+          feature: `${family.label} · ${item.label}`, method: `${family.label}${band ? ` · ${band}` : ''} · ${periodLabel(sel.period)}`,
+          period: sel.period,
+          reason: `${item.label}: ${valueText} (${periodLabel(sel.period)})`,
+          sample,
+        });
+      }
+      return out;
+    }
+    // Goal-timing window Period (First 15′ / Last 20′): the stat is just Scored or
+    // Conceded, read from the window the Period names — overall-only % banded ↑/mid/↓.
+    if (isWindowPeriod(sel.period) || isTimingStat(sel.methodId)) {
+      const def = TIMING_STATS.find((s) => s.key === sel.methodId);
+      if (!def || !b.timing || !isWindowPeriod(sel.period)) return [];
+      const early = sel.period === 'first15';
+      const pick = early ? def.early : def.late;
+      const winLabel = early ? 'First 15′' : 'Last 20′';
+      const winShort = early ? '0–15′' : '70′+';
+      const show = sel.options.show ?? ALL;
+      const out: TeamEval[] = [];
+      for (const r of b.timing) {
+        if (r.timing.coveragePct <= 0) continue; // no timing data for this team
+        const v = pick(r.timing);
+        const dir = directionOf(v);
+        if (show === 'strong' && dir !== 'up') continue;
+        if (show === 'weak' && dir !== 'down') continue;
+        const color: ResultColor = dir === 'up' ? 'green' : dir === 'mid' ? 'yellow' : 'red';
+        const band = dir === 'up' ? 'UP' : dir === 'mid' ? 'MID' : 'DOWN';
+        out.push({
+          teamId: r.teamId, team: r.team, competition: b.competition, qualifies: true,
+          value: v, valueText: pctText(v), grade: `${def.label} ${winShort} · ${band}`, color,
+          dimensionId: 'grading1', dimensionLabel: 'Stats Grading · Method 1',
+          feature: `${def.label} · ${winLabel}`, method: `Goal timing · ${winLabel} · ${band} · ${pctText(v)}`,
+          period: sel.period,
+          reason: `${def.label} in the ${winLabel.toLowerCase()}: ${pctText(v)} of matches this season (overall · timing coverage ${Math.round(r.timing.coveragePct)}%)`,
+          sample: null,
+        });
+      }
+      return out;
+    }
+    // Betting-market stats: computed from the team's own scoped results (handicaps
+    // and the half-scoring / first-half markets), banded ↑/mid/↓ on the % of games.
+    if (isMarketStat(sel.methodId)) {
+      const def = MARKET_STATS.find((s) => s.key === sel.methodId);
+      if (!def || !b.fixtures || !b.stats) return [];
+      const show = sel.options.show ?? ALL;
+      const scope = splitPeriod(sel.period).scope;
+      const scopeLabel = scope === 'home' ? 'Home' : scope === 'away' ? 'Away' : 'Overall';
+      const out: TeamEval[] = [];
+      for (const t of roster(b.stats)) {
+        if (t.teamId == null) continue;
+        const scoped = filterScope(teamResultsFromFixtures(b.fixtures, t.teamId, null, {}), scope);
+        const usable = def.needsHt ? scoped.filter(hasHalfTime) : scoped;
+        if (usable.length < MARKET_MIN_GAMES) continue;
+        const pct = Math.round((100 * usable.filter(def.hit).length) / usable.length);
+        const dir = directionOf(pct);
+        if (show === 'strong' && dir !== 'up') continue;
+        if (show === 'weak' && dir !== 'down') continue;
+        const color: ResultColor = dir === 'up' ? 'green' : dir === 'mid' ? 'yellow' : 'red';
+        const band = dir === 'up' ? 'UP' : dir === 'mid' ? 'MID' : 'DOWN';
+        out.push({
+          teamId: t.teamId, team: t.team, competition: b.competition, qualifies: true,
+          value: pct, valueText: pctText(pct), grade: `${def.short} · ${band}`, color,
+          dimensionId: 'grading1', dimensionLabel: 'Stats Grading · Method 1',
+          feature: def.label, method: `Market · ${scopeLabel} · ${band} · ${pctText(pct)}`,
+          period: sel.period,
+          reason: `${def.label}: ${pctText(pct)} of ${scopeLabel.toLowerCase()} games (${usable.length}g)`,
+          sample: usable.length,
+        });
+      }
+      return out;
+    }
     const stats = b.stats;
     if (!stats) return [];
-    const source = (Number(sel.options.source ?? '1') as SourceListId);
-    const direction = sel.options.direction ?? ALL;
-    const letter = sel.options.letter ?? ALL;
+    const show = sel.options.show ?? ALL;
     const half = splitPeriod(sel.period).half; // 'ft' | 'ht' | '2h' — grade the chosen half
-    const graded = gradeAllTeamsForStat(stats, source, sel.methodId, b.competition, half);
-    const srcLabel = SOURCE_LISTS.find((s) => s.id === source)?.label ?? String(source);
     const per = periodLabel(sel.period);
+
+    // The Ordinary / Series / RFS columns read a team's season games; built once
+    // per team, league-scoped (the fixtures feed is already one league's), and only
+    // when that league's fixtures are loaded — otherwise a team shows Ordinary only.
+    const resultsByTeam = new Map<string, TeamResult[]>();
+    const streakOf = (g: TeamGradeRow): StatStreaks | null => {
+      if (!b.fixtures || g.teamId == null) return null;
+      const key = teamKeyOf(g);
+      let res = resultsByTeam.get(key);
+      if (!res) {
+        res = teamResultsFromFixtures(b.fixtures, g.teamId, null, {}).sort((x, y) => y.unix - x.unix);
+        resultsByTeam.set(key, res);
+      }
+      return statStreaksFor(res, g.statKey);
+    };
+
+    // Grade each team at all three source lists; for each grade, add every column
+    // the team qualifies in. A team may hold several grade-group · column
+    // qualifications — the document says to keep them all and headline the
+    // strongest (lowest overall rank: group first, then column preference).
+    const byTeam = new Map<string, { rows: Map<SourceListId, TeamGradeRow>; quals: GradeQualification[] }>();
+    for (const sid of [1, 2, 3] as SourceListId[]) {
+      for (const g of gradeAllTeamsForStat(stats, sid, sel.methodId, b.competition, half)) {
+        if (g.grade == null || g.direction == null || g.roman == null) continue;
+        if (show === 'strong' && g.direction !== 'strong') continue;
+        if (show === 'weak' && g.direction !== 'weak') continue;
+        const key = teamKeyOf(g);
+        const entry = byTeam.get(key) ?? { rows: new Map<SourceListId, TeamGradeRow>(), quals: [] };
+        entry.rows.set(sid, g);
+        const groupRank = combinedRank(g.direction, g.roman);
+        const combined = `${sid}·${g.grade}`; // combined-list entry, e.g. "1·A" / "3·F"
+        const streaks = streakOf(g);
+        const seriesOk = !letterCarriesDa(g.grade); // "Series has no DA"
+        const columns: QualColumn[] = ['ordinary'];
+        if (streaks?.ordinaryRfs) columns.push('ordinary_rfs');
+        if (seriesOk && (streaks?.seriesRun ?? 0) > 0) columns.push('series');
+        if (seriesOk && (streaks?.brokeRun ?? 0) > 0) columns.push('series_rfs');
+        for (const column of columns) {
+          entry.quals.push({
+            source: sid, roman: g.roman, letter: g.grade, direction: g.direction, da: g.da,
+            column, groupRank, combined, overallRank: groupRank * 10 + COLUMN_RANK[column],
+          });
+        }
+        byTeam.set(key, entry);
+      }
+    }
+
     const out: TeamEval[] = [];
-    for (const g of graded) {
-      if (g.grade == null || g.direction == null) continue;
-      if (direction !== ALL && g.direction !== direction) continue;
-      if (letter !== ALL && g.grade !== letter) continue;
-      const dirWord = g.direction === 'strong' ? 'Strong' : 'Weak';
-      const leagueNote = g.grade === 'C' ? ' (above league avg)' : g.grade === 'D' ? ' (below league avg)' : '';
+    for (const { rows, quals } of byTeam.values()) {
+      if (!quals.length) continue;
+      quals.sort((a, c) => a.overallRank - c.overallRank);
+      const head = quals[0];
+      const g = rows.get(head.source)!; // the headline source's row carries its %s
+      const dirWord = head.direction === 'strong' ? 'Strong' : 'Weak';
+      const srcLabel = SOURCE_LISTS.find((s) => s.id === head.source)?.label ?? String(head.source);
+      const leagueNote = head.letter === 'C' ? ' (above league avg)' : head.letter === 'D' ? ' (below league avg)' : '';
+      const colLabel = COLUMN_LABEL[head.column];
       out.push({
         teamId: g.teamId, team: g.team, competition: b.competition, qualifies: true,
         value: g.overallValue, valueText: pctText(g.overallValue),
-        // Roman-forward, self-explaining — e.g. "II · B · DA" (daLevelOf still reads the DA).
-        grade: `${g.roman ? `${g.roman} · ` : ''}${g.grade}${g.da ? ' · DA' : ''}`, color: gradeColor(g.grade),
+        // Combined-list identity: "(I) 1·A", "(IV) 2·B · DA". The column(s) show as
+        // chips on the row, so they are not repeated in the grade text.
+        grade: `${head.roman} · ${head.combined}${head.da ? ' · DA' : ''}`,
+        color: head.direction === 'strong' ? 'green' : 'red',
         dimensionId: 'grading1', dimensionLabel: 'Stats Grading · Method 1',
         feature: gradableStatLabel(sel.methodId),
-        method: `${dirWord} · ${srcLabel} · ${per}`,
+        method: `${dirWord} · ${srcLabel} · ${colLabel} · ${per}`,
         period: sel.period,
-        reason: `Home ${pctText(g.homeValue)} ${arrowOf(g.homeValue)} / Overall ${pctText(g.overallValue)} ${arrowOf(g.overallValue)}${leagueNote} → Roman ${g.roman ?? '—'} · ${g.grade}`,
+        reason: `Home ${pctText(g.homeValue)} ${arrowOf(g.homeValue)} / Overall ${pctText(g.overallValue)} ${arrowOf(g.overallValue)}${leagueNote} → (${head.roman}) ${head.combined} · ${colLabel}`,
         sample: g.sample,
+        rank: head.groupRank,
+        gradeColumn: head.column,
+        qualifications: quals,
+        daInfo: { home: g.homeValue, overall: g.overallValue },
       });
     }
     return out;
@@ -794,6 +1165,8 @@ export type StrategyResult = {
   /** One eval per matched condition. */
   conditions: TeamEval[];
   color: ResultColor;
+  /** Best (lowest) grading rank among its conditions — for strongest-first ordering. */
+  rank?: number;
 };
 
 export type StrategyLogic = 'and' | 'or';
@@ -838,6 +1211,8 @@ export type SavedStrategy = {
   name: string;
   /** Auto-written from the chosen methods/terminology — see describeStrategy. */
   description: string;
+  /** The user's own description, entered when saving. Optional (older saves have none). */
+  note?: string;
   createdAt: string;
   config: SavedStrategyConfig;
 };
@@ -917,9 +1292,16 @@ export function evaluateStrategy(bundles: LeagueBundle[], conditions: Condition[
     const ok = logic === 'and' ? matched.length === conditions.length : matched.length >= 1;
     if (!ok) continue;
     const evals = matched.map((c) => (c.not ? notEval(c, info, c.period) : condEval.get(c.id)!.get(key)!));
-    results.push({ team: info.team, teamId: info.teamId, competition: info.competition, conditions: evals, color: strongestColor(evals.map((e) => e.color)) });
+    const ranks = evals.map((e) => e.rank).filter((r): r is number => r != null);
+    const rank = ranks.length ? Math.min(...ranks) : undefined;
+    results.push({ team: info.team, teamId: info.teamId, competition: info.competition, conditions: evals, color: strongestColor(evals.map((e) => e.color)), rank });
   }
-  return results.sort((a, b) => COLOR_RANK[b.color] - COLOR_RANK[a.color] || a.team.localeCompare(b.team));
+  // Strongest first: by colour (green→red), then the combined-list rank (Strong I … Weak VII), then name.
+  return results.sort((a, b) =>
+    COLOR_RANK[b.color] - COLOR_RANK[a.color] ||
+    (a.rank ?? Infinity) - (b.rank ?? Infinity) ||
+    a.team.localeCompare(b.team),
+  );
 }
 
 /** Index results by `competition::teamKey` so a fixture's sides can be looked up. */
@@ -967,6 +1349,10 @@ function conditionStat(cond: Condition): { prefix: string; key: string; kind: St
     }
     case 'grading1':
     case 'grading2':
+      // Goal-timing, market, additional-family & placeholder stats have no single
+      // combined-list FT/1H/2H column — no half split.
+      if (isTimingStat(cond.methodId) || isMarketStat(cond.methodId) || cond.methodId.startsWith('sf:') || cond.methodId.startsWith('mx:') || cond.methodId.startsWith('pd:')
+        || cond.methodId.startsWith('ch:') || cond.methodId.startsWith('op:') || cond.methodId.startsWith('om:')) return null;
       // Every gradable stat is a percentage column in the ordinary family.
       return { prefix: 'ordinary', key: cond.methodId, kind: 'pct', decimals: 0 };
     default:
@@ -1019,6 +1405,132 @@ export function teamHalfBreakdown(
   });
 }
 
+/* ----------------------------------------------------------------- stat ranking (own league vs across leagues) */
+
+/** The third of a ranked list a team falls in — top (green), middle (yellow),
+ *  bottom (red). */
+export type StatTier = 'top' | 'mid' | 'bottom';
+/** Which venue the stat is stronger (higher) at — the sign of the Home–Away gap. */
+export type DominantVenue = 'home' | 'away' | 'balanced';
+
+/**
+ * A team's standing on one stat, two ways:
+ *  - Method 1 (stat %): rank by the stat percentage itself, higher = #1.
+ *  - Method 2 (gap / DA): rank by the Home–Away gap (|home % − away %|, Gap
+ *    Analytics' DA), then split the ranked list into equal thirds — top / mid /
+ *    bottom — in its own league AND across all loaded leagues.
+ */
+export type StatRank = {
+  // Method 1 — the stat % itself.
+  value: number;
+  leagueRank: number; leagueTotal: number;
+  worldRank: number; worldTotal: number;
+  // Method 2 — the Home–Away gap (DA).
+  gap: number | null;
+  gapLeagueRank: number | null; gapLeagueTotal: number;
+  gapWorldRank: number | null; gapWorldTotal: number;
+  leagueTier: StatTier | null; worldTier: StatTier | null;
+  /** Where the stat is stronger — home or away (null when the gap can't be measured). */
+  dominantVenue: DominantVenue | null;
+};
+
+/** Minimum counted games for a stat rank (mirrors Gap Analytics / grading source 1). */
+const RANK_MIN_GAMES = 8;
+/** Minimum games at each venue for the Home–Away gap (Gap Analytics' rule). */
+const RANK_MIN_VENUE = 4;
+
+/** Which third of a ranked list a 1-based position falls in. */
+function tierOf(rank: number, total: number): StatTier {
+  if (total <= 0) return 'mid';
+  const third = total / 3;
+  if (rank <= Math.ceil(third)) return 'top';
+  if (rank <= Math.ceil(2 * third)) return 'mid';
+  return 'bottom';
+}
+
+/**
+ * For a grading condition's stat (an ordinary % column), rank every eligible team
+ * within its own league AND across every loaded league, keyed by
+ * `competition::teamKey`. Only percentage grading stats rank — the goal-timing and
+ * market Rules resolve to no single column, so they return an empty map. Reads the
+ * live tables only; no new maths.
+ */
+export function rankTeamsForStat(bundles: LeagueBundle[], cond: Condition): Map<string, StatRank> {
+  const out = new Map<string, StatRank>();
+  const stat = conditionStat(cond);
+  if (!stat || stat.kind !== 'pct') return out;
+  const { periodKey, scope } = exportLoc(cond.period);
+  // Each row carries BOTH an id key and a name key, and its StatRank is stored
+  // under both — a team is looked up by id OR by name, so a table that reports a
+  // team_id while the result has none (or vice versa) never loses its rank.
+  type Row = { idKey: string | null; nameKey: string; value: number; gap: number | null; dom: DominantVenue | null; rank?: StatRank };
+  const all: Row[] = [];
+  const byComp = new Map<string, Row[]>();
+  for (const b of bundles) {
+    if (!b.stats) continue;
+    const rows = b.stats.tables[`${stat.prefix}_${periodKey}_${scope}`] ?? [];
+    // Home / away readings for the Home–Away gap (Method 2), keyed by team name.
+    const venue = (vScope: string) => {
+      const m = new Map<string, { v: number; g: number }>();
+      for (const r of b.stats!.tables[`${stat.prefix}_${periodKey}_${vScope}`] ?? []) {
+        const v = r[stat.key]; const g = r['sample_size'];
+        if (typeof v === 'number' && Number.isFinite(v)) m.set(norm(String(r.team_name)), { v, g: typeof g === 'number' && Number.isFinite(g) ? g : 0 });
+      }
+      return m;
+    };
+    const homeMap = venue('home'); const awayMap = venue('away');
+    const list: Row[] = [];
+    for (const r of rows) {
+      const v = r[stat.key];
+      if (typeof v !== 'number' || !Number.isFinite(v)) continue;
+      const s = r['sample_size'];
+      if (typeof s === 'number' && Number.isFinite(s) && s < RANK_MIN_GAMES) continue;
+      const id = numTeamId(r);
+      const nk = norm(String(r.team_name));
+      const h = homeMap.get(nk); const a = awayMap.get(nk);
+      const measurable = !!h && !!a && h.g >= RANK_MIN_VENUE && a.g >= RANK_MIN_VENUE && h.g + a.g >= RANK_MIN_GAMES;
+      const gap = measurable ? Math.abs(h!.v - a!.v) : null;
+      const dom: DominantVenue | null = !measurable ? null : h!.v > a!.v ? 'home' : a!.v > h!.v ? 'away' : 'balanced';
+      const row: Row = {
+        idKey: id == null ? null : `${b.competition}::id:${id}`,
+        nameKey: `${b.competition}::name:${nk}`,
+        value: v, gap, dom,
+      };
+      list.push(row);
+      all.push(row);
+    }
+    byComp.set(b.competition, list);
+  }
+  const place = (row: Row) => {
+    const rank = row.rank!;
+    if (row.idKey) out.set(row.idKey, rank);
+    out.set(row.nameKey, rank);
+  };
+  // Method 1 — rank by the stat %, per league then across leagues.
+  for (const list of byComp.values()) {
+    const sorted = [...list].sort((a, b) => b.value - a.value || a.nameKey.localeCompare(b.nameKey));
+    sorted.forEach((row, i) => {
+      row.rank = {
+        value: row.value, leagueRank: i + 1, leagueTotal: sorted.length, worldRank: 0, worldTotal: 0,
+        gap: row.gap, gapLeagueRank: null, gapLeagueTotal: 0, gapWorldRank: null, gapWorldTotal: 0, leagueTier: null, worldTier: null,
+        dominantVenue: row.dom,
+      };
+      place(row);
+    });
+  }
+  const sortedAll = [...all].sort((a, b) => b.value - a.value || a.nameKey.localeCompare(b.nameKey));
+  sortedAll.forEach((row, i) => { if (row.rank) { row.rank.worldRank = i + 1; row.rank.worldTotal = sortedAll.length; } });
+  // Method 2 — rank by the Home–Away gap (DA), per league then across leagues, and
+  // split each ranked list into top / mid / bottom thirds.
+  for (const list of byComp.values()) {
+    const gapped = list.filter((r) => r.gap != null).sort((a, b) => (b.gap! - a.gap!) || a.nameKey.localeCompare(b.nameKey));
+    gapped.forEach((row, i) => { if (row.rank) { row.rank.gapLeagueRank = i + 1; row.rank.gapLeagueTotal = gapped.length; row.rank.leagueTier = tierOf(i + 1, gapped.length); } });
+  }
+  const gappedAll = all.filter((r) => r.gap != null).sort((a, b) => (b.gap! - a.gap!) || a.nameKey.localeCompare(b.nameKey));
+  gappedAll.forEach((row, i) => { if (row.rank) { row.rank.gapWorldRank = i + 1; row.rank.gapWorldTotal = gappedAll.length; row.rank.worldTier = tierOf(i + 1, gappedAll.length); } });
+  return out;
+}
+
 /* ----------------------------------------------------------------- per-side fixture evaluation */
 
 export type CondMembership = { set: Set<string>; evalByKey: Map<string, TeamEval> };
@@ -1044,7 +1556,7 @@ export function conditionMembership(bundles: LeagueBundle[], conditions: Conditi
 }
 
 export type FixtureTeam = { id: number | null; name: string };
-export type FixtureSideResult = { homeEvals: TeamEval[]; awayEvals: TeamEval[]; color: ResultColor; matched: number };
+export type FixtureSideResult = { homeEvals: TeamEval[]; awayEvals: TeamEval[]; color: ResultColor; matched: number; rank?: number };
 
 /**
  * Does a fixture (home H, away A) satisfy the strategy with per-condition side
@@ -1082,8 +1594,11 @@ export function evaluateFixtureSides(
   }
   const ok = logic === 'and' ? matched === conditions.length : matched >= 1;
   if (!ok) return null;
-  const color = strongestColor([...homeEvals, ...awayEvals].map((e) => e.color));
-  return { homeEvals, awayEvals, color, matched };
+  const all = [...homeEvals, ...awayEvals];
+  const color = strongestColor(all.map((e) => e.color));
+  const ranks = all.map((e) => e.rank).filter((r): r is number => r != null);
+  const rank = ranks.length ? Math.min(...ranks) : undefined;
+  return { homeEvals, awayEvals, color, matched, rank };
 }
 
 export type StrategySummary = { teams: number; leagues: number; green: number; yellow: number; red: number };
@@ -1106,6 +1621,12 @@ function sfLimit(methodId: string, value: number, o: { family?: string; window?:
     methodId,
     options: { family: o.family ?? 'ordinary', window: o.window ?? 'season', mode: 'limit', level: ALL, cmp: o.cmp ?? 'gte', value: String(value) },
   };
+}
+
+/** A Rule (grading1) condition — a gradable stat, a 🎯 market, or a composite
+ *  (op: / ch: / om:). `show`/engine options sharpen it into a filter. */
+function gRule(methodId: string, options: Record<string, string> = {}): PresetCondition {
+  return { dimensionId: 'grading1', methodId, options: { show: ALL, ...options } };
 }
 
 /**
@@ -1143,6 +1664,27 @@ export const STRATEGY_PRESETS: StrategyPreset[] = [
     id: 'bttsboth', label: 'BTTS both halves', note: 'Both teams score in each half.',
     period: 'overall', logic: 'and',
     conditions: [sfLimit('btts_both_halves', 40, { family: 'ftonly' })],
+  },
+  // Composite + market rules — the recently-added tests put to work as filters.
+  {
+    id: 'onesided', label: 'One-sided DA · scorers', note: 'A clear Opposite DA split, free-scoring, goals flow.',
+    period: 'overall', logic: 'and',
+    conditions: [gRule('op:all', { allocation: 'long' }), sfLimit('sc_pct', 70), sfLimit('over25', 50)],
+  },
+  {
+    id: 'winmargin', label: 'Home win-margins', note: 'Wins by 2+ at home and keeps it clean.',
+    period: 'home', logic: 'and',
+    conditions: [gRule('mk_win2', { show: 'strong' }), sfLimit('cs_pct', 45)],
+  },
+  {
+    id: 'firsthalfkings', label: '1st-half kings', note: 'Scores early and shuts out the 1st half.',
+    period: 'overall', logic: 'and',
+    conditions: [gRule('mk_scored_1h', { show: 'strong' }), gRule('mk_cs_1h', { show: 'strong' })],
+  },
+  {
+    id: 'sensitivegoals', label: 'Sensitive scorers · watch', note: 'Big-win-inflated scoring average that still produces goals.',
+    period: 'overall', logic: 'and',
+    conditions: [gRule('om:scoring', { direction: 'up' }), sfLimit('over25', 50)],
   },
 ];
 
@@ -1214,12 +1756,38 @@ export function recommendFixture(
   return { prediction, rec };
 }
 
-export type ResultFilters = { league: string; dimension: string; color: string; minGames: number; minMatch?: number; total?: number };
+/** The grading condition whose grade+column headlines a result (the first one). */
+export function gradingHead(result: StrategyResult): TeamEval | null {
+  return result.conditions.find((c) => c.dimensionId === 'grading1' && (c.qualifications?.length ?? 0) > 0) ?? null;
+}
+
+export type ResultFilters = {
+  league: string; dimension: string; color: string; minGames: number; minMatch?: number; total?: number;
+  /** Grading-only facets — match ANY of a team's qualifications (not just the headline). */
+  group?: string; column?: string; letter?: string; source?: string;
+};
 export function filterResults(results: StrategyResult[], f: ResultFilters): StrategyResult[] {
   return results.filter((r) => {
     if (f.league !== ALL && r.competition !== f.league) return false;
     if (f.color !== ALL && r.color !== f.color) return false;
     if (f.dimension !== ALL && !r.conditions.some((c) => c.dimensionId === f.dimension)) return false;
+    // Grading facets look across every qualification a team holds, so filtering by
+    // e.g. the "Ordinary + RFS" column surfaces teams that have that signal even
+    // when a stronger column headlines the row.
+    const wantsGrading = (f.group && f.group !== ALL) || (f.column && f.column !== ALL) || (f.letter && f.letter !== ALL) || (f.source && f.source !== ALL);
+    const quals = wantsGrading ? gradingHead(r)?.qualifications ?? null : null;
+    if (f.group && f.group !== ALL) {
+      if (!quals || !quals.some((q) => q.roman === f.group)) return false;
+    }
+    if (f.column && f.column !== ALL) {
+      if (!quals || !quals.some((q) => q.column === f.column)) return false;
+    }
+    if (f.letter && f.letter !== ALL) {
+      if (!quals || !quals.some((q) => q.letter === f.letter)) return false;
+    }
+    if (f.source && f.source !== ALL) {
+      if (!quals || !quals.some((q) => String(q.source) === f.source)) return false;
+    }
     if (f.minGames > 0) {
       const samples = r.conditions.map((c) => c.sample).filter((s): s is number => s != null);
       if (samples.length && Math.min(...samples) < f.minGames) return false;
