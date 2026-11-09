@@ -241,17 +241,20 @@ console.log('\nStat streaks — Ordinary / Series / RFS columns for one stat');
   check('no games means no streaks', statStreaksFor([], 'sc_pct') == null);
 }
 
-console.log('\nRecent form — last 5 / 10 / 15 + latest results');
+console.log('\nRecent form — last 5 / 8 / 10 / 15 / 20 + latest results');
 {
   // Newest-first: 5 scored, then 5 blank, then 5 scored.
   const results = [...Array.from({ length: 5 }, () => result(2, 0)), ...Array.from({ length: 5 }, () => result(0, 1)), ...Array.from({ length: 5 }, () => result(2, 0))];
   const form = recentFormForStat(results, 'sc_pct');
   check('a form reading is produced', form != null);
   const w = (n: number) => form?.windows.find((x) => x.window === n);
+  check('the five windows are 5/8/10/15/20', JSON.stringify(form?.windows.map((x) => x.window)) === JSON.stringify([5, 8, 10, 15, 20]));
   check('last 5 is 100%', w(5)?.rate === 100 && w(5)?.hits === 5, JSON.stringify(w(5)));
+  check('last 8 is 63% (5 of 8)', w(8)?.rate === 63 && w(8)?.hits === 5 && w(8)?.games === 8, JSON.stringify(w(8)));
   check('last 10 is 50%', w(10)?.rate === 50 && w(10)?.hits === 5, JSON.stringify(w(10)));
   check('last 15 is 67%', w(15)?.rate === 67 && w(15)?.hits === 10, JSON.stringify(w(15)));
-  check('up to 10 latest games are returned, newest first', form?.games.length === 10 && form.games[0].hit === true && form.games[0].score === '2-0');
+  check('last 20 falls back to the 15 available (67%)', w(20)?.rate === 67 && w(20)?.hits === 10 && w(20)?.games === 15, JSON.stringify(w(20)));
+  check('all available games (up to 20) are returned, newest first', form?.games.length === 15 && form.games[0].hit === true && form.games[0].score === '2-0');
   check('the 6th latest game is a miss', form?.games[5].hit === false && form.games[5].score === '0-1');
   check('an unknown stat has no form', recentFormForStat(results, 'not_a_stat') == null);
   check('no games means no form', recentFormForStat([], 'sc_pct') == null);

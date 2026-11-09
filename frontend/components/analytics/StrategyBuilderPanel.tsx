@@ -16,7 +16,8 @@ import { clientStaleTime } from '@/services/oddAlertsCachePolicy';
 import { buildLeagueStatsLive } from '@/services/statsBuilder';
 import { nextFixtureFor, type UpcomingLite } from '@/utils/statsGrading';
 import { ordinaryRfsForStat, recentFormForStat, type RecentForm, type StatRfs } from '@/utils/fixtureRfs';
-import { teamResultsFromFixtures } from '@/utils/teamResults';
+import { teamResultsFromFixtures, type TeamResult } from '@/utils/teamResults';
+import { RESULT_FILTERS, LAST_RESULT_WINDOWS } from '@/utils/lastResults';
 import {
   COLUMN_LABEL, DIMENSIONS, FIXTURE_SIDES, QUAL_COLUMNS, STRATEGY_PRESETS, TIMING_STATE_OPTIONS, buildStrategyConfig, conditionLabel, conditionMembership,
   daLevelOf, evaluateFixtureSides, evaluateStrategy, filterResults, getDimension, gradeShareByLeague,
@@ -162,6 +163,10 @@ export default function StrategyBuilderPanel() {
   const [logic, setLogic] = useState<StrategyLogic>('and');
   // How conditions are composed: one combined builder, or separate Home | Away panels.
   const [buildMode, setBuildMode] = useState<'combined' | 'split'>('combined');
+  // The call type: a Peg (the full multi-rule strategy) or a Single (one call —
+  // one featured stat, or a Last-game-results filter).
+  const [callMode, setCallMode] = useState<'peg' | 'single'>('peg');
+  const [singleMode, setSingleMode] = useState<'stat' | 'results'>('stat');
 
   // ---- result mode + filters ----
   const [resultMode, setResultMode] = useState<'teams' | 'fixtures'>('teams');
@@ -412,6 +417,9 @@ export default function StrategyBuilderPanel() {
   const dimensionOptions = useMemo(() => [{ value: ALL, label: 'All categories' }, ...[...new Set(conditions.map((c) => c.dimensionId))].map((id) => ({ value: id, label: getDimension(id)?.label ?? id }))], [conditions]);
 
   const addCondition = (c: Condition) => { setConditions((cur) => [...cur, c]); setActiveId(null); };
+  // A Single call holds exactly one rule, always viewed as qualifying teams.
+  const addSingle = (c: Condition) => { setConditions([c]); setLogic('and'); setResultMode('teams'); setActiveId(null); };
+  const switchCall = (m: 'peg' | 'single') => { setCallMode(m); setConditions([]); setActiveId(null); if (m === 'single') { setResultMode('teams'); setBuildMode('combined'); } };
   const removeCondition = (id: string) => { setConditions((cur) => cur.filter((c) => c.id !== id)); setActiveId(null); };
   const toggleNot = (id: string) => { setConditions((cur) => cur.map((c) => (c.id === id ? { ...c, not: !c.not } : c))); setActiveId(null); };
   const clearAll = () => { setConditions([]); setFLeague(ALL); setFDimension(ALL); setFColor(ALL); setFMinGames(0); setFMinMatch(0); setFGroup(ALL); setFColumn(ALL); setFLetter(ALL); setFSource(ALL); setFDominance(ALL); setActiveId(null); };
@@ -476,74 +484,114 @@ export default function StrategyBuilderPanel() {
         </Text>
       </View>
 
-      {/* Quick strategies — one-click presets */}
-      <View style={styles.presetCard}>
-        <Text style={styles.presetTitle}>⚡ Quick strategies</Text>
-        <View style={styles.presetRow}>
-          {STRATEGY_PRESETS.map((p) => (
-            <Pressable key={p.id} accessibilityRole="button" accessibilityLabel={`Apply ${p.label}`} onPress={() => applyPreset(p)} style={({ pressed }) => [styles.presetChip, pressed && styles.addBtnPressed]}>
-              <Text style={styles.presetChipText}>{p.label}</Text>
-            </Pressable>
-          ))}
-        </View>
-      </View>
-
-      {/* Build mode: one combined builder, or separate Home | Away panels */}
-      <View style={styles.modeRow}>
-        {([['combined', 'Combined (either team)'], ['split', 'Home vs Away']] as const).map(([v, label]) => {
-          const on = buildMode === v;
+      {/* Call type: a Peg (full multi-rule strategy) or a Single (one call) */}
+      <View style={styles.callRow}>
+        {([['peg', '🧷 Peg · full strategy'], ['single', '① Single · one call']] as const).map(([v, label]) => {
+          const on = callMode === v;
           return (
-            <Pressable key={v} accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => setBuildMode(v)} style={[styles.modeBtn, on && styles.modeBtnOn]}>
-              <Text style={[styles.modeBtnText, on && styles.modeBtnTextOn]}>{label}</Text>
+            <Pressable key={v} accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => switchCall(v)} style={[styles.callBtn, on && styles.callBtnOn]}>
+              <Text style={[styles.callBtnText, on && styles.callBtnTextOn]}>{label}</Text>
             </Pressable>
           );
         })}
       </View>
+      <Text style={styles.callHint}>
+        {callMode === 'peg'
+          ? 'Peg — combine several rules into one strategy (AND / OR). Open a qualifying team to see its last 5 · 8 · 10 · 15 · 20 results and how it did on the stat.'
+          : 'Single — one call: pick a featured stat, or filter teams by their last-game results.'}
+      </Text>
 
-      {/* Result mode */}
-      <View style={styles.modeRow}>
-        {([['teams', 'Teams'], ['fixtures', 'Fixtures · grade qualification']] as const).map(([v, label]) => {
-          const on = resultMode === v;
-          return (
-            <Pressable key={v} accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => setResultMode(v)} style={[styles.modeBtn, on && styles.modeBtnOn]}>
-              <Text style={[styles.modeBtnText, on && styles.modeBtnTextOn]}>{label}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
+      {callMode === 'peg' ? (
+        <>
+          {/* Quick strategies — one-click presets */}
+          <View style={styles.presetCard}>
+            <Text style={styles.presetTitle}>⚡ Quick strategies</Text>
+            <View style={styles.presetRow}>
+              {STRATEGY_PRESETS.map((p) => (
+                <Pressable key={p.id} accessibilityRole="button" accessibilityLabel={`Apply ${p.label}`} onPress={() => applyPreset(p)} style={({ pressed }) => [styles.presetChip, pressed && styles.addBtnPressed]}>
+                  <Text style={styles.presetChipText}>{p.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
 
-      {/* A. Strategy configuration */}
-      {buildMode === 'combined' ? (
-        <ConditionBuilder narrow={narrow} onAdd={addCondition} />
+          {/* Build mode: one combined builder, or separate Home | Away panels */}
+          <View style={styles.modeRow}>
+            {([['combined', 'Combined (either team)'], ['split', 'Home vs Away']] as const).map(([v, label]) => {
+              const on = buildMode === v;
+              return (
+                <Pressable key={v} accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => setBuildMode(v)} style={[styles.modeBtn, on && styles.modeBtnOn]}>
+                  <Text style={[styles.modeBtnText, on && styles.modeBtnTextOn]}>{label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {/* Result mode */}
+          <View style={styles.modeRow}>
+            {([['teams', 'Teams'], ['fixtures', 'Fixtures · grade qualification']] as const).map(([v, label]) => {
+              const on = resultMode === v;
+              return (
+                <Pressable key={v} accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => setResultMode(v)} style={[styles.modeBtn, on && styles.modeBtnOn]}>
+                  <Text style={[styles.modeBtnText, on && styles.modeBtnTextOn]}>{label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {/* A. Strategy configuration */}
+          {buildMode === 'combined' ? (
+            <ConditionBuilder narrow={narrow} onAdd={addCondition} />
+          ) : (
+            <View style={[styles.splitRow, narrow && styles.filterCol]}>
+              <View style={wide ? styles.flex : styles.full}>
+                <ConditionBuilder narrow={narrow} fixedSide="home" title="🏠 Home team · Rule" onAdd={addCondition} />
+              </View>
+              <View style={wide ? styles.flex : styles.full}>
+                <ConditionBuilder narrow={narrow} fixedSide="away" title="✈ Away team · Rule" onAdd={addCondition} />
+              </View>
+            </View>
+          )}
+        </>
       ) : (
-        <View style={[styles.splitRow, narrow && styles.filterCol]}>
-          <View style={wide ? styles.flex : styles.full}>
-            <ConditionBuilder narrow={narrow} fixedSide="home" title="🏠 Home team · Rule" onAdd={addCondition} />
+        <>
+          {/* Single sub-mode: a featured stat, or a last-game-results filter */}
+          <View style={styles.modeRow}>
+            {([['stat', 'Featured stat'], ['results', 'Last game results']] as const).map(([v, label]) => {
+              const on = singleMode === v;
+              return (
+                <Pressable key={v} accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => { setSingleMode(v); setConditions([]); setActiveId(null); }} style={[styles.modeBtn, on && styles.modeBtnOn]}>
+                  <Text style={[styles.modeBtnText, on && styles.modeBtnTextOn]}>{label}</Text>
+                </Pressable>
+              );
+            })}
           </View>
-          <View style={wide ? styles.flex : styles.full}>
-            <ConditionBuilder narrow={narrow} fixedSide="away" title="✈ Away team · Rule" onAdd={addCondition} />
-          </View>
-        </View>
+          {singleMode === 'stat' ? (
+            <ConditionBuilder narrow={narrow} title="① Single stat · one call" onAdd={addSingle} />
+          ) : (
+            <LastResultsExplorer narrow={narrow} bundles={bundles} upcoming={upcoming} loading={loading} />
+          )}
+        </>
       )}
 
       {/* B. Conditions + logic */}
-      {conditions.length > 0 ? (
+      {callMode === 'single' && singleMode === 'results' ? null : conditions.length > 0 ? (
         <View style={styles.conditionsCard}>
           <View style={styles.conditionsHead}>
-            <Text style={styles.sectionLabel}>Rules</Text>
+            <Text style={styles.sectionLabel}>{callMode === 'single' ? 'Single call' : 'Rules'}</Text>
             <View style={styles.logicRow}>
-              {(['and', 'or'] as StrategyLogic[]).map((l) => (
+              {callMode === 'peg' ? (['and', 'or'] as StrategyLogic[]).map((l) => (
                 <Pressable key={l} onPress={() => setLogic(l)} style={[styles.logicBtn, logic === l && styles.logicBtnOn]}>
                   <Text style={[styles.logicBtnText, logic === l && styles.logicBtnTextOn]}>{l.toUpperCase()}</Text>
                 </Pressable>
-              ))}
+              )) : null}
               <Pressable onPress={() => { setSaving((s) => !s); setDraftName(''); setDraftNote(''); }} style={[styles.saveBtn, saving && styles.saveBtnOn]}>
                 <Text style={[styles.saveBtnText, saving && styles.saveBtnTextOn]}>{saving ? 'Cancel' : '★ Save'}</Text>
               </Pressable>
               <Pressable onPress={clearAll} style={styles.clearBtn}><Text style={styles.clearBtnText}>Clear</Text></Pressable>
             </View>
           </View>
-          <Text style={styles.logicHint}>{logic === 'and' ? 'AND — a team must satisfy every condition.' : 'OR — a team must satisfy at least one condition.'} Tap NOT to exclude teams matching a condition.</Text>
+          {callMode === 'peg' ? <Text style={styles.logicHint}>{logic === 'and' ? 'AND — a team must satisfy every condition.' : 'OR — a team must satisfy at least one condition.'} Tap NOT to exclude teams matching a condition.</Text> : <Text style={styles.logicHint}>One stat called — the qualifying teams are below. Open a team to see its recent form.</Text>}
           <View style={styles.chipGroups}>
             {([['home', '🏠 Home team'], ['away', '✈ Away team'], ['either', 'Either team']] as const).map(([sv, label]) => {
               const group = conditions.filter((c) => (c.side ?? 'either') === sv);
@@ -604,10 +652,11 @@ export default function StrategyBuilderPanel() {
           ) : null}
         </View>
       ) : (
-        <Text style={styles.empty}>Add a Rule above to build your strategy.</Text>
+        <Text style={styles.empty}>{callMode === 'single' ? 'Pick a stat above to call it.' : 'Add a Rule above to build your strategy.'}</Text>
       )}
 
       {/* Status */}
+      {callMode === 'single' && singleMode === 'results' ? null : (
       <View style={styles.statusRow}>
         {loading || (resultMode === 'fixtures' && up.loading) ? (
           <><ActivityIndicator size="small" color={theme.accentGreen} /><Text style={styles.statusMuted}>Querying {liveLeagues.length} ongoing leagues…</Text></>
@@ -619,6 +668,7 @@ export default function StrategyBuilderPanel() {
           <Text style={styles.statusLive}>● {fxFiltered.length} qualifying fixtures{conditions.length > 0 ? ' · home/away attributes matched' : ''}</Text>
         )}
       </View>
+      )}
 
       {/* ===== Teams mode ===== */}
       {resultMode === 'teams' && conditions.length > 0 && !loading ? (
@@ -1123,6 +1173,90 @@ function EvalRow({ ev, breakdown, rfs, recentForm }: { ev: TeamEval; breakdown?:
 
 /** Recent form for the stat: the last 5 / 10 / 15 hit-rates plus the latest game
  *  cards (green = the team did the stat that game, muted = it didn't). */
+/**
+ * Single · Last-game results — filter teams by what their recent games produced
+ * (BTTS, draws, Over 1.5, clean sheet, …). Teams are ranked by how often the
+ * chosen result landed in their last N games, filterable by league and team, and
+ * each shows its recent games and its next fixture. Reuses the season fixtures
+ * already loaded for the Rule engine.
+ */
+function LastResultsExplorer({ narrow, bundles, upcoming, loading }: { narrow: boolean; bundles: LeagueBundle[]; upcoming: UpcomingLite[]; loading: boolean }) {
+  const [typeKey, setTypeKey] = useState('btts');
+  const [windowN, setWindowN] = useState(5);
+  const [league, setLeague] = useState(ALL);
+  const [query, setQuery] = useState('');
+  const def = RESULT_FILTERS.find((f) => f.key === typeKey) ?? RESULT_FILTERS[0];
+  const leagueOptions = useMemo(() => [{ value: ALL, label: 'All leagues' }, ...bundles.map((b) => ({ value: b.competition, label: b.competition }))], [bundles]);
+
+  const rows = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    type Row = { teamId: number; team: string; competition: string; hits: number; games: number; rate: number; recent: TeamResult[]; next: ReturnType<typeof nextFixtureFor> };
+    const out: Row[] = [];
+    for (const b of bundles) {
+      if (league !== ALL && b.competition !== league) continue;
+      if (!b.fixtures || !b.fixtures.length) continue;
+      const teams = new Map<number, string>();
+      for (const fx of b.fixtures) {
+        if (fx.home_id != null) teams.set(fx.home_id, fx.home_name);
+        if (fx.away_id != null) teams.set(fx.away_id, fx.away_name);
+      }
+      for (const [teamId, team] of teams) {
+        if (q && !team.toLowerCase().includes(q)) continue;
+        const recent = teamResultsFromFixtures(b.fixtures, teamId, null, {}).sort((a, c) => c.unix - a.unix).slice(0, windowN);
+        if (!recent.length) continue;
+        const hits = recent.filter(def.hit).length;
+        out.push({ teamId, team, competition: b.competition, hits, games: recent.length, rate: Math.round((100 * hits) / recent.length), recent, next: nextFixtureFor(teamId, team, upcoming) });
+      }
+    }
+    out.sort((a, c) => c.rate - a.rate || c.hits - a.hits || a.team.localeCompare(c.team));
+    return out;
+  }, [bundles, league, windowN, def, query, upcoming]);
+
+  return (
+    <View style={styles.builderCard}>
+      <Text style={styles.sectionLabel}>Last-game results · filter</Text>
+      <Text style={styles.readNote}>Pick a result type and a window — teams whose last games produced it most often come first, each with its recent games and next fixture.</Text>
+      <View style={[styles.filterRow, narrow && styles.filterCol]}>
+        <FilterDropdown label="Result type" value={typeKey} options={RESULT_FILTERS.map((f) => ({ value: f.key, label: f.label }))} onChange={setTypeKey} style={narrow ? styles.full : styles.flex} />
+        <FilterDropdown label="Window" value={String(windowN)} options={LAST_RESULT_WINDOWS.map((w) => ({ value: String(w), label: `Last ${w}` }))} onChange={(v) => setWindowN(Number(v))} style={narrow ? styles.full : styles.flex} />
+        <FilterDropdown label="League" value={league} options={leagueOptions} onChange={setLeague} style={narrow ? styles.full : styles.flex} />
+        <View style={narrow ? styles.full : styles.flex}>
+          <Text style={styles.numLabel}>Team</Text>
+          <TextInput value={query} onChangeText={setQuery} placeholder="Search team…" placeholderTextColor={theme.textFaint} style={styles.numInput} accessibilityLabel="Search team" />
+        </View>
+      </View>
+      {loading ? <View style={styles.loadingRow}><ActivityIndicator size="small" color={theme.accentGreen} /><Text style={styles.statusMuted}>Loading season fixtures…</Text></View> : null}
+      {!loading && rows.length === 0 ? <Text style={styles.empty}>No teams for these filters yet — widen the window, league or search.</Text> : null}
+      {rows.length > 0 ? (
+        <>
+          <Text style={styles.statusLive}>● {rows.length} teams · {def.label} · last {windowN}</Text>
+          {rows.slice(0, 60).map((r) => (
+            <View key={`${r.competition}:${r.teamId}`} style={styles.lreRow}>
+              <View style={styles.lreHead}>
+                <Text style={styles.lreTeam} numberOfLines={1}>{r.team}</Text>
+                <Text style={[styles.lreRate, { color: r.rate >= 65 ? theme.accentGreen : r.rate >= 40 ? theme.yellow : theme.loss }]} numberOfLines={1}>{r.hits}/{r.games} · {r.rate}%</Text>
+              </View>
+              <Text style={styles.lreMeta} numberOfLines={1}>{r.competition}{r.next ? ` · next: ${r.next.side === 'home' ? 'vs' : '@'} ${r.next.opponentName}${kickoffLabel(r.next.fixture.kickoffUnix, '') ? ` · ${kickoffLabel(r.next.fixture.kickoffUnix, '')}` : ''}` : ' · no upcoming fixture'}</Text>
+              <View style={styles.lreGames}>
+                {r.recent.map((g, i) => {
+                  const hit = def.hit(g);
+                  return (
+                    <View key={i} style={[styles.lreGame, { backgroundColor: hit ? 'rgba(5,150,105,0.14)' : 'rgba(148,163,184,0.12)', borderColor: hit ? theme.accentGreen : theme.border }]}>
+                      <Text style={[styles.lreGameScore, { color: hit ? theme.accentGreen : theme.textMuted }]} numberOfLines={1}>{g.gf}-{g.ga}</Text>
+                      <Text style={styles.lreGameOpp} numberOfLines={1}>{g.isHome ? 'vs' : '@'} {g.opponentName}</Text>
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+          ))}
+          {rows.length > 60 ? <Text style={styles.readNote}>Showing the top 60 — narrow by league or team to see more.</Text> : null}
+        </>
+      ) : null}
+    </View>
+  );
+}
+
 function RecentFormStrip({ form }: { form: RecentForm }) {
   return (
     <View style={styles.formWrap}>
@@ -1487,6 +1621,24 @@ const styles = StyleSheet.create({
 
   modeRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
   modeBtn: { flex: 1, borderWidth: 1.5, borderColor: theme.border, borderRadius: layout.borderRadius, paddingVertical: spacing.sm, alignItems: 'center', backgroundColor: theme.surface },
+  // Peg / Single call-type toggle
+  callRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.xs },
+  callBtn: { flex: 1, borderWidth: 2, borderColor: theme.border, borderRadius: layout.borderRadius, paddingVertical: spacing.md, alignItems: 'center', backgroundColor: theme.surface },
+  callBtnOn: { borderColor: theme.accentPurple, backgroundColor: 'rgba(124,58,237,0.08)' },
+  callBtnText: { fontFamily: fonts.bodySemiBold, fontSize: 14, color: theme.textMuted },
+  callBtnTextOn: { color: theme.accentPurple },
+  callHint: { fontFamily: fonts.body, fontSize: 11, lineHeight: 16, color: theme.textMuted, marginBottom: spacing.sm },
+  // Last-game results explorer
+  loadingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: spacing.sm },
+  lreRow: { borderWidth: layout.borderWidth, borderColor: theme.border, borderRadius: layout.borderRadius, backgroundColor: theme.surface, padding: spacing.sm, marginTop: spacing.xs, gap: 3 },
+  lreHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+  lreTeam: { flex: 1, fontFamily: fonts.bodySemiBold, fontSize: 13, color: theme.textPrimary },
+  lreRate: { fontFamily: fonts.bodySemiBold, fontSize: 12 },
+  lreMeta: { fontFamily: fonts.body, fontSize: 10, color: theme.textMuted },
+  lreGames: { flexDirection: 'row', flexWrap: 'wrap', gap: 3, marginTop: 2 },
+  lreGame: { borderWidth: 1, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2, minWidth: 54 },
+  lreGameScore: { fontFamily: fonts.bodySemiBold, fontSize: 11, textAlign: 'center' },
+  lreGameOpp: { fontFamily: fonts.body, fontSize: 8, color: theme.textMuted, textAlign: 'center' },
   modeBtnOn: { borderColor: theme.accentGreen, backgroundColor: 'rgba(5,150,105,0.08)' },
   modeBtnText: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: theme.textMuted },
   modeBtnTextOn: { color: theme.accentGreen },
@@ -1704,8 +1856,8 @@ const styles = StyleSheet.create({
   // Recent form (last 5/10/15 + latest results)
   formWrap: { marginTop: spacing.sm, gap: 4 },
   formTitle: { fontFamily: fonts.bodySemiBold, fontSize: 10, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
-  formWindows: { flexDirection: 'row', gap: spacing.xs },
-  formWindow: { flex: 1, borderWidth: layout.borderWidth, borderColor: theme.border, borderRadius: layout.borderRadius, paddingVertical: 4, alignItems: 'center', backgroundColor: theme.surface },
+  formWindows: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  formWindow: { flexGrow: 1, flexBasis: 52, minWidth: 46, borderWidth: layout.borderWidth, borderColor: theme.border, borderRadius: layout.borderRadius, paddingVertical: 4, alignItems: 'center', backgroundColor: theme.surface },
   formWindowLabel: { fontFamily: fonts.bodySemiBold, fontSize: 10, color: theme.textMuted },
   formWindowRate: { fontFamily: fonts.bodySemiBold, fontSize: 14 },
   formWindowCount: { fontFamily: fonts.body, fontSize: 9, color: theme.textFaint },
