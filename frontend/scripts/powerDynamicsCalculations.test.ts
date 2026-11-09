@@ -46,19 +46,19 @@ console.log('\ncalculation summary');
     sectors: [
       row('baseline', 'Baseline', 'core', 8, 0),
       row('last5', 'Last 5', 'core', 5, 9),
-      row('indlela', 'Indlela', 'y', 2, 0, ['t1']),
+      row('indlela', 'Indlela', 'y', 0.5, 0, ['t1']),
     ],
   });
-  check('T1 hit is baseline only', calc.calc1.t1.map((hit) => hit.id).join() === 'baseline');
-  check('T2 hit is last 5 only', calc.calc1.t2.map((hit) => hit.id).join() === 'last5');
-  check('equal hit counts are level', calc.calc1.leader === 'level');
-  check('apple totals add every numbered sector', calc.calc2.t1 === 15 && calc.calc2.t2 === 9);
+  check('a clear core win is stored as 3', calc.sectors.find((sector) => sector.id === 'baseline')?.t1 === 3 && calc.sectors.find((sector) => sector.id === 'baseline')?.t2 === 0);
+  check('a mediocre core win is stored as 1', calc.sectors.find((sector) => sector.id === 'last5')?.t2 === 1 && calc.sectors.find((sector) => sector.id === 'last5')?.t1 === 0);
+  check('separation values stay under 6', calc.calc1.t1.length === 0 && calc.calc1.t2.length === 0 && calc.calc1.leader === 'level');
+  check('totals add the separation of sectors won', calc.calc2.t1 === 3.5 && calc.calc2.t2 === 1);
   check(
-    'T2 wins only the sector it leads, by 4',
-    calc.calc3.t2.count === 1 && calc.calc3.t2.bands.mid[0]?.id === 'last5' && calc.calc3.t2.bands.mid[0]?.margin === 4,
+    'T2 wins the mediocre sector for 1',
+    calc.calc3.t2.count === 1 && calc.calc3.t2.bands.mid[0]?.id === 'last5' && calc.calc3.t2.bands.mid[0]?.margin === 1,
   );
   check(
-    'T1 wins split into 6 or more and under 4',
+    'T1 wins a clear sector and a Y application',
     calc.calc3.t1.count === 2 &&
       calc.calc3.t1.bands.high.map((hit) => hit.id).join() === 'baseline' &&
       calc.calc3.t1.bands.low.map((hit) => hit.id).join() === 'indlela',
@@ -92,12 +92,12 @@ console.log('\nwin margin bands');
   });
   const ids = (side: 't1' | 't2', band: 'high' | 'mid' | 'low') =>
     calc.calc3[side].bands[band].map((hit) => hit.id).join();
-  check('6 and above is its own group', ids('t1', 'high') === 'by6,roundsUp');
-  check('4 to 5.9 includes 4, 4.5 and 5.9', ids('t1', 'mid') === 'by59,by4,staysMid');
-  check('under 4 stays out of the middle group', ids('t1', 'low') === 'by39');
-  check('a tie is not a win', calc.calc3.t1.count + calc.calc3.t2.count === 9);
-  check('T2 groups mirror the same cuts', ids('t2', 'high') === 't2high' && ids('t2', 'mid') === 't2mid' && ids('t2', 'low') === 't2low');
-  check('each side keeps its own count', calc.calc3.t1.count === 6 && calc.calc3.t2.count === 3);
+  check('high against low is a clear win of 3', ids('t1', 'high') === 'by59,roundsUp');
+  check('one step apart is a mediocre win of 1', ids('t1', 'mid') === 'by6,by4,staysMid');
+  check('the same band is not a win', ids('t1', 'low') === '');
+  check('a tie is not a win', !ids('t1', 'high').includes('tie') && !ids('t2', 'high').includes('tie'));
+  check('T2 clear and mediocre follow the same cuts', ids('t2', 'high') === 't2high' && ids('t2', 'mid') === 't2mid' && ids('t2', 'low') === '');
+  check('poor separations drop out of the count', calc.calc3.t1.count === 5 && calc.calc3.t2.count === 2);
 }
 
 console.log('\ncontested league spread');
@@ -190,20 +190,20 @@ console.log('\nlive sector values');
   const value = (id: string, side: 't1' | 't2') => calc.sectors.find((sector) => sector.id === id)?.[side];
   const tick = (id: string) => calc.ticks.find((row) => row.id === id);
 
-  check('1st place is imbangi', value('imbangi', 't1') === 6);
+  check('1st place wins imbangi as a clear 3', value('imbangi', 't1') === 3);
   check('6th place is not imbangi', value('imbangi', 't2') === 0);
-  check('next game intense is 2', value('indlela', 't1') === 2);
+  check('next game intense is 0.5', value('indlela', 't1') === 0.5);
   check('next game quiet is 0', value('indlela', 't2') === 0);
-  check('sudden drop is awarded to the opponent', value('sudden_drop', 't1') === 0 && value('sudden_drop', 't2') === 2);
-  check('sudden pick up is 2 for the other side', value('sudden_pickup', 't2') === 2 && value('sudden_pickup', 't1') === 0);
-  check('problem causer uses the level score', value('problem_causer', 't1') === 3);
+  check('sudden drop is awarded to the opponent', value('sudden_drop', 't1') === 0 && value('sudden_drop', 't2') === 0.5);
+  check('sudden pick up is 0.5 for the other side', value('sudden_pickup', 't2') === 0.5 && value('sudden_pickup', 't1') === 0);
+  check('a level problem causer is a poor 0', value('problem_causer', 't1') === 0 && value('problem_causer', 't2') === 0);
   check('yellow side keeps Y applications in core', calc.t2Yellow && calc.sectors.find((s) => s.id === 'indlela')?.coreFor.includes('t2') === true);
   check('green side does not move Y applications', calc.t1Yellow === false);
   check('lost 6 ticks T1', tick('lost_6')?.t1 === true && tick('lost_6')?.t2 === false);
   check('won 6 ticks T2', tick('won_6')?.t2 === true);
   check('never lost twice ticks T2', tick('never_lost_twice')?.t2 === true);
   check('contested pack includes 1st only of these two', tick('contested_league')?.t1 === true && tick('contested_league')?.t2 === false);
-  check('home/away strong copies the baseline', value('home_away_strong', 't1') === value('baseline', 't1'));
+  check('a won baseline stores 3 while home/away keeps the raw score', value('baseline', 't1') === 3 && (value('home_away_strong', 't1') ?? 0) > 3);
   check('baseline names a separation', (calc.sectors.find((s) => s.id === 'baseline')?.detail ?? '').includes('separation'));
   check('h2h separation uses the gap values', (calc.sectors.find((s) => s.id === 'h2h')?.detail ?? '').includes('separation'));
   check('imbangi sits with the core sectors', calc.sectors.find((s) => s.id === 'imbangi')?.group === 'core');
@@ -244,10 +244,9 @@ console.log('\nimbangi is 1st or 2nd only');
   });
   const imbangi = calc.sectors.find((sector) => sector.id === 'imbangi');
   const drop = calc.sectors.find((sector) => sector.id === 'sudden_drop');
-  check('2nd place is imbangi even with a wide gap', pd.t1.rank === 2 && imbangi?.t1 === 6);
-  check('3rd becomes imbangi when a win lands them at 2nd', pd.t2.rank === 3 && imbangi?.t2 === 6 && imbangi?.group === 'core');
+  check('both imbangi sides are a poor 0', pd.t1.rank === 2 && pd.t2.rank === 3 && imbangi?.t1 === 0 && imbangi?.t2 === 0 && imbangi?.group === 'core');
   check('the win into 2nd is named', (imbangi?.detail ?? '').includes('lands them at #2'));
-  check('both sudden drops award 2 to each opponent', drop?.t1 === 2 && drop?.t2 === 2);
+  check('both sudden drops award 0.5 to each opponent', drop?.t1 === 0.5 && drop?.t2 === 0.5);
 }
 
 console.log('\nseparation from two scores');

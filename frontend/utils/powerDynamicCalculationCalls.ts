@@ -176,13 +176,13 @@ const RAW_CALCULATION_ASPECTS: CalculationCallAspect[] = [
     needsFixtures: true,
   },
   ...(['high', 'mid', 'low'] as const).flatMap((band) => {
-    const word = band === 'high' ? '6 or more' : band === 'mid' ? '4 to 5.9' : 'less than 4';
+    const word = band === 'high' ? 'a clear separation' : band === 'mid' ? 'a mediocre separation' : 'a Y application';
     return (['t1', 't2'] as const).map((sideId) => ({
       id: `calc3-${sideId}-${band}`,
       tabId: 'calculations' as const,
       functionId: 'calc3' as const,
-      label: `${sideId === 't1' ? 'T1' : 'T2'} won by ${word}`,
-      detail: `Calculation 3. ${sideId === 't1' ? 'T1' : 'T2'} won at least one sector by ${word}.`,
+      label: `${sideId === 't1' ? 'T1' : 'T2'} won ${word}`,
+      detail: `Calculation 3. ${sideId === 't1' ? 'T1' : 'T2'} won at least one sector as ${word}.`,
       pair: true as const,
       needsFixtures: true as const,
       binary: true as const,
@@ -205,11 +205,11 @@ export const CALCULATION_CALL: PowerDynamicCallDef = {
   detail: 'Calculation 1, 2 and 3, core sectors, semi-core, Y sectors, and ticks. A tick means the call holds. A cross means it does not.',
   functions: [
     { id: 'calc1', label: 'Calculation 1', detail: 'Sectors of 6 or more.' },
-    { id: 'calc2', label: 'Calculation 2', detail: 'Total of every numbered sector.' },
-    { id: 'calc3', label: 'Calculation 3', detail: 'Sectors each side won, and the gap.' },
+    { id: 'calc2', label: 'Calculation 2', detail: 'Total from sectors won. Clear separation is 3, mediocre is 1, poor is 0. A Y application is 0.5.' },
+    { id: 'calc3', label: 'Calculation 3', detail: 'Sectors each side won, grouped as clear, mediocre, or a Y application.' },
     { id: 'core', label: 'Core sectors', detail: 'Baseline, importance of 3 points, last 5, form, H2H, problem causer, and imbangi.' },
     { id: 'semi', label: 'Semi-core', detail: 'Home/Away strong.' },
-    { id: 'y', label: 'Y sectors', detail: 'Indlela, Bhozoma, child beater, sudden drop, and sudden pick up.' },
+    { id: 'y', label: 'Y sectors', detail: 'Indlela, Bhozoma, child beater, sudden drop, and sudden pick up. Each one is 0.5 when it is on.' },
     { id: 'ticks', label: 'Ticks', detail: 'Lost 6, won 6, never twice, and contested league.' },
   ],
 };

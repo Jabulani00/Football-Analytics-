@@ -1,8 +1,9 @@
 /**
  * Power dynamics calculations.
  * One number per sector for T1 and T2, then three reads:
- * sectors at 6 or more, each side's total, and the sectors each side wins.
- * A win is the higher number. The gap is 6 or more, 4 to 5.9, or under 4.
+ * sectors at 6 or more, the total from sectors won, and which side won each one.
+ * A core win uses the separation of the two values: clear is 3, mediocre is 1, poor is 0.
+ * A Y application is 0.5 when it is on.
  */
 
 import type { H2HMatch } from '@/services/oddAlerts';
@@ -21,7 +22,12 @@ import {
   type Last6Period,
   type Last6Venue,
 } from '@/utils/last6Form';
-import { sectorSeparationLabel, problemSeparationLabel } from '@/utils/importanceOf3Engine';
+import {
+  importanceSeparation,
+  importanceValueBand,
+  problemSeparationLabel,
+  sectorSeparationLabel,
+} from '@/utils/importanceOf3Engine';
 import { rankAfterWin, type StandingLike } from '@/utils/motivationEngine';
 import {
   baselineGapFor,
@@ -39,7 +45,8 @@ import { lastN } from '@/utils/teamResults';
 
 export const SECTOR_HIT = 6;
 export const MARGIN_MID = 4;
-export const Y_APPLICATION_VALUE = 2;
+export const Y_APPLICATION_VALUE = 0.5;
+export const SEPARATION_AWARD = { clear: 3, mediocre: 1, poor: 0 } as const;
 export const IMBANGI_TRUE_VALUE = 6;
 
 const LAST5_VENUES: Last6Venue[] = ['overall', 'home', 'away'];
@@ -160,24 +167,67 @@ function readBands(bands: MarginBands): SideMarginRead {
   };
 }
 
+export type SeparationAward = {
+  kind: 'clear' | 'mediocre' | 'poor';
+  winner: SideId | null;
+  points: number;
+};
+
+/** Core T1 against T2. The higher value wins. The points come from the separation, not the raw scores. */
+export function coreSeparationAward(t1: number | null, t2: number | null): SeparationAward {
+  const left = shown(num(t1));
+  const right = shown(num(t2));
+  const kind = importanceSeparation(importanceValueBand(left), importanceValueBand(right));
+  const points = SEPARATION_AWARD[kind];
+  if (points === 0 || left === right) return { kind, winner: null, points: 0 };
+  return { kind, winner: left > right ? 't1' : 't2', points };
+}
+
+function awardBand(points: number): MarginBandId {
+  if (points >= SEPARATION_AWARD.clear) return 'high';
+  if (points >= SEPARATION_AWARD.mediocre) return 'mid';
+  return 'low';
+}
+
+/** The winner keeps 3, 1, or 0. The other side is 0. Poor separation leaves both at 0. */
+function applyCoreAwards(sectors: CalculationSector[]): CalculationSector[] {
+  return sectors.map((row) => {
+    if (row.group !== 'core') return row;
+    const award = coreSeparationAward(row.t1, row.t2);
+    return {
+      ...row,
+      t1: award.winner === 't1' ? award.points : 0,
+      t2: award.winner === 't2' ? award.points : 0,
+    };
+  });
+}
+
 function sectorWins(sectors: CalculationSector[]): { t1: SideMarginRead; t2: SideMarginRead } {
   const t1 = emptyBands();
   const t2 = emptyBands();
   for (const row of sectors) {
     const left = shown(num(row.t1));
     const right = shown(num(row.t2));
-    if (left === right) continue;
-    const margin = shown(Math.abs(left - right));
+    if (row.group === 'semi' || left === right) continue;
+    const points = row.group === 'core' ? Math.max(left, right) : shown(Math.abs(left - right));
+    if (points === 0) continue;
     const side = left > right ? t1 : t2;
-    side[marginBand(margin)].push({
+    side[row.group === 'core' ? awardBand(points) : marginBand(points)].push({
       id: row.id,
       label: row.label,
       t1: left,
       t2: right,
-      margin,
+      margin: points,
     });
   }
   return { t1: readBands(t1), t2: readBands(t2) };
+}
+
+function sectorsWonTotal(sectors: CalculationSector[], side: SideId): number {
+  return sectors.reduce((sum, row) => {
+    if (row.group === 'core' || row.group === 'y') return sum + num(row[side]);
+    return sum;
+  }, 0);
 }
 
 function sumParts(parts: SectorPart[]): SideNumbers {
@@ -505,8 +555,9 @@ export function summariseSectorScores(opts: {
   t1Yellow: boolean;
   t2Yellow: boolean;
 }): PowerDynamicsCalculation {
+  const sectors = applyCoreAwards(opts.sectors);
   const hits = (side: SideId): SectorHit[] =>
-    opts.sectors
+    sectors
       .filter((row) => num(row[side]) >= SECTOR_HIT)
       .map((row) => ({ id: row.id, label: row.label, value: num(row[side]) }));
   const t1Hits = hits('t1');
@@ -516,14 +567,14 @@ export function summariseSectorScores(opts: {
   return {
     t1Yellow: opts.t1Yellow,
     t2Yellow: opts.t2Yellow,
-    sectors: opts.sectors,
+    sectors,
     ticks: opts.ticks,
     calc1: { t1: t1Hits, t2: t2Hits, leader },
     calc2: {
-      t1: opts.sectors.reduce((sum, row) => sum + num(row.t1), 0),
-      t2: opts.sectors.reduce((sum, row) => sum + num(row.t2), 0),
+      t1: sectorsWonTotal(sectors, 't1'),
+      t2: sectorsWonTotal(sectors, 't2'),
     },
-    calc3: sectorWins(opts.sectors),
+    calc3: sectorWins(sectors),
   };
 }
 
@@ -605,7 +656,7 @@ export function buildPowerDynamicsCalculations(
   );
   const dropForOpponent = (dropped: boolean, droppedBy: string, receiver: string, read: string) =>
     dropped
-      ? { value: Y_APPLICATION_VALUE, detail: `${droppedBy} is in a sudden drop, so ${receiver} receives 2. ${read}` }
+      ? { value: Y_APPLICATION_VALUE, detail: `${droppedBy} is in a sudden drop, so ${receiver} receives 0.5. ${read}` }
       : { value: 0, detail: `${droppedBy} is not in a sudden drop` };
   const dropToT2 = dropForOpponent(input.swing.t1.drop, pd.t1.label, pd.t2.label, input.swing.t1.detail);
   const dropToT1 = dropForOpponent(input.swing.t2.drop, pd.t2.label, pd.t1.label, input.swing.t2.detail);

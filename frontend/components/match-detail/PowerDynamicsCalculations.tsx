@@ -47,15 +47,15 @@ type Props = {
 const GROUP_COPY: Record<SectorGroup, { title: string; note: string }> = {
   core: {
     title: 'Core sectors',
-    note: 'Baseline, escape, last 5, form, H2H, problem causer, and imbangi. Each row names its separation from those two values.',
+    note: 'Baseline, importance of 3 points, last 5, form, H2H, problem causer, and imbangi. The number on a won sector is the separation: clear is 3, mediocre is 1, poor is 0.',
   },
   semi: {
     title: 'Semi-core',
-    note: 'Home/Away strong uses the baseline scores. A Strong label on T2 is highlighted next to gap analysis.',
+    note: 'Home/Away strong uses the baseline scores. It is not added again into the sectors-won total.',
   },
   y: {
     title: 'Y applications',
-    note: 'Each application is 2 when it is on, otherwise 0. A sudden drop gives that 2 to the opponent. A yellow side counts these inside Core.',
+    note: 'Each application is 0.5 when it is on, otherwise 0. A sudden drop gives that 0.5 to the opponent. A yellow side counts these inside Core.',
   },
 };
 
@@ -68,9 +68,9 @@ function fmt(value: number | null | undefined): string {
 const SECTOR_PREVIEW = 5;
 
 const WIN_BANDS: { id: MarginBandId; title: string; chip: string }[] = [
-  { id: 'high', title: 'Won by 6 or more', chip: '6+' },
-  { id: 'mid', title: 'Won by 4 to 5.9', chip: '4–5.9' },
-  { id: 'low', title: 'Won by less than 4', chip: 'Under 4' },
+  { id: 'high', title: 'Clear separation · 3', chip: 'Clear' },
+  { id: 'mid', title: 'Mediocre separation · 1', chip: 'Mediocre' },
+  { id: 'low', title: 'Y application · 0.5', chip: '0.5' },
 ];
 
 function takePreview(bands: MarginBands, limit: number): MarginBands {
@@ -543,7 +543,7 @@ export default function PowerDynamicsCalculations(props: Props) {
                 <Text style={styles.total}>{fmt(calc.calc2.t2)}</Text>
               </View>
             </View>
-            <Text style={styles.detail}>Core, semi-core, and Y applications. Additional sectors are ticks only.</Text>
+            <Text style={styles.detail}>Clear separation adds 3, mediocre adds 1, and poor adds 0. A Y application adds 0.5. Ticks stay out.</Text>
           </View>
         ) : null}
         {focusId === 'calc3' ? (
@@ -574,7 +574,7 @@ export default function PowerDynamicsCalculations(props: Props) {
   return (
     <View>
       <Text style={styles.intro}>
-        {t1} against {t2}. Calculation 1 lists a sector of {SECTOR_HIT} or more. Totals add every numbered sector. Calculations 1 and 2 show the sectors each side won. Calculation 3 shows the sectors {t2} won. The gap is 6 or more, 4 to 5.9, or less than 4. Ticks stay out of the totals.
+        {t1} against {t2}. Calculation 1 lists a sector of {SECTOR_HIT} or more. The total adds the sectors won: clear separation is 3, mediocre is 1, poor is 0, and a Y application is 0.5. Calculation 3 groups those wins. Ticks stay out of the totals.
       </Text>
       {calc.t1Yellow || calc.t2Yellow ? (
         <Text style={styles.yellowNote}>
@@ -609,7 +609,7 @@ export default function PowerDynamicsCalculations(props: Props) {
             <Text style={styles.total}>{fmt(calc.calc2.t2)}</Text>
           </View>
         </View>
-        <Text style={styles.detail}>Core, semi-core, and Y applications. Additional sectors are ticks only.</Text>
+        <Text style={styles.detail}>Clear separation adds 3, mediocre adds 1, and poor adds 0. A Y application adds 0.5. Ticks stay out.</Text>
         <Text style={styles.blockLabel}>Sectors won</Text>
         <WonSectors t1Name={t1} t2Name={t2} wins={calc.calc3} />
       </View>
