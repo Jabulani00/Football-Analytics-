@@ -1257,6 +1257,11 @@ export type SavedStrategyConfig = {
   /** Legacy global default period (new builds store period/side per condition). */
   period?: StrategyPeriod;
   resultMode: 'teams' | 'fixtures';
+  /** How it was built — a graded Peg, a numeric Single, or a mixed Combo. */
+  kind?: 'peg' | 'single' | 'combo';
+  /** When this is a child strategy, the id of the parent whose qualifying teams it
+   *  refines (the child is shown only for teams the parent already surfaced). */
+  parentId?: string | null;
 };
 
 export type SavedStrategy = {
@@ -1281,10 +1286,12 @@ export function describeStrategy(cfg: SavedStrategyConfig): string {
   const body = conds.length
     ? `${cfg.logic.toUpperCase()} of ${conds.length}: ${conds.join(joiner)}`
     : 'No conditions yet';
+  const kind = cfg.kind === 'single' ? 'Single · ' : cfg.kind === 'combo' ? 'Combo · ' : '';
+  const child = cfg.parentId ? 'Child strategy · ' : '';
   if (cfg.resultMode === 'fixtures') {
-    return `Fixtures · grade qualification · home/away targeting. ${body}`;
+    return `${child}${kind}Fixtures · grade qualification. ${body}`;
   }
-  return `Qualifying teams. ${body}`;
+  return `${child}${kind}Qualifying teams. ${body}`;
 }
 
 /** The parts of the panel's live state that make up a saved strategy. */
@@ -1293,7 +1300,19 @@ export function buildStrategyConfig(s: SavedStrategyConfig): SavedStrategyConfig
     conditions: s.conditions.map((c) => ({ ...c, options: { ...c.options } })),
     logic: s.logic,
     resultMode: s.resultMode,
+    kind: s.kind,
+    parentId: s.parentId ?? null,
   };
+}
+
+/** The set of team keys a saved strategy's config qualifies, used to restrict a
+ *  child strategy to its parent's teams. Key = "competition::id:<n>|name:<norm>". */
+export function strategyTeamKeys(bundles: LeagueBundle[], config: SavedStrategyConfig): Set<string> {
+  const out = new Set<string>();
+  for (const r of evaluateStrategy(bundles, config.conditions, config.logic)) {
+    out.add(`${r.competition}::${teamKeyOf({ teamId: r.teamId ?? null, team: r.team })}`);
+  }
+  return out;
 }
 
 /** A synthesised eval for a NOT condition a team matches by exclusion. */

@@ -22,7 +22,7 @@ import {
   COLUMN_LABEL, DIMENSIONS, FIXTURE_SIDES, QUAL_COLUMNS, STRATEGY_PRESETS, TIMING_STATE_OPTIONS, buildStrategyConfig, conditionLabel, conditionMembership,
   daLevelOf, evaluateFixtureSides, evaluateStrategy, filterResults, getDimension, gradeShareByLeague,
   matchStrength, needsExport, needsFixtures, periodFrom, periodLabel, rankSingleStat, rankTeamsForStat, resultBackground, resultColour,
-  singleStatFamilies, SINGLE_STAT_WINDOWS, splitPeriod, summarize, teamHalfBreakdown,
+  singleStatFamilies, SINGLE_STAT_WINDOWS, splitPeriod, strategyTeamKeys, summarize, teamHalfBreakdown, teamKeyOf,
   type SingleStatRow,
   type CondMembership, type Condition, type Dimension, type FixtureSide, type GradeQualification, type HalfReading, type LeagueBundle, type LeagueGradeShare,
   type DominantVenue, type ResultColor, type SavedStrategy, type StatHalf, type StatRank, type StatScope, type StatTier, type StrategyLogic, type StrategyPeriod,
@@ -146,6 +146,39 @@ const COLOR_SECTIONS: { color: ResultColor; label: string }[] = [
   { color: 'none', label: 'UNGRADED' },
 ];
 
+/** The Single · numbers leaderboard's configuration (its saveable "call"). */
+type SingleState = { family: string; methodId: string; scope: StatScope; half: 'ft' | 'ht' | '2h'; window: string; league: string; cmp: 'gte' | 'lte'; value: string };
+const DEFAULT_SINGLE: SingleState = (() => {
+  const fams = singleStatFamilies();
+  return { family: fams[0]?.value ?? 'ordinary', methodId: fams[0]?.items[0]?.value ?? '', scope: 'overall', half: 'ft', window: 'season', league: ALL, cmp: 'gte', value: '' };
+})();
+/** A Single call is one Stat-filter condition: a threshold (≥/≤) when a value is
+ *  set, otherwise an unfiltered band (every team) — so it saves & combines like any rule. */
+function makeSingleCondition(s: SingleState): Condition {
+  const hasT = s.value.trim() !== '' && Number.isFinite(Number(s.value));
+  return {
+    id: `c${(CONDITION_SEQ += 1)}`,
+    dimensionId: 'statfilter',
+    period: periodFrom(s.half, s.scope),
+    methodId: s.methodId,
+    options: hasT
+      ? { family: s.family, window: s.window, mode: 'limit', level: ALL, cmp: s.cmp, value: s.value }
+      : { family: s.family, window: s.window, mode: 'band', level: ALL },
+    side: 'either',
+  };
+}
+/** Rebuild the Single leaderboard state from a saved Stat-filter condition. */
+function singleFromCondition(c: Condition): Partial<SingleState> {
+  const { half, scope } = splitPeriod(c.period);
+  const o = c.options ?? {};
+  return {
+    family: o.family ?? 'ordinary', methodId: c.methodId, scope,
+    half: half === 'ht' ? 'ht' : half === '2h' ? '2h' : 'ft',
+    window: o.window ?? 'season', league: ALL,
+    cmp: o.cmp === 'lte' ? 'lte' : 'gte', value: o.mode === 'limit' ? (o.value ?? '') : '',
+  };
+}
+
 export default function StrategyBuilderPanel() {
   const { width } = useWindowDimensions();
   const narrow = width < 720;
@@ -170,6 +203,13 @@ export default function StrategyBuilderPanel() {
   const [singleMode, setSingleMode] = useState<'stat' | 'results'>('stat');
   // In Combo, each added rule is either a graded call or a numeric call.
   const [comboKind, setComboKind] = useState<'graded' | 'numeric'>('graded');
+  // The live Single leaderboard config (reported up so it can be saved as a strategy).
+  const [single, setSingle] = useState<SingleState>(DEFAULT_SINGLE);
+  const [initialSingle, setInitialSingle] = useState<Partial<SingleState> | undefined>(undefined);
+  const [singleKey, setSingleKey] = useState(0);
+  // When set, the current build is a CHILD of this saved strategy — its teams are
+  // restricted to the parent's qualifiers (referencing the first strategy's teams).
+  const [childOfId, setChildOfId] = useState<string | null>(null);
 
   // ---- result mode + filters ----
   const [resultMode, setResultMode] = useState<'teams' | 'fixtures'>('teams');
@@ -187,7 +227,11 @@ export default function StrategyBuilderPanel() {
   // reads the league exports, the last-results explorer reads season fixtures.
   const singleNeedsExport = callMode === 'single' && singleMode === 'stat';
   const singleNeedsFixtures = callMode === 'single' && singleMode === 'results';
-  const wantExport = singleNeedsExport || (conditions.length > 0 && needsExport(conditions));
+  // A child strategy also needs the PARENT's data, to compute the parent's teams.
+  const parentConfig = childOfId ? saved.find((s) => s.id === childOfId)?.config : undefined;
+  const parentNeedsExport = parentConfig ? needsExport(parentConfig.conditions) : false;
+  const parentNeedsFixtures = parentConfig ? (needsFixtures(parentConfig.conditions) || parentConfig.conditions.some((c) => c.dimensionId === 'grading1')) : false;
+  const wantExport = singleNeedsExport || parentNeedsExport || (conditions.length > 0 && needsExport(conditions));
   const teamsNeedFixtures = conditions.length > 0 && needsFixtures(conditions);
   // The grading RFS overlay reads season fixtures; bounded to the capped leagues to limit load.
   const rfsNeedsFixtures = conditions.some((c) => c.dimensionId === 'grading1');
@@ -222,7 +266,7 @@ export default function StrategyBuilderPanel() {
   // season fixtures are fetched only for them — even for export/fixtures-based
   // conditions. Teams mode still spans every league.
   const needFixturesFor = (compId: number) => (resultMode === 'teams'
-    ? (teamsNeedFixtures || ((wantBacktest || rfsNeedsFixtures || singleNeedsFixtures) && fixtureCompIds.has(compId)))
+    ? (teamsNeedFixtures || ((wantBacktest || rfsNeedsFixtures || singleNeedsFixtures || parentNeedsFixtures) && fixtureCompIds.has(compId)))
     : ((teamsNeedFixtures || rfsNeedsFixtures) && fixtureCompIds.has(compId)));
   const needExportFor = (compId: number) => (resultMode === 'teams' ? wantExport : wantExport && fixtureCompIds.has(compId));
   const needTimingFor = (compId: number) => timingNeeded && fixtureCompIds.has(compId);
@@ -293,8 +337,23 @@ export default function StrategyBuilderPanel() {
     || (fixtureEnabled > 0 && fixtureSettled < fixtureEnabled)
     || (timingEnabled > 0 && timingSettled < timingEnabled);
 
+  // ---- child strategy: restrict to the parent's qualifying teams ----
+  const parentStrategy = useMemo(() => (childOfId ? saved.find((s) => s.id === childOfId) : undefined), [childOfId, saved]);
+  const parentKeys = useMemo(
+    () => (parentStrategy ? strategyTeamKeys(bundles, parentStrategy.config) : null),
+    [parentStrategy, bundles],
+  );
+  const inParent = useCallback(
+    (competition: string, teamId: number | null, team: string) =>
+      !parentKeys || parentKeys.has(`${competition}::${teamKeyOf({ teamId, team })}`),
+    [parentKeys],
+  );
+
   // ---- results (Teams mode) — each condition at its own period ----
-  const results = useMemo(() => evaluateStrategy(bundles, conditions, logic), [bundles, conditions, logic]);
+  const results = useMemo(
+    () => evaluateStrategy(bundles, conditions, logic).filter((r) => inParent(r.competition, r.teamId, r.team)),
+    [bundles, conditions, logic, inParent],
+  );
 
   // Where each team sits on the grading stat — in its own league and across every
   // loaded league (Gap Analytics' Stat rank (L) / World #), so a DA team's standing
@@ -424,10 +483,11 @@ export default function StrategyBuilderPanel() {
   const dimensionOptions = useMemo(() => [{ value: ALL, label: 'All categories' }, ...[...new Set(conditions.map((c) => c.dimensionId))].map((id) => ({ value: id, label: getDimension(id)?.label ?? id }))], [conditions]);
 
   const addCondition = (c: Condition) => { setConditions((cur) => [...cur, c]); setActiveId(null); };
+  const onSingleConfig = useCallback((s: SingleState) => setSingle(s), []);
   const switchCall = (m: 'peg' | 'single' | 'combo') => { setCallMode(m); setConditions([]); setActiveId(null); if (m !== 'peg') { setResultMode('teams'); setBuildMode('combined'); } };
   const removeCondition = (id: string) => { setConditions((cur) => cur.filter((c) => c.id !== id)); setActiveId(null); };
   const toggleNot = (id: string) => { setConditions((cur) => cur.map((c) => (c.id === id ? { ...c, not: !c.not } : c))); setActiveId(null); };
-  const clearAll = () => { setConditions([]); setFLeague(ALL); setFDimension(ALL); setFColor(ALL); setFMinGames(0); setFMinMatch(0); setFGroup(ALL); setFColumn(ALL); setFLetter(ALL); setFSource(ALL); setFDominance(ALL); setActiveId(null); };
+  const clearAll = () => { setConditions([]); setChildOfId(null); setFLeague(ALL); setFDimension(ALL); setFColor(ALL); setFMinGames(0); setFMinMatch(0); setFGroup(ALL); setFColumn(ALL); setFLetter(ALL); setFSource(ALL); setFDominance(ALL); setActiveId(null); };
 
   // One-click preset: set logic + conditions (each with its own period), then recompute live.
   const applyPreset = (p: StrategyPreset) => {
@@ -438,10 +498,16 @@ export default function StrategyBuilderPanel() {
     setActiveId(null);
   };
 
-  // Save the current build (conditions + logic + global period + view), never its results.
+  const resetFilters = () => { setFLeague(ALL); setFDimension(ALL); setFColor(ALL); setFMinGames(0); setFMinMatch(0); setFGroup(ALL); setFColumn(ALL); setFLetter(ALL); setFSource(ALL); setFDominance(ALL); };
+
+  // Save the current build (conditions + logic + view + child link), never its
+  // results. A Single call saves as its one Stat-filter condition.
   const commitSave = () => {
-    if (!conditions.length || !draftName.trim()) return; // a strategy needs a name
-    const entry = save(draftName, buildStrategyConfig({ conditions, logic, resultMode }), draftNote);
+    if (!draftName.trim()) return; // a strategy needs a name
+    const conds = callMode === 'single' ? (single.methodId ? [makeSingleCondition(single)] : []) : conditions;
+    if (!conds.length) return;
+    const kind: 'peg' | 'single' | 'combo' = callMode === 'single' ? 'single' : callMode === 'combo' ? 'combo' : 'peg';
+    const entry = save(draftName, buildStrategyConfig({ conditions: conds, logic, resultMode, kind, parentId: childOfId }), draftNote);
     setActiveId(entry.id);
     setDraftName('');
     setDraftNote('');
@@ -450,15 +516,32 @@ export default function StrategyBuilderPanel() {
   // Replay a saved strategy: restore the build and let the live engines recompute.
   const loadStrategy = (s: SavedStrategy) => {
     const cfg = s.config;
+    setChildOfId(cfg.parentId ?? null);
+    resetFilters();
+    setActiveId(s.id);
+    setSaving(false);
+    if (cfg.kind === 'single' && cfg.conditions[0]) {
+      setCallMode('single'); setSingleMode('stat');
+      setInitialSingle(singleFromCondition(cfg.conditions[0])); setSingleKey((k) => k + 1);
+      setConditions([]); setResultMode('teams');
+      return;
+    }
+    setCallMode(cfg.kind === 'combo' ? 'combo' : 'peg');
     setConditions(cfg.conditions.map((c) => ({ ...c, id: `c${(CONDITION_SEQ += 1)}`, options: { ...c.options } })));
     setLogic(cfg.logic);
     setBuildMode(cfg.conditions.some((c) => c.side === 'home' || c.side === 'away') ? 'split' : 'combined');
     setResultMode(cfg.resultMode);
-    setFLeague(ALL); setFDimension(ALL); setFColor(ALL); setFMinGames(0); setFMinMatch(0); setFGroup(ALL); setFColumn(ALL); setFLetter(ALL); setFSource(ALL); setFDominance(ALL);
-    setActiveId(s.id);
-    setSaving(false);
   };
-  const removeStrategy = (id: string) => { remove(id); setActiveId((cur) => (cur === id ? null : cur)); };
+  // Build a CHILD of a saved strategy: a fresh build whose teams will be restricted
+  // to the parent's qualifiers. The user picks the call type and stats for the child.
+  const addChild = (parent: SavedStrategy) => {
+    setChildOfId(parent.id);
+    setConditions([]); setActiveId(null); setSaving(false);
+    setDraftName(`${parent.name} → child`); setDraftNote('');
+    resetFilters();
+  };
+  const clearChild = () => setChildOfId(null);
+  const removeStrategy = (id: string) => { remove(id); setActiveId((cur) => (cur === id ? null : cur)); setChildOfId((cur) => (cur === id ? null : cur)); };
 
   const aside = (
     <SavedStrategiesPanel
@@ -466,6 +549,7 @@ export default function StrategyBuilderPanel() {
       activeId={activeId}
       onLoad={loadStrategy}
       onRemove={removeStrategy}
+      onAddChild={addChild}
       cloud={cloud}
       syncError={syncError}
       style={wide ? styles.asideWide : styles.asideStacked}
@@ -507,6 +591,12 @@ export default function StrategyBuilderPanel() {
             ? 'Combo — one strategy mixing both: add graded rules and numeric rules (a stat at a ≥ / ≤ threshold), combined with AND / OR.'
             : 'Single — one call by the numbers: a stat ranked highest → lowest, or filter teams by their last-game results.'}
       </Text>
+      {childOfId ? (
+        <View style={styles.childBanner}>
+          <Text style={styles.childBannerText} numberOfLines={2}>🔗 Child of “{parentStrategy?.name ?? 'a strategy'}” — only its qualifying teams are shown here. Build this child on a different stat/half, then save.</Text>
+          <Pressable accessibilityRole="button" onPress={clearChild} style={styles.childBannerBtn}><Text style={styles.childBannerBtnText}>Detach</Text></Pressable>
+        </View>
+      ) : null}
 
       {callMode === 'peg' ? (
         <>
@@ -611,7 +701,19 @@ export default function StrategyBuilderPanel() {
             })}
           </View>
           {singleMode === 'stat' ? (
-            <SingleStatLeaderboard narrow={narrow} bundles={bundles} upcoming={upcoming} loading={loading} />
+            <>
+              <SingleStatLeaderboard key={singleKey} narrow={narrow} bundles={bundles} upcoming={upcoming} loading={loading} initial={initialSingle} onConfig={onSingleConfig} inParent={inParent} />
+              <SingleSaveBar
+                saving={saving}
+                draftName={draftName}
+                draftNote={draftNote}
+                onToggle={() => { setSaving((s) => !s); setDraftName(''); setDraftNote(''); }}
+                onName={setDraftName}
+                onNote={setDraftNote}
+                onSave={commitSave}
+                disabled={!single.methodId}
+              />
+            </>
           ) : (
             <LastResultsExplorer narrow={narrow} bundles={bundles} upcoming={upcoming} loading={loading} />
           )}
@@ -1308,21 +1410,23 @@ function LastResultsExplorer({ narrow, bundles, upcoming, loading }: { narrow: b
  * across the loaded leagues, every team ranked highest → lowest by its value.
  * No grades, no thresholds — just the number, with each team's next fixture.
  */
-function SingleStatLeaderboard({ narrow, bundles, upcoming, loading }: { narrow: boolean; bundles: LeagueBundle[]; upcoming: UpcomingLite[]; loading: boolean }) {
+function SingleStatLeaderboard({ narrow, bundles, upcoming, loading, initial, onConfig, inParent }: { narrow: boolean; bundles: LeagueBundle[]; upcoming: UpcomingLite[]; loading: boolean; initial?: Partial<SingleState>; onConfig?: (s: SingleState) => void; inParent?: (competition: string, teamId: number | null, team: string) => boolean }) {
   const families = useMemo(() => singleStatFamilies(), []);
-  const [family, setFamily] = useState(families[0]?.value ?? 'ordinary');
+  const [family, setFamily] = useState(initial?.family ?? families[0]?.value ?? 'ordinary');
   const fam = families.find((f) => f.value === family) ?? families[0];
-  const [methodId, setMethodId] = useState(fam?.items[0]?.value ?? '');
-  const [scope, setScope] = useState<StatScope>('overall');
-  const [half, setHalf] = useState<'ft' | 'ht' | '2h'>('ft');
-  const [window, setWindow] = useState('season');
-  const [league, setLeague] = useState(ALL);
+  const [methodId, setMethodId] = useState(initial?.methodId ?? fam?.items[0]?.value ?? '');
+  const [scope, setScope] = useState<StatScope>(initial?.scope ?? 'overall');
+  const [half, setHalf] = useState<'ft' | 'ht' | '2h'>(initial?.half ?? 'ft');
+  const [window, setWindow] = useState(initial?.window ?? 'season');
+  const [league, setLeague] = useState(initial?.league ?? ALL);
   // Optional numeric threshold — narrow the ranked list to teams at a number
   // (e.g. ≥ 20%). Empty = show every team, ranked.
-  const [cmp, setCmp] = useState<'gte' | 'lte'>('gte');
-  const [minValue, setMinValue] = useState('');
+  const [cmp, setCmp] = useState<'gte' | 'lte'>(initial?.cmp ?? 'gte');
+  const [minValue, setMinValue] = useState(initial?.value ?? '');
   const period = periodFrom(half, scope);
   const hasThreshold = minValue.trim() !== '' && Number.isFinite(Number(minValue));
+  // Report the current config up so the parent can save this call as a strategy.
+  useEffect(() => { onConfig?.({ family, methodId, scope, half, window, league, cmp, value: minValue }); }, [family, methodId, scope, half, window, league, cmp, minValue, onConfig]);
 
   const changeFamily = (v: string) => {
     setFamily(v);
@@ -1334,11 +1438,12 @@ function SingleStatLeaderboard({ narrow, bundles, upcoming, loading }: { narrow:
   const statLabel = fam?.items.find((i) => i.value === methodId)?.label ?? '';
   const rows: SingleStatRow[] = useMemo(() => {
     const scoped = league === ALL ? bundles : bundles.filter((b) => b.competition === league);
-    const ranked = rankSingleStat(scoped, { family, methodId, period, window });
+    let ranked = rankSingleStat(scoped, { family, methodId, period, window });
+    if (inParent) ranked = ranked.filter((r) => inParent(r.competition, r.teamId, r.team));
     const n = Number(minValue);
     if (minValue.trim() === '' || !Number.isFinite(n)) return ranked;
     return ranked.filter((r) => (cmp === 'gte' ? r.value >= n : r.value <= n));
-  }, [bundles, league, family, methodId, period, window, cmp, minValue]);
+  }, [bundles, league, family, methodId, period, window, cmp, minValue, inParent]);
 
   return (
     <View style={styles.builderCard}>
@@ -1389,6 +1494,31 @@ function SingleStatLeaderboard({ narrow, bundles, upcoming, loading }: { narrow:
           })}
           {rows.length > 100 ? <Text style={styles.readNote}>Showing the top 100 — filter by league to narrow.</Text> : null}
         </>
+      ) : null}
+    </View>
+  );
+}
+
+/** Save a Single call as a strategy (name + description), reusing the save box. */
+function SingleSaveBar({ saving, draftName, draftNote, onToggle, onName, onNote, onSave, disabled }: { saving: boolean; draftName: string; draftNote: string; onToggle: () => void; onName: (v: string) => void; onNote: (v: string) => void; onSave: () => void; disabled?: boolean }) {
+  return (
+    <View style={styles.singleSaveWrap}>
+      <Pressable accessibilityRole="button" accessibilityState={{ disabled }} onPress={onToggle} disabled={disabled} style={[styles.saveBtn, saving && styles.saveBtnOn, disabled && styles.saveConfirmDisabled]}>
+        <Text style={[styles.saveBtnText, saving && styles.saveBtnTextOn]}>{saving ? 'Cancel' : '★ Save this call as a strategy'}</Text>
+      </Pressable>
+      {saving ? (
+        <View style={styles.saveBox}>
+          <Text style={styles.saveFieldLabel}>Name *</Text>
+          <TextInput value={draftName} onChangeText={onName} placeholder="Name this call — e.g. Home BTTS ≥ 20%" placeholderTextColor={theme.textFaint} style={styles.saveInput} autoFocus />
+          <Text style={styles.saveFieldLabel}>Description</Text>
+          <TextInput value={draftNote} onChangeText={onNote} placeholder="What is this call for? When would you use it?" placeholderTextColor={theme.textFaint} style={[styles.saveInput, styles.saveInputMultiline]} multiline numberOfLines={3} textAlignVertical="top" />
+          <View style={styles.saveActionsRow}>
+            <Pressable accessibilityRole="button" onPress={onSave} disabled={!draftName.trim()} style={({ pressed }) => [styles.saveConfirm, !draftName.trim() && styles.saveConfirmDisabled, pressed && styles.addBtnPressed]}>
+              <Text style={styles.saveConfirmText}>Save strategy</Text>
+            </Pressable>
+            {!draftName.trim() ? <Text style={styles.saveHintText}>Give it a name to save.</Text> : null}
+          </View>
+        </View>
       ) : null}
     </View>
   );
@@ -1625,15 +1755,50 @@ function SideEvals({ title, tint, evals, breakdownFor, rfsFor, recentFormFor }: 
 
 /** Side panel: the user's saved strategies. Each opens a build (not its results)
  *  and the live engines recompute the latest qualifying teams / fixtures. */
-function SavedStrategiesPanel({ saved, activeId, onLoad, onRemove, cloud, syncError, style }: {
+function SavedStrategyItem({ s, active, depth, onLoad, onRemove, onAddChild }: { s: SavedStrategy; active: boolean; depth: number; onLoad: (s: SavedStrategy) => void; onRemove: (id: string) => void; onAddChild: (s: SavedStrategy) => void }) {
+  return (
+    <View style={[styles.savedItem, active && styles.savedItemActive, depth > 0 && styles.savedChild]}>
+      <Pressable accessibilityRole="button" accessibilityLabel={`Open ${s.name}`} onPress={() => onLoad(s)} style={styles.savedMain}>
+        <View style={styles.savedNameRow}>
+          <View style={[styles.savedDot, { backgroundColor: active ? theme.accentGreen : depth > 0 ? theme.accentBlue : theme.accentPurple }]} />
+          <Text style={styles.savedName} numberOfLines={1}>{depth > 0 ? '↳ ' : ''}{s.name}</Text>
+        </View>
+        {s.note ? <Text style={styles.savedNote} numberOfLines={3}>{s.note}</Text> : null}
+        <Text style={styles.savedDesc} numberOfLines={4}>{s.description}</Text>
+      </Pressable>
+      <View style={styles.savedActions}>
+        <Pressable accessibilityRole="button" onPress={() => onLoad(s)} style={[styles.savedLoad, active && styles.savedLoadOn]}>
+          <Text style={[styles.savedLoadText, active && styles.savedLoadTextOn]}>{active ? '● Loaded' : 'Open'}</Text>
+        </Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Add a child strategy of ${s.name}`} onPress={() => onAddChild(s)} style={styles.savedChildBtn}>
+          <Text style={styles.savedChildBtnText}>+ Child</Text>
+        </Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Delete strategy" onPress={() => onRemove(s.id)} style={styles.savedDel}>
+          <Text style={styles.savedDelText}>Delete</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function SavedStrategiesPanel({ saved, activeId, onLoad, onRemove, onAddChild, cloud, syncError, style }: {
   saved: SavedStrategy[];
   activeId: string | null;
   onLoad: (s: SavedStrategy) => void;
   onRemove: (id: string) => void;
+  onAddChild: (s: SavedStrategy) => void;
   cloud?: boolean;
   syncError?: string | null;
   style?: StyleProp<ViewStyle>;
 }) {
+  // Group children under their parent; an orphan (parent deleted) shows at the top.
+  const childrenByParent = new Map<string, SavedStrategy[]>();
+  for (const s of saved) {
+    const pid = s.config.parentId;
+    if (pid) { const list = childrenByParent.get(pid) ?? []; list.push(s); childrenByParent.set(pid, list); }
+  }
+  const ids = new Set(saved.map((s) => s.id));
+  const topLevel = saved.filter((s) => !s.config.parentId || !ids.has(s.config.parentId));
   return (
     <View style={[styles.aside, style]}>
       <View style={styles.asideHead}>
@@ -1646,34 +1811,19 @@ function SavedStrategiesPanel({ saved, activeId, onLoad, onRemove, cloud, syncEr
         </Text>
       </View>
       {syncError ? <Text style={styles.cloudError}>Cloud sync issue: {syncError}</Text> : null}
-      <Text style={styles.asideHint}>Only the build is saved — open one to recompute the latest teams & fixtures.</Text>
+      <Text style={styles.asideHint}>Only the build is saved — open one to recompute live. “+ Child” builds a strategy on top of this one’s qualifying teams.</Text>
       {saved.length === 0 ? (
-        <Text style={styles.asideEmpty}>No saved strategies yet. Build your conditions, then tap ★ Save to keep the recipe.</Text>
+        <Text style={styles.asideEmpty}>No saved strategies yet. Build a call, then tap ★ Save to keep the recipe.</Text>
       ) : (
         <View style={styles.asideList}>
-          {saved.map((s) => {
-            const active = s.id === activeId;
-            return (
-              <View key={s.id} style={[styles.savedItem, active && styles.savedItemActive]}>
-                <Pressable accessibilityRole="button" accessibilityLabel={`Open ${s.name}`} onPress={() => onLoad(s)} style={styles.savedMain}>
-                  <View style={styles.savedNameRow}>
-                    <View style={[styles.savedDot, { backgroundColor: active ? theme.accentGreen : theme.accentPurple }]} />
-                    <Text style={styles.savedName} numberOfLines={1}>{s.name}</Text>
-                  </View>
-                  {s.note ? <Text style={styles.savedNote} numberOfLines={3}>{s.note}</Text> : null}
-                  <Text style={styles.savedDesc} numberOfLines={4}>{s.description}</Text>
-                </Pressable>
-                <View style={styles.savedActions}>
-                  <Pressable accessibilityRole="button" onPress={() => onLoad(s)} style={[styles.savedLoad, active && styles.savedLoadOn]}>
-                    <Text style={[styles.savedLoadText, active && styles.savedLoadTextOn]}>{active ? '● Loaded' : 'Open'}</Text>
-                  </Pressable>
-                  <Pressable accessibilityRole="button" accessibilityLabel="Delete strategy" onPress={() => onRemove(s.id)} style={styles.savedDel}>
-                    <Text style={styles.savedDelText}>Delete</Text>
-                  </Pressable>
-                </View>
-              </View>
-            );
-          })}
+          {topLevel.map((s) => (
+            <View key={s.id}>
+              <SavedStrategyItem s={s} active={s.id === activeId} depth={0} onLoad={onLoad} onRemove={onRemove} onAddChild={onAddChild} />
+              {(childrenByParent.get(s.id) ?? []).map((c) => (
+                <SavedStrategyItem key={c.id} s={c} active={c.id === activeId} depth={1} onLoad={onLoad} onRemove={onRemove} onAddChild={onAddChild} />
+              ))}
+            </View>
+          ))}
         </View>
       )}
     </View>
@@ -1867,6 +2017,14 @@ const styles = StyleSheet.create({
   cloudTagTextOn: { color: theme.accentGreen },
   cloudTagTextOff: { color: theme.textMuted },
   cloudError: { fontFamily: fonts.body, fontSize: 10, color: theme.loss, marginBottom: spacing.xs },
+  singleSaveWrap: { marginTop: spacing.sm, gap: spacing.xs },
+  childBanner: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm, padding: spacing.sm, borderWidth: 1, borderColor: theme.accentBlue, borderRadius: layout.borderRadius, backgroundColor: 'rgba(37,99,235,0.07)' },
+  childBannerText: { flex: 1, fontFamily: fonts.bodyMedium, fontSize: 11, lineHeight: 15, color: theme.accentBlue },
+  childBannerBtn: { borderWidth: 1, borderColor: theme.accentBlue, borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: 4 },
+  childBannerBtnText: { fontFamily: fonts.bodySemiBold, fontSize: 11, color: theme.accentBlue },
+  savedChild: { marginLeft: spacing.md, borderLeftWidth: 2, borderLeftColor: theme.accentBlue },
+  savedChildBtn: { borderWidth: 1, borderColor: theme.accentBlue, borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: 4 },
+  savedChildBtnText: { fontFamily: fonts.bodySemiBold, fontSize: 11, color: theme.accentBlue },
   asideEmpty: { fontFamily: fonts.body, fontSize: 12, lineHeight: 18, color: theme.textFaint, paddingVertical: spacing.md, textAlign: 'center' },
   asideList: { gap: spacing.sm },
   savedItem: { borderWidth: layout.borderWidth, borderColor: theme.border, borderLeftWidth: 3, borderLeftColor: theme.accentPurple, borderRadius: layout.borderRadius, backgroundColor: theme.surfaceHover, padding: spacing.sm, gap: 6 },
