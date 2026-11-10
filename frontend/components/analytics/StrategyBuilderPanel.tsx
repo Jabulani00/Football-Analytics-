@@ -25,7 +25,7 @@ import {
   singleStatFamilies, SINGLE_STAT_WINDOWS, splitPeriod, strategyTeamKeys, summarize, teamHalfBreakdown, teamKeyOf,
   type SingleStatRow,
   type CondMembership, type Condition, type Dimension, type FixtureSide, type GradeQualification, type HalfReading, type LeagueBundle, type LeagueGradeShare,
-  type DominantVenue, type ResultColor, type SavedStrategy, type StatHalf, type StatRank, type StatScope, type StatTier, type StrategyLogic, type StrategyPeriod,
+  type DominantVenue, type ResultColor, type SavedStrategy, type SavedStrategyConfig, type StatHalf, type StatRank, type StatScope, type StatTier, type StrategyLogic, type StrategyPeriod,
   type StrategyPreset, type StrategyResult, type TeamEval,
 } from '@/utils/strategyBuilder';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
@@ -217,7 +217,7 @@ export default function StrategyBuilderPanel() {
   const [target, setTarget] = useState<string>(ALL);
 
   // ---- saved strategies (the HOW only — recomputed live on load) ----
-  const { saved, save, remove, cloud, syncError } = useSavedBuilderStrategies();
+  const { saved, save, update, remove, cloud, syncError } = useSavedBuilderStrategies();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [draftName, setDraftName] = useState('');
@@ -500,19 +500,38 @@ export default function StrategyBuilderPanel() {
 
   const resetFilters = () => { setFLeague(ALL); setFDimension(ALL); setFColor(ALL); setFMinGames(0); setFMinMatch(0); setFGroup(ALL); setFColumn(ALL); setFLetter(ALL); setFSource(ALL); setFDominance(ALL); };
 
-  // Save the current build (conditions + logic + view + child link), never its
-  // results. A Single call saves as its one Stat-filter condition.
-  const commitSave = () => {
-    if (!draftName.trim()) return; // a strategy needs a name
+  // The config for the current build (Single = its one Stat-filter condition).
+  const currentConfig = (): SavedStrategyConfig | null => {
     const conds = callMode === 'single' ? (single.methodId ? [makeSingleCondition(single)] : []) : conditions;
-    if (!conds.length) return;
+    if (!conds.length) return null;
     const kind: 'peg' | 'single' | 'combo' = callMode === 'single' ? 'single' : callMode === 'combo' ? 'combo' : 'peg';
-    const entry = save(draftName, buildStrategyConfig({ conditions: conds, logic, resultMode, kind, parentId: childOfId }), draftNote);
-    setActiveId(entry.id);
+    return buildStrategyConfig({ conditions: conds, logic, resultMode, kind, parentId: childOfId });
+  };
+  const editingSaved = saved.find((s) => s.id === activeId);
+  // Save the current build, never its results. 'update' edits the open strategy in
+  // place (same id); 'new' creates a fresh one.
+  const commitSave = (mode: 'new' | 'update') => {
+    if (!draftName.trim()) return; // a strategy needs a name
+    const config = currentConfig();
+    if (!config) return;
+    if (mode === 'update' && editingSaved) {
+      update(editingSaved.id, { name: draftName, note: draftNote, config });
+    } else {
+      const entry = save(draftName, config, draftNote);
+      setActiveId(entry.id);
+    }
     setDraftName('');
     setDraftNote('');
     setSaving(false);
   };
+  // Open/close the save box, prefilling the open strategy's name & note for editing.
+  const toggleSave = () => setSaving((s) => {
+    const next = !s;
+    const a = saved.find((x) => x.id === activeId);
+    setDraftName(next ? (a?.name ?? '') : '');
+    setDraftNote(next ? (a?.note ?? '') : '');
+    return next;
+  });
   // Replay a saved strategy: restore the build and let the live engines recompute.
   const loadStrategy = (s: SavedStrategy) => {
     const cfg = s.config;
@@ -707,10 +726,12 @@ export default function StrategyBuilderPanel() {
                 saving={saving}
                 draftName={draftName}
                 draftNote={draftNote}
-                onToggle={() => { setSaving((s) => !s); setDraftName(''); setDraftNote(''); }}
+                onToggle={toggleSave}
                 onName={setDraftName}
                 onNote={setDraftNote}
-                onSave={commitSave}
+                onSave={() => commitSave('new')}
+                onUpdate={() => commitSave('update')}
+                editingName={editingSaved?.name}
                 disabled={!single.methodId}
               />
             </>
@@ -731,8 +752,8 @@ export default function StrategyBuilderPanel() {
                   <Text style={[styles.logicBtnText, logic === l && styles.logicBtnTextOn]}>{l.toUpperCase()}</Text>
                 </Pressable>
               ))}
-              <Pressable onPress={() => { setSaving((s) => !s); setDraftName(''); setDraftNote(''); }} style={[styles.saveBtn, saving && styles.saveBtnOn]}>
-                <Text style={[styles.saveBtnText, saving && styles.saveBtnTextOn]}>{saving ? 'Cancel' : '★ Save'}</Text>
+              <Pressable onPress={toggleSave} style={[styles.saveBtn, saving && styles.saveBtnOn]}>
+                <Text style={[styles.saveBtnText, saving && styles.saveBtnTextOn]}>{saving ? 'Cancel' : editingSaved ? '✎ Edit' : '★ Save'}</Text>
               </Pressable>
               <Pressable onPress={clearAll} style={styles.clearBtn}><Text style={styles.clearBtnText}>Clear</Text></Pressable>
             </View>
@@ -784,13 +805,13 @@ export default function StrategyBuilderPanel() {
                 textAlignVertical="top"
               />
               <View style={styles.saveActionsRow}>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityState={{ disabled: !draftName.trim() }}
-                  onPress={commitSave}
-                  disabled={!draftName.trim()}
-                  style={({ pressed }) => [styles.saveConfirm, !draftName.trim() && styles.saveConfirmDisabled, pressed && styles.addBtnPressed]}>
-                  <Text style={styles.saveConfirmText}>Save strategy</Text>
+                {editingSaved ? (
+                  <Pressable accessibilityRole="button" onPress={() => commitSave('update')} disabled={!draftName.trim()} style={({ pressed }) => [styles.saveConfirm, !draftName.trim() && styles.saveConfirmDisabled, pressed && styles.addBtnPressed]}>
+                    <Text style={styles.saveConfirmText}>Update “{editingSaved.name}”</Text>
+                  </Pressable>
+                ) : null}
+                <Pressable accessibilityRole="button" onPress={() => commitSave('new')} disabled={!draftName.trim()} style={({ pressed }) => [editingSaved ? styles.saveSecondary : styles.saveConfirm, !draftName.trim() && styles.saveConfirmDisabled, pressed && styles.addBtnPressed]}>
+                  <Text style={editingSaved ? styles.saveSecondaryText : styles.saveConfirmText}>{editingSaved ? 'Save as new' : 'Save strategy'}</Text>
                 </Pressable>
                 {!draftName.trim() ? <Text style={styles.saveHintText}>Give it a name to save.</Text> : null}
               </View>
@@ -1499,12 +1520,12 @@ function SingleStatLeaderboard({ narrow, bundles, upcoming, loading, initial, on
   );
 }
 
-/** Save a Single call as a strategy (name + description), reusing the save box. */
-function SingleSaveBar({ saving, draftName, draftNote, onToggle, onName, onNote, onSave, disabled }: { saving: boolean; draftName: string; draftNote: string; onToggle: () => void; onName: (v: string) => void; onNote: (v: string) => void; onSave: () => void; disabled?: boolean }) {
+/** Save (or edit) a Single call as a strategy, reusing the save box. */
+function SingleSaveBar({ saving, draftName, draftNote, onToggle, onName, onNote, onSave, onUpdate, editingName, disabled }: { saving: boolean; draftName: string; draftNote: string; onToggle: () => void; onName: (v: string) => void; onNote: (v: string) => void; onSave: () => void; onUpdate: () => void; editingName?: string; disabled?: boolean }) {
   return (
     <View style={styles.singleSaveWrap}>
       <Pressable accessibilityRole="button" accessibilityState={{ disabled }} onPress={onToggle} disabled={disabled} style={[styles.saveBtn, saving && styles.saveBtnOn, disabled && styles.saveConfirmDisabled]}>
-        <Text style={[styles.saveBtnText, saving && styles.saveBtnTextOn]}>{saving ? 'Cancel' : '★ Save this call as a strategy'}</Text>
+        <Text style={[styles.saveBtnText, saving && styles.saveBtnTextOn]}>{saving ? 'Cancel' : editingName ? '✎ Edit this strategy' : '★ Save this call as a strategy'}</Text>
       </Pressable>
       {saving ? (
         <View style={styles.saveBox}>
@@ -1513,8 +1534,13 @@ function SingleSaveBar({ saving, draftName, draftNote, onToggle, onName, onNote,
           <Text style={styles.saveFieldLabel}>Description</Text>
           <TextInput value={draftNote} onChangeText={onNote} placeholder="What is this call for? When would you use it?" placeholderTextColor={theme.textFaint} style={[styles.saveInput, styles.saveInputMultiline]} multiline numberOfLines={3} textAlignVertical="top" />
           <View style={styles.saveActionsRow}>
-            <Pressable accessibilityRole="button" onPress={onSave} disabled={!draftName.trim()} style={({ pressed }) => [styles.saveConfirm, !draftName.trim() && styles.saveConfirmDisabled, pressed && styles.addBtnPressed]}>
-              <Text style={styles.saveConfirmText}>Save strategy</Text>
+            {editingName ? (
+              <Pressable accessibilityRole="button" onPress={onUpdate} disabled={!draftName.trim()} style={({ pressed }) => [styles.saveConfirm, !draftName.trim() && styles.saveConfirmDisabled, pressed && styles.addBtnPressed]}>
+                <Text style={styles.saveConfirmText}>Update “{editingName}”</Text>
+              </Pressable>
+            ) : null}
+            <Pressable accessibilityRole="button" onPress={onSave} disabled={!draftName.trim()} style={({ pressed }) => [editingName ? styles.saveSecondary : styles.saveConfirm, !draftName.trim() && styles.saveConfirmDisabled, pressed && styles.addBtnPressed]}>
+              <Text style={editingName ? styles.saveSecondaryText : styles.saveConfirmText}>{editingName ? 'Save as new' : 'Save strategy'}</Text>
             </Pressable>
             {!draftName.trim() ? <Text style={styles.saveHintText}>Give it a name to save.</Text> : null}
           </View>
@@ -1997,6 +2023,8 @@ const styles = StyleSheet.create({
   saveInputMultiline: { minHeight: 64 },
   saveActionsRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.xs, flexWrap: 'wrap' },
   saveConfirm: { borderRadius: 999, paddingHorizontal: spacing.lg, paddingVertical: 9, backgroundColor: theme.accentPurple },
+  saveSecondary: { borderRadius: 999, paddingHorizontal: spacing.lg, paddingVertical: 9, borderWidth: 1.5, borderColor: theme.accentPurple, backgroundColor: 'transparent' },
+  saveSecondaryText: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: theme.accentPurple },
   saveConfirmDisabled: { opacity: 0.45 },
   saveHintText: { fontFamily: fonts.body, fontSize: 11, color: theme.textFaint },
   saveConfirmText: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: '#FFFFFF' },
