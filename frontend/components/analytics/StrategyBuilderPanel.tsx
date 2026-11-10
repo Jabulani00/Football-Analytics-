@@ -1317,7 +1317,12 @@ function SingleStatLeaderboard({ narrow, bundles, upcoming, loading }: { narrow:
   const [half, setHalf] = useState<'ft' | 'ht' | '2h'>('ft');
   const [window, setWindow] = useState('season');
   const [league, setLeague] = useState(ALL);
+  // Optional numeric threshold — narrow the ranked list to teams at a number
+  // (e.g. ≥ 20%). Empty = show every team, ranked.
+  const [cmp, setCmp] = useState<'gte' | 'lte'>('gte');
+  const [minValue, setMinValue] = useState('');
   const period = periodFrom(half, scope);
+  const hasThreshold = minValue.trim() !== '' && Number.isFinite(Number(minValue));
 
   const changeFamily = (v: string) => {
     setFamily(v);
@@ -1329,13 +1334,16 @@ function SingleStatLeaderboard({ narrow, bundles, upcoming, loading }: { narrow:
   const statLabel = fam?.items.find((i) => i.value === methodId)?.label ?? '';
   const rows: SingleStatRow[] = useMemo(() => {
     const scoped = league === ALL ? bundles : bundles.filter((b) => b.competition === league);
-    return rankSingleStat(scoped, { family, methodId, period, window });
-  }, [bundles, league, family, methodId, period, window]);
+    const ranked = rankSingleStat(scoped, { family, methodId, period, window });
+    const n = Number(minValue);
+    if (minValue.trim() === '' || !Number.isFinite(n)) return ranked;
+    return ranked.filter((r) => (cmp === 'gte' ? r.value >= n : r.value <= n));
+  }, [bundles, league, family, methodId, period, window, cmp, minValue]);
 
   return (
     <View style={styles.builderCard}>
       <Text style={styles.sectionLabel}>① Single stat · ranked by the numbers</Text>
-      <Text style={styles.readNote}>One stat — percentages or averages. Every team is ranked by its number, highest at the top, lowest at the bottom. No grades, no thresholds.</Text>
+      <Text style={styles.readNote}>One stat — percentages or averages — ranked by its number, highest at the top. No grades. Add an optional ≥ / ≤ threshold to keep only teams at a number (e.g. ≥ 20%).</Text>
       <View style={styles.readRow}>
         <SegGroup label="Period" value={half} options={[['ft', 'Full time'], ['ht', '1st half'], ['2h', '2nd half']]} onChange={setHalf} />
         <SegGroup label="Venue" value={scope} options={[['overall', 'Overall'], ['home', 'Home'], ['away', 'Away']]} onChange={setScope} />
@@ -1346,11 +1354,26 @@ function SingleStatLeaderboard({ narrow, bundles, upcoming, loading }: { narrow:
         <FilterDropdown label="Window" value={window} options={SINGLE_STAT_WINDOWS} onChange={setWindow} style={narrow ? styles.full : styles.flex} />
         <FilterDropdown label="League" value={league} options={leagueOptions} onChange={setLeague} style={narrow ? styles.full : styles.flex} />
       </View>
+      <View style={[styles.filterRow, narrow && styles.filterCol]}>
+        <FilterDropdown label="Threshold" value={cmp} options={[{ value: 'gte', label: 'At least ≥' }, { value: 'lte', label: 'At most ≤' }]} onChange={(v) => setCmp(v as 'gte' | 'lte')} style={narrow ? styles.full : styles.flex} />
+        <View style={narrow ? styles.full : styles.flex}>
+          <Text style={styles.numLabel}>Value (e.g. 20 = 20%, 2.0 = PPG) · blank = all</Text>
+          <TextInput
+            value={minValue}
+            onChangeText={(t) => setMinValue(t.replace(/[^0-9.]/g, ''))}
+            keyboardType="decimal-pad"
+            placeholder="Any"
+            placeholderTextColor={theme.textFaint}
+            style={styles.numInput}
+            accessibilityLabel="Threshold value"
+          />
+        </View>
+      </View>
       {loading ? <View style={styles.loadingRow}><ActivityIndicator size="small" color={theme.accentGreen} /><Text style={styles.statusMuted}>Loading stats…</Text></View> : null}
-      {!loading && rows.length === 0 ? <Text style={styles.empty}>No teams for this stat yet — load leagues, or try another family / period.</Text> : null}
+      {!loading && rows.length === 0 ? <Text style={styles.empty}>{hasThreshold ? 'No team meets that threshold — relax the number, or switch ≥ / ≤.' : 'No teams for this stat yet — load leagues, or try another family / period.'}</Text> : null}
       {rows.length > 0 ? (
         <>
-          <Text style={styles.statusLive}>● {rows.length} teams · {statLabel} · {periodLabel(period)}</Text>
+          <Text style={styles.statusLive}>● {rows.length} teams · {statLabel} · {periodLabel(period)}{hasThreshold ? ` · ${cmp === 'gte' ? '≥' : '≤'} ${minValue}` : ''}</Text>
           {rows.slice(0, 100).map((r, i) => {
             const next = nextFixtureFor(r.teamId, r.team, upcoming);
             return (
