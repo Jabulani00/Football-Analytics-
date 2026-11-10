@@ -164,10 +164,12 @@ export default function StrategyBuilderPanel() {
   const [logic, setLogic] = useState<StrategyLogic>('and');
   // How conditions are composed: one combined builder, or separate Home | Away panels.
   const [buildMode, setBuildMode] = useState<'combined' | 'split'>('combined');
-  // The call type: a Peg (the full multi-rule strategy) or a Single (one call —
-  // one featured stat, or a Last-game-results filter).
-  const [callMode, setCallMode] = useState<'peg' | 'single'>('peg');
+  // The call type: a Peg (graded multi-rule strategy), a Single (one numeric call),
+  // or a Combo (one strategy mixing graded rules and numeric rules).
+  const [callMode, setCallMode] = useState<'peg' | 'single' | 'combo'>('peg');
   const [singleMode, setSingleMode] = useState<'stat' | 'results'>('stat');
+  // In Combo, each added rule is either a graded call or a numeric call.
+  const [comboKind, setComboKind] = useState<'graded' | 'numeric'>('graded');
 
   // ---- result mode + filters ----
   const [resultMode, setResultMode] = useState<'teams' | 'fixtures'>('teams');
@@ -418,7 +420,7 @@ export default function StrategyBuilderPanel() {
   const dimensionOptions = useMemo(() => [{ value: ALL, label: 'All categories' }, ...[...new Set(conditions.map((c) => c.dimensionId))].map((id) => ({ value: id, label: getDimension(id)?.label ?? id }))], [conditions]);
 
   const addCondition = (c: Condition) => { setConditions((cur) => [...cur, c]); setActiveId(null); };
-  const switchCall = (m: 'peg' | 'single') => { setCallMode(m); setConditions([]); setActiveId(null); if (m === 'single') { setResultMode('teams'); setBuildMode('combined'); } };
+  const switchCall = (m: 'peg' | 'single' | 'combo') => { setCallMode(m); setConditions([]); setActiveId(null); if (m !== 'peg') { setResultMode('teams'); setBuildMode('combined'); } };
   const removeCondition = (id: string) => { setConditions((cur) => cur.filter((c) => c.id !== id)); setActiveId(null); };
   const toggleNot = (id: string) => { setConditions((cur) => cur.map((c) => (c.id === id ? { ...c, not: !c.not } : c))); setActiveId(null); };
   const clearAll = () => { setConditions([]); setFLeague(ALL); setFDimension(ALL); setFColor(ALL); setFMinGames(0); setFMinMatch(0); setFGroup(ALL); setFColumn(ALL); setFLetter(ALL); setFSource(ALL); setFDominance(ALL); setActiveId(null); };
@@ -483,9 +485,9 @@ export default function StrategyBuilderPanel() {
         </Text>
       </View>
 
-      {/* Call type: a Peg (full multi-rule strategy) or a Single (one call) */}
+      {/* Call type: Peg (graded strategy), Single (one numeric call), or Combo (both) */}
       <View style={styles.callRow}>
-        {([['peg', '🧷 Peg · full strategy'], ['single', '① Single · one call']] as const).map(([v, label]) => {
+        {([['peg', '🧷 Peg · graded'], ['single', '① Single · numbers'], ['combo', '🧩 Combo · both']] as const).map(([v, label]) => {
           const on = callMode === v;
           return (
             <Pressable key={v} accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => switchCall(v)} style={[styles.callBtn, on && styles.callBtnOn]}>
@@ -497,7 +499,9 @@ export default function StrategyBuilderPanel() {
       <Text style={styles.callHint}>
         {callMode === 'peg'
           ? 'Peg — the graded strategy: combine several rules (AND / OR) on the combined-list grades. Open a qualifying team to see its last 5 · 8 · 10 · 15 · 20 results and how it did on the stat.'
-          : 'Single — one call by the numbers: a stat at a ≥ / ≤ threshold (e.g. Home BTTS ≥ 20%, PPG ≥ 2.0, last 5 scoring ≥ 50%), or filter teams by their last-game results.'}
+          : callMode === 'combo'
+            ? 'Combo — one strategy mixing both: add graded rules and numeric rules (a stat at a ≥ / ≤ threshold), combined with AND / OR.'
+            : 'Single — one call by the numbers: a stat ranked highest → lowest, or filter teams by their last-game results.'}
       </Text>
 
       {callMode === 'peg' ? (
@@ -550,6 +554,43 @@ export default function StrategyBuilderPanel() {
                 <ConditionBuilder narrow={narrow} fixedSide="away" title="✈ Away team · Rule" onAdd={addCondition} />
               </View>
             </View>
+          )}
+        </>
+      ) : callMode === 'combo' ? (
+        <>
+          {/* Result mode (teams / fixtures) */}
+          <View style={styles.modeRow}>
+            {([['teams', 'Teams'], ['fixtures', 'Fixtures · grade qualification']] as const).map(([v, label]) => {
+              const on = resultMode === v;
+              return (
+                <Pressable key={v} accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => setResultMode(v)} style={[styles.modeBtn, on && styles.modeBtnOn]}>
+                  <Text style={[styles.modeBtnText, on && styles.modeBtnTextOn]}>{label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          {/* Combo: add a graded rule or a numeric rule — they combine in one strategy */}
+          <View style={styles.modeRow}>
+            {([['graded', '🧷 Graded rule'], ['numeric', '① Numeric rule']] as const).map(([v, label]) => {
+              const on = comboKind === v;
+              return (
+                <Pressable key={v} accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => setComboKind(v)} style={[styles.modeBtn, on && styles.modeBtnOn]}>
+                  <Text style={[styles.modeBtnText, on && styles.modeBtnTextOn]}>{label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          {comboKind === 'graded' ? (
+            <ConditionBuilder narrow={narrow} title="🧷 Graded rule" onAdd={addCondition} />
+          ) : (
+            <ConditionBuilder
+              narrow={narrow}
+              title="① Numeric rule (by the numbers)"
+              onAdd={addCondition}
+              dimId="statfilter"
+              addLabel="+ Add numeric rule"
+              defaultOpts={{ mode: 'limit', cmp: 'gte', value: '50' }}
+            />
           )}
         </>
       ) : (
