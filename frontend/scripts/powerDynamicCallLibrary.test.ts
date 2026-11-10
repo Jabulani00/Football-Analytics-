@@ -148,6 +148,28 @@ console.log('\nseparation on a called fixture');
   check('poor hierarchy separation is callable', poor?.percent === 100 && (poor.reason ?? '').includes('C · Poor separation'), poor?.reason ?? 'none');
   const clear = scoreCallFixture('label-sep-A::wrong', top, low, saved.table, { matches: quiet });
   check('the opposite of a clear hierarchy gap still names the gap', clear?.percent === 100 && (clear.reason ?? '').includes('Poor separation'), clear?.reason ?? 'none');
+  const labels = callAspectsFor('last5', 'label_change').map((item) => item.label);
+  check(
+    'positive changes are callable together and on their own',
+    labels.includes('Positive changes (all types combined)') &&
+      labels.includes('Positive changes') &&
+      labels.includes('Negative changes (all types combined)'),
+  );
+  const none = scoreCallFixture('label-positive-all::tick', top, low, saved.table, { matches: quiet });
+  check('no label moves is not a combined positive', none?.percent === 0, none?.reason ?? 'none');
+  const oppositePositive = scoreCallFixture('label-positive::wrong', top, low, saved.table, { matches: quiet });
+  check('the opposite of positive changes holds when there are none', oppositePositive?.percent === 100, oppositePositive?.reason ?? 'none');
+  const yellow: CallTableRow = { rank: 5, teamId: 5, name: 'Mid', played: 10, points: 12, homePoints: 4, awayPoints: 8, zone: 'mid' };
+  const green: CallTableRow = { rank: 1, teamId: 1, name: 'Top', played: 10, points: 30, homePoints: 18, awayPoints: 12, zone: 'top' };
+  const losses = [1, 2, 3, 4, 5].map((unix) => ({ homeId: green.teamId, awayId: yellow.teamId, homeGoals: 1, awayGoals: 0, unix }));
+  const climbed = scoreCallFixture('label-positive-all::tick', yellow, green, [green, yellow], { matches: losses });
+  check('five positive changes call every positive type together', climbed?.percent === 100, climbed?.reason ?? 'none');
+  const anyPositive = scoreCallFixture('label-positive::tick', yellow, green, [green, yellow], { matches: losses });
+  check('five positive changes call positive changes', anyPositive?.percent === 100, anyPositive?.reason ?? 'none');
+  const dropped = scoreCallFixture('label-negative-all::tick', yellow, green, [green, yellow], { matches: losses });
+  check('five negative changes call every negative type together', dropped?.percent === 100, dropped?.reason ?? 'none');
+  const quietNegative = scoreCallFixture('label-negative-all::tick', top, low, saved.table, { matches: quiet });
+  check('no label moves is not a combined negative', quietNegative?.percent === 0, quietNegative?.reason ?? 'none');
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

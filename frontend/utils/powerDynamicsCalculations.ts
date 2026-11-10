@@ -11,16 +11,12 @@ import { buildBhozomaTable, type SeasonMatch } from '@/utils/bhozomaEngine';
 import { evaluateH2HOptions, h2hGradeScore } from '@/utils/h2hOptions';
 import { evaluateImportanceOf3 } from '@/utils/importanceOf3Engine';
 import type { ImbangiScheduleMatch } from '@/utils/imbangiEngine';
-import type { FixtureInitialState, InitialStateSide } from '@/utils/last5Analysis';
-import { PERIOD_WORD, VENUE_WORD } from '@/utils/last5Sections';
+import type { FixtureInitialState } from '@/utils/last5Analysis';
 import {
   last5FormLeagueTable,
   last6FormLeagueTable,
   last6FormStandings,
-  resultsFromSeasonMatches,
   type Last6LeagueRow,
-  type Last6Period,
-  type Last6Venue,
 } from '@/utils/last6Form';
 import {
   importanceSeparation,
@@ -41,16 +37,12 @@ import {
 } from '@/utils/powerDynamicsEngine';
 import type { ProblemCauserRead } from '@/utils/problemCauser';
 import { contestedLeagueBoard } from '@/utils/separatorTools';
-import { lastN } from '@/utils/teamResults';
 
 export const SECTOR_HIT = 6;
 export const MARGIN_MID = 4;
 export const Y_APPLICATION_VALUE = 0.5;
 export const SEPARATION_AWARD = { clear: 3, mediocre: 1, poor: 0 } as const;
 export const IMBANGI_TRUE_VALUE = 6;
-
-const LAST5_VENUES: Last6Venue[] = ['overall', 'home', 'away'];
-const LAST5_PERIODS: Last6Period[] = ['ft', '1h', '2h'];
 
 export type SectorGroup = 'core' | 'semi' | 'y';
 
@@ -113,7 +105,13 @@ export type PowerDynamicsCalculation = {
     t2: SectorHit[];
     leader: SideId | 'level';
   };
-  calc2: { t1: number; t2: number };
+  calc2: {
+    core: { t1: number; t2: number };
+    y: { t1: number; t2: number };
+    /** Core sectors plus Y applications. */
+    t1: number;
+    t2: number;
+  };
   calc3: {
     t1: SideMarginRead;
     t2: SideMarginRead;
@@ -223,20 +221,8 @@ function sectorWins(sectors: CalculationSector[]): { t1: SideMarginRead; t2: Sid
   return { t1: readBands(t1), t2: readBands(t2) };
 }
 
-function sectorsWonTotal(sectors: CalculationSector[], side: SideId): number {
-  return sectors.reduce((sum, row) => {
-    if (row.group === 'core' || row.group === 'y') return sum + num(row[side]);
-    return sum;
-  }, 0);
-}
-
-function sumParts(parts: SectorPart[]): SideNumbers {
-  const t1 = parts.map((part) => part.t1).filter((value): value is number => value != null);
-  const t2 = parts.map((part) => part.t2).filter((value): value is number => value != null);
-  return {
-    t1: t1.length > 0 ? t1.reduce((sum, value) => sum + value, 0) : null,
-    t2: t2.length > 0 ? t2.reduce((sum, value) => sum + value, 0) : null,
-  };
+function groupTotal(sectors: CalculationSector[], group: SectorGroup, side: SideId): number {
+  return sectors.reduce((sum, row) => (row.group === group ? sum + num(row[side]) : sum), 0);
 }
 
 function isYellow(pd: PowerDynamicsBundle, side: SideId): boolean {
@@ -273,159 +259,6 @@ function scoresOnFormTable(pd: PowerDynamicsBundle, rows: Last6LeagueRow[]): Sid
   });
   const gap = baselineGapFor(t1, t2, standings, positionGap);
   return { t1: gap.t1.score, t2: gap.t2.score };
-}
-
-type InitialTally = { points: number; gd: number; gf: number; mp: number };
-
-function tallyInitial(side: InitialStateSide | null | undefined): InitialTally {
-  const matches = side?.matches ?? [];
-  let gf = 0;
-  let ga = 0;
-  let points = 0;
-  for (const match of matches) {
-    if (match.outcome === 'W') points += 3;
-    else if (match.outcome === 'D') points += 1;
-    gf += match.result.gf;
-    ga += match.result.ga;
-  }
-  return { points, gd: gf - ga, gf, mp: matches.length };
-}
-
-function venueLast5Rows(
-  standings: StandingLike[],
-  matches: SeasonMatch[],
-  venue: 'home' | 'away' | 'overall',
-  focus: { teamId: number | null; tally: InitialTally }[],
-): StandingLike[] {
-  const focusById = new Map(
-    focus
-      .filter((row): row is { teamId: number; tally: InitialTally } => row.teamId != null)
-      .map((row) => [row.teamId, row.tally]),
-  );
-  const rows = standings.map((side) => {
-    const kept = focusById.get(side.teamId);
-    if (kept) {
-      return {
-        teamId: side.teamId,
-        name: side.name,
-        zone: side.zone,
-        points: kept.points,
-        gd: kept.gd,
-        gf: kept.gf,
-        played: kept.mp,
-      };
-    }
-    const window = lastN(resultsFromSeasonMatches(side.teamId, matches, standings, { venue }), 5);
-    let points = 0;
-    let gf = 0;
-    let ga = 0;
-    for (const result of window) {
-      if (result.outcome === 'W') points += 3;
-      else if (result.outcome === 'D') points += 1;
-      gf += result.gf;
-      ga += result.ga;
-    }
-    return {
-      teamId: side.teamId,
-      name: side.name,
-      zone: side.zone,
-      points,
-      gd: gf - ga,
-      gf,
-      played: window.length,
-    };
-  });
-  rows.sort((a, b) => {
-    if (b.points !== a.points) return b.points - a.points;
-    if (b.gd !== a.gd) return b.gd - a.gd;
-    if (b.gf !== a.gf) return b.gf - a.gf;
-    return a.teamId - b.teamId;
-  });
-  return rows.map((row, index) => ({
-    rank: index + 1,
-    teamId: row.teamId,
-    name: row.name,
-    points: row.points,
-    played: row.played,
-    zone: row.zone,
-    goalDiff: row.gd,
-    goalsFor: row.gf,
-  }));
-}
-
-function initialBaseline(
-  pd: PowerDynamicsBundle,
-  standings: StandingLike[],
-  matches: SeasonMatch[],
-  initial: FixtureInitialState,
-  lens: 'overall' | 'home_away',
-): SideNumbers {
-  if (standings.length < 2) return { t1: null, t2: null };
-  const homeId = pd.t1.venue === 'home' ? pd.t1.teamId : pd.t2.teamId;
-  const awayId = pd.t1.venue === 'away' ? pd.t1.teamId : pd.t2.teamId;
-  const homeTable =
-    lens === 'overall'
-      ? venueLast5Rows(standings, matches, 'overall', [
-          { teamId: homeId, tally: tallyInitial(initial.overallHome) },
-          { teamId: awayId, tally: tallyInitial(initial.overallAway) },
-        ])
-      : venueLast5Rows(standings, matches, 'home', [{ teamId: homeId, tally: tallyInitial(initial.home) }]);
-  const awayTable =
-    lens === 'overall'
-      ? homeTable
-      : venueLast5Rows(standings, matches, 'away', [{ teamId: awayId, tally: tallyInitial(initial.away) }]);
-  const homeRank = homeId != null ? homeTable.find((row) => row.teamId === homeId) : undefined;
-  const awayRank = awayId != null ? awayTable.find((row) => row.teamId === awayId) : undefined;
-  const apply = (snap: SideSnapshot): SideSnapshot => {
-    const row = snap.venue === 'home' ? homeRank : awayRank;
-    return { ...snap, rank: row?.rank ?? null };
-  };
-  const t1 = apply(pd.t1);
-  const t2 = apply(pd.t2);
-  const positionGap = evaluatePositionGap({
-    tableSize: standings.length,
-    t1Rank: t1.rank,
-    t2Rank: t2.rank,
-    t1Label: t1.label,
-    t2Label: t2.label,
-  });
-  const gap = baselineGapFor(
-    t1,
-    t2,
-    lens === 'overall' ? homeTable : [...homeTable, ...awayTable],
-    positionGap,
-  );
-  return { t1: gap.t1.score, t2: gap.t2.score };
-}
-
-function last5Parts(
-  pd: PowerDynamicsBundle,
-  standings: StandingLike[],
-  matches: SeasonMatch[],
-  initial: FixtureInitialState,
-): SectorPart[] {
-  const parts: SectorPart[] = [
-    {
-      label: 'Initial state · Overall',
-      ...initialBaseline(pd, standings, matches, initial, 'overall'),
-    },
-    {
-      label: 'Initial state · Home/Away',
-      ...initialBaseline(pd, standings, matches, initial, 'home_away'),
-    },
-  ];
-  if (standings.length >= 2 && matches.length > 0) {
-    for (const venue of LAST5_VENUES) {
-      for (const period of LAST5_PERIODS) {
-        const table = last5FormLeagueTable(standings, matches, { venue, period });
-        parts.push({
-          label: `Last 5 · ${VENUE_WORD[venue]} · ${PERIOD_WORD[period]}`,
-          ...scoresOnFormTable(pd, table),
-        });
-      }
-    }
-  }
-  return parts;
 }
 
 function h2hGradeValues(
@@ -571,8 +404,10 @@ export function summariseSectorScores(opts: {
     ticks: opts.ticks,
     calc1: { t1: t1Hits, t2: t2Hits, leader },
     calc2: {
-      t1: sectorsWonTotal(sectors, 't1'),
-      t2: sectorsWonTotal(sectors, 't2'),
+      core: { t1: groupTotal(sectors, 'core', 't1'), t2: groupTotal(sectors, 'core', 't2') },
+      y: { t1: groupTotal(sectors, 'y', 't1'), t2: groupTotal(sectors, 'y', 't2') },
+      t1: groupTotal(sectors, 'core', 't1') + groupTotal(sectors, 'y', 't1'),
+      t2: groupTotal(sectors, 'core', 't2') + groupTotal(sectors, 'y', 't2'),
     },
     calc3: sectorWins(sectors),
   };
@@ -609,8 +444,7 @@ export function buildPowerDynamicsCalculations(
     false,
   );
 
-  const last5 = last5Parts(pd, standings, matches, input.initial);
-  const last5Scores = sumParts(last5);
+  const last5Scores = scoresOnFormTable(pd, last5FormLeagueTable(standings, matches));
   const formScores = scoresOnFormTable(pd, last6FormLeagueTable(standings, matches));
   const h2h = h2hGradeValues(
     input.h2hMatches,
@@ -690,8 +524,7 @@ export function buildPowerDynamicsCalculations(
       'Last 5',
       'core',
       last5Scores,
-      `Sum of every Last 5 baseline, including each venue and period filter.${separationLine(last5Scores.t1, last5Scores.t2)}`,
-      last5,
+      `Last 5 separation between ${pd.t1.label} and ${pd.t2.label}.${separationLine(last5Scores.t1, last5Scores.t2)}`,
     ),
     sector(
       'form',
@@ -724,7 +557,7 @@ export function buildPowerDynamicsCalculations(
     sector(
       'home_away_strong',
       'Home/Away strong',
-      'semi',
+      'core',
       { t1: pd.baselineGap.t1.score, t2: pd.baselineGap.t2.score },
       'Baseline shown on Home/Away strong.',
     ),

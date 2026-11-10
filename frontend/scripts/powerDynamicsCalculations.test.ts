@@ -52,7 +52,7 @@ console.log('\ncalculation summary');
   check('a clear core win is stored as 3', calc.sectors.find((sector) => sector.id === 'baseline')?.t1 === 3 && calc.sectors.find((sector) => sector.id === 'baseline')?.t2 === 0);
   check('a mediocre core win is stored as 1', calc.sectors.find((sector) => sector.id === 'last5')?.t2 === 1 && calc.sectors.find((sector) => sector.id === 'last5')?.t1 === 0);
   check('separation values stay under 6', calc.calc1.t1.length === 0 && calc.calc1.t2.length === 0 && calc.calc1.leader === 'level');
-  check('totals add the separation of sectors won', calc.calc2.t1 === 3.5 && calc.calc2.t2 === 1);
+  check('totals add the separation of sectors won', calc.calc2.core.t1 === 3 && calc.calc2.y.t1 === 0.5 && calc.calc2.t1 === 3.5 && calc.calc2.t2 === 1);
   check(
     'T2 wins the mediocre sector for 1',
     calc.calc3.t2.count === 1 && calc.calc3.t2.bands.mid[0]?.id === 'last5' && calc.calc3.t2.bands.mid[0]?.margin === 1,
@@ -68,7 +68,12 @@ console.log('\ncalculation summary');
     t2Yellow: false,
     ticks: [],
     sectors: [row('form', 'Form', 'core', null, 6)],
-  }).calc2.t1 === 0);
+  }).calc2.t1 === 0 && summariseSectorScores({
+    t1Yellow: false,
+    t2Yellow: false,
+    ticks: [],
+    sectors: [row('form', 'Form', 'core', null, 6)],
+  }).calc2.core.t2 === 3);
 }
 
 console.log('\nwin margin bands');
@@ -203,7 +208,11 @@ console.log('\nlive sector values');
   check('won 6 ticks T2', tick('won_6')?.t2 === true);
   check('never lost twice ticks T2', tick('never_lost_twice')?.t2 === true);
   check('contested pack includes 1st only of these two', tick('contested_league')?.t1 === true && tick('contested_league')?.t2 === false);
-  check('a won baseline stores 3 while home/away keeps the raw score', value('baseline', 't1') === 3 && (value('home_away_strong', 't1') ?? 0) > 3);
+  check('home/away strong is a core sector with the same award as baseline', calc.sectors.find((s) => s.id === 'home_away_strong')?.group === 'core' && value('home_away_strong', 't1') === value('baseline', 't1') && value('baseline', 't1') === 3);
+  check('last 5 is the separation between the two sides', (() => {
+    const last5 = calc.sectors.find((s) => s.id === 'last5');
+    return last5?.parts.length === 0 && (last5?.detail ?? '').includes('Last 5 separation');
+  })());
   check('baseline names a separation', (calc.sectors.find((s) => s.id === 'baseline')?.detail ?? '').includes('separation'));
   check('h2h separation uses the gap values', (calc.sectors.find((s) => s.id === 'h2h')?.detail ?? '').includes('separation'));
   check('imbangi sits with the core sectors', calc.sectors.find((s) => s.id === 'imbangi')?.group === 'core');

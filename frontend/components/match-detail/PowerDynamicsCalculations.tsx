@@ -47,11 +47,11 @@ type Props = {
 const GROUP_COPY: Record<SectorGroup, { title: string; note: string }> = {
   core: {
     title: 'Core sectors',
-    note: 'Baseline, importance of 3 points, last 5, form, H2H, problem causer, and imbangi. The number on a won sector is the separation: clear is 3, mediocre is 1, poor is 0.',
+    note: 'Baseline, importance of 3 points, last 5, form, H2H, problem causer, imbangi, and home/away strong. The number on a won sector is the separation: clear is 3, mediocre is 1, poor is 0.',
   },
   semi: {
     title: 'Semi-core',
-    note: 'Home/Away strong uses the baseline scores. It is not added again into the sectors-won total.',
+    note: 'Home/Away strong now sits with the core sectors.',
   },
   y: {
     title: 'Y applications',
@@ -334,7 +334,7 @@ function WonSectors({
 }) {
   const lead = (
     <Text style={styles.detail}>
-      The higher number wins the sector. The gap is 6 or more, 4 to 5.9, or less than 4.
+      A core win is the separation: clear is 3, mediocre is 1, poor is 0. A Y application is 0.5.
     </Text>
   );
   if (only === 't2') {
@@ -357,6 +357,106 @@ function WonSectors({
         <SideWon name={t1Name} read={wins.t1} side="t1" emphasize={highlight?.side === 't1' ? highlight.band : undefined} />
         <SideWon name={t2Name} read={wins.t2} side="t2" emphasize={highlight?.side === 't2' ? highlight.band : undefined} />
       </View>
+    </View>
+  );
+}
+
+function coreWinner(row: CalculationSector): { aside: string; band: MarginBandId } {
+  const left = row.t1 ?? 0;
+  const right = row.t2 ?? 0;
+  if (left === 0 && right === 0) return { aside: 'Poor · 0', band: 'low' };
+  if (left > right) return { aside: `T1 · ${left >= 3 ? 'Clear' : 'Mediocre'} · ${fmt(left)}`, band: left >= 3 ? 'high' : 'mid' };
+  if (right > left) return { aside: `T2 · ${right >= 3 ? 'Clear' : 'Mediocre'} · ${fmt(right)}`, band: right >= 3 ? 'high' : 'mid' };
+  return { aside: 'Level', band: 'low' };
+}
+
+function CoreSectorsButton({
+  calc,
+  t1Name,
+  t2Name,
+}: {
+  calc: PowerDynamicsCalculation;
+  t1Name: string;
+  t2Name: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const core = calc.sectors.filter((row) => row.group === 'core');
+  const y = calc.sectors.filter((row) => row.group === 'y');
+  return (
+    <>
+      <Pressable
+        onPress={() => setOpen(true)}
+        accessibilityRole="button"
+        accessibilityLabel={`Show all ${core.length} core sectors and the Y applications`}
+        style={styles.moreBtn}>
+        <Text style={styles.showMore}>All {core.length} core sectors</Text>
+      </Pressable>
+      <SectorModal
+        visible={open}
+        title="Sectors these sides versed"
+        subtitle={`Combined · ${t1Name} ${fmt(calc.calc2.t1)} · ${t2Name} ${fmt(calc.calc2.t2)}`}
+        onClose={() => setOpen(false)}>
+        <Text style={styles.bandTitle}>Core sectors</Text>
+        <Text style={styles.detail}>
+          {t1Name} {fmt(calc.calc2.core.t1)} · {t2Name} {fmt(calc.calc2.core.t2)}
+        </Text>
+        {core.map((row) => {
+          const result = coreWinner(row);
+          return (
+            <SectorFact
+              key={row.id}
+              label={row.label}
+              aside={result.aside}
+              note={`${t1Name} ${fmt(row.t1)} · ${t2Name} ${fmt(row.t2)}`}
+              band={result.band}
+            />
+          );
+        })}
+        <Text style={styles.bandTitle}>Y applications</Text>
+        <Text style={styles.detail}>
+          {t1Name} {fmt(calc.calc2.y.t1)} · {t2Name} {fmt(calc.calc2.y.t2)}
+        </Text>
+        {y.map((row) => (
+          <SectorFact
+            key={row.id}
+            label={row.label}
+            aside={(row.t1 ?? 0) > 0 || (row.t2 ?? 0) > 0 ? 'On · 0.5' : 'Off · 0'}
+            note={`${t1Name} ${fmt(row.t1)} · ${t2Name} ${fmt(row.t2)}`}
+            band={(row.t1 ?? 0) > 0 || (row.t2 ?? 0) > 0 ? 'low' : 'low'}
+          />
+        ))}
+        <Text style={styles.bandTitle}>Combined</Text>
+        <Text style={styles.detail}>
+          {t1Name} {fmt(calc.calc2.t1)} · {t2Name} {fmt(calc.calc2.t2)}
+        </Text>
+      </SectorModal>
+    </>
+  );
+}
+
+function TotalSplit({ calc, t1, t2 }: { calc: PowerDynamicsCalculation; t1: string; t2: string }) {
+  const lines = [
+    { label: 'Core sectors', t1: calc.calc2.core.t1, t2: calc.calc2.core.t2, main: false },
+    { label: 'Y applications', t1: calc.calc2.y.t1, t2: calc.calc2.y.t2, main: false },
+    { label: 'Combined', t1: calc.calc2.t1, t2: calc.calc2.t2, main: true },
+  ];
+  return (
+    <View>
+      {lines.map((line) => (
+        <View key={line.label} style={styles.splitBlock}>
+          <Text style={styles.blockLabel}>{line.label}</Text>
+          <View style={styles.totalGrid}>
+            <View style={styles.totalCol}>
+              <Text style={styles.hitLabel}>{t1}</Text>
+              <Text style={line.main ? styles.total : styles.splitTotal}>{fmt(line.t1)}</Text>
+            </View>
+            <View style={styles.totalCol}>
+              <Text style={styles.hitLabel}>{t2}</Text>
+              <Text style={line.main ? styles.total : styles.splitTotal}>{fmt(line.t2)}</Text>
+            </View>
+          </View>
+        </View>
+      ))}
     </View>
   );
 }
@@ -533,17 +633,9 @@ export default function PowerDynamicsCalculations(props: Props) {
           <View style={styles.calcCard}>
             <Text style={styles.calcKicker}>Calculation 2 · Apples v apples</Text>
             <Text style={styles.calcTitle}>Totals</Text>
-            <View style={styles.totalGrid}>
-              <View style={styles.totalCol}>
-                <Text style={styles.hitLabel}>{t1}</Text>
-                <Text style={styles.total}>{fmt(calc.calc2.t1)}</Text>
-              </View>
-              <View style={styles.totalCol}>
-                <Text style={styles.hitLabel}>{t2}</Text>
-                <Text style={styles.total}>{fmt(calc.calc2.t2)}</Text>
-              </View>
-            </View>
-            <Text style={styles.detail}>Clear separation adds 3, mediocre adds 1, and poor adds 0. A Y application adds 0.5. Ticks stay out.</Text>
+            <TotalSplit calc={calc} t1={t1} t2={t2} />
+            <Text style={styles.detail}>Core sectors first, then Y applications, then the two added together. Clear is 3, mediocre is 1, poor is 0, and a Y application is 0.5.</Text>
+            <CoreSectorsButton calc={calc} t1Name={t1} t2Name={t2} />
           </View>
         ) : null}
         {focusId === 'calc3' ? (
@@ -599,17 +691,9 @@ export default function PowerDynamicsCalculations(props: Props) {
       <View style={styles.calcCard}>
         <Text style={styles.calcKicker}>Calculation 2 · Apples v apples</Text>
         <Text style={styles.calcTitle}>Totals</Text>
-        <View style={styles.totalGrid}>
-          <View style={styles.totalCol}>
-            <Text style={styles.hitLabel}>{t1}</Text>
-            <Text style={styles.total}>{fmt(calc.calc2.t1)}</Text>
-          </View>
-          <View style={styles.totalCol}>
-            <Text style={styles.hitLabel}>{t2}</Text>
-            <Text style={styles.total}>{fmt(calc.calc2.t2)}</Text>
-          </View>
-        </View>
-        <Text style={styles.detail}>Clear separation adds 3, mediocre adds 1, and poor adds 0. A Y application adds 0.5. Ticks stay out.</Text>
+        <TotalSplit calc={calc} t1={t1} t2={t2} />
+        <Text style={styles.detail}>Core sectors first, then Y applications, then the two added together. Clear is 3, mediocre is 1, poor is 0, and a Y application is 0.5.</Text>
+        <CoreSectorsButton calc={calc} t1Name={t1} t2Name={t2} />
         <Text style={styles.blockLabel}>Sectors won</Text>
         <WonSectors t1Name={t1} t2Name={t2} wins={calc.calc3} />
       </View>
@@ -632,11 +716,13 @@ export default function PowerDynamicsCalculations(props: Props) {
         ))}
       </Section>
 
-      <Section title={GROUP_COPY.semi.title} note={GROUP_COPY.semi.note}>
-        {semi.map((row) => (
-          <SectorRow key={row.id} row={row} />
-        ))}
-      </Section>
+      {semi.length > 0 ? (
+        <Section title={GROUP_COPY.semi.title} note={GROUP_COPY.semi.note}>
+          {semi.map((row) => (
+            <SectorRow key={row.id} row={row} />
+          ))}
+        </Section>
+      ) : null}
 
       {yOnly.length > 0 ? (
         <Section title={GROUP_COPY.y.title} note={GROUP_COPY.y.note}>
@@ -791,8 +877,14 @@ const styles = StyleSheet.create({
     color: theme.textMuted,
     marginTop: 2,
   },
+  splitBlock: { marginBottom: spacing.sm },
   totalGrid: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.xs },
   totalCol: { flex: 1 },
+  splitTotal: {
+    fontFamily: fonts.displaySemi,
+    fontSize: 22,
+    color: theme.textPrimary,
+  },
   total: {
     fontFamily: fonts.display,
     fontSize: 32,

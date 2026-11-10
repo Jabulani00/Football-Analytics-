@@ -31,7 +31,7 @@ const calc = {
     t2: [],
     leader: 't1',
   },
-  calc2: { t1: 8, t2: 2 },
+  calc2: { core: { t1: 7, t2: 1 }, y: { t1: 0.5, t2: 1 }, t1: 8, t2: 2 },
   calc3: {
     t1: { count: 1, bands: { high: [{ id: 'baseline', label: 'Baseline', t1: 8, t2: 2, margin: 6 }], mid: [], low: [] } },
     t2: { count: 0, bands: emptyBands },
@@ -46,6 +46,20 @@ check('a wrong is the opposite of the tick', scoreCalculationRead('calc1-t2::wro
 check('core and Y sectors are callable', callAspectById('sector-baseline-t1::tick')?.functionId === 'core' && callAspectById('sector-bhozoma-t2::wrong')?.functionId === 'y');
 check('a core sector call follows the two numbers', scoreCalculationRead('sector-baseline-t1::tick', calc)?.percent === 100 && scoreCalculationRead('sector-baseline-t2::tick', calc)?.percent === 0);
 check('a tick call follows the side it is on', scoreCalculationRead('tick-lost_6-t1::tick', calc)?.percent === 100 && scoreCalculationRead('tick-lost_6-t2::wrong', calc)?.percent === 100);
+check(
+  'each calculation can call the highest and lowest core, Y, and combined totals',
+  scoreCalculationRead('calc1-core-t1-high', calc)?.percent === 100 &&
+    scoreCalculationRead('calc2-y-t1-low', calc)?.percent === 100 &&
+    scoreCalculationRead('calc3-combined-t2-low', calc)?.percent === 100 &&
+    scoreCalculationRead('calc3-combined-t1-low', calc)?.percent === 0,
+);
+check(
+  'a sector can be called as highest or lowest',
+  scoreCalculationRead('sector-baseline-t1', calc)?.percent === 100 &&
+    scoreCalculationRead('sector-h2h-t1-low', calc)?.percent === 0 &&
+    scoreCalculationRead('sector-baseline-t2-low', calc)?.percent === 100 &&
+    callAspectById('sector-h2h-t1-low::tick')?.functionId === 'core',
+);
 
 const table: CallTableRow[] = [
   { rank: 1, teamId: 1, name: 'Top', played: 10, points: 30, homePoints: 24, awayPoints: 6, zone: 'top' },
@@ -76,13 +90,13 @@ const sector = scoreCallFixture('sector-baseline-t1::tick', table[0], table[2], 
 const tick = scoreCallFixture('tick-lost_6-t1::wrong', table[0], table[2], table, context);
 check('a sector call is scored for the fixture', sector != null && sector.percent > 0);
 check('a tick call is scored for the fixture', tick != null && tick.percent > 0);
-const hits = scorePowerDynamicPacks([pack], ['calc1-t1::tick', 'sector-baseline-t1::tick', 'tick-lost_6-t1::wrong'], '2026-10-28');
+const hits = scorePowerDynamicPacks([pack], ['calc2-t1::tick', 'sector-baseline-t1::tick', 'tick-lost_6-t1::wrong'], '2026-10-28');
 check(
   'calculation, sector, and tick calls return the fixture once when all hold',
   hits.length === 1 &&
     hits[0].fixtureId === 11 &&
     hits[0].percent > 0 &&
-    ['T1 has more sectors of 6+ · true', 'Baseline · T1 ahead · true', 'Lost 6 in a row · T1 · opposite'].every((label) => hits[0].aspectLabel.includes(label)),
+    ['T1 total is higher · true', 'Baseline · T1 highest · true', 'Lost 6 in a row · T1 · opposite'].every((label) => hits[0].aspectLabel.includes(label)),
 );
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -739,6 +739,39 @@ function rawMeasureAspects(): MeasureAspect[] {
         token: `${row.kind}:${row.code}`,
       }),
     ),
+    aspect({
+      id: 'label-positive-all',
+      tabId: 'last5',
+      functionId: 'label_change',
+      label: 'Positive changes (all types combined)',
+      detail: 'Any positive hierarchy type: A1, B1, B2, C1, C2, D1, D2, D3, or E1.',
+      needsFixtures: true,
+      binary: true,
+      measure: 'label-change',
+      token: 'positive-all',
+    }),
+    aspect({
+      id: 'label-positive',
+      tabId: 'last5',
+      functionId: 'label_change',
+      label: 'Positive changes',
+      detail: 'At least one game in the last 5 is a positive change.',
+      needsFixtures: true,
+      binary: true,
+      measure: 'label-change',
+      token: 'positive',
+    }),
+    aspect({
+      id: 'label-negative-all',
+      tabId: 'last5',
+      functionId: 'label_change',
+      label: 'Negative changes (all types combined)',
+      detail: 'Any negative hierarchy type: A1, B1, B2, C1, C2, D1, D2, D3, or E1.',
+      needsFixtures: true,
+      binary: true,
+      measure: 'label-change',
+      token: 'negative-all',
+    }),
     ...(['A', 'B', 'C'] as const satisfies readonly ChangeSeparation[]).map((letter) =>
       aspect({
         id: `label-sep-${letter}`,
@@ -1921,12 +1954,23 @@ export function scoreMeasure(
     const otherPlace = changeScalePlace(otherSide.hierarchy);
     const letter = changeSeparation(place, otherPlace);
     const gap = letter ? `${place} v ${otherPlace} · ${letter} · ${CHANGE_SEPARATION_LABEL[letter]}` : null;
+    const called = `${labelChangeKind(side.hierarchy.kind as ChangeKind)} · ${side.hierarchy.code}`;
     if (token.startsWith('sep:')) {
       const wanted = token.slice(4);
       return fit(letter === wanted ? 100 : 0, gap ?? 'No hierarchy gap');
     }
+    if (token === 'positive-all') {
+      const on = side.hierarchy.kind === 'strength';
+      return fit(on ? 100 : 0, gap ? `${called} · ${gap}` : called);
+    }
+    if (token === 'positive') {
+      return fit(side.positives > 0 ? 100 : 0, `${side.positives} positive changes${gap ? ` · ${gap}` : ''}`);
+    }
+    if (token === 'negative-all') {
+      const on = side.hierarchy.kind === 'weakness';
+      return fit(on ? 100 : 0, gap ? `${called} · ${gap}` : called);
+    }
     const [kind, code] = token.split(':');
-    const called = `${labelChangeKind(side.hierarchy.kind as ChangeKind)} · ${side.hierarchy.code}`;
     const on = side.hierarchy.kind === kind && side.hierarchy.code === code;
     return fit(on ? 100 : 0, gap ? `${called} · ${gap}` : called);
   }

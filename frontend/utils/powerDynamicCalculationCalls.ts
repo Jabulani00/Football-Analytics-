@@ -39,9 +39,8 @@ const CORE_SECTORS: [string, string][] = [
   ['h2h', 'H2H'],
   ['problem_causer', 'Problem causer'],
   ['imbangi', 'Imbangi'],
+  ['home_away_strong', 'Home/Away strong'],
 ];
-
-const SEMI_SECTORS: [string, string][] = [['home_away_strong', 'Home/Away strong']];
 
 const Y_SECTORS: [string, string][] = [
   ['indlela', 'Indlela'],
@@ -65,12 +64,43 @@ function read(id: string, functionId: string, label: string, detail: string): Ca
 
 function sectorReads(functionId: string, rows: [string, string][]): CalculationCallAspect[] {
   return rows.flatMap(([id, label]) => [
-    read(`sector-${id}-t1`, functionId, `${label} · T1 ahead`, `${label}. T1’s number is higher than T2.`),
-    read(`sector-${id}-t2`, functionId, `${label} · T2 ahead`, `${label}. T2’s number is higher than T1.`),
+    read(`sector-${id}-t1`, functionId, `${label} · T1 highest`, `${label}. T1’s number is higher than T2.`),
+    read(`sector-${id}-t2`, functionId, `${label} · T2 highest`, `${label}. T2’s number is higher than T1.`),
+    read(`sector-${id}-t1-low`, functionId, `${label} · T1 lowest`, `${label}. T1’s number is lower than T2.`),
+    read(`sector-${id}-t2-low`, functionId, `${label} · T2 lowest`, `${label}. T2’s number is lower than T1.`),
     read(`sector-${id}-level`, functionId, `${label} · level`, `${label}. Both numbers are equal.`),
     read(`sector-${id}-t1-hit`, functionId, `${label} · T1 at ${SECTOR_HIT}+`, `${label}. T1 is ${SECTOR_HIT} or more.`),
     read(`sector-${id}-t2-hit`, functionId, `${label} · T2 at ${SECTOR_HIT}+`, `${label}. T2 is ${SECTOR_HIT} or more.`),
   ]);
+}
+
+function totalExtremeReads(): CalculationCallAspect[] {
+  const groups = [
+    ['core', 'core sectors'],
+    ['y', 'Y sectors'],
+    ['combined', 'combined'],
+  ] as const;
+  return (['calc1', 'calc2', 'calc3'] as const).flatMap((functionId) =>
+    groups.flatMap(([key, name]) =>
+      (['t1', 't2'] as const).flatMap((sideId) => {
+        const who = sideId === 't1' ? 'T1' : 'T2';
+        return [
+          read(
+            `${functionId}-${key}-${sideId}-high`,
+            functionId,
+            `${who} ${name} total is highest`,
+            `${who} has the higher ${name} total.`,
+          ),
+          read(
+            `${functionId}-${key}-${sideId}-low`,
+            functionId,
+            `${who} ${name} total is lowest`,
+            `${who} has the lower ${name} total.`,
+          ),
+        ];
+      }),
+    ),
+  );
 }
 
 function tickReads(): CalculationCallAspect[] {
@@ -188,8 +218,8 @@ const RAW_CALCULATION_ASPECTS: CalculationCallAspect[] = [
       binary: true as const,
     }));
   }),
+  ...totalExtremeReads(),
   ...sectorReads('core', CORE_SECTORS),
-  ...sectorReads('semi', SEMI_SECTORS),
   ...sectorReads('y', Y_SECTORS),
   ...tickReads(),
 ];
@@ -202,13 +232,12 @@ export const CALCULATION_CALL: PowerDynamicCallDef = {
   id: 'calculations',
   index: 'C',
   name: 'Power dynamic calculations',
-  detail: 'Calculation 1, 2 and 3, core sectors, semi-core, Y sectors, and ticks. A tick means the call holds. A cross means it does not.',
+  detail: 'Calculation 1, 2 and 3, core sectors, Y sectors, and ticks. A tick means the call holds. A cross means it does not.',
   functions: [
     { id: 'calc1', label: 'Calculation 1', detail: 'Sectors of 6 or more.' },
-    { id: 'calc2', label: 'Calculation 2', detail: 'Total from sectors won. Clear separation is 3, mediocre is 1, poor is 0. A Y application is 0.5.' },
+    { id: 'calc2', label: 'Calculation 2', detail: 'Core total, then the Y total, then the two added together. Clear separation is 3, mediocre is 1, poor is 0. A Y application is 0.5.' },
     { id: 'calc3', label: 'Calculation 3', detail: 'Sectors each side won, grouped as clear, mediocre, or a Y application.' },
-    { id: 'core', label: 'Core sectors', detail: 'Baseline, importance of 3 points, last 5, form, H2H, problem causer, and imbangi.' },
-    { id: 'semi', label: 'Semi-core', detail: 'Home/Away strong.' },
+    { id: 'core', label: 'Core sectors', detail: 'Baseline, importance of 3 points, last 5, form, H2H, problem causer, imbangi, and home/away strong.' },
     { id: 'y', label: 'Y sectors', detail: 'Indlela, Bhozoma, child beater, sudden drop, and sudden pick up. Each one is 0.5 when it is on.' },
     { id: 'ticks', label: 'Ticks', detail: 'Lost 6, won 6, never twice, and contested league.' },
   ],
@@ -257,6 +286,19 @@ function scoreCalculationBase(id: string, calc: PowerDynamicsCalculation): Calcu
   if (id === 'calc3-t2') return hit(c3t2 > c3t1, c3);
   if (id === 'calc3-level') return hit(c3t1 === c3t2, c3);
 
+  const extreme = id.match(/^calc[123]-(core|y|combined)-(t1|t2)-(high|low)$/);
+  if (extreme) {
+    const key = extreme[1] as 'core' | 'y' | 'combined';
+    const sideId = extreme[2] as 't1' | 't2';
+    const totals =
+      key === 'core' ? calc.calc2.core : key === 'y' ? calc.calc2.y : { t1: calc.calc2.t1, t2: calc.calc2.t2 };
+    const mine = shown(totals?.[sideId] ?? 0);
+    const other = shown(totals?.[sideId === 't1' ? 't2' : 't1'] ?? 0);
+    const name = key === 'core' ? 'Core' : key === 'y' ? 'Y' : 'Combined';
+    const line = `${name} total · T1 ${shown(totals?.t1 ?? 0)} · T2 ${shown(totals?.t2 ?? 0)}`;
+    return hit(extreme[3] === 'high' ? mine > other : mine < other, line);
+  }
+
   const band = id.match(/^calc3-(t1|t2)-(high|mid|low)$/);
   if (!band) return scoreSector(id, calc) ?? scoreTick(id, calc);
   const sideId = band[1] as 't1' | 't2';
@@ -267,7 +309,7 @@ function scoreCalculationBase(id: string, calc: PowerDynamicsCalculation): Calcu
 }
 
 function scoreSector(id: string, calc: PowerDynamicsCalculation): CalculationScore | null {
-  const match = id.match(/^sector-(.+)-(t1-hit|t2-hit|t1|t2|level)$/);
+  const match = id.match(/^sector-(.+)-(t1-hit|t2-hit|t1-low|t2-low|t1|t2|level)$/);
   if (!match) return null;
   const row = calc.sectors.find((sector) => sector.id === match[1]);
   if (!row || row.t1 == null || row.t2 == null) return hit(false, 'No figure for this sector');
@@ -275,7 +317,9 @@ function scoreSector(id: string, calc: PowerDynamicsCalculation): CalculationSco
   const t2 = shown(row.t2);
   const line = `${row.label} · T1 ${t1} · T2 ${t2}`;
   if (match[2] === 't1') return hit(t1 > t2, line);
+  if (match[2] === 't1-low') return hit(t1 < t2, line);
   if (match[2] === 't2') return hit(t2 > t1, line);
+  if (match[2] === 't2-low') return hit(t2 < t1, line);
   if (match[2] === 'level') return hit(t1 === t2, line);
   if (match[2] === 't1-hit') return hit(t1 >= SECTOR_HIT, line);
   return hit(t2 >= SECTOR_HIT, line);
