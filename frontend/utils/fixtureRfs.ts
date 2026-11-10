@@ -342,19 +342,25 @@ export function statStreaksFor(
 }
 
 /**
- * Recent form for ONE stat — how often a team has done it over the last 5 / 10 / 15
- * games, plus the most recent game cards (hit/miss, score, opponent). Reuses the
- * same per-game predicate as RFS, so "form" and "grade" read consistently.
- * `results` must be newest-first. Null when the stat has no per-game definition.
+ * Recent form for ONE stat — how often a team has done it over the last 5 / 8 /
+ * 10 / 15 / 20 games (only the windows it has enough games for), plus the recent
+ * game cards (hit/miss, score, opponent). Reuses the same per-game predicate as
+ * RFS, so "form" and "grade" read consistently. `results` must be newest-first.
+ * Null when the stat has no per-game definition.
  */
 export type RecentGame = { hit: boolean; score: string; opponent: string; home: boolean; outcome: ResultOutcome };
 export type RecentFormWindow = { window: number; games: number; hits: number; rate: number };
 export type RecentForm = { key: string; usual: string; windows: RecentFormWindow[]; games: RecentGame[] };
 
+/** The last-N windows offered for recent form, shortest first. */
+export const RECENT_FORM_WINDOWS = [5, 8, 10, 15, 20];
+/** How many recent game cards to carry (covers the widest window). */
+const RECENT_FORM_CARDS = 20;
+
 export function recentFormForStat(
   results: TeamResult[],
   statKey: string,
-  windows: number[] = [5, 10, 15],
+  windows: number[] = RECENT_FORM_WINDOWS,
 ): RecentForm | null {
   const def = RFS_ORDINARY_DEFS.find((d) => d.key === statKey);
   if (!def || results.length === 0) return null;
@@ -363,7 +369,7 @@ export function recentFormForStat(
     const hits = slice.filter(def.hit).length;
     return { window: w, games: slice.length, hits, rate: slice.length ? Math.round((100 * hits) / slice.length) : 0 };
   });
-  const games: RecentGame[] = results.slice(0, 10).map((r) => ({
+  const games: RecentGame[] = results.slice(0, RECENT_FORM_CARDS).map((r) => ({
     hit: def.hit(r), score: `${r.gf}-${r.ga}`, opponent: r.opponentName, home: r.isHome, outcome: r.outcome,
   }));
   return { key: statKey, usual: def.usual, windows: wins, games };
