@@ -183,7 +183,11 @@ export default function StrategyBuilderPanel() {
   const [draftName, setDraftName] = useState('');
   const [draftNote, setDraftNote] = useState('');
 
-  const wantExport = conditions.length > 0 && needsExport(conditions);
+  // Single calls fetch their own data (no conditions): the ranked leaderboard
+  // reads the league exports, the last-results explorer reads season fixtures.
+  const singleNeedsExport = callMode === 'single' && singleMode === 'stat';
+  const singleNeedsFixtures = callMode === 'single' && singleMode === 'results';
+  const wantExport = singleNeedsExport || (conditions.length > 0 && needsExport(conditions));
   const teamsNeedFixtures = conditions.length > 0 && needsFixtures(conditions);
   // The grading RFS overlay reads season fixtures; bounded to the capped leagues to limit load.
   const rfsNeedsFixtures = conditions.some((c) => c.dimensionId === 'grading1');
@@ -218,7 +222,7 @@ export default function StrategyBuilderPanel() {
   // season fixtures are fetched only for them — even for export/fixtures-based
   // conditions. Teams mode still spans every league.
   const needFixturesFor = (compId: number) => (resultMode === 'teams'
-    ? (teamsNeedFixtures || ((wantBacktest || rfsNeedsFixtures) && fixtureCompIds.has(compId)))
+    ? (teamsNeedFixtures || ((wantBacktest || rfsNeedsFixtures || singleNeedsFixtures) && fixtureCompIds.has(compId)))
     : ((teamsNeedFixtures || rfsNeedsFixtures) && fixtureCompIds.has(compId)));
   const needExportFor = (compId: number) => (resultMode === 'teams' ? wantExport : wantExport && fixtureCompIds.has(compId));
   const needTimingFor = (compId: number) => timingNeeded && fixtureCompIds.has(compId);
