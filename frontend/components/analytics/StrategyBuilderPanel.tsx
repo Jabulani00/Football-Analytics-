@@ -21,8 +21,9 @@ import { RESULT_FILTERS, LAST_RESULT_WINDOWS } from '@/utils/lastResults';
 import {
   COLUMN_LABEL, DIMENSIONS, FIXTURE_SIDES, QUAL_COLUMNS, STRATEGY_PRESETS, TIMING_STATE_OPTIONS, buildStrategyConfig, conditionLabel, conditionMembership,
   daLevelOf, evaluateFixtureSides, evaluateStrategy, filterResults, getDimension, gradeShareByLeague,
-  matchStrength, needsExport, needsFixtures, periodFrom, periodLabel, rankTeamsForStat, resultBackground, resultColour,
-  splitPeriod, summarize, teamHalfBreakdown,
+  matchStrength, needsExport, needsFixtures, periodFrom, periodLabel, rankSingleStat, rankTeamsForStat, resultBackground, resultColour,
+  singleStatFamilies, SINGLE_STAT_WINDOWS, splitPeriod, summarize, teamHalfBreakdown,
+  type SingleStatRow,
   type CondMembership, type Condition, type Dimension, type FixtureSide, type GradeQualification, type HalfReading, type LeagueBundle, type LeagueGradeShare,
   type DominantVenue, type ResultColor, type SavedStrategy, type StatHalf, type StatRank, type StatScope, type StatTier, type StrategyLogic, type StrategyPeriod,
   type StrategyPreset, type StrategyResult, type TeamEval,
@@ -417,8 +418,6 @@ export default function StrategyBuilderPanel() {
   const dimensionOptions = useMemo(() => [{ value: ALL, label: 'All categories' }, ...[...new Set(conditions.map((c) => c.dimensionId))].map((id) => ({ value: id, label: getDimension(id)?.label ?? id }))], [conditions]);
 
   const addCondition = (c: Condition) => { setConditions((cur) => [...cur, c]); setActiveId(null); };
-  // A Single call holds exactly one rule, always viewed as qualifying teams.
-  const addSingle = (c: Condition) => { setConditions([c]); setLogic('and'); setResultMode('teams'); setActiveId(null); };
   const switchCall = (m: 'peg' | 'single') => { setCallMode(m); setConditions([]); setActiveId(null); if (m === 'single') { setResultMode('teams'); setBuildMode('combined'); } };
   const removeCondition = (id: string) => { setConditions((cur) => cur.filter((c) => c.id !== id)); setActiveId(null); };
   const toggleNot = (id: string) => { setConditions((cur) => cur.map((c) => (c.id === id ? { ...c, not: !c.not } : c))); setActiveId(null); };
@@ -567,14 +566,7 @@ export default function StrategyBuilderPanel() {
             })}
           </View>
           {singleMode === 'stat' ? (
-            <ConditionBuilder
-              narrow={narrow}
-              title="① Single stat · one call (by the numbers)"
-              onAdd={addSingle}
-              dimId="statfilter"
-              addLabel="Call this stat"
-              defaultOpts={{ mode: 'limit', cmp: 'gte', value: '50' }}
-            />
+            <SingleStatLeaderboard narrow={narrow} bundles={bundles} upcoming={upcoming} loading={loading} />
           ) : (
             <LastResultsExplorer narrow={narrow} bundles={bundles} upcoming={upcoming} loading={loading} />
           )}
@@ -582,23 +574,23 @@ export default function StrategyBuilderPanel() {
       )}
 
       {/* B. Conditions + logic */}
-      {callMode === 'single' && singleMode === 'results' ? null : conditions.length > 0 ? (
+      {callMode === 'single' ? null : conditions.length > 0 ? (
         <View style={styles.conditionsCard}>
           <View style={styles.conditionsHead}>
-            <Text style={styles.sectionLabel}>{callMode === 'single' ? 'Single call' : 'Rules'}</Text>
+            <Text style={styles.sectionLabel}>Rules</Text>
             <View style={styles.logicRow}>
-              {callMode === 'peg' ? (['and', 'or'] as StrategyLogic[]).map((l) => (
+              {(['and', 'or'] as StrategyLogic[]).map((l) => (
                 <Pressable key={l} onPress={() => setLogic(l)} style={[styles.logicBtn, logic === l && styles.logicBtnOn]}>
                   <Text style={[styles.logicBtnText, logic === l && styles.logicBtnTextOn]}>{l.toUpperCase()}</Text>
                 </Pressable>
-              )) : null}
+              ))}
               <Pressable onPress={() => { setSaving((s) => !s); setDraftName(''); setDraftNote(''); }} style={[styles.saveBtn, saving && styles.saveBtnOn]}>
                 <Text style={[styles.saveBtnText, saving && styles.saveBtnTextOn]}>{saving ? 'Cancel' : '★ Save'}</Text>
               </Pressable>
               <Pressable onPress={clearAll} style={styles.clearBtn}><Text style={styles.clearBtnText}>Clear</Text></Pressable>
             </View>
           </View>
-          {callMode === 'peg' ? <Text style={styles.logicHint}>{logic === 'and' ? 'AND — a team must satisfy every condition.' : 'OR — a team must satisfy at least one condition.'} Tap NOT to exclude teams matching a condition.</Text> : <Text style={styles.logicHint}>One stat called — the qualifying teams are below. Open a team to see its recent form.</Text>}
+          <Text style={styles.logicHint}>{logic === 'and' ? 'AND — a team must satisfy every condition.' : 'OR — a team must satisfy at least one condition.'} Tap NOT to exclude teams matching a condition.</Text>
           <View style={styles.chipGroups}>
             {([['home', '🏠 Home team'], ['away', '✈ Away team'], ['either', 'Either team']] as const).map(([sv, label]) => {
               const group = conditions.filter((c) => (c.side ?? 'either') === sv);
@@ -659,11 +651,11 @@ export default function StrategyBuilderPanel() {
           ) : null}
         </View>
       ) : (
-        <Text style={styles.empty}>{callMode === 'single' ? 'Pick a stat above to call it.' : 'Add a Rule above to build your strategy.'}</Text>
+        <Text style={styles.empty}>Add a Rule above to build your strategy.</Text>
       )}
 
       {/* Status */}
-      {callMode === 'single' && singleMode === 'results' ? null : (
+      {callMode === 'single' ? null : (
       <View style={styles.statusRow}>
         {loading || (resultMode === 'fixtures' && up.loading) ? (
           <><ActivityIndicator size="small" color={theme.accentGreen} /><Text style={styles.statusMuted}>Querying {liveLeagues.length} ongoing leagues…</Text></>
@@ -1266,6 +1258,74 @@ function LastResultsExplorer({ narrow, bundles, upcoming, loading }: { narrow: b
   );
 }
 
+/**
+ * Single · stat ranked by the numbers. One numeric stat (percentage or average)
+ * across the loaded leagues, every team ranked highest → lowest by its value.
+ * No grades, no thresholds — just the number, with each team's next fixture.
+ */
+function SingleStatLeaderboard({ narrow, bundles, upcoming, loading }: { narrow: boolean; bundles: LeagueBundle[]; upcoming: UpcomingLite[]; loading: boolean }) {
+  const families = useMemo(() => singleStatFamilies(), []);
+  const [family, setFamily] = useState(families[0]?.value ?? 'ordinary');
+  const fam = families.find((f) => f.value === family) ?? families[0];
+  const [methodId, setMethodId] = useState(fam?.items[0]?.value ?? '');
+  const [scope, setScope] = useState<StatScope>('overall');
+  const [half, setHalf] = useState<'ft' | 'ht' | '2h'>('ft');
+  const [window, setWindow] = useState('season');
+  const [league, setLeague] = useState(ALL);
+  const period = periodFrom(half, scope);
+
+  const changeFamily = (v: string) => {
+    setFamily(v);
+    const f = families.find((x) => x.value === v);
+    if (f && !f.items.some((i) => i.value === methodId)) setMethodId(f.items[0]?.value ?? '');
+  };
+
+  const leagueOptions = useMemo(() => [{ value: ALL, label: 'All leagues' }, ...bundles.map((b) => ({ value: b.competition, label: b.competition }))], [bundles]);
+  const statLabel = fam?.items.find((i) => i.value === methodId)?.label ?? '';
+  const rows: SingleStatRow[] = useMemo(() => {
+    const scoped = league === ALL ? bundles : bundles.filter((b) => b.competition === league);
+    return rankSingleStat(scoped, { family, methodId, period, window });
+  }, [bundles, league, family, methodId, period, window]);
+
+  return (
+    <View style={styles.builderCard}>
+      <Text style={styles.sectionLabel}>① Single stat · ranked by the numbers</Text>
+      <Text style={styles.readNote}>One stat — percentages or averages. Every team is ranked by its number, highest at the top, lowest at the bottom. No grades, no thresholds.</Text>
+      <View style={styles.readRow}>
+        <SegGroup label="Period" value={half} options={[['ft', 'Full time'], ['ht', '1st half'], ['2h', '2nd half']]} onChange={setHalf} />
+        <SegGroup label="Venue" value={scope} options={[['overall', 'Overall'], ['home', 'Home'], ['away', 'Away']]} onChange={setScope} />
+      </View>
+      <View style={[styles.filterRow, narrow && styles.filterCol]}>
+        <FilterDropdown label="Family" value={family} options={families.map((f) => ({ value: f.value, label: f.label }))} onChange={changeFamily} style={narrow ? styles.full : styles.flex} />
+        <FilterDropdown label="Stat (number)" value={methodId} options={fam?.items ?? []} onChange={setMethodId} style={narrow ? styles.full : styles.flex} />
+        <FilterDropdown label="Window" value={window} options={SINGLE_STAT_WINDOWS} onChange={setWindow} style={narrow ? styles.full : styles.flex} />
+        <FilterDropdown label="League" value={league} options={leagueOptions} onChange={setLeague} style={narrow ? styles.full : styles.flex} />
+      </View>
+      {loading ? <View style={styles.loadingRow}><ActivityIndicator size="small" color={theme.accentGreen} /><Text style={styles.statusMuted}>Loading stats…</Text></View> : null}
+      {!loading && rows.length === 0 ? <Text style={styles.empty}>No teams for this stat yet — load leagues, or try another family / period.</Text> : null}
+      {rows.length > 0 ? (
+        <>
+          <Text style={styles.statusLive}>● {rows.length} teams · {statLabel} · {periodLabel(period)}</Text>
+          {rows.slice(0, 100).map((r, i) => {
+            const next = nextFixtureFor(r.teamId, r.team, upcoming);
+            return (
+              <View key={`${r.competition}:${r.teamId ?? r.team}:${i}`} style={styles.lreRow}>
+                <View style={styles.lreHead}>
+                  <Text style={styles.sslRank}>{i + 1}</Text>
+                  <Text style={styles.lreTeam} numberOfLines={1}>{r.team}</Text>
+                  <Text style={styles.sslValue} numberOfLines={1}>{r.valueText}</Text>
+                </View>
+                <Text style={styles.lreMeta} numberOfLines={1}>{r.competition}{next ? ` · next: ${next.side === 'home' ? 'vs' : '@'} ${next.opponentName}${kickoffLabel(next.fixture.kickoffUnix, '') ? ` · ${kickoffLabel(next.fixture.kickoffUnix, '')}` : ''}` : ''}</Text>
+              </View>
+            );
+          })}
+          {rows.length > 100 ? <Text style={styles.readNote}>Showing the top 100 — filter by league to narrow.</Text> : null}
+        </>
+      ) : null}
+    </View>
+  );
+}
+
 function RecentFormStrip({ form }: { form: RecentForm }) {
   return (
     <View style={styles.formWrap}>
@@ -1648,6 +1708,8 @@ const styles = StyleSheet.create({
   lreGame: { borderWidth: 1, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2, minWidth: 54 },
   lreGameScore: { fontFamily: fonts.bodySemiBold, fontSize: 11, textAlign: 'center' },
   lreGameOpp: { fontFamily: fonts.body, fontSize: 8, color: theme.textMuted, textAlign: 'center' },
+  sslRank: { minWidth: 22, fontFamily: fonts.bodySemiBold, fontSize: 12, color: theme.textMuted },
+  sslValue: { fontFamily: fonts.display, fontSize: 15, color: theme.accentGreen },
   modeBtnOn: { borderColor: theme.accentGreen, backgroundColor: 'rgba(5,150,105,0.08)' },
   modeBtnText: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: theme.textMuted },
   modeBtnTextOn: { color: theme.accentGreen },

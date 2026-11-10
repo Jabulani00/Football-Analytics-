@@ -949,6 +949,59 @@ function statFamily(value: string | undefined): StatFamilyDef {
   return STAT_FAMILIES.find((f) => f.value === value) ?? STAT_FAMILIES[0];
 }
 
+/* ---- Single call: a plain numeric ranking (percentages / averages, no grade) ---- */
+
+/** Stat families a Single call can rank — percentages / averages only (Series
+ *  run counts are not "numbers" in this sense and are left out). */
+export function singleStatFamilies(): { value: string; label: string; items: MethodOpt[] }[] {
+  return STAT_FAMILIES
+    .filter((f) => f.value === 'ordinary' || f.value === 'ppg' || f.value === 'ftonly')
+    .map((f) => ({
+      value: f.value,
+      label: f.label,
+      items: f.items.filter((i) => i.kind === 'pct' || i.kind === 'avg').map((i) => ({ value: i.key, label: i.label })),
+    }));
+}
+
+/** The windows a Single call can rank over (whole season, or a last-N sample). */
+export const SINGLE_STAT_WINDOWS: MethodOpt[] = [
+  { value: 'season', label: 'All games (season)' },
+  { value: 'last10', label: 'Last 10' }, { value: 'last8', label: 'Last 8' },
+  { value: 'last6', label: 'Last 6' }, { value: 'last5', label: 'Last 5' },
+];
+
+export type SingleStatRow = { team: string; teamId: number | null; competition: string; value: number; valueText: string; kind: 'pct' | 'avg' };
+
+/**
+ * A Single call's body: every team's value for ONE numeric stat across the loaded
+ * leagues, highest first. No grading and no threshold — just the number (a
+ * percentage or an average), ranked top → bottom.
+ */
+export function rankSingleStat(
+  bundles: LeagueBundle[],
+  sel: { family: string; methodId: string; period: StrategyPeriod; window: string },
+): SingleStatRow[] {
+  const fam = statFamily(sel.family);
+  const item = fam.items.find((i) => i.key === sel.methodId);
+  if (!item || (item.kind !== 'pct' && item.kind !== 'avg')) return [];
+  const kind: 'pct' | 'avg' = item.kind;
+  const loc = exportLoc(sel.period);
+  const usesWindow = fam.windowed && sel.window !== 'season';
+  const prefix = usesWindow ? sel.window : fam.prefix;
+  const out: SingleStatRow[] = [];
+  for (const b of bundles) {
+    if (!b.stats) continue;
+    const rows = b.stats.tables[`${prefix}_${loc.periodKey}_${loc.scope}`] ?? [];
+    for (const r of rows) {
+      const raw = r[item.key];
+      if (typeof raw !== 'number' || !Number.isFinite(raw)) continue;
+      out.push({ team: String(r.team_name), teamId: numTeamId(r), competition: b.competition, value: raw, valueText: kind === 'pct' ? pctText(raw) : raw.toFixed(2), kind });
+    }
+  }
+  out.sort((a, c) => c.value - a.value || a.team.localeCompare(c.team));
+  return out;
+}
+
 const STAT_WINDOWS: MethodOpt[] = [
   { value: 'season', label: 'All games (season)' },
   { value: 'last10', label: 'Last 10' }, { value: 'last8', label: 'Last 8' },
