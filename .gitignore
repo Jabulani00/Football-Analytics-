@@ -66,3 +66,8 @@ backend/**/__pycache__/
 # Optional ML artifacts (large)
 backend/.venv/
 venv/
+
+# Generated ML training data (not committed)
+training_data*.csv
+frontend/training_data*.csv
+frontend/_export.log
