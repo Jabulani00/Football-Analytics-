@@ -165,7 +165,9 @@ function makeSingleCondition(s: SingleState): Condition {
     options: hasT
       ? { family: s.family, window: s.window, mode: 'limit', level: ALL, cmp: s.cmp, value: s.value }
       : { family: s.family, window: s.window, mode: 'band', level: ALL },
-    side: 'either',
+    // Venue binds the fixture side: a Home rule must be met by the home team, an
+    // Away rule by the away team; Overall stays side-agnostic.
+    side: s.scope === 'home' ? 'home' : s.scope === 'away' ? 'away' : 'either',
   };
 }
 /** Rebuild the Single leaderboard state from a saved Stat-filter condition. */
@@ -633,7 +635,7 @@ export default function StrategyBuilderPanel() {
         {callMode === 'peg'
           ? 'Peg — the graded strategy: combine several rules (AND / OR) on the combined-list grades. Open a qualifying team to see its last 5 · 8 · 10 · 15 · 20 results and how it did on the stat.'
           : callMode === 'combo'
-            ? 'Combo — one strategy mixing both: add graded rules and numeric rules (a stat at a ≥ / ≤ threshold), combined with AND / OR.'
+            ? 'Combo — one strategy mixing both: add Peg (graded) rules and Single (numbers) rules, combined with AND / OR. Each rule’s Venue binds its fixture side, so Home and Away rules sync onto the right team.'
             : 'Single — one call by the numbers: a stat ranked highest → lowest, or filter teams by their last-game results.'}
       </Text>
       {childOfId ? (
@@ -708,9 +710,10 @@ export default function StrategyBuilderPanel() {
               );
             })}
           </View>
-          {/* Combo: add a graded rule or a numeric rule — they combine in one strategy */}
+          {/* Combo: switch between adding a Peg (graded) rule and a Single (numbers)
+              rule. Both land in one rule list and combine (AND / OR) to one result. */}
           <View style={styles.modeRow}>
-            {([['graded', '🧷 Graded rule'], ['numeric', '① Numeric rule']] as const).map(([v, label]) => {
+            {([['graded', '🧷 Peg rule'], ['numeric', '① Single rule']] as const).map(([v, label]) => {
               const on = comboKind === v;
               return (
                 <Pressable key={v} accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => setComboKind(v)} style={[styles.modeBtn, on && styles.modeBtnOn]}>
@@ -719,17 +722,11 @@ export default function StrategyBuilderPanel() {
               );
             })}
           </View>
+          <Text style={styles.callHint}>Add Peg and Single rules in any mix — they stack in one rule list and sync. Each rule's Venue binds the fixture side (Home → home team, Away → away team), so Fixtures returns only matches meeting every rule on its side.</Text>
           {comboKind === 'graded' ? (
-            <ConditionBuilder narrow={narrow} title="🧷 Graded rule" onAdd={addCondition} />
+            <ConditionBuilder narrow={narrow} title="🧷 Peg rule (graded)" onAdd={addCondition} />
           ) : (
-            <ConditionBuilder
-              narrow={narrow}
-              title="① Numeric rule (by the numbers)"
-              onAdd={addCondition}
-              dimId="statfilter"
-              addLabel="+ Add numeric rule"
-              defaultOpts={{ mode: 'limit', cmp: 'gte', value: '50' }}
-            />
+            <SingleRuleBuilder narrow={narrow} onAdd={addCondition} />
           )}
         </>
       ) : (
@@ -1267,7 +1264,11 @@ function ConditionBuilder({ narrow, fixedSide, title, onAdd, dimId: dimIdProp, a
   };
 
   const add = () => {
-    onAdd({ id: `c${(CONDITION_SEQ += 1)}`, dimensionId: dimId, period, methodId, options: { ...opts }, side: fixedSide ?? side });
+    // Venue binds the fixture side when no explicit Team side is picked: Home venue
+    // → home team, Away venue → away team. A fixed side or an explicit Team wins.
+    const venueSide: FixtureSide = scope === 'home' ? 'home' : scope === 'away' ? 'away' : 'either';
+    const effSide: FixtureSide = fixedSide ?? (side !== 'either' ? side : venueSide);
+    onAdd({ id: `c${(CONDITION_SEQ += 1)}`, dimensionId: dimId, period, methodId, options: { ...opts }, side: effSide });
     // Advance to the next stat so a second "+ Add Rule" is a different Rule, not a
     // silent duplicate of the one just added (which would look like "nothing happened").
     const i = methods.findIndex((m) => m.value === methodId);
@@ -1344,6 +1345,72 @@ function ConditionBuilder({ narrow, fixedSide, title, onAdd, dimId: dimIdProp, a
 }
 
 /** A bold Difference-Alert flag, when the grade carries one. */
+/**
+ * Combo · add a Single (numbers) rule with the full Single configurator — Period,
+ * Venue, Family, Stat, Window and a ≥ / ≤ threshold — then "Add" turns it into one
+ * Stat-filter condition that stacks with the Peg rules. Venue binds the fixture
+ * side (makeSingleCondition), so a Home rule syncs onto the home team.
+ */
+function SingleRuleBuilder({ narrow, onAdd }: { narrow: boolean; onAdd: (c: Condition) => void }) {
+  const families = useMemo(() => singleStatFamilies(), []);
+  const [family, setFamily] = useState(families[0]?.value ?? 'ordinary');
+  const fam = families.find((f) => f.value === family) ?? families[0];
+  const [methodId, setMethodId] = useState(fam?.items[0]?.value ?? '');
+  const [scope, setScope] = useState<StatScope>('overall');
+  const [half, setHalf] = useState<'ft' | 'ht' | '2h'>('ft');
+  const [window, setWindow] = useState('season');
+  const [cmp, setCmp] = useState<'gte' | 'lte'>('gte');
+  const [value, setValue] = useState('');
+
+  const changeFamily = (v: string) => {
+    setFamily(v);
+    const f = families.find((x) => x.value === v);
+    if (f && !f.items.some((i) => i.value === methodId)) setMethodId(f.items[0]?.value ?? '');
+  };
+  const statLabel = fam?.items.find((i) => i.value === methodId)?.label ?? '';
+  const canAdd = methodId !== '' && value.trim() !== '' && Number.isFinite(Number(value));
+  const sideHint = scope === 'home' ? 'Home team' : scope === 'away' ? 'Away team' : 'Either team';
+  const add = () => {
+    if (!canAdd) return;
+    onAdd(makeSingleCondition({ family, methodId, scope, half, window, league: ALL, cmp, value }));
+    setValue('');
+  };
+
+  return (
+    <View style={styles.builderCard}>
+      <Text style={styles.sectionLabel}>① Single rule · by the numbers</Text>
+      <Text style={styles.readNote}>One stat at a ≥ / ≤ threshold, configured just like the Single tab. Venue sets the fixture side it syncs on — {sideHint}.</Text>
+      <View style={styles.readRow}>
+        <SegGroup label="Period" value={half} options={[['ft', 'Full time'], ['ht', '1st half'], ['2h', '2nd half']]} onChange={setHalf} />
+        <SegGroup label={`Venue · ${sideHint}`} value={scope} options={[['overall', 'Overall'], ['home', 'Home'], ['away', 'Away']]} onChange={setScope} />
+      </View>
+      <View style={[styles.filterRow, narrow && styles.filterCol]}>
+        <FilterDropdown label="Family" value={family} options={families.map((f) => ({ value: f.value, label: f.label }))} onChange={changeFamily} style={narrow ? styles.full : styles.flex} />
+        <FilterDropdown label="Stat (number)" value={methodId} options={fam?.items ?? []} onChange={setMethodId} style={narrow ? styles.full : styles.flex} />
+        <FilterDropdown label="Window" value={window} options={SINGLE_STAT_WINDOWS} onChange={setWindow} style={narrow ? styles.full : styles.flex} />
+      </View>
+      <View style={[styles.filterRow, narrow && styles.filterCol]}>
+        <FilterDropdown label="Threshold" value={cmp} options={[{ value: 'gte', label: 'At least ≥' }, { value: 'lte', label: 'At most ≤' }]} onChange={(v) => setCmp(v as 'gte' | 'lte')} style={narrow ? styles.full : styles.flex} />
+        <View style={narrow ? styles.full : styles.flex}>
+          <Text style={styles.numLabel}>Value (e.g. 20 = 20%, 2.0 = PPG)</Text>
+          <TextInput
+            value={value}
+            onChangeText={(t) => setValue(t.replace(/[^0-9.]/g, ''))}
+            keyboardType="decimal-pad"
+            placeholder="e.g. 20"
+            placeholderTextColor={theme.textFaint}
+            style={styles.numInput}
+            accessibilityLabel="Threshold value"
+          />
+        </View>
+      </View>
+      <Pressable accessibilityRole="button" accessibilityState={{ disabled: !canAdd }} disabled={!canAdd} onPress={add} style={({ pressed }) => [styles.addBtn, !canAdd && styles.addBtnDisabled, pressed && styles.addBtnPressed]}>
+        <Text style={styles.addBtnText}>+ Add Single rule{statLabel ? ` · ${statLabel}` : ''}</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 function DaBadge({ grade }: { grade: string | null }) {
   const lvl = daLevelOf(grade);
   if (!lvl) return null;
@@ -1923,6 +1990,7 @@ const styles = StyleSheet.create({
   numInput: { borderWidth: layout.borderWidth, borderColor: theme.borderStrong, borderRadius: layout.borderRadius, paddingHorizontal: spacing.md, paddingVertical: 10, fontFamily: fonts.bodyMedium, fontSize: 14, color: theme.textPrimary, backgroundColor: theme.surface },
   addBtn: { alignSelf: 'flex-start', marginTop: spacing.xs, borderWidth: 1.5, borderColor: theme.accentGreen, borderRadius: 999, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, backgroundColor: 'rgba(5,150,105,0.08)' },
   addBtnPressed: { opacity: 0.7 },
+  addBtnDisabled: { opacity: 0.45 },
   addBtnText: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: theme.accentGreen },
 
   conditionsCard: { marginTop: spacing.md, borderWidth: layout.borderWidth, borderColor: theme.border, borderRadius: layout.borderRadius, backgroundColor: theme.surface, padding: spacing.md, gap: spacing.sm },
