@@ -14,7 +14,8 @@ import { fetchAllFixturesBetween, fetchSeasonStandings, seasonWindowUnix, type F
 import { TARGET_MARKETS, backtestTeam, targetMarket, type BacktestResult, type BacktestScope, type TargetMarket } from '@/utils/strategyBacktest';
 import { clientStaleTime } from '@/services/oddAlertsCachePolicy';
 import { buildLeagueStatsLive } from '@/services/statsBuilder';
-import { nextFixtureFor, type UpcomingLite } from '@/utils/statsGrading';
+import { nextFixtureFor, normaliseTeam, type UpcomingLite } from '@/utils/statsGrading';
+import { charactersFromStats, colourTint, levelGlyph, type TeamCharacterRead } from '@/utils/statsCharacters';
 import { ordinaryRfsForStat, recentFormForStat, type RecentForm, type StatRfs } from '@/utils/fixtureRfs';
 import { teamResultsFromFixtures, type TeamResult } from '@/utils/teamResults';
 import { RESULT_FILTERS, LAST_RESULT_WINDOWS } from '@/utils/lastResults';
@@ -315,6 +316,23 @@ export default function StrategyBuilderPanel() {
     () => liveLeagues.map((comp, i) => ({ competition: comp.name, stats: exportResults[i]?.data, fixtures: fixtureResults[i]?.data, timing: timingResults[i]?.data })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [liveLeagues, exportSig, fixtureSig, timingSig],
+  );
+
+  // Each team's canonical character (Overall · Full time · all-games, Method 1),
+  // read from the same league export, keyed `competition::team` so the character
+  // can label every qualifying team at the end of its row — not only its grade.
+  const charByTeam = useMemo(() => {
+    const map = new Map<string, TeamCharacterRead>();
+    for (const b of bundles) {
+      if (!b.stats) continue;
+      for (const [key, read] of charactersFromStats(b.stats)) map.set(`${b.competition}::${key}`, read);
+    }
+    return map;
+  }, [bundles]);
+  const charFor = useCallback(
+    (r: StrategyResult): TeamCharacterRead | null =>
+      charByTeam.get(`${r.competition}::${normaliseTeam(r.team)}`) ?? null,
+    [charByTeam],
   );
 
   // Season fixtures per league + a name→id map, for the Teams-mode backtest.
@@ -876,7 +894,7 @@ export default function StrategyBuilderPanel() {
           ) : (
             <>
               <PageControls page={safe} pages={pages} total={filtered.length} from={start + 1} to={start + visible.length} onChange={setPage} />
-              <TeamsTable rows={visible} upcoming={upcoming} target={targetDef ?? null} fixturesByComp={fixturesByComp} compIdByName={compIdByName} total={conditions.length} share={leagueShare} breakdownFor={breakdownFor} rfsFor={rfsFor} recentFormFor={recentFormFor} rankFor={rankFor} />
+              <TeamsTable rows={visible} upcoming={upcoming} target={targetDef ?? null} fixturesByComp={fixturesByComp} compIdByName={compIdByName} total={conditions.length} share={leagueShare} breakdownFor={breakdownFor} rfsFor={rfsFor} recentFormFor={recentFormFor} rankFor={rankFor} charFor={charFor} />
               <PageControls page={safe} pages={pages} total={filtered.length} from={start + 1} to={start + visible.length} onChange={setPage} />
             </>
           )}
@@ -923,7 +941,7 @@ const TEAM_SECTIONS: { color: ResultColor; label: string }[] = [
 
 type TeamRow = { result: StrategyResult; nf: ReturnType<typeof nextFixtureFor>; bt: BacktestResult | null };
 
-function TeamsTable({ rows, upcoming, target, fixturesByComp, compIdByName, total, share, breakdownFor, rfsFor, recentFormFor, rankFor }: {
+function TeamsTable({ rows, upcoming, target, fixturesByComp, compIdByName, total, share, breakdownFor, rfsFor, recentFormFor, rankFor, charFor }: {
   rows: StrategyResult[];
   upcoming: UpcomingLite[];
   target: TargetMarket | null;
@@ -935,6 +953,7 @@ function TeamsTable({ rows, upcoming, target, fixturesByComp, compIdByName, tota
   rfsFor: (ev: TeamEval) => StatRfs | null;
   recentFormFor: (ev: TeamEval) => RecentForm | null;
   rankFor: (r: StrategyResult) => StatRank | null;
+  charFor: (r: StrategyResult) => TeamCharacterRead | null;
 }) {
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const built: TeamRow[] = useMemo(() => rows.map((result) => {
@@ -952,7 +971,7 @@ function TeamsTable({ rows, upcoming, target, fixturesByComp, compIdByName, tota
   }), [rows, upcoming, target, fixturesByComp, compIdByName]);
 
   const keyOf = (r: StrategyResult) => `${r.competition}::${r.team}`;
-  const minW = target ? 920 : 820;
+  const minW = target ? 1080 : 980;
   return (
     <View>
       <DragScroll horizontal style={styles.fxScroll} contentContainerStyle={styles.fxScrollContent}>
@@ -964,6 +983,7 @@ function TeamsTable({ rows, upcoming, target, fixturesByComp, compIdByName, tota
             <Text style={[styles.tGrade, styles.fxTHead]}>Grade</Text>
             <Text style={[styles.tRead, styles.fxTHead]}>Reading</Text>
             {target ? <Text style={[styles.tRate, styles.fxTHead]}>Hist. {target.label}</Text> : null}
+            <Text style={[styles.tChar, styles.fxTHead]}>Character</Text>
           </View>
           {TEAM_SECTIONS.map((sec) => {
             const group = built.filter((b) => b.result.color === sec.color);
@@ -979,7 +999,7 @@ function TeamsTable({ rows, upcoming, target, fixturesByComp, compIdByName, tota
                   const isActive = expandedKey === k;
                   return (
                     <Fragment key={k}>
-                      <TeamsTableRow row={b} hasTarget={!!target} active={isActive} rank={rankFor(b.result)} onPress={() => setExpandedKey((x) => (x === k ? null : k))} />
+                      <TeamsTableRow row={b} hasTarget={!!target} active={isActive} rank={rankFor(b.result)} char={charFor(b.result)} onPress={() => setExpandedKey((x) => (x === k ? null : k))} />
                       {isActive ? (
                         <View style={[styles.fxDetailInline, { minWidth: minW, borderColor: resultColour(b.result.color) }]}>
                           <ResultCard result={b.result} upcoming={upcoming} total={total} share={share.get(b.result.competition)} breakdownFor={breakdownFor} rfsFor={rfsFor} recentFormFor={recentFormFor} rank={rankFor(b.result)} />
@@ -999,7 +1019,7 @@ function TeamsTable({ rows, upcoming, target, fixturesByComp, compIdByName, tota
   );
 }
 
-function TeamsTableRow({ row, hasTarget, active, rank, onPress }: { row: TeamRow; hasTarget: boolean; active: boolean; rank: StatRank | null; onPress: () => void }) {
+function TeamsTableRow({ row, hasTarget, active, rank, char, onPress }: { row: TeamRow; hasTarget: boolean; active: boolean; rank: StatRank | null; char: TeamCharacterRead | null; onPress: () => void }) {
   const { result, nf, bt } = row;
   const tint = resultColour(result.color);
   const graded = result.conditions.find((c) => c.grade);
@@ -1069,7 +1089,24 @@ function TeamsTableRow({ row, hasTarget, active, rank, onPress }: { row: TeamRow
           ) : <Text style={styles.fxNone}>Insuff. data</Text>}
         </View>
       ) : null}
+      <View style={styles.tChar}><CharTag read={char} /></View>
     </Pressable>
+  );
+}
+
+/** Compact, read-only character label — number + name + Sc/Conc glyphs, coloured by goal abundance. */
+function CharTag({ read }: { read: TeamCharacterRead | null }) {
+  const character = read?.character ?? null;
+  if (!character) return <Text style={styles.fxNone}>—</Text>;
+  const tint = colourTint(character.colour);
+  return (
+    <View style={styles.charTag}>
+      <View style={[styles.charNum, { backgroundColor: tint }]}><Text style={styles.charNumText}>{character.n}</Text></View>
+      <View style={styles.charBody}>
+        <Text style={styles.charName} numberOfLines={1}>{character.name}</Text>
+        <Text style={[styles.charLvl, { color: tint }]}>Sc{levelGlyph(character.sc)} · Conc{levelGlyph(character.conc)}</Text>
+      </View>
+    </View>
   );
 }
 
@@ -2106,6 +2143,13 @@ const styles = StyleSheet.create({
   tGrade: { width: 100, paddingHorizontal: 4 },
   tRead: { width: 120, paddingHorizontal: 4 },
   tRate: { width: 96, paddingHorizontal: 4, alignItems: 'flex-start' },
+  tChar: { width: 158, paddingHorizontal: 4, justifyContent: 'center' },
+  charTag: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  charNum: { width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  charNumText: { fontFamily: fonts.bodySemiBold, fontSize: 11, color: '#FFFFFF' },
+  charBody: { flex: 1, minWidth: 0 },
+  charName: { fontFamily: fonts.bodyMedium, fontSize: 12, color: theme.textPrimary },
+  charLvl: { fontFamily: fonts.body, fontSize: 10 },
   teamNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   gradeTxt: { fontFamily: fonts.bodySemiBold, fontSize: 12 },
   rateTxt: { fontFamily: fonts.display, fontSize: 16 },
