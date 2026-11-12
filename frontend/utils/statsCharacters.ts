@@ -1,4 +1,5 @@
 import type { TeamStatRow, TeamStatsExport } from '@/types/data';
+import { analyzeTeamGoals } from '@/utils/gapAnalytics';
 import { theme } from '@/styles/theme';
 
 /**
@@ -223,6 +224,32 @@ export function charactersFromStats(stats: TeamStatsExport): Map<string, TeamCha
     const concLevel = qualifies ? levelForAvgM1(concAvg) : null;
     const character = scLevel && concLevel ? characterFor(scLevel, concLevel) : null;
     out.set(key, { character, scAvg, concAvg, games });
+  }
+  return out;
+}
+
+/**
+ * Each team's canonical character from season fixtures — the same Overall · Full
+ * time · Method 1 read as {@link charactersFromStats}, for the paths that only
+ * hold raw fixtures (no built export). Keyed by lowercased team name.
+ */
+export function charactersFromFixtures(
+  fixtures: Parameters<typeof analyzeTeamGoals>[0],
+): Map<string, TeamCharacterRead> {
+  const out = new Map<string, TeamCharacterRead>();
+  for (const g of analyzeTeamGoals(fixtures, 'fulltime')) {
+    const scAvg = g.overall.avgFor;
+    const concAvg = g.overall.avgAgainst;
+    const qualifies =
+      g.overall.games >= MIN_GAMES_OVERALL &&
+      g.home.games >= MIN_GAMES_PER_VENUE &&
+      g.away.games >= MIN_GAMES_PER_VENUE &&
+      scAvg != null &&
+      concAvg != null;
+    const scLevel = qualifies ? levelForAvgM1(scAvg) : null;
+    const concLevel = qualifies ? levelForAvgM1(concAvg) : null;
+    const character = scLevel && concLevel ? characterFor(scLevel, concLevel) : null;
+    out.set(String(g.team).trim().toLowerCase(), { character, scAvg, concAvg, games: g.overall.games });
   }
   return out;
 }

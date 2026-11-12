@@ -15,7 +15,7 @@ import { TARGET_MARKETS, backtestTeam, targetMarket, type BacktestResult, type B
 import { clientStaleTime } from '@/services/oddAlertsCachePolicy';
 import { buildLeagueStatsLive } from '@/services/statsBuilder';
 import { nextFixtureFor, normaliseTeam, type UpcomingLite } from '@/utils/statsGrading';
-import { charactersFromStats, colourTint, levelGlyph, type TeamCharacterRead } from '@/utils/statsCharacters';
+import { charactersFromFixtures, charactersFromStats, colourTint, levelGlyph, type TeamCharacterRead } from '@/utils/statsCharacters';
 import { ordinaryRfsForStat, recentFormForStat, type RecentForm, type StatRfs } from '@/utils/fixtureRfs';
 import { teamResultsFromFixtures, type TeamResult } from '@/utils/teamResults';
 import { RESULT_FILTERS, LAST_RESULT_WINDOWS } from '@/utils/lastResults';
@@ -324,15 +324,23 @@ export default function StrategyBuilderPanel() {
   const charByTeam = useMemo(() => {
     const map = new Map<string, TeamCharacterRead>();
     for (const b of bundles) {
-      if (!b.stats) continue;
-      for (const [key, read] of charactersFromStats(b.stats)) map.set(`${b.competition}::${key}`, read);
+      // Prefer the built export; fall back to raw fixtures (Single · last-results
+      // loads fixtures but no export) so the character labels there too.
+      const reads = b.stats ? charactersFromStats(b.stats)
+        : b.fixtures?.length ? charactersFromFixtures(b.fixtures)
+        : null;
+      if (reads) for (const [key, read] of reads) map.set(`${b.competition}::${key}`, read);
     }
     return map;
   }, [bundles]);
-  const charFor = useCallback(
-    (r: StrategyResult): TeamCharacterRead | null =>
-      charByTeam.get(`${r.competition}::${normaliseTeam(r.team)}`) ?? null,
+  const charLookup = useCallback(
+    (competition: string, team: string): TeamCharacterRead | null =>
+      charByTeam.get(`${competition}::${normaliseTeam(team)}`) ?? null,
     [charByTeam],
+  );
+  const charFor = useCallback(
+    (r: StrategyResult): TeamCharacterRead | null => charLookup(r.competition, r.team),
+    [charLookup],
   );
 
   // Season fixtures per league + a name→id map, for the Teams-mode backtest.
@@ -739,7 +747,7 @@ export default function StrategyBuilderPanel() {
           </View>
           {singleMode === 'stat' ? (
             <>
-              <SingleStatLeaderboard key={singleKey} narrow={narrow} bundles={bundles} upcoming={upcoming} loading={loading} initial={initialSingle} onConfig={onSingleConfig} inParent={inParent} />
+              <SingleStatLeaderboard key={singleKey} narrow={narrow} bundles={bundles} upcoming={upcoming} loading={loading} initial={initialSingle} onConfig={onSingleConfig} inParent={inParent} charLookup={charLookup} />
               <SingleSaveBar
                 saving={saving}
                 draftName={draftName}
@@ -754,7 +762,7 @@ export default function StrategyBuilderPanel() {
               />
             </>
           ) : (
-            <LastResultsExplorer narrow={narrow} bundles={bundles} upcoming={upcoming} loading={loading} />
+            <LastResultsExplorer narrow={narrow} bundles={bundles} upcoming={upcoming} loading={loading} charLookup={charLookup} />
           )}
         </>
       )}
@@ -1386,7 +1394,7 @@ function EvalRow({ ev, breakdown, rfs, recentForm }: { ev: TeamEval; breakdown?:
  * each shows its recent games and its next fixture. Reuses the season fixtures
  * already loaded for the Rule engine.
  */
-function LastResultsExplorer({ narrow, bundles, upcoming, loading }: { narrow: boolean; bundles: LeagueBundle[]; upcoming: UpcomingLite[]; loading: boolean }) {
+function LastResultsExplorer({ narrow, bundles, upcoming, loading, charLookup }: { narrow: boolean; bundles: LeagueBundle[]; upcoming: UpcomingLite[]; loading: boolean; charLookup?: (competition: string, team: string) => TeamCharacterRead | null }) {
   const [typeKey, setTypeKey] = useState('btts');
   const [windowN, setWindowN] = useState(5);
   const [league, setLeague] = useState(ALL);
@@ -1441,6 +1449,7 @@ function LastResultsExplorer({ narrow, bundles, upcoming, loading }: { narrow: b
               <View style={styles.lreHead}>
                 <Text style={styles.lreTeam} numberOfLines={1}>{r.team}</Text>
                 <Text style={[styles.lreRate, { color: r.rate >= 65 ? theme.accentGreen : r.rate >= 40 ? theme.yellow : theme.loss }]} numberOfLines={1}>{r.hits}/{r.games} · {r.rate}%</Text>
+                <View style={styles.lreChar}><CharTag read={charLookup?.(r.competition, r.team) ?? null} /></View>
               </View>
               <Text style={styles.lreMeta} numberOfLines={1}>{r.competition}{r.next ? ` · next: ${r.next.side === 'home' ? 'vs' : '@'} ${r.next.opponentName}${kickoffLabel(r.next.fixture.kickoffUnix, '') ? ` · ${kickoffLabel(r.next.fixture.kickoffUnix, '')}` : ''}` : ' · no upcoming fixture'}</Text>
               <View style={styles.lreGames}>
@@ -1468,7 +1477,7 @@ function LastResultsExplorer({ narrow, bundles, upcoming, loading }: { narrow: b
  * across the loaded leagues, every team ranked highest → lowest by its value.
  * No grades, no thresholds — just the number, with each team's next fixture.
  */
-function SingleStatLeaderboard({ narrow, bundles, upcoming, loading, initial, onConfig, inParent }: { narrow: boolean; bundles: LeagueBundle[]; upcoming: UpcomingLite[]; loading: boolean; initial?: Partial<SingleState>; onConfig?: (s: SingleState) => void; inParent?: (competition: string, teamId: number | null, team: string) => boolean }) {
+function SingleStatLeaderboard({ narrow, bundles, upcoming, loading, initial, onConfig, inParent, charLookup }: { narrow: boolean; bundles: LeagueBundle[]; upcoming: UpcomingLite[]; loading: boolean; initial?: Partial<SingleState>; onConfig?: (s: SingleState) => void; inParent?: (competition: string, teamId: number | null, team: string) => boolean; charLookup?: (competition: string, team: string) => TeamCharacterRead | null }) {
   const families = useMemo(() => singleStatFamilies(), []);
   const [family, setFamily] = useState(initial?.family ?? families[0]?.value ?? 'ordinary');
   const fam = families.find((f) => f.value === family) ?? families[0];
@@ -1545,6 +1554,7 @@ function SingleStatLeaderboard({ narrow, bundles, upcoming, loading, initial, on
                   <Text style={styles.sslRank}>{i + 1}</Text>
                   <Text style={styles.lreTeam} numberOfLines={1}>{r.team}</Text>
                   <Text style={styles.sslValue} numberOfLines={1}>{r.valueText}</Text>
+                  <View style={styles.lreChar}><CharTag read={charLookup?.(r.competition, r.team) ?? null} /></View>
                 </View>
                 <Text style={styles.lreMeta} numberOfLines={1}>{r.competition}{next ? ` · next: ${next.side === 'home' ? 'vs' : '@'} ${next.opponentName}${kickoffLabel(next.fixture.kickoffUnix, '') ? ` · ${kickoffLabel(next.fixture.kickoffUnix, '')}` : ''}` : ''}</Text>
               </View>
@@ -1985,6 +1995,7 @@ const styles = StyleSheet.create({
   lreTeam: { flex: 1, fontFamily: fonts.bodySemiBold, fontSize: 13, color: theme.textPrimary },
   lreRate: { fontFamily: fonts.bodySemiBold, fontSize: 12 },
   lreMeta: { fontFamily: fonts.body, fontSize: 10, color: theme.textMuted },
+  lreChar: { width: 150, flexShrink: 0 },
   lreGames: { flexDirection: 'row', flexWrap: 'wrap', gap: 3, marginTop: 2 },
   lreGame: { borderWidth: 1, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2, minWidth: 54 },
   lreGameScore: { fontFamily: fonts.bodySemiBold, fontSize: 11, textAlign: 'center' },
