@@ -949,6 +949,59 @@ function statFamily(value: string | undefined): StatFamilyDef {
   return STAT_FAMILIES.find((f) => f.value === value) ?? STAT_FAMILIES[0];
 }
 
+/* ---- Single call: a plain numeric ranking (percentages / averages, no grade) ---- */
+
+/** Stat families a Single call can rank — percentages / averages only (Series
+ *  run counts are not "numbers" in this sense and are left out). */
+export function singleStatFamilies(): { value: string; label: string; items: MethodOpt[] }[] {
+  return STAT_FAMILIES
+    .filter((f) => f.value === 'ordinary' || f.value === 'ppg' || f.value === 'ftonly')
+    .map((f) => ({
+      value: f.value,
+      label: f.label,
+      items: f.items.filter((i) => i.kind === 'pct' || i.kind === 'avg').map((i) => ({ value: i.key, label: i.label })),
+    }));
+}
+
+/** The windows a Single call can rank over (whole season, or a last-N sample). */
+export const SINGLE_STAT_WINDOWS: MethodOpt[] = [
+  { value: 'season', label: 'All games (season)' },
+  { value: 'last10', label: 'Last 10' }, { value: 'last8', label: 'Last 8' },
+  { value: 'last6', label: 'Last 6' }, { value: 'last5', label: 'Last 5' },
+];
+
+export type SingleStatRow = { team: string; teamId: number | null; competition: string; value: number; valueText: string; kind: 'pct' | 'avg' };
+
+/**
+ * A Single call's body: every team's value for ONE numeric stat across the loaded
+ * leagues, highest first. No grading and no threshold — just the number (a
+ * percentage or an average), ranked top → bottom.
+ */
+export function rankSingleStat(
+  bundles: LeagueBundle[],
+  sel: { family: string; methodId: string; period: StrategyPeriod; window: string },
+): SingleStatRow[] {
+  const fam = statFamily(sel.family);
+  const item = fam.items.find((i) => i.key === sel.methodId);
+  if (!item || (item.kind !== 'pct' && item.kind !== 'avg')) return [];
+  const kind: 'pct' | 'avg' = item.kind;
+  const loc = exportLoc(sel.period);
+  const usesWindow = fam.windowed && sel.window !== 'season';
+  const prefix = usesWindow ? sel.window : fam.prefix;
+  const out: SingleStatRow[] = [];
+  for (const b of bundles) {
+    if (!b.stats) continue;
+    const rows = b.stats.tables[`${prefix}_${loc.periodKey}_${loc.scope}`] ?? [];
+    for (const r of rows) {
+      const raw = r[item.key];
+      if (typeof raw !== 'number' || !Number.isFinite(raw)) continue;
+      out.push({ team: String(r.team_name), teamId: numTeamId(r), competition: b.competition, value: raw, valueText: kind === 'pct' ? pctText(raw) : raw.toFixed(2), kind });
+    }
+  }
+  out.sort((a, c) => c.value - a.value || a.team.localeCompare(c.team));
+  return out;
+}
+
 const STAT_WINDOWS: MethodOpt[] = [
   { value: 'season', label: 'All games (season)' },
   { value: 'last10', label: 'Last 10' }, { value: 'last8', label: 'Last 8' },
@@ -1204,6 +1257,11 @@ export type SavedStrategyConfig = {
   /** Legacy global default period (new builds store period/side per condition). */
   period?: StrategyPeriod;
   resultMode: 'teams' | 'fixtures';
+  /** How it was built — a graded Peg, a numeric Single, or a mixed Combo. */
+  kind?: 'peg' | 'single' | 'combo';
+  /** When this is a child strategy, the id of the parent whose qualifying teams it
+   *  refines (the child is shown only for teams the parent already surfaced). */
+  parentId?: string | null;
 };
 
 export type SavedStrategy = {
@@ -1228,10 +1286,12 @@ export function describeStrategy(cfg: SavedStrategyConfig): string {
   const body = conds.length
     ? `${cfg.logic.toUpperCase()} of ${conds.length}: ${conds.join(joiner)}`
     : 'No conditions yet';
+  const kind = cfg.kind === 'single' ? 'Single · ' : cfg.kind === 'combo' ? 'Combo · ' : '';
+  const child = cfg.parentId ? 'Child strategy · ' : '';
   if (cfg.resultMode === 'fixtures') {
-    return `Fixtures · grade qualification · home/away targeting. ${body}`;
+    return `${child}${kind}Fixtures · grade qualification. ${body}`;
   }
-  return `Qualifying teams. ${body}`;
+  return `${child}${kind}Qualifying teams. ${body}`;
 }
 
 /** The parts of the panel's live state that make up a saved strategy. */
@@ -1240,7 +1300,19 @@ export function buildStrategyConfig(s: SavedStrategyConfig): SavedStrategyConfig
     conditions: s.conditions.map((c) => ({ ...c, options: { ...c.options } })),
     logic: s.logic,
     resultMode: s.resultMode,
+    kind: s.kind,
+    parentId: s.parentId ?? null,
   };
+}
+
+/** The set of team keys a saved strategy's config qualifies, used to restrict a
+ *  child strategy to its parent's teams. Key = "competition::id:<n>|name:<norm>". */
+export function strategyTeamKeys(bundles: LeagueBundle[], config: SavedStrategyConfig): Set<string> {
+  const out = new Set<string>();
+  for (const r of evaluateStrategy(bundles, config.conditions, config.logic)) {
+    out.add(`${r.competition}::${teamKeyOf({ teamId: r.teamId ?? null, team: r.team })}`);
+  }
+  return out;
 }
 
 /** A synthesised eval for a NOT condition a team matches by exclusion. */

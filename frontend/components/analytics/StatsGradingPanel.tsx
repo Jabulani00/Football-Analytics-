@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useQueries } from '@tanstack/react-query';
 
@@ -17,6 +17,7 @@ import {
   nextFixtureFor,
   indexRowsByTeam,
   lookupRow,
+  normaliseTeam,
   GRADABLE_STATS,
   SOURCE_LISTS,
   sourceListById,
@@ -30,6 +31,7 @@ import {
   type UpcomingLite,
 } from '@/utils/statsGrading';
 import { gradingUnity } from '@/utils/unity';
+import { charactersFromStats, colourTint, levelGlyph, type TeamCharacterRead } from '@/utils/statsCharacters';
 import UnityStat from '@/components/analytics/UnityStat';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
@@ -142,6 +144,31 @@ export default function StatsGradingPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allLeagues, live.data, allSig, sourceList, statKey, activeComp?.name]);
 
+  // Each team's canonical character (Overall · Full time · all-games), read from
+  // the same live export. Keyed `competition::team` so combined mode never mixes
+  // same-named teams across leagues.
+  const charByTeam = useMemo(() => {
+    const map = new Map<string, TeamCharacterRead>();
+    const add = (stats: Parameters<typeof charactersFromStats>[0], competition: string) => {
+      for (const [key, read] of charactersFromStats(stats)) map.set(`${competition}::${key}`, read);
+    };
+    if (!allLeagues) {
+      if (live.data) add(live.data, activeComp?.name ?? '');
+    } else {
+      allResults.forEach((r, i) => {
+        const comp = liveLeagues[i];
+        if (r.data && comp) add(r.data, comp.name);
+      });
+    }
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allLeagues, live.data, allSig, activeComp?.name]);
+  const charForRow = useCallback(
+    (r: TeamGradeRow): TeamCharacterRead | null =>
+      charByTeam.get(`${r.competition}::${normaliseTeam(r.team)}`) ?? null,
+    [charByTeam],
+  );
+
   // Upcoming fixtures (all leagues) → each team's next match + the opponent's grade.
   const up = useLiveFixtures('ns', { upcomingDays: 7, upcomingScope: 'all' });
   const upcoming: UpcomingLite[] = useMemo(
@@ -195,7 +222,8 @@ export default function StatsGradingPanel() {
         <Text style={styles.subtitle}>
           Each team graded A–F for one statistic within a source list — Home read against Overall on
           the 60 / 40 bands, exactly as the grading document defines. Leagues only (no cups); grade a
-          single league or all leagues combined.
+          single league or all leagues combined. Each team also carries its character — the Overall ·
+          Full time scoring / conceding read from the Stats Characters notes.
         </Text>
       </View>
 
@@ -290,6 +318,7 @@ export default function StatsGradingPanel() {
                   <Text style={[styles.cell, styles.cTeam, styles.headText]}>Team</Text>
                   {allLeagues ? <Text style={[styles.cell, styles.cComp, styles.headText]}>League</Text> : null}
                   <Text style={[styles.cell, styles.cGrade, styles.headText]}>Grade</Text>
+                  <Text style={[styles.cell, styles.cChar, styles.headText]}>Character</Text>
                   <Text style={[styles.cell, styles.cNum, styles.headText, styles.headRight]}>Home</Text>
                   <Text style={[styles.cell, styles.cNum, styles.headText, styles.headRight]}>Overall</Text>
                   <Text style={[styles.cell, styles.cNum, styles.headText, styles.headRight]}>League</Text>
@@ -326,6 +355,7 @@ export default function StatsGradingPanel() {
                         {r.roman ? <Text style={styles.gradeRoman}>{r.roman}</Text> : null}
                         {r.da ? <View style={styles.daDot}><Text style={styles.daDotText}>DA</Text></View> : null}
                       </View>
+                      <View style={[styles.cell, styles.cChar]}><CharTag read={charForRow(r)} /></View>
                       <Text style={[styles.cell, styles.cNum, styles.num]}>{pct(r.homeValue)}</Text>
                       <Text style={[styles.cell, styles.cNum, styles.numStrong, { color }]}>{pct(r.overallValue)}</Text>
                       <Text style={[styles.cell, styles.cNum, styles.muted]}>{pct(r.leagueValue)}</Text>
@@ -378,7 +408,7 @@ export default function StatsGradingPanel() {
       ) : null}
 
       {/* Selected-team detail */}
-      {selectedRow ? <DetailCard row={selectedRow} showComp={allLeagues} onClose={() => setSelected(null)} /> : null}
+      {selectedRow ? <DetailCard row={selectedRow} char={charForRow(selectedRow)} showComp={allLeagues} onClose={() => setSelected(null)} /> : null}
 
       {/* Ungraded teams */}
       {ungradedRows.length > 0 ? (
@@ -420,6 +450,24 @@ function rowId(r: TeamGradeRow): string {
   return `${r.competition}::${r.team}`;
 }
 
+/** Compact, read-only character badge — number + name + Sc/Conc glyphs, coloured by goal abundance. */
+function CharTag({ read }: { read: TeamCharacterRead | null }) {
+  const character = read?.character ?? null;
+  if (!character) return <Text style={styles.charNone}>—</Text>;
+  const tint = colourTint(character.colour);
+  return (
+    <View style={styles.charTag}>
+      <View style={[styles.charNum, { backgroundColor: tint }]}>
+        <Text style={styles.charNumText}>{character.n}</Text>
+      </View>
+      <View style={styles.charBody}>
+        <Text style={styles.charName} numberOfLines={1}>{character.name}</Text>
+        <Text style={[styles.charLvl, { color: tint }]}>Sc{levelGlyph(character.sc)} · Conc{levelGlyph(character.conc)}</Text>
+      </View>
+    </View>
+  );
+}
+
 function Tile({ label, value, accent }: { label: string; value: string; accent: string }) {
   return (
     <View style={styles.tile}>
@@ -457,8 +505,9 @@ function DistributionBar({ dist }: { dist: Record<Grade, number> }) {
   );
 }
 
-function DetailCard({ row, showComp, onClose }: { row: TeamGradeRow; showComp: boolean; onClose: () => void }) {
+function DetailCard({ row, char, showComp, onClose }: { row: TeamGradeRow; char: TeamCharacterRead | null; showComp: boolean; onClose: () => void }) {
   const color = row.grade ? gradeColor(row.grade) : theme.textMuted;
+  const character = char?.character ?? null;
   return (
     <View style={[styles.detail, { borderColor: color }]}>
       <View style={styles.detailHead}>
@@ -485,6 +534,14 @@ function DetailCard({ row, showComp, onClose }: { row: TeamGradeRow; showComp: b
         <Metric label="League avg" value={pct(row.leagueValue)} sub="full season" />
         <Metric label="Sample" value={row.sample == null ? '—' : String(row.sample)} sub="games" />
       </View>
+      {character ? (
+        <View style={styles.charLine}>
+          <CharTag read={char} />
+          <Text style={styles.charLineText}>
+            {character.callout} Overall · Full time: Sc {char?.scAvg?.toFixed(2) ?? '—'} / Conc {char?.concAvg?.toFixed(2) ?? '—'} per match.
+          </Text>
+        </View>
+      ) : null}
       <Text style={styles.detailRule}>{explain(row)}</Text>
       <Text style={styles.detailMeta}>
         Source {row.sourceList} · {sourceListById(row.sourceList).label} · Letter {row.letter}
@@ -563,7 +620,7 @@ const styles = StyleSheet.create({
   tableScroll: { width: '100%', maxWidth: '100%' },
   tableScrollContent: { minWidth: '100%' },
   table: {
-    width: '100%', minWidth: 860, backgroundColor: theme.surface, borderWidth: layout.borderWidth,
+    width: '100%', minWidth: 1030, backgroundColor: theme.surface, borderWidth: layout.borderWidth,
     borderColor: theme.border, borderRadius: layout.borderRadius, overflow: 'hidden',
   },
   row: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.sm, paddingHorizontal: spacing.sm },
@@ -578,6 +635,7 @@ const styles = StyleSheet.create({
   cTeam: { flex: 1, minWidth: 150 },
   cComp: { width: 120 },
   cGrade: { width: 104, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  cChar: { width: 168 },
   cNum: { width: 72, alignItems: 'flex-end' },
   cDir: { width: 84 },
   cNext: { width: 180, alignItems: 'flex-start' },
@@ -600,6 +658,16 @@ const styles = StyleSheet.create({
   daDot: { backgroundColor: theme.accentPurple, borderRadius: 999, paddingHorizontal: 4, paddingVertical: 1 },
   daDotText: { fontFamily: fonts.bodySemiBold, fontSize: 8, color: '#FFFFFF' },
   tableHint: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted, textAlign: 'center', marginTop: spacing.sm },
+
+  charTag: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  charNum: { width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  charNumText: { fontFamily: fonts.bodySemiBold, fontSize: 11, color: '#FFFFFF' },
+  charBody: { flex: 1, minWidth: 0 },
+  charName: { fontFamily: fonts.bodyMedium, fontSize: 12, color: theme.textPrimary },
+  charLvl: { fontFamily: fonts.body, fontSize: 10 },
+  charNone: { fontFamily: fonts.body, fontSize: 11, color: theme.textFaint },
+  charLine: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexWrap: 'wrap' },
+  charLineText: { flex: 1, minWidth: 160, fontFamily: fonts.body, fontSize: 12, lineHeight: 18, color: theme.textPrimary },
 
   detail: {
     marginTop: spacing.md, borderWidth: 1.5, borderRadius: layout.borderRadius,

@@ -107,5 +107,23 @@ export function useSavedBuilderStrategies() {
     }
   }, [cloud]);
 
-  return { saved, save, remove, rename, cloud, syncError };
+  // Edit an existing strategy in place (name / description / build), keeping its id.
+  const update = useCallback((id: string, patch: { name?: string; note?: string; config?: SavedStrategyConfig }) => {
+    let updated: SavedStrategy | undefined;
+    setSaved((cur) => cur.map((s) => {
+      if (s.id !== id) return s;
+      const config = patch.config ?? s.config;
+      const note = patch.note !== undefined ? (patch.note.trim() || undefined) : s.note;
+      updated = { ...s, name: patch.name?.trim() || s.name, note, description: describeStrategy(config), config };
+      return updated;
+    }));
+    if (cloud && updated) {
+      upsertStrategy({ id: updated.id, name: updated.name, note: updated.note ?? null, config: updated.config, ownerKey: deviceKey() })
+        .then(() => setSyncError(null))
+        .catch((err) => setSyncError(err instanceof Error ? err.message : 'update to cloud failed'));
+    }
+    return updated;
+  }, [cloud]);
+
+  return { saved, save, update, remove, rename, cloud, syncError };
 }

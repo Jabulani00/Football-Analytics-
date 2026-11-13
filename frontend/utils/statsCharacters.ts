@@ -1,3 +1,5 @@
+import type { TeamStatRow, TeamStatsExport } from '@/types/data';
+import { analyzeTeamGoals } from '@/utils/gapAnalytics';
 import { theme } from '@/styles/theme';
 
 /**
@@ -177,3 +179,77 @@ export const COLOUR_MEANINGS: { value: CharColour; label: string; meaning: strin
 /** Minimum-games gate for a reliable character: 8+ games overall (Page 13), 4+ per venue. */
 export const MIN_GAMES_OVERALL = 8;
 export const MIN_GAMES_PER_VENUE = 4;
+
+/** One team's canonical character read, keyed off a live stats export. */
+export type TeamCharacterRead = {
+  character: StatsCharacter | null;
+  scAvg: number | null;
+  concAvg: number | null;
+  games: number | null;
+};
+
+function cellNum(row: TeamStatRow | undefined, key: string): number | null {
+  if (!row) return null;
+  const v = row[key];
+  return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
+const statRowKey = (row: TeamStatRow): string => String(row.team_name).trim().toLowerCase();
+
+/**
+ * Each team's canonical character from a live stats export — Overall, Full time,
+ * all-games, Method 1 fixed bands, exactly how the Stats Characters panel reads
+ * it by default (Sc = sc_avg per match, Conc = conc_avg per match). Keyed by
+ * lowercased team name. A team without the notes' minimum games (8 overall, 4 per
+ * venue) gets a null character, so a thin sample is never forced into one.
+ */
+export function charactersFromStats(stats: TeamStatsExport): Map<string, TeamCharacterRead> {
+  const overall = stats.tables['ordinary_ft_overall'] ?? [];
+  const homeMap = new Map((stats.tables['ordinary_ft_home'] ?? []).map((r) => [statRowKey(r), r]));
+  const awayMap = new Map((stats.tables['ordinary_ft_away'] ?? []).map((r) => [statRowKey(r), r]));
+  const out = new Map<string, TeamCharacterRead>();
+  for (const row of overall) {
+    const key = statRowKey(row);
+    const scAvg = cellNum(row, 'sc_avg');
+    const concAvg = cellNum(row, 'conc_avg');
+    const games = cellNum(row, 'sample_size');
+    const homeGames = cellNum(homeMap.get(key), 'sample_size');
+    const awayGames = cellNum(awayMap.get(key), 'sample_size');
+    const qualifies =
+      (games ?? 0) >= MIN_GAMES_OVERALL &&
+      (homeGames ?? 0) >= MIN_GAMES_PER_VENUE &&
+      (awayGames ?? 0) >= MIN_GAMES_PER_VENUE &&
+      scAvg != null &&
+      concAvg != null;
+    const scLevel = qualifies ? levelForAvgM1(scAvg) : null;
+    const concLevel = qualifies ? levelForAvgM1(concAvg) : null;
+    const character = scLevel && concLevel ? characterFor(scLevel, concLevel) : null;
+    out.set(key, { character, scAvg, concAvg, games });
+  }
+  return out;
+}
+
+/**
+ * Each team's canonical character from season fixtures — the same Overall · Full
+ * time · Method 1 read as {@link charactersFromStats}, for the paths that only
+ * hold raw fixtures (no built export). Keyed by lowercased team name.
+ */
+export function charactersFromFixtures(
+  fixtures: Parameters<typeof analyzeTeamGoals>[0],
+): Map<string, TeamCharacterRead> {
+  const out = new Map<string, TeamCharacterRead>();
+  for (const g of analyzeTeamGoals(fixtures, 'fulltime')) {
+    const scAvg = g.overall.avgFor;
+    const concAvg = g.overall.avgAgainst;
+    const qualifies =
+      g.overall.games >= MIN_GAMES_OVERALL &&
+      g.home.games >= MIN_GAMES_PER_VENUE &&
+      g.away.games >= MIN_GAMES_PER_VENUE &&
+      scAvg != null &&
+      concAvg != null;
+    const scLevel = qualifies ? levelForAvgM1(scAvg) : null;
+    const concLevel = qualifies ? levelForAvgM1(concAvg) : null;
+    const character = scLevel && concLevel ? characterFor(scLevel, concLevel) : null;
+    out.set(String(g.team).trim().toLowerCase(), { character, scAvg, concAvg, games: g.overall.games });
+  }
+  return out;
+}
