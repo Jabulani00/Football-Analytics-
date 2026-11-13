@@ -710,6 +710,19 @@ export default function StrategyBuilderPanel() {
               );
             })}
           </View>
+          {/* Build mode: one combined builder (either team), or separate Home | Away
+              panels — so a Fixtures query filters the home team by its rules and the
+              away team by its own, exactly like a real home-vs-away fixture. */}
+          <View style={styles.modeRow}>
+            {([['combined', 'Combined (either team)'], ['split', 'Home vs Away']] as const).map(([v, label]) => {
+              const on = buildMode === v;
+              return (
+                <Pressable key={v} accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => setBuildMode(v)} style={[styles.modeBtn, on && styles.modeBtnOn]}>
+                  <Text style={[styles.modeBtnText, on && styles.modeBtnTextOn]}>{label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
           {/* Combo: switch between adding a Peg (graded) rule and a Single (numbers)
               rule. Both land in one rule list and combine (AND / OR) to one result. */}
           <View style={styles.modeRow}>
@@ -722,11 +735,30 @@ export default function StrategyBuilderPanel() {
               );
             })}
           </View>
-          <Text style={styles.callHint}>Add Peg and Single rules in any mix — they stack in one rule list and sync. Each rule's Venue binds the fixture side (Home → home team, Away → away team), so Fixtures returns only matches meeting every rule on its side.</Text>
-          {comboKind === 'graded' ? (
-            <ConditionBuilder narrow={narrow} title="🧷 Peg rule (graded)" onAdd={addCondition} />
+          <Text style={styles.callHint}>Add Peg and Single rules in any mix — they stack in one rule list and sync. {buildMode === 'split' ? 'Home rules apply to the home team and Away rules to the away team — a Fixtures query returns the matches where both sides qualify.' : 'Each rule’s Venue binds the fixture side (Home → home team, Away → away team), so Fixtures returns only matches meeting every rule on its side.'}</Text>
+          {buildMode === 'combined' ? (
+            comboKind === 'graded' ? (
+              <ConditionBuilder narrow={narrow} title="🧷 Peg rule (graded)" onAdd={addCondition} />
+            ) : (
+              <SingleRuleBuilder narrow={narrow} onAdd={addCondition} />
+            )
           ) : (
-            <SingleRuleBuilder narrow={narrow} onAdd={addCondition} />
+            <View style={[styles.splitRow, narrow && styles.filterCol]}>
+              <View style={wide ? styles.flex : styles.full}>
+                {comboKind === 'graded' ? (
+                  <ConditionBuilder narrow={narrow} fixedSide="home" title="🏠 Home team · Peg rule" onAdd={addCondition} />
+                ) : (
+                  <SingleRuleBuilder narrow={narrow} fixedSide="home" title="🏠 Home team · Single rule" onAdd={addCondition} />
+                )}
+              </View>
+              <View style={wide ? styles.flex : styles.full}>
+                {comboKind === 'graded' ? (
+                  <ConditionBuilder narrow={narrow} fixedSide="away" title="✈ Away team · Peg rule" onAdd={addCondition} />
+                ) : (
+                  <SingleRuleBuilder narrow={narrow} fixedSide="away" title="✈ Away team · Single rule" onAdd={addCondition} />
+                )}
+              </View>
+            </View>
           )}
         </>
       ) : (
@@ -1351,7 +1383,7 @@ function ConditionBuilder({ narrow, fixedSide, title, onAdd, dimId: dimIdProp, a
  * Stat-filter condition that stacks with the Peg rules. Venue binds the fixture
  * side (makeSingleCondition), so a Home rule syncs onto the home team.
  */
-function SingleRuleBuilder({ narrow, onAdd }: { narrow: boolean; onAdd: (c: Condition) => void }) {
+function SingleRuleBuilder({ narrow, onAdd, fixedSide, title }: { narrow: boolean; onAdd: (c: Condition) => void; fixedSide?: FixtureSide; title?: string }) {
   const families = useMemo(() => singleStatFamilies(), []);
   const [family, setFamily] = useState(families[0]?.value ?? 'ordinary');
   const fam = families.find((f) => f.value === family) ?? families[0];
@@ -1369,20 +1401,24 @@ function SingleRuleBuilder({ narrow, onAdd }: { narrow: boolean; onAdd: (c: Cond
   };
   const statLabel = fam?.items.find((i) => i.value === methodId)?.label ?? '';
   const canAdd = methodId !== '' && value.trim() !== '' && Number.isFinite(Number(value));
-  const sideHint = scope === 'home' ? 'Home team' : scope === 'away' ? 'Away team' : 'Either team';
+  const venueSideHint = scope === 'home' ? 'Home team' : scope === 'away' ? 'Away team' : 'Either team';
   const add = () => {
     if (!canAdd) return;
-    onAdd(makeSingleCondition({ family, methodId, scope, half, window, league: ALL, cmp, value }));
+    const c = makeSingleCondition({ family, methodId, scope, half, window, league: ALL, cmp, value });
+    // In a Home / Away panel the fixture side is fixed; the Venue only picks which
+    // stat table (home / away / overall) the number is read from.
+    if (fixedSide) c.side = fixedSide;
+    onAdd(c);
     setValue('');
   };
 
   return (
-    <View style={styles.builderCard}>
-      <Text style={styles.sectionLabel}>① Single rule · by the numbers</Text>
-      <Text style={styles.readNote}>One stat at a ≥ / ≤ threshold, configured just like the Single tab. Venue sets the fixture side it syncs on — {sideHint}.</Text>
+    <View style={[styles.builderCard, fixedSide === 'home' && styles.builderHome, fixedSide === 'away' && styles.builderAway]}>
+      <Text style={styles.sectionLabel}>{title ?? '① Single rule · by the numbers'}</Text>
+      <Text style={styles.readNote}>One stat at a ≥ / ≤ threshold, configured just like the Single tab. {fixedSide ? `This rule is applied to the ${fixedSide} team.` : `Venue sets the fixture side it syncs on — ${venueSideHint}.`}</Text>
       <View style={styles.readRow}>
         <SegGroup label="Period" value={half} options={[['ft', 'Full time'], ['ht', '1st half'], ['2h', '2nd half']]} onChange={setHalf} />
-        <SegGroup label={`Venue · ${sideHint}`} value={scope} options={[['overall', 'Overall'], ['home', 'Home'], ['away', 'Away']]} onChange={setScope} />
+        <SegGroup label={fixedSide ? 'Venue' : `Venue · ${venueSideHint}`} value={scope} options={[['overall', 'Overall'], ['home', 'Home'], ['away', 'Away']]} onChange={setScope} />
       </View>
       <View style={[styles.filterRow, narrow && styles.filterCol]}>
         <FilterDropdown label="Family" value={family} options={families.map((f) => ({ value: f.value, label: f.label }))} onChange={changeFamily} style={narrow ? styles.full : styles.flex} />
