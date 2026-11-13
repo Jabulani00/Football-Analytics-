@@ -1655,7 +1655,7 @@ function ChangeScaleBoard({
   return (
     <View>
       <Text style={styles.note}>
-        Change scale 1–14. 1 is the strongest positive and 7 the weakest. 8 is the weakest negative and 14 the strongest. Places 6, 7, 8 and 9 are neutral changes.
+        Change scale 1–14. 1 is the strongest positive and 7 the weakest. 8 is the weakest negative and 14 the strongest. Places 6, 7, 8 and 9 are neutral changes. The space count is only the places between T1 and T2, and those four neutral places count as one space.
       </Text>
       {gap.match ? (
         <Callout
@@ -1740,7 +1740,7 @@ function ChangeScaleModal({
               {gap.grade && gap.from != null && gap.to != null
                 ? ` ${gap.grade} covers places ${gap.from}–${gap.to}.`
                 : ''}
-              {' '}Places 1–7 are positive. Places 8–14 are negative. Places 6, 7, 8 and 9 are neutral.
+              {' '}Places 1–7 are positive. Places 8–14 are negative. Places 6, 7, 8 and 9 are neutral, and any of them between the two sides count as one space. The places T1 and T2 sit on are not counted.
             </Text>
             <View style={styles.posGrid}>
               {CHANGE_SCALE.map((slot) => {

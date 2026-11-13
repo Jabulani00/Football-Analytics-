@@ -176,6 +176,11 @@ console.log('\nseparation on a called fixture');
   check('a neutral place is not T1 positive', positiveSide?.percent === 0, positiveSide?.reason ?? 'none');
   const spaces = scoreCallFixture('label-spaces-0::tick', top, low, saved.table, { matches: quiet });
   check('the same label-change place is 0 spaces', spaces?.percent === 100 && (spaces?.reason ?? '').includes('0 spaces'), spaces?.reason ?? 'none');
+  check('3 or more spaces is a label-change call', labels.includes('3 or more spaces between T1 and T2'));
+  const tight = scoreCallFixture('label-spaces-3-plus::tick', top, low, saved.table, { matches: quiet });
+  check('the same place is not 3 or more spaces', tight?.percent === 0, tight?.reason ?? 'none');
+  const wide = scoreCallFixture('label-spaces-3-plus::tick', yellow, green, [green, yellow], { matches: losses });
+  check('a wide label-change gap calls 3 or more spaces', wide?.percent === 100 && (wide?.reason ?? '').includes('spaces'), wide?.reason ?? 'none');
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

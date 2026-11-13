@@ -403,8 +403,11 @@ console.log('\nlast 5 fixture overview');
   const samePlace = read(6, 6);
   check('the same neutral place is a poor 0', samePlace?.winner === 't1' && samePlace.points === 0);
   check('the same place has no spaces between', changePlaceSpaces(6, 6) === 0);
-  check('the two ends are 13 spaces apart', changePlaceSpaces(1, 14) === 13 && changePlaceSpaces(14, 1) === 13);
-  check('the overview names the spaces', (read(1, 5)?.detail ?? '').includes('4 spaces'));
+  check('neighbours have no space between them', changePlaceSpaces(1, 2) === 0 && changePlaceSpaces(6, 7) === 0);
+  check('places between 1 and 5 are 3', changePlaceSpaces(1, 5) === 3);
+  check('the four neutral places count as one space', changePlaceSpaces(5, 10) === 1 && changePlaceSpaces(4, 10) === 2 && changePlaceSpaces(6, 9) === 1);
+  check('the two ends leave 9 spaces between', changePlaceSpaces(1, 14) === 9 && changePlaceSpaces(14, 1) === 9);
+  check('the overview names the spaces', (read(1, 5)?.detail ?? '').includes('3 spaces'));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

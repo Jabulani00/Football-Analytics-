@@ -844,9 +844,21 @@ export function changePlacePole(place: number): ChangePole | null {
   return null;
 }
 
-/** Places apart on the 1–14 line. The same place is 0. The two ends are 13. */
+/**
+ * Places strictly between the two sides. The places they sit on are not counted.
+ * Any of places 6–9 that fall between them count as one space together.
+ * The same place is 0. Neighbours are 0. The two ends are 9.
+ */
 export function changePlaceSpaces(t1Place: number, t2Place: number): number {
-  return Math.abs(t1Place - t2Place);
+  const from = Math.min(t1Place, t2Place);
+  const to = Math.max(t1Place, t2Place);
+  let spaces = 0;
+  let neutral = false;
+  for (let place = from + 1; place < to; place += 1) {
+    if (changePlaceIsNeutral(place)) neutral = true;
+    else spaces += 1;
+  }
+  return spaces + (neutral ? 1 : 0);
 }
 
 /** Signed distance from neutral. +5 is the most positive. −5 is the most negative. */

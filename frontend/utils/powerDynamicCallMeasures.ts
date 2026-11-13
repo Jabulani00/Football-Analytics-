@@ -42,6 +42,7 @@ import {
 import {
   CHANGE_GUIDE,
   CHANGE_SEPARATION_LABEL,
+  changePlaceSpaces,
   changeScalePlace,
   changeSeparation,
   last5LabelChanges,
@@ -797,13 +798,13 @@ function rawMeasureAspects(): MeasureAspect[] {
         token: id,
       }),
     ),
-    ...Array.from({ length: 14 }, (_, spaces) =>
+    ...Array.from({ length: 10 }, (_, spaces) =>
       aspect({
         id: `label-spaces-${spaces}`,
         tabId: 'last5',
         functionId: 'label_change',
         label: spaces === 1 ? '1 space between T1 and T2' : `${spaces} spaces between T1 and T2`,
-        detail: 'How many places apart the two sides sit on the label-change number line. The same place is 0. The two ends are 13.',
+        detail: 'Places between the two sides on the label-change number line. The places they sit on are not counted. The four neutral places count as one space.',
         needsFixtures: true,
         binary: true,
         pair: true,
@@ -811,6 +812,18 @@ function rawMeasureAspects(): MeasureAspect[] {
         token: `spaces:${spaces}`,
       }),
     ),
+    aspect({
+      id: 'label-spaces-3-plus',
+      tabId: 'last5',
+      functionId: 'label_change',
+      label: '3 or more spaces between T1 and T2',
+      detail: 'The places between the two sides add up to 3 or more. The four neutral places count as one space.',
+      needsFixtures: true,
+      binary: true,
+      pair: true,
+      measure: 'label-change',
+      token: 'spaces:3+',
+    }),
     ...(['A', 'B', 'C'] as const satisfies readonly ChangeSeparation[]).map((letter) =>
       aspect({
         id: `label-sep-${letter}`,
@@ -2011,10 +2024,12 @@ export function scoreMeasure(
     const gap = letter ? `${place} v ${otherPlace} · ${letter} · ${CHANGE_SEPARATION_LABEL[letter]}` : null;
     const called = `${labelChangeKind(side.hierarchy.kind as ChangeKind)} · ${side.hierarchy.code}`;
     if (token.startsWith('spaces:')) {
-      const wanted = Number(token.slice('spaces:'.length));
-      const spaces = Math.abs(place - otherPlace);
+      const raw = token.slice('spaces:'.length);
+      const spaces = changePlaceSpaces(place, otherPlace);
       const word = spaces === 1 ? '1 space' : `${spaces} spaces`;
-      return fit(spaces === wanted ? 100 : 0, `${word} between place ${place} and place ${otherPlace}`);
+      const reason = `${word} between place ${place} and place ${otherPlace}`;
+      if (raw === '3+') return fit(spaces >= 3 ? 100 : 0, reason);
+      return fit(spaces === Number(raw) ? 100 : 0, reason);
     }
     if (token.startsWith('sep:')) {
       const wanted = token.slice(4);
