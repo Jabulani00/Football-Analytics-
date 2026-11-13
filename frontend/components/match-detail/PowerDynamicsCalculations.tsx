@@ -9,7 +9,10 @@ import type { StandingLike } from '@/utils/motivationEngine';
 import { scoreCalculationRead } from '@/utils/powerDynamicCalculationCalls';
 import {
   buildPowerDynamicsCalculations,
+  CORE_POINTS_CAP,
+  MIX_POINTS_CAP,
   SECTOR_HIT,
+  Y_POINTS_CAP,
   type CalculationSector,
   type CalculationTick,
   type ComparedSector,
@@ -398,7 +401,7 @@ function CoreSectorsButton({
         onClose={() => setOpen(false)}>
         <Text style={styles.bandTitle}>Core sectors</Text>
         <Text style={styles.detail}>
-          {t1Name} {fmt(calc.calc2.core.t1)} · {t2Name} {fmt(calc.calc2.core.t2)}
+          {t1Name} {fmt(calc.calc2.core.t1)} · {t2Name} {fmt(calc.calc2.core.t2)} · {fmt(calc.calc2.core.t1 + calc.calc2.core.t2)} of {fmt(CORE_POINTS_CAP)}
         </Text>
         {core.map((row) => {
           const result = coreWinner(row);
@@ -414,7 +417,7 @@ function CoreSectorsButton({
         })}
         <Text style={styles.bandTitle}>Y applications</Text>
         <Text style={styles.detail}>
-          {t1Name} {fmt(calc.calc2.y.t1)} · {t2Name} {fmt(calc.calc2.y.t2)}
+          {t1Name} {fmt(calc.calc2.y.t1)} · {t2Name} {fmt(calc.calc2.y.t2)} · {fmt(calc.calc2.y.t1 + calc.calc2.y.t2)} of {fmt(Y_POINTS_CAP)}
         </Text>
         {y.map((row) => (
           <SectorFact
@@ -427,7 +430,7 @@ function CoreSectorsButton({
         ))}
         <Text style={styles.bandTitle}>Combined</Text>
         <Text style={styles.detail}>
-          {t1Name} {fmt(calc.calc2.t1)} · {t2Name} {fmt(calc.calc2.t2)}
+          {t1Name} {fmt(calc.calc2.t1)} · {t2Name} {fmt(calc.calc2.t2)} · {fmt(calc.calc2.t1 + calc.calc2.t2)} of {fmt(MIX_POINTS_CAP)}
         </Text>
       </SectorModal>
     </>
@@ -436,9 +439,9 @@ function CoreSectorsButton({
 
 function TotalSplit({ calc, t1, t2 }: { calc: PowerDynamicsCalculation; t1: string; t2: string }) {
   const lines = [
-    { label: 'Core sectors', t1: calc.calc2.core.t1, t2: calc.calc2.core.t2, main: false },
-    { label: 'Y applications', t1: calc.calc2.y.t1, t2: calc.calc2.y.t2, main: false },
-    { label: 'Combined', t1: calc.calc2.t1, t2: calc.calc2.t2, main: true },
+    { label: 'Core sectors', t1: calc.calc2.core.t1, t2: calc.calc2.core.t2, cap: CORE_POINTS_CAP, main: false },
+    { label: 'Y applications', t1: calc.calc2.y.t1, t2: calc.calc2.y.t2, cap: Y_POINTS_CAP, main: false },
+    { label: 'Combined', t1: calc.calc2.t1, t2: calc.calc2.t2, cap: MIX_POINTS_CAP, main: true },
   ];
   return (
     <View>
@@ -455,6 +458,7 @@ function TotalSplit({ calc, t1, t2 }: { calc: PowerDynamicsCalculation; t1: stri
               <Text style={line.main ? styles.total : styles.splitTotal}>{fmt(line.t2)}</Text>
             </View>
           </View>
+          <Text style={styles.detail}>{fmt(line.t1 + line.t2)} of {fmt(line.cap)}</Text>
         </View>
       ))}
     </View>

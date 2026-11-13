@@ -211,7 +211,7 @@ console.log('\nlive sector values');
   check('home/away strong is a core sector with the same award as baseline', calc.sectors.find((s) => s.id === 'home_away_strong')?.group === 'core' && value('home_away_strong', 't1') === value('baseline', 't1') && value('baseline', 't1') === 3);
   check('last 5 is the separation between the two sides', (() => {
     const last5 = calc.sectors.find((s) => s.id === 'last5');
-    return last5?.parts.length === 0 && (last5?.detail ?? '').includes('Last 5 separation');
+    return last5?.parts.length === 0 && (last5?.detail ?? '').includes('Neutral vs neutral');
   })());
   check('baseline names a separation', (calc.sectors.find((s) => s.id === 'baseline')?.detail ?? '').includes('separation'));
   check('h2h separation uses the gap values', (calc.sectors.find((s) => s.id === 'h2h')?.detail ?? '').includes('separation'));

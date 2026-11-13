@@ -45,6 +45,7 @@ import {
   changeScalePlace,
   changeSeparation,
   last5LabelChanges,
+  last5Overview,
   twoGoalBandSides,
   type ChangeKind,
   type ChangeSeparation,
@@ -772,6 +773,30 @@ function rawMeasureAspects(): MeasureAspect[] {
       measure: 'label-change',
       token: 'negative-all',
     }),
+    ...[
+      ['t1-positive', 'T1 positive', 'T1 sits on a positive place.'],
+      ['t2-positive', 'T2 positive', 'T2 sits on a positive place.'],
+      ['t1-negative', 'T1 negative', 'T1 sits on a negative place.'],
+      ['t2-negative', 'T2 negative', 'T2 sits on a negative place.'],
+      ['t1-neutral', 'T1 neutral', 'T1 sits on a neutral place.'],
+      ['t2-neutral', 'T2 neutral', 'T2 sits on a neutral place.'],
+      ['t1-support', 'T1 support', 'The last 5 pair supports T1.'],
+      ['t2-support', 'T2 support', 'The last 5 pair supports T2.'],
+      ['both-support', 'T1 and T2 support', 'Both sides sit on the same pole. The gap decides who leans further.'],
+    ].map(([id, label, detail]) =>
+      aspect({
+        id: `overview-${id}`,
+        tabId: 'last5',
+        functionId: 'fixture_overview',
+        label,
+        detail,
+        needsFixtures: true,
+        binary: true,
+        pair: true,
+        measure: 'fixture-overview',
+        token: id,
+      }),
+    ),
     ...(['A', 'B', 'C'] as const satisfies readonly ChangeSeparation[]).map((letter) =>
       aspect({
         id: `label-sep-${letter}`,
@@ -1917,7 +1942,7 @@ export function scoreMeasure(
     return fit(Math.min(100, (hits / 2) * 100), `${hits} in the last ${recent.length}`);
   }
 
-  if (measure === 'two-goal' || measure === 'label-change') {
+  if (measure === 'two-goal' || measure === 'label-change' || measure === 'fixture-overview') {
     const other = neighbourOf(row, table, context);
     if (!other) return null;
     if (measure === 'two-goal') {
@@ -1950,6 +1975,22 @@ export function scoreMeasure(
     const side = sides.left;
     const otherSide = sides.right;
     if (!side || !otherSide) return null;
+    if (measure === 'fixture-overview') {
+      const overview = last5Overview(changeScalePlace(side.hierarchy), changeScalePlace(otherSide.hierarchy));
+      if (!overview) return null;
+      const on =
+        token === 't1-positive' ? overview.t1Pole === 'positive'
+        : token === 't2-positive' ? overview.t2Pole === 'positive'
+        : token === 't1-negative' ? overview.t1Pole === 'negative'
+        : token === 't2-negative' ? overview.t2Pole === 'negative'
+        : token === 't1-neutral' ? overview.t1Pole === 'neutral'
+        : token === 't2-neutral' ? overview.t2Pole === 'neutral'
+        : token === 't1-support' ? overview.support === 't1'
+        : token === 't2-support' ? overview.support === 't2'
+        : token === 'both-support' ? overview.support === 'both'
+        : false;
+      return fit(on ? 100 : 0, overview.detail);
+    }
     const place = changeScalePlace(side.hierarchy);
     const otherPlace = changeScalePlace(otherSide.hierarchy);
     const letter = changeSeparation(place, otherPlace);

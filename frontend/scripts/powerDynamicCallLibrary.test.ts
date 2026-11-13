@@ -170,6 +170,10 @@ console.log('\nseparation on a called fixture');
   check('five negative changes call every negative type together', dropped?.percent === 100, dropped?.reason ?? 'none');
   const quietNegative = scoreCallFixture('label-negative-all::tick', top, low, saved.table, { matches: quiet });
   check('no label moves is not a combined negative', quietNegative?.percent === 0, quietNegative?.reason ?? 'none');
+  const overview = scoreCallFixture('overview-both-support::tick', top, low, saved.table, { matches: quiet });
+  check('no label moves is T1 and T2 support', overview?.percent === 100 && (overview?.reason ?? '').includes('Neutral'), overview?.reason ?? 'none');
+  const positiveSide = scoreCallFixture('overview-t1-positive::tick', top, low, saved.table, { matches: quiet });
+  check('a neutral place is not T1 positive', positiveSide?.percent === 0, positiveSide?.reason ?? 'none');
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -834,6 +834,104 @@ export function changeScaleGap(t1: ChangeHierarchy, t2: ChangeHierarchy): Change
   };
 }
 
+export type ChangePole = 'positive' | 'neutral' | 'negative';
+
+/** Places 1–5 are positive, 6–9 are neutral, 10–14 are negative. */
+export function changePlacePole(place: number): ChangePole | null {
+  if (place >= 1 && place <= 5) return 'positive';
+  if (changePlaceIsNeutral(place)) return 'neutral';
+  if (place >= 10 && place <= 14) return 'negative';
+  return null;
+}
+
+/** Signed distance from neutral. +5 is the most positive. −5 is the most negative. */
+export function changePlaceMagnitude(place: number): number {
+  if (place >= 1 && place <= 5) return 6 - place;
+  if (place >= 10 && place <= 14) return -(place - 9);
+  return 0;
+}
+
+export type Last5Overview = {
+  t1Place: number;
+  t2Place: number;
+  t1Pole: ChangePole;
+  t2Pole: ChangePole;
+  t1Magnitude: number;
+  t2Magnitude: number;
+  support: 't1' | 't2' | 'both';
+  winner: 't1' | 't2' | null;
+  letter: ChangeSeparation | null;
+  /** Clear is 3, mediocre is 1, poor is 0. The winner keeps it. */
+  points: number;
+  detail: string;
+};
+
+/**
+ * Who the last 5 supports.
+ * T2 is supported by negative/neutral, neutral/positive, and negative/positive.
+ * T1 is supported by the three opposite pairs.
+ * The same pole is counted from the gap: more positive wins, less negative wins, and neutral vs neutral goes to T1.
+ */
+export function last5Overview(t1Place: number, t2Place: number): Last5Overview | null {
+  const t1Pole = changePlacePole(t1Place);
+  const t2Pole = changePlacePole(t2Place);
+  if (!t1Pole || !t2Pole) return null;
+  const t1Magnitude = changePlaceMagnitude(t1Place);
+  const t2Magnitude = changePlaceMagnitude(t2Place);
+  const letter = changeSeparation(t1Place, t2Place);
+  const award = letter === 'A' ? 3 : letter === 'B' ? 1 : 0;
+  const support: Last5Overview['support'] =
+    t1Pole === t2Pole
+      ? 'both'
+      : (t1Pole === 'negative' && t2Pole === 'neutral') ||
+          (t1Pole === 'neutral' && t2Pole === 'positive') ||
+          (t1Pole === 'negative' && t2Pole === 'positive')
+        ? 't2'
+        : 't1';
+
+  let winner: 't1' | 't2' | null = support === 'both' ? null : support;
+  let lean = support === 't1' ? 'T1 support' : support === 't2' ? 'T2 support' : '';
+  if (support === 'both' && t1Pole === 'neutral') {
+    winner = 't1';
+    lean = 'Neutral vs neutral. T1 wins';
+  } else if (support === 'both' && t1Pole === 'positive') {
+    if (t1Magnitude === t2Magnitude) lean = 'Positive vs positive. Same magnitude';
+    else if (t1Magnitude > t2Magnitude) {
+      winner = 't1';
+      lean = 'Positive vs positive. T1 is more positive';
+    } else {
+      winner = 't2';
+      lean = 'Positive vs positive. T2 is more positive';
+    }
+  } else if (support === 'both') {
+    if (t1Magnitude === t2Magnitude) lean = 'Negative vs negative. Same magnitude';
+    else if (t1Magnitude > t2Magnitude) {
+      winner = 't1';
+      lean = 'Negative vs negative. T1 is less negative';
+    } else {
+      winner = 't2';
+      lean = 'Negative vs negative. T2 is less negative';
+    }
+  }
+
+  const poleWord = (pole: ChangePole, place: number) =>
+    pole === 'neutral' ? 'neutral' : `${pole} ${changePlaceMark(place)}`;
+  const separation = letter ? ` ${CHANGE_SEPARATION_LABEL[letter]}.` : '';
+  return {
+    t1Place,
+    t2Place,
+    t1Pole,
+    t2Pole,
+    t1Magnitude,
+    t2Magnitude,
+    support,
+    winner,
+    letter,
+    points: winner ? award : 0,
+    detail: `Last 5 · T1 ${poleWord(t1Pole, t1Place)} · T2 ${poleWord(t2Pole, t2Place)}. ${lean}.${separation}`,
+  };
+}
+
 export type LabelChangeGame = {
   opponentName: string;
   outcome: ResultOutcome;

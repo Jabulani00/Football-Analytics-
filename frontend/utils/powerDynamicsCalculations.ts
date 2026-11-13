@@ -12,10 +12,11 @@ import { evaluateH2HOptions, h2hGradeScore } from '@/utils/h2hOptions';
 import { evaluateImportanceOf3 } from '@/utils/importanceOf3Engine';
 import type { ImbangiScheduleMatch } from '@/utils/imbangiEngine';
 import type { FixtureInitialState } from '@/utils/last5Analysis';
+import { changeScalePlace, last5LabelChanges, last5Overview, type Last5Overview } from '@/utils/last5Sections';
 import {
-  last5FormLeagueTable,
   last6FormLeagueTable,
   last6FormStandings,
+  resultsFromSeasonMatches,
   type Last6LeagueRow,
 } from '@/utils/last6Form';
 import {
@@ -41,6 +42,12 @@ import { contestedLeagueBoard } from '@/utils/separatorTools';
 export const SECTOR_HIT = 6;
 export const MARGIN_MID = 4;
 export const Y_APPLICATION_VALUE = 0.5;
+/** Eight core sectors, each worth at most 3. The two sides share this. */
+export const CORE_POINTS_CAP = 24;
+/** Five Y applications, each worth 0.5. The two sides share this. */
+export const Y_POINTS_CAP = 2.5;
+/** Core and Y together. */
+export const MIX_POINTS_CAP = 26.5;
 export const SEPARATION_AWARD = { clear: 3, mediocre: 1, poor: 0 } as const;
 export const IMBANGI_TRUE_VALUE = 6;
 
@@ -116,6 +123,8 @@ export type PowerDynamicsCalculation = {
     t1: SideMarginRead;
     t2: SideMarginRead;
   };
+  /** Last 5 fixture overview. Absent on a hand-built total. */
+  last5?: Last5Overview | null;
 };
 
 export type PowerDynamicsCalculationInput = {
@@ -190,7 +199,8 @@ function awardBand(points: number): MarginBandId {
 /** The winner keeps 3, 1, or 0. The other side is 0. Poor separation leaves both at 0. */
 function applyCoreAwards(sectors: CalculationSector[]): CalculationSector[] {
   return sectors.map((row) => {
-    if (row.group !== 'core') return row;
+    const settled = num(row.t1) <= SEPARATION_AWARD.clear && num(row.t2) <= SEPARATION_AWARD.clear;
+    if (row.group !== 'core' || (row.id === 'last5' && settled)) return row;
     const award = coreSeparationAward(row.t1, row.t2);
     return {
       ...row,
@@ -444,7 +454,29 @@ export function buildPowerDynamicsCalculations(
     false,
   );
 
-  const last5Scores = scoresOnFormTable(pd, last5FormLeagueTable(standings, matches));
+  const homeId = pd.t1.venue === 'home' ? pd.t1.teamId : pd.t2.teamId;
+  const last5Read =
+    pd.t1.teamId == null || pd.t2.teamId == null
+      ? null
+      : last5LabelChanges({
+          t1Id: pd.t1.teamId,
+          t2Id: pd.t2.teamId,
+          t1Label: pd.t1.label,
+          t2Label: pd.t2.label,
+          t1Results: resultsFromSeasonMatches(pd.t1.teamId, matches, standings),
+          t2Results: resultsFromSeasonMatches(pd.t2.teamId, matches, standings),
+          standings,
+          mode: 'overall',
+          fixtureHomeId: homeId,
+        });
+  const last5View =
+    last5Read?.left && last5Read.right
+      ? last5Overview(changeScalePlace(last5Read.left.hierarchy), changeScalePlace(last5Read.right.hierarchy))
+      : null;
+  const last5Scores = {
+    t1: last5View?.winner === 't1' ? last5View.points : 0,
+    t2: last5View?.winner === 't2' ? last5View.points : 0,
+  };
   const formScores = scoresOnFormTable(pd, last6FormLeagueTable(standings, matches));
   const h2h = h2hGradeValues(
     input.h2hMatches,
@@ -524,7 +556,7 @@ export function buildPowerDynamicsCalculations(
       'Last 5',
       'core',
       last5Scores,
-      `Last 5 separation between ${pd.t1.label} and ${pd.t2.label}.${separationLine(last5Scores.t1, last5Scores.t2)}`,
+      last5View?.detail ?? 'Last 5 has no change read yet.',
     ),
     sector(
       'form',
@@ -659,5 +691,5 @@ export function buildPowerDynamicsCalculations(
     ),
   ];
 
-  return summariseSectorScores({ sectors, ticks, t1Yellow, t2Yellow });
+  return { ...summariseSectorScores({ sectors, ticks, t1Yellow, t2Yellow }), last5: last5View };
 }

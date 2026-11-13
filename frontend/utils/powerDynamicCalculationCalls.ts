@@ -103,6 +103,48 @@ function totalExtremeReads(): CalculationCallAspect[] {
   );
 }
 
+function overviewReads(): CalculationCallAspect[] {
+  const rows: [string, string, string][] = [
+    ['t1-positive', 'T1 positive', 'T1 sits on a positive last-5 place.'],
+    ['t2-positive', 'T2 positive', 'T2 sits on a positive last-5 place.'],
+    ['t1-negative', 'T1 negative', 'T1 sits on a negative last-5 place.'],
+    ['t2-negative', 'T2 negative', 'T2 sits on a negative last-5 place.'],
+    ['t1-neutral', 'T1 neutral', 'T1 sits on a neutral last-5 place.'],
+    ['t2-neutral', 'T2 neutral', 'T2 sits on a neutral last-5 place.'],
+    ['t1-support', 'T1 support', 'The last 5 pair supports T1.'],
+    ['t2-support', 'T2 support', 'The last 5 pair supports T2.'],
+    ['both-support', 'T1 and T2 support', 'Both sides sit on the same pole.'],
+    ['t1-wins', 'T1 wins last 5', 'The last 5 overview gives the sector to T1.'],
+    ['t2-wins', 'T2 wins last 5', 'The last 5 overview gives the sector to T2.'],
+  ];
+  return rows.map(([token, label, detail]) => read(`calc-overview-${token}`, 'overview', label, detail));
+}
+
+function activityReads(): CalculationCallAspect[] {
+  const stages = [
+    ['core', 'Core'],
+    ['y', 'Y'],
+    ['mix', 'Combined'],
+  ] as const;
+  return stages.flatMap(([key, name]) => {
+    const rows: CalculationCallAspect[] = [];
+    for (const sideId of ['t1', 't2'] as const) {
+      const who = sideId === 't1' ? 'T1' : 'T2';
+      rows.push(
+        read(`activity-${key}-${sideId}-high`, 'activity', `${who} ${name} is high amongst fixtures`, `${who}’s ${name} total is above the other fixtures on this day.`),
+        read(`activity-${key}-${sideId}-low`, 'activity', `${who} ${name} is low amongst fixtures`, `${who}’s ${name} total is below the other fixtures on this day.`),
+        read(`activity-${key}-${sideId}-bigger`, 'activity', `${who} ${name} is bigger`, `${who}’s ${name} total is higher than the other side in this fixture.`),
+        read(`activity-${key}-${sideId}-smaller`, 'activity', `${who} ${name} is smaller`, `${who}’s ${name} total is lower than the other side in this fixture.`),
+      );
+    }
+    rows.push(
+      read(`activity-${key}-big`, 'activity', `${name} difference is big`, `${name} totals differ by a clear gap or more.`),
+      read(`activity-${key}-small`, 'activity', `${name} difference is small`, `${name} totals differ, by less than a clear gap.`),
+    );
+    return rows;
+  });
+}
+
 function tickReads(): CalculationCallAspect[] {
   return TICK_ROWS.flatMap(([id, label]) => [
     read(`tick-${id}-t1`, 'ticks', `${label} · T1`, `${label} is on for T1.`),
@@ -219,6 +261,8 @@ const RAW_CALCULATION_ASPECTS: CalculationCallAspect[] = [
     }));
   }),
   ...totalExtremeReads(),
+  ...activityReads(),
+  ...overviewReads(),
   ...sectorReads('core', CORE_SECTORS),
   ...sectorReads('y', Y_SECTORS),
   ...tickReads(),
@@ -235,7 +279,9 @@ export const CALCULATION_CALL: PowerDynamicCallDef = {
   detail: 'Calculation 1, 2 and 3, core sectors, Y sectors, and ticks. A tick means the call holds. A cross means it does not.',
   functions: [
     { id: 'calc1', label: 'Calculation 1', detail: 'Sectors of 6 or more.' },
-    { id: 'calc2', label: 'Calculation 2', detail: 'Core total, then the Y total, then the two added together. Clear separation is 3, mediocre is 1, poor is 0. A Y application is 0.5.' },
+    { id: 'calc2', label: 'Calculation 2', detail: 'Core total out of 24, Y total out of 2.5, then the two added together out of 26.5.' },
+    { id: 'activity', label: 'Fixture activity', detail: 'High or low amongst the day’s fixtures, bigger or smaller than the other side, and a big or small difference. Core, Y, and the combined total each have their own calls.' },
+    { id: 'overview', label: 'Last 5 overview', detail: 'T1 or T2 positive, negative, or neutral, who the last 5 supports, and who wins that sector.' },
     { id: 'calc3', label: 'Calculation 3', detail: 'Sectors each side won, grouped as clear, mediocre, or a Y application.' },
     { id: 'core', label: 'Core sectors', detail: 'Baseline, importance of 3 points, last 5, form, H2H, problem causer, imbangi, and home/away strong.' },
     { id: 'y', label: 'Y sectors', detail: 'Indlela, Bhozoma, child beater, sudden drop, and sudden pick up. Each one is 0.5 when it is on.' },
@@ -270,6 +316,26 @@ function scoreCalculationBase(id: string, calc: PowerDynamicsCalculation): Calcu
   const c1t1 = calc.calc1.t1.length;
   const c1t2 = calc.calc1.t2.length;
   const c1 = `Sectors of 6+ · T1 ${c1t1} · T2 ${c1t2}`;
+  if (id.startsWith('calc-overview-')) {
+    const token = id.slice('calc-overview-'.length);
+    const overview = calc.last5;
+    if (!overview) return hit(false, 'No last 5 overview');
+    const on =
+      token === 't1-positive' ? overview.t1Pole === 'positive'
+      : token === 't2-positive' ? overview.t2Pole === 'positive'
+      : token === 't1-negative' ? overview.t1Pole === 'negative'
+      : token === 't2-negative' ? overview.t2Pole === 'negative'
+      : token === 't1-neutral' ? overview.t1Pole === 'neutral'
+      : token === 't2-neutral' ? overview.t2Pole === 'neutral'
+      : token === 't1-support' ? overview.support === 't1'
+      : token === 't2-support' ? overview.support === 't2'
+      : token === 'both-support' ? overview.support === 'both'
+      : token === 't1-wins' ? overview.winner === 't1'
+      : token === 't2-wins' ? overview.winner === 't2'
+      : false;
+    return hit(on, overview.detail);
+  }
+
   if (id === 'calc1-t1') return hit(c1t1 > c1t2, c1);
   if (id === 'calc1-t2') return hit(c1t2 > c1t1, c1);
   if (id === 'calc1-level') return hit(c1t1 === c1t2, c1);
@@ -417,15 +483,74 @@ function calculationFor(
   });
 }
 
-export function scoreCalculationFixture(
-  aspectId: string,
+export const ACTIVITY_BOARD_KEY = 'activity-board';
+
+export type ActivitySample = {
+  key: string;
+  core: { t1: number; t2: number };
+  y: { t1: number; t2: number };
+  mix: { t1: number; t2: number };
+};
+
+export function activitySample(key: string, calc: PowerDynamicsCalculation): ActivitySample {
+  return {
+    key,
+    core: calc.calc2.core ?? { t1: 0, t2: 0 },
+    y: calc.calc2.y ?? { t1: 0, t2: 0 },
+    mix: { t1: calc.calc2.t1, t2: calc.calc2.t2 },
+  };
+}
+
+function stageTotals(calc: PowerDynamicsCalculation, key: 'core' | 'y' | 'mix'): { t1: number; t2: number } {
+  if (key === 'core') return calc.calc2.core ?? { t1: 0, t2: 0 };
+  if (key === 'y') return calc.calc2.y ?? { t1: 0, t2: 0 };
+  return { t1: calc.calc2.t1, t2: calc.calc2.t2 };
+}
+
+function median(values: number[]): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+/** High and low compare this fixture with the day’s board. Bigger, smaller, and the gap stay inside the fixture. */
+export function scoreActivityCall(
+  id: string,
+  calc: PowerDynamicsCalculation,
+  samples: ActivitySample[] = [],
+): CalculationScore | null {
+  const side = id.match(/^activity-(core|y|mix)-(t1|t2)-(high|low|bigger|smaller)$/);
+  const gap = id.match(/^activity-(core|y|mix)-(big|small)$/);
+  const key = (side?.[1] ?? gap?.[1]) as 'core' | 'y' | 'mix' | undefined;
+  if (!key) return null;
+  const pair = stageTotals(calc, key);
+  const name = key === 'core' ? 'Core' : key === 'y' ? 'Y' : 'Combined';
+  const difference = shown(Math.abs(pair.t1 - pair.t2));
+  const line = `${name} · T1 ${shown(pair.t1)} · T2 ${shown(pair.t2)} · difference ${difference} · Sectors won · T1 ${calc.calc3.t1.count} · T2 ${calc.calc3.t2.count}`;
+  if (gap) {
+    const cut = key === 'y' ? 1 : 3;
+    const big = difference >= cut;
+    const small = difference > 0 && difference < cut;
+    return hit(gap[2] === 'big' ? big : small, line);
+  }
+  if (!side) return null;
+  const sideId = side[2] as 't1' | 't2';
+  const other = sideId === 't1' ? pair.t2 : pair.t1;
+  const mine = pair[sideId];
+  if (side[3] === 'bigger') return hit(mine > other, line);
+  if (side[3] === 'smaller') return hit(mine < other, line);
+  const mid = median(samples.map((sample) => sample[key][sideId]));
+  if (mid == null) return hit(false, `${line} · no other fixtures`);
+  return hit(side[3] === 'high' ? mine > mid : mine < mid, `${line} · day ${shown(mid)}`);
+}
+
+export function ensureFixtureCalculation(
   home: CallTableRow,
   away: CallTableRow,
   table: CallTableRow[],
   context?: CallSearchContext,
-): CalculationScore | null {
-  const kind = aspectId.replace(/::(tick|wrong)$/, '');
-  if (!kind.startsWith('calc') && !kind.startsWith('sector-') && !kind.startsWith('tick-')) return null;
+): PowerDynamicsCalculation | null {
   const fixture = context?.fixture ?? { homeId: home.teamId, awayId: away.teamId, unix: 0 };
   const key = `calc:${fixture.homeId}:${fixture.awayId}:${fixture.unix}`;
   const cache = context?.cache;
@@ -434,6 +559,23 @@ export function scoreCalculationFixture(
     calc = calculationFor(home, away, table, context);
     cache?.set(key, calc);
   }
+  return calc ?? null;
+}
+
+export function scoreCalculationFixture(
+  aspectId: string,
+  home: CallTableRow,
+  away: CallTableRow,
+  table: CallTableRow[],
+  context?: CallSearchContext,
+): CalculationScore | null {
+  const kind = aspectId.replace(/::(tick|wrong)$/, '');
+  if (!kind.startsWith('calc') && !kind.startsWith('sector-') && !kind.startsWith('tick-') && !kind.startsWith('activity-')) return null;
+  const calc = ensureFixtureCalculation(home, away, table, context);
   if (!calc) return null;
+  if (kind.startsWith('activity-')) {
+    const samples = (context?.cache?.get(ACTIVITY_BOARD_KEY) as ActivitySample[] | undefined) ?? [];
+    return scoreActivityCall(kind, calc, samples);
+  }
   return scoreCalculationRead(aspectId, calc);
 }

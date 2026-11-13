@@ -12,6 +12,7 @@ import {
   colourPairId,
   labelChange,
   last5LabelChanges,
+  last5Overview,
   last5PointsDiff,
   matchesGoalDiffTab,
   matchesOutcomeTab,
@@ -383,6 +384,23 @@ console.log('\nhierarchy gap analysis');
   check('1 is +5 and 14 is -5', changePlaceMark(1) === '+5' && changePlaceMark(5) === '+1' && changePlaceMark(6) === 'Neutral' && changePlaceMark(10) === '-1' && changePlaceMark(14) === '-5');
   const same = changeScaleGap(changeHierarchy(5, 0), changeHierarchy(5, 0));
   check('the same hierarchy is poor separation', same.t1Place === 1 && same.match === 'C');
+}
+
+console.log('\nlast 5 fixture overview');
+{
+  const read = (t1: number, t2: number) => last5Overview(t1, t2);
+  const t2Support = read(14, 6);
+  check('negative against neutral supports T2', t2Support?.support === 't2' && t2Support.winner === 't2' && t2Support.points === 3);
+  const t1Support = read(1, 10);
+  check('positive against negative supports T1', t1Support?.support === 't1' && t1Support.winner === 't1' && t1Support.points === 3);
+  const morePositive = read(1, 5);
+  check('the more positive side wins', morePositive?.support === 'both' && morePositive.winner === 't1' && morePositive.points === 3);
+  const lessNegative = read(14, 10);
+  check('the less negative side wins', lessNegative?.support === 'both' && lessNegative.winner === 't2' && lessNegative.points === 3);
+  const neutral = read(6, 8);
+  check('neutral against neutral goes to T1', neutral?.winner === 't1' && neutral.points === 1);
+  const samePlace = read(6, 6);
+  check('the same neutral place is a poor 0', samePlace?.winner === 't1' && samePlace.points === 0);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -70,6 +70,7 @@ export const POWER_DYNAMIC_CALLS: PowerDynamicCallDef[] = [
       { id: 'diff', label: 'Last 5 difference', detail: 'How the last five compare across venues.' },
       { id: 'two_goal', label: 'Two-goal bands', detail: 'Wins and losses by two goals or more.' },
       { id: 'label_change', label: 'Label change', detail: 'Hidden strength and weakness from label moves, positive or negative changes of every type together, then the A, B or C gap between the two places.' },
+      { id: 'fixture_overview', label: 'Fixture overview', detail: 'Whether last 5 supports T1, T2, or both, from positive, neutral, and negative places.' },
       { id: 'death_trap', label: 'Death traps', detail: 'Runs of losses, wins, scoring, and conceding.' },
       { id: 'reverse', label: 'Reverse engineering', detail: 'What the recent results were building toward.' },
     ],

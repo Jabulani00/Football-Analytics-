@@ -5,6 +5,7 @@
 import type { SeasonMatch } from '@/utils/bhozomaEngine';
 import type { StandingLike } from '@/utils/motivationEngine';
 import type { ImbangiScheduleMatch } from '@/utils/imbangiEngine';
+import { ACTIVITY_BOARD_KEY, activitySample, ensureFixtureCalculation } from '@/utils/powerDynamicCalculationCalls';
 import { callAspectById, scoreCallFixture, type CallTableRow } from '@/utils/powerDynamicCallSearch';
 
 export type PowerDynamicHit = {
@@ -63,6 +64,26 @@ export function scorePowerDynamicPacks(
   const hits: PowerDynamicHit[] = [];
   if (aspectIds.length === 0) return hits;
   for (const pack of packs) {
+    if (aspectIds.some((id) => id.replace(/::(tick|wrong)$/, '').startsWith('activity-'))) {
+      const samples = [];
+      for (const fixture of pack.fixtures) {
+        if (fixture.dateKey !== dateKey) continue;
+        const home = pack.byTeam.get(fixture.homeId);
+        const away = pack.byTeam.get(fixture.awayId);
+        if (!home || !away) continue;
+        const calc = ensureFixtureCalculation(home, away, pack.table, {
+          matches: pack.matches,
+          schedule: pack.schedule,
+          cache: pack.cache,
+          standings: pack.standings,
+          competitionId: pack.competitionId,
+          fixture: { homeId: fixture.homeId, awayId: fixture.awayId, unix: fixture.unix },
+        });
+        if (!calc) continue;
+        samples.push(activitySample(`${fixture.homeId}:${fixture.awayId}:${fixture.unix}`, calc));
+      }
+      pack.cache.set(ACTIVITY_BOARD_KEY, samples);
+    }
     for (const fixture of pack.fixtures) {
       if (fixture.dateKey !== dateKey) continue;
       const home = pack.byTeam.get(fixture.homeId);
