@@ -844,6 +844,11 @@ export function changePlacePole(place: number): ChangePole | null {
   return null;
 }
 
+/** Places apart on the 1–14 line. The same place is 0. The two ends are 13. */
+export function changePlaceSpaces(t1Place: number, t2Place: number): number {
+  return Math.abs(t1Place - t2Place);
+}
+
 /** Signed distance from neutral. +5 is the most positive. −5 is the most negative. */
 export function changePlaceMagnitude(place: number): number {
   if (place >= 1 && place <= 5) return 6 - place;
@@ -916,7 +921,9 @@ export function last5Overview(t1Place: number, t2Place: number): Last5Overview |
 
   const poleWord = (pole: ChangePole, place: number) =>
     pole === 'neutral' ? 'neutral' : `${pole} ${changePlaceMark(place)}`;
+  const spaces = changePlaceSpaces(t1Place, t2Place);
   const separation = letter ? ` ${CHANGE_SEPARATION_LABEL[letter]}.` : '';
+  const spaceWord = spaces === 1 ? '1 space' : `${spaces} spaces`;
   return {
     t1Place,
     t2Place,
@@ -928,7 +935,7 @@ export function last5Overview(t1Place: number, t2Place: number): Last5Overview |
     winner,
     letter,
     points: winner ? award : 0,
-    detail: `Last 5 · T1 ${poleWord(t1Pole, t1Place)} · T2 ${poleWord(t2Pole, t2Place)}. ${lean}.${separation}`,
+    detail: `Last 5 · T1 ${poleWord(t1Pole, t1Place)} · T2 ${poleWord(t2Pole, t2Place)}. ${lean}.${separation} ${spaceWord} between the places.`,
   };
 }
 

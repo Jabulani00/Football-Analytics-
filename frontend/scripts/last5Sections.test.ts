@@ -6,6 +6,7 @@ import {
   changeHierarchy,
   changePlaceIsNeutral,
   changePlaceMark,
+  changePlaceSpaces,
   changeScaleGap,
   changeScalePlace,
   changeSeparation,
@@ -401,6 +402,9 @@ console.log('\nlast 5 fixture overview');
   check('neutral against neutral goes to T1', neutral?.winner === 't1' && neutral.points === 1);
   const samePlace = read(6, 6);
   check('the same neutral place is a poor 0', samePlace?.winner === 't1' && samePlace.points === 0);
+  check('the same place has no spaces between', changePlaceSpaces(6, 6) === 0);
+  check('the two ends are 13 spaces apart', changePlaceSpaces(1, 14) === 13 && changePlaceSpaces(14, 1) === 13);
+  check('the overview names the spaces', (read(1, 5)?.detail ?? '').includes('4 spaces'));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

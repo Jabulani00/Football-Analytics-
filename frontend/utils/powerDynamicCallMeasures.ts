@@ -797,6 +797,20 @@ function rawMeasureAspects(): MeasureAspect[] {
         token: id,
       }),
     ),
+    ...Array.from({ length: 14 }, (_, spaces) =>
+      aspect({
+        id: `label-spaces-${spaces}`,
+        tabId: 'last5',
+        functionId: 'label_change',
+        label: spaces === 1 ? '1 space between T1 and T2' : `${spaces} spaces between T1 and T2`,
+        detail: 'How many places apart the two sides sit on the label-change number line. The same place is 0. The two ends are 13.',
+        needsFixtures: true,
+        binary: true,
+        pair: true,
+        measure: 'label-change',
+        token: `spaces:${spaces}`,
+      }),
+    ),
     ...(['A', 'B', 'C'] as const satisfies readonly ChangeSeparation[]).map((letter) =>
       aspect({
         id: `label-sep-${letter}`,
@@ -1996,6 +2010,12 @@ export function scoreMeasure(
     const letter = changeSeparation(place, otherPlace);
     const gap = letter ? `${place} v ${otherPlace} · ${letter} · ${CHANGE_SEPARATION_LABEL[letter]}` : null;
     const called = `${labelChangeKind(side.hierarchy.kind as ChangeKind)} · ${side.hierarchy.code}`;
+    if (token.startsWith('spaces:')) {
+      const wanted = Number(token.slice('spaces:'.length));
+      const spaces = Math.abs(place - otherPlace);
+      const word = spaces === 1 ? '1 space' : `${spaces} spaces`;
+      return fit(spaces === wanted ? 100 : 0, `${word} between place ${place} and place ${otherPlace}`);
+    }
     if (token.startsWith('sep:')) {
       const wanted = token.slice(4);
       return fit(letter === wanted ? 100 : 0, gap ?? 'No hierarchy gap');

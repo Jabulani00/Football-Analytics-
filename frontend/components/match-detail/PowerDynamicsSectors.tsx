@@ -79,10 +79,13 @@ import {
   CHANGE_SEPARATION_LABEL,
   changePlaceIsNeutral,
   changePlaceMark,
+  changePlacePole,
+  changePlaceSpaces,
   changeScaleGap,
   goalDiffTabLabel,
   LABEL_CHANGE_TEXT,
   last5LabelChanges,
+  last5Overview,
   last5PointsDiff,
   outcomeTabLabel,
   peakLast5Gap,
@@ -1622,6 +1625,8 @@ function ChangeScaleBoard({
 }) {
   const [open, setOpen] = useState(false);
   const gap = changeScaleGap(left.hierarchy, right.hierarchy);
+  const spaces = changePlaceSpaces(gap.t1Place, gap.t2Place);
+  const overview = last5Overview(gap.t1Place, gap.t2Place);
   const tone: Tone = gap.separation != null && gap.separation >= 6 ? 'warn' : gap.stronger === 'level' ? 'info' : 'good';
   const sideCard = (snap: PowerDynamicsBundle['t1'], side: LabelChangeSide, score: ChangeScaleGapSide) => (
     <SideCard
@@ -1633,6 +1638,9 @@ function ChangeScaleBoard({
           : `${snap.venue === 'home' ? 'Home' : 'Away'} · Place ${side === left ? gap.t1Place : gap.t2Place}`
       }>
       <Line text={`${side.hierarchy.title} · ${side.hierarchy.code} · Grade ${side.hierarchy.grade}`} />
+      <Line
+        text={`${changePlacePole(side === left ? gap.t1Place : gap.t2Place) ?? '—'} · ${changePlaceMark(side === left ? gap.t1Place : gap.t2Place)}`}
+      />
       <GapScoreRow
         s={snap}
         g={{
@@ -1654,6 +1662,13 @@ function ChangeScaleBoard({
           text={`${gap.t1Place} v ${gap.t2Place} · ${gap.match} · ${CHANGE_SEPARATION_LABEL[gap.match]}`}
           tone={gap.match === 'A' ? 'good' : gap.match === 'B' ? 'warn' : 'info'}
         />
+      ) : null}
+      <Callout
+        text={spaces === 1 ? '1 space between T1 and T2 on the number line.' : `${spaces} spaces between T1 and T2 on the number line.`}
+        tone="info"
+      />
+      {overview ? (
+        <Callout text={overview.detail} tone={overview.support === 't2' ? 'warn' : overview.support === 't1' ? 'good' : 'info'} />
       ) : null}
       <Pressable
         onPress={() => setOpen(true)}
@@ -1710,7 +1725,7 @@ function ChangeScaleModal({
             <View style={{ flex: 1 }}>
               <Text style={styles.modalTitle}>{gap.grade ? `Gap analysis · ${gap.grade}` : 'Gap analysis'}</Text>
               <Text style={styles.modalSub}>
-                14 places · {t1Label} #{gap.t1Place} · {t2Label} #{gap.t2Place}
+                14 places · {t1Label} #{gap.t1Place} · {t2Label} #{gap.t2Place} · {changePlaceSpaces(gap.t1Place, gap.t2Place)} spaces between them
               </Text>
             </View>
             <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Close">

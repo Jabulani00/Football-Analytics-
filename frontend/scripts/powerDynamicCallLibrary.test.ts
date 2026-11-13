@@ -174,6 +174,8 @@ console.log('\nseparation on a called fixture');
   check('no label moves is T1 and T2 support', overview?.percent === 100 && (overview?.reason ?? '').includes('Neutral'), overview?.reason ?? 'none');
   const positiveSide = scoreCallFixture('overview-t1-positive::tick', top, low, saved.table, { matches: quiet });
   check('a neutral place is not T1 positive', positiveSide?.percent === 0, positiveSide?.reason ?? 'none');
+  const spaces = scoreCallFixture('label-spaces-0::tick', top, low, saved.table, { matches: quiet });
+  check('the same label-change place is 0 spaces', spaces?.percent === 100 && (spaces?.reason ?? '').includes('0 spaces'), spaces?.reason ?? 'none');
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

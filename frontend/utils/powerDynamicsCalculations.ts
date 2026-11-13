@@ -48,6 +48,14 @@ export const CORE_POINTS_CAP = 24;
 export const Y_POINTS_CAP = 2.5;
 /** Core and Y together. */
 export const MIX_POINTS_CAP = 26.5;
+/** A lead of this size or more can be trusted. 2 or less cannot. */
+export const TRUSTED_DIFFERENCE = 3;
+
+export function totalTrust(t1: number, t2: number): 'trusted' | 'untrusted' | 'level' {
+  const diff = Math.abs(t1 - t2);
+  if (diff === 0) return 'level';
+  return diff >= TRUSTED_DIFFERENCE ? 'trusted' : 'untrusted';
+}
 export const SEPARATION_AWARD = { clear: 3, mediocre: 1, poor: 0 } as const;
 export const IMBANGI_TRUE_VALUE = 6;
 

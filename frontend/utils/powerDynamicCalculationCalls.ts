@@ -10,6 +10,7 @@ import { evaluatePowerDynamics, indlelaPath, ppgSwing, streakSide } from '@/util
 import {
   buildPowerDynamicsCalculations,
   SECTOR_HIT,
+  TRUSTED_DIFFERENCE,
   type MarginBandId,
   type PowerDynamicsCalculation,
 } from '@/utils/powerDynamicsCalculations';
@@ -138,8 +139,8 @@ function activityReads(): CalculationCallAspect[] {
       );
     }
     rows.push(
-      read(`activity-${key}-big`, 'activity', `${name} difference is big`, `${name} totals differ by a clear gap or more.`),
-      read(`activity-${key}-small`, 'activity', `${name} difference is small`, `${name} totals differ, by less than a clear gap.`),
+      read(`activity-${key}-big`, 'activity', `${name} difference is trusted`, `${name} totals differ by 3 or more, so the higher side can be trusted.`),
+      read(`activity-${key}-small`, 'activity', `${name} difference is not trusted`, `${name} totals differ by 2 or less, so the higher side is not trusted.`),
     );
     return rows;
   });
@@ -280,7 +281,7 @@ export const CALCULATION_CALL: PowerDynamicCallDef = {
   functions: [
     { id: 'calc1', label: 'Calculation 1', detail: 'Sectors of 6 or more.' },
     { id: 'calc2', label: 'Calculation 2', detail: 'Core total out of 24, Y total out of 2.5, then the two added together out of 26.5.' },
-    { id: 'activity', label: 'Fixture activity', detail: 'High or low amongst the day’s fixtures, bigger or smaller than the other side, and a big or small difference. Core, Y, and the combined total each have their own calls.' },
+    { id: 'activity', label: 'Fixture activity', detail: 'High or low amongst the day’s fixtures, bigger or smaller than the other side, and whether a difference of 3 or more can be trusted. Core, Y, and the combined total each have their own calls.' },
     { id: 'overview', label: 'Last 5 overview', detail: 'T1 or T2 positive, negative, or neutral, who the last 5 supports, and who wins that sector.' },
     { id: 'calc3', label: 'Calculation 3', detail: 'Sectors each side won, grouped as clear, mediocre, or a Y application.' },
     { id: 'core', label: 'Core sectors', detail: 'Baseline, importance of 3 points, last 5, form, H2H, problem causer, imbangi, and home/away strong.' },
@@ -529,10 +530,9 @@ export function scoreActivityCall(
   const difference = shown(Math.abs(pair.t1 - pair.t2));
   const line = `${name} · T1 ${shown(pair.t1)} · T2 ${shown(pair.t2)} · difference ${difference} · Sectors won · T1 ${calc.calc3.t1.count} · T2 ${calc.calc3.t2.count}`;
   if (gap) {
-    const cut = key === 'y' ? 1 : 3;
-    const big = difference >= cut;
-    const small = difference > 0 && difference < cut;
-    return hit(gap[2] === 'big' ? big : small, line);
+    const trusted = difference >= TRUSTED_DIFFERENCE;
+    const untrusted = difference > 0 && difference < TRUSTED_DIFFERENCE;
+    return hit(gap[2] === 'big' ? trusted : untrusted, line);
   }
   if (!side) return null;
   const sideId = side[2] as 't1' | 't2';

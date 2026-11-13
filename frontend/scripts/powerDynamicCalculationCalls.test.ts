@@ -63,7 +63,8 @@ check('a tick call follows the side it is on', scoreCalculationRead('tick-lost_6
       scoreActivityCall('activity-core-t1-bigger', busy, samples)?.percent === 100 &&
       scoreActivityCall('activity-y-t2-smaller', busy, samples)?.percent === 100 &&
       scoreActivityCall('activity-core-big', busy, samples)?.percent === 100 &&
-      scoreActivityCall('activity-y-small', busy, samples)?.percent === 0 &&
+      scoreActivityCall('activity-y-small', busy, samples)?.percent === 100 &&
+      scoreActivityCall('activity-y-big', busy, samples)?.percent === 0 &&
       scoreActivityCall('activity-mix-big', busy, samples)?.percent === 100,
   );
 }

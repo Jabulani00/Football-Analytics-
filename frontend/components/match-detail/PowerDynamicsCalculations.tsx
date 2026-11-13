@@ -12,6 +12,8 @@ import {
   CORE_POINTS_CAP,
   MIX_POINTS_CAP,
   SECTOR_HIT,
+  TRUSTED_DIFFERENCE,
+  totalTrust,
   Y_POINTS_CAP,
   type CalculationSector,
   type CalculationTick,
@@ -401,7 +403,7 @@ function CoreSectorsButton({
         onClose={() => setOpen(false)}>
         <Text style={styles.bandTitle}>Core sectors</Text>
         <Text style={styles.detail}>
-          {t1Name} {fmt(calc.calc2.core.t1)} · {t2Name} {fmt(calc.calc2.core.t2)} · {fmt(calc.calc2.core.t1 + calc.calc2.core.t2)} of {fmt(CORE_POINTS_CAP)}
+          {t1Name} {fmt(calc.calc2.core.t1)} · {t2Name} {fmt(calc.calc2.core.t2)} · {fmt(calc.calc2.core.t1 + calc.calc2.core.t2)} of {fmt(CORE_POINTS_CAP)}. {trustSentence(calc.calc2.core.t1, calc.calc2.core.t2, t1Name, t2Name)}
         </Text>
         {core.map((row) => {
           const result = coreWinner(row);
@@ -417,7 +419,7 @@ function CoreSectorsButton({
         })}
         <Text style={styles.bandTitle}>Y applications</Text>
         <Text style={styles.detail}>
-          {t1Name} {fmt(calc.calc2.y.t1)} · {t2Name} {fmt(calc.calc2.y.t2)} · {fmt(calc.calc2.y.t1 + calc.calc2.y.t2)} of {fmt(Y_POINTS_CAP)}
+          {t1Name} {fmt(calc.calc2.y.t1)} · {t2Name} {fmt(calc.calc2.y.t2)} · {fmt(calc.calc2.y.t1 + calc.calc2.y.t2)} of {fmt(Y_POINTS_CAP)}. {trustSentence(calc.calc2.y.t1, calc.calc2.y.t2, t1Name, t2Name)}
         </Text>
         {y.map((row) => (
           <SectorFact
@@ -430,11 +432,22 @@ function CoreSectorsButton({
         ))}
         <Text style={styles.bandTitle}>Combined</Text>
         <Text style={styles.detail}>
-          {t1Name} {fmt(calc.calc2.t1)} · {t2Name} {fmt(calc.calc2.t2)} · {fmt(calc.calc2.t1 + calc.calc2.t2)} of {fmt(MIX_POINTS_CAP)}
+          {t1Name} {fmt(calc.calc2.t1)} · {t2Name} {fmt(calc.calc2.t2)} · {fmt(calc.calc2.t1 + calc.calc2.t2)} of {fmt(MIX_POINTS_CAP)}. {trustSentence(calc.calc2.t1, calc.calc2.t2, t1Name, t2Name)}
         </Text>
       </SectorModal>
     </>
   );
+}
+
+function trustSentence(t1Value: number, t2Value: number, t1: string, t2: string): string {
+  const diff = Math.abs(t1Value - t2Value);
+  const rounded = Math.round(diff * 10) / 10;
+  const gap = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+  const trust = totalTrust(t1Value, t2Value);
+  if (trust === 'level') return `Difference ${gap}. The totals are level.`;
+  const ahead = t1Value > t2Value ? t1 : t2;
+  if (trust === 'trusted') return `Difference ${gap}. ${ahead} leads by ${TRUSTED_DIFFERENCE} or more, so the lead is trusted.`;
+  return `Difference ${gap}. ${ahead} leads by 2 or less, so the lead is not trusted.`;
 }
 
 function TotalSplit({ calc, t1, t2 }: { calc: PowerDynamicsCalculation; t1: string; t2: string }) {
@@ -459,6 +472,7 @@ function TotalSplit({ calc, t1, t2 }: { calc: PowerDynamicsCalculation; t1: stri
             </View>
           </View>
           <Text style={styles.detail}>{fmt(line.t1 + line.t2)} of {fmt(line.cap)}</Text>
+          <Text style={styles.detail}>{trustSentence(line.t1, line.t2, t1, t2)}</Text>
         </View>
       ))}
     </View>
