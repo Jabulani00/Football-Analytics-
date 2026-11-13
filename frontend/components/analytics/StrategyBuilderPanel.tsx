@@ -35,7 +35,7 @@ const ALL = 'all';
 let CONDITION_SEQ = 0;
 
 // Remember that the explainer has been shown, so it auto-opens only on a first visit.
-const HELP_SEEN_KEY = 'scoreline.strategy-builder.help-seen.v1';
+const HELP_SEEN_KEY = 'scoreline.strategy-builder.help-seen.v2';
 function helpSeen(): boolean {
   if (Platform.OS !== 'web' || typeof window === 'undefined') return true;
   try { return window.localStorage.getItem(HELP_SEEN_KEY) === '1'; } catch { return true; }
@@ -1178,20 +1178,61 @@ function HelpModal({ visible, onClose }: { visible: boolean; onClose: () => void
             </Pressable>
           </View>
           <Text style={styles.helpLead}>
-            One place to combine every analytics engine in the app into a single strategy, then see the teams and upcoming fixtures that fit it — recomputed live.
+            The Strategy Builder turns the app’s stat engines into one strategy, then shows the teams or upcoming fixtures that fit it — recomputed live every time you change a rule. New here? Follow the Combo walkthrough below; it names every button and table.
           </Text>
           <ScrollView style={styles.helpScroll} contentContainerStyle={styles.helpScrollBody}>
-            <HelpStep n="1" title="Pick what to measure" accent={theme.accentBlue}>
-              Choose a <Text style={styles.helpStrong}>Category</Text>. “Stat filter · all tables” reaches every metric across all 81 tables — pick a <Text style={styles.helpStrong}>Family</Text> (Ordinary, Series runs, FT-only patterns, Points), a <Text style={styles.helpStrong}>Window</Text> (season or last 10/8/6/5) and a stat. The named categories (Stats Characters, Grading, Dominance, Opposite, Gap) use their own engines and terminology unchanged.
+            {/* ---- The three call types ---- */}
+            <HelpHeading>Start here · the three call types</HelpHeading>
+            <Text style={styles.helpStepText}>
+              The top row picks what kind of call you’re building:
+            </Text>
+            <HelpStep n="🧷" title="Peg · graded" accent={theme.accentGreen}>
+              Combine graded rules (the A–F combined-list grades: Roman I·1·A … VII·3·F). Best when you think in grades.
             </HelpStep>
-            <HelpStep n="2" title="Add conditions & combine" accent={theme.accentPurple}>
-              Set the period, method and level, then <Text style={styles.helpStrong}>+ Add condition</Text>. Stack as many as you like and switch <Text style={styles.helpStrong}>AND</Text> (must satisfy all) / <Text style={styles.helpStrong}>OR</Text> (any one). Tap <Text style={styles.helpStrong}>NOT</Text> on a chip to exclude teams that match it.
+            <HelpStep n="①" title="Single · numbers" accent={theme.accentBlue}>
+              One stat ranked by its raw number (highest → lowest), with an optional ≥ / ≤ threshold — or filter teams by their last-game results.
             </HelpStep>
-            <HelpStep n="3" title="Read the results" accent={theme.accentGreen}>
-              <Text style={styles.helpStrong}>Teams</Text> lists every qualifying side, graded green / yellow / red with the exact reason per condition (and an optional historical success rate). <Text style={styles.helpStrong}>Fixtures</Text> turns the strategy onto upcoming matches — each one showing the matched side(s) and the exact grade every feature qualified with; tap a row for the full read.
+            <HelpStep n="🧩" title="Combo · both" accent={theme.accentPurple}>
+              Mix Peg rules and Single rules in one strategy. This is the full builder — the step-by-step below walks through it.
             </HelpStep>
-            <HelpStep n="4" title="Save & reuse" accent={theme.accentOrange}>
-              Tap <Text style={styles.helpStrong}>★ Save</Text> and name it. Only the recipe is stored — never the teams or fixtures — so each time you open a saved strategy it recalculates against the latest data in the side panel.
+
+            {/* ---- Combo, step by step ---- */}
+            <HelpHeading>Combo · step by step</HelpHeading>
+            <HelpStep n="1" title="Tap 🧩 Combo" accent={theme.accentPurple}>
+              In the top row tap <Text style={styles.helpStrong}>🧩 Combo · both</Text>. All the Combo controls appear below it.
+            </HelpStep>
+            <HelpStep n="2" title="Choose Teams or Fixtures" accent={theme.accentBlue}>
+              First toggle: <Text style={styles.helpStrong}>Teams</Text> lists every qualifying side on its own. <Text style={styles.helpStrong}>Fixtures · grade qualification</Text> takes your rules onto upcoming matches and returns only the fixtures that fit. Pick this before you build.
+            </HelpStep>
+            <HelpStep n="3" title="Combined or Home vs Away" accent={theme.accentOrange}>
+              Second toggle. <Text style={styles.helpStrong}>Combined (either team)</Text> — each rule can be met by either side. <Text style={styles.helpStrong}>Home vs Away</Text> — two panels appear: a rule you add in the 🏠 <Text style={styles.helpStrong}>Home team</Text> panel must be met by the match’s home team, and a rule in the ✈ <Text style={styles.helpStrong}>Away team</Text> panel by the away team. Use this for a real fixture read (e.g. strong home side vs weak away side).
+            </HelpStep>
+            <HelpStep n="4" title="Pick the rule type" accent={theme.accentGreen}>
+              Third toggle: <Text style={styles.helpStrong}>🧷 Peg rule</Text> opens the graded rule builder; <Text style={styles.helpStrong}>① Single rule</Text> opens the full Single configurator. You can switch back and forth and add as many of each as you like — they all stack in one list.
+            </HelpStep>
+            <HelpStep n="5" title="Build a Peg rule" accent={theme.accentGreen}>
+              In the Peg builder set <Text style={styles.helpStrong}>Period</Text> (Full time / 1st / 2nd half, or a First 15′ / Last 20′ window), <Text style={styles.helpStrong}>Venue</Text> (Overall / Home / Away), and — in Combined mode — <Text style={styles.helpStrong}>Team (fixtures)</Text>. Pick a <Text style={styles.helpStrong}>Category</Text> chip to narrow the <Text style={styles.helpStrong}>Stat / feature</Text> dropdown, set any option, then tap <Text style={styles.helpStrong}>+ Add Rule</Text>. The Venue binds the fixture side unless you set Team explicitly.
+            </HelpStep>
+            <HelpStep n="6" title="Build a Single rule" accent={theme.accentBlue}>
+              The Single builder is the same as the Single tab: <Text style={styles.helpStrong}>Period</Text>, <Text style={styles.helpStrong}>Venue</Text> (also sets the fixture side it syncs on), <Text style={styles.helpStrong}>Family</Text>, <Text style={styles.helpStrong}>Stat (number)</Text>, <Text style={styles.helpStrong}>Window</Text>, then a <Text style={styles.helpStrong}>Threshold</Text> (≥ / ≤) and a <Text style={styles.helpStrong}>Value</Text> (e.g. 20 = 20%, 2.0 = PPG). Tap <Text style={styles.helpStrong}>+ Add Single rule</Text>. In Home vs Away the side is fixed to the panel you’re in.
+            </HelpStep>
+            <HelpStep n="7" title="Combine with AND / OR / NOT" accent={theme.accentPurple}>
+              Every rule shows in the <Text style={styles.helpStrong}>Rules</Text> list. <Text style={styles.helpStrong}>AND</Text> = a team must satisfy every rule; <Text style={styles.helpStrong}>OR</Text> = any one. Tap <Text style={styles.helpStrong}>NOT</Text> on a rule to exclude matches. Every time you add or change a rule the results recalculate and drop anything that no longer meets all of them.
+            </HelpStep>
+            <HelpStep n="8" title="Read the results table" accent={theme.accentGreen}>
+              <Text style={styles.helpStrong}>Teams</Text> is a table: #, Team, Next fixture, Rules (how many it met), <Text style={styles.helpStrong}>Grade</Text>, Reading, an optional Hist. success rate, and the team’s <Text style={styles.helpStrong}>Character</Text> at the end. <Text style={styles.helpStrong}>Fixtures</Text> lists upcoming matches with the matched home / away sides and the exact grade each feature qualified with. Tap any row to expand its full per-rule breakdown.
+            </HelpStep>
+            <HelpStep n="9" title="Filter, then save" accent={theme.accentOrange}>
+              Use the filter dropdowns (League, Category, Colour, Min games, Min match, and for graded rules Group / Grade / Source / Column / Dominance, plus a Historical outcome) to refine. Then tap <Text style={styles.helpStrong}>★ Save</Text> and name it. Only the recipe is stored — never the teams — so a saved Combo recalculates live every time you open it.
+            </HelpStep>
+
+            {/* ---- The other two, briefly ---- */}
+            <HelpHeading>Single & Peg, briefly</HelpHeading>
+            <HelpStep n="①" title="Single" accent={theme.accentBlue}>
+              <Text style={styles.helpStrong}>Featured stat</Text> ranks every team by one number (add a ≥ / ≤ threshold to keep only teams at a value). <Text style={styles.helpStrong}>Last game results</Text> filters teams by what their recent games produced. Each team shows its Character at the end of the row. Save it as a one-rule call.
+            </HelpStep>
+            <HelpStep n="🧷" title="Peg" accent={theme.accentGreen}>
+              The graded strategy. Build one <Text style={styles.helpStrong}>Combined</Text> rule set or split it <Text style={styles.helpStrong}>Home vs Away</Text>, view as Teams or Fixtures, and open any team for its last 5 · 8 · 10 · 15 · 20 results.
             </HelpStep>
           </ScrollView>
           <Pressable accessibilityRole="button" onPress={onClose} style={({ pressed }) => [styles.helpCta, pressed && styles.addBtnPressed]}>
@@ -1201,6 +1242,10 @@ function HelpModal({ visible, onClose }: { visible: boolean; onClose: () => void
       </View>
     </Modal>
   );
+}
+
+function HelpHeading({ children }: { children: ReactNode }) {
+  return <Text style={styles.helpHeading}>{children}</Text>;
 }
 
 function HelpStep({ n, title, accent, children }: { n: string; title: string; accent: string; children: ReactNode }) {
@@ -2240,6 +2285,7 @@ const styles = StyleSheet.create({
   helpLead: { fontFamily: fonts.body, fontSize: 13, lineHeight: 20, color: theme.textMuted, marginTop: spacing.xs, marginBottom: spacing.sm },
   helpScroll: { flexGrow: 0 },
   helpScrollBody: { gap: spacing.md, paddingVertical: spacing.xs },
+  helpHeading: { fontFamily: fonts.bodySemiBold, fontSize: 11, letterSpacing: 0.6, textTransform: 'uppercase', color: theme.textMuted, marginTop: spacing.sm, marginBottom: 2 },
   helpStep: { flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-start' },
   helpNum: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 },
   helpNumText: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: '#FFFFFF' },
