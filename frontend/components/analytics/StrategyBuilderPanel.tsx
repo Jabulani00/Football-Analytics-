@@ -40,7 +40,7 @@ let CONDITION_SEQ = 0;
  * number of season-stat queries. It sits well above the ~1k active + in-progress
  * leagues, so in practice every one of them is scanned.
  */
-const SCAN_HARD_CAP = 1500;
+const SCAN_HARD_CAP = 2600;
 
 // Remember that the explainer has been shown, so it auto-opens only on a first visit.
 const HELP_SEEN_KEY = 'scoreline.strategy-builder.help-seen.v2';
@@ -215,18 +215,20 @@ export default function StrategyBuilderPanel() {
   );
 
   // The full scan set: every active domestic league (upcoming fixtures, from the
-  // live feed) unioned with every domestic league whose current season is in
-  // progress (from the catalogue). Deduped by id; a high ceiling only guards
-  // against a runaway query count, it is not a "top N" cap.
+  // live feed) unioned with EVERY domestic club league that has a season in the
+  // catalogue — not only the ones the API flags "in progress" (its progress field
+  // is null for ~900 leagues, which is why a progress-only filter dropped them).
+  // Deduped by id; the high ceiling is only a runaway guard, not a "top N" cut.
   const liveLeagues = useMemo<LiveCompetition[]>(() => {
     const byId = new Map<number, LiveCompetition>();
     for (const l of feed.competitions) if (l.rank === 0) byId.set(l.id, l);
     for (const c of catalogue.data ?? []) {
       if (c.isCup || byId.has(c.id)) continue;
       if (detectKind(c.name) !== 'club' || /friendl/i.test(`${c.type} ${c.name}`)) continue;
-      const cur = c.seasons.find((s) => s.isCurrent);
-      const p = cur?.progress ?? null;
-      if (!cur || p == null || p <= 0 || p >= 100) continue;
+      // Current season, or the newest one — so a league with no flagged current
+      // season is still scanned instead of silently dropped.
+      const cur = c.seasons.find((s) => s.isCurrent) ?? c.seasons[0];
+      if (!cur) continue;
       byId.set(c.id, {
         id: c.id, name: c.name, season: cur.seasonName, seasonId: cur.seasonId,
         seasonPlayed: cur.played, country: c.country, upcoming: 0, rank: 0,
@@ -673,7 +675,7 @@ export default function StrategyBuilderPanel() {
         <ScopeStat
           label="Scanning"
           value={feed.loading && catalogue.isPending ? '…' : liveLeagues.length.toLocaleString()}
-          sub="active + in progress"
+          sub="all leagues"
           tone={theme.accentBlue}
         />
       </View>
@@ -939,7 +941,7 @@ export default function StrategyBuilderPanel() {
       {callMode === 'single' ? null : (
       <View style={styles.statusRow}>
         {loading || (resultMode === 'fixtures' && up.loading) ? (
-          <><ActivityIndicator size="small" color={theme.accentGreen} /><Text style={styles.statusMuted}>Querying {liveLeagues.length} active & in-progress leagues…</Text></>
+          <><ActivityIndicator size="small" color={theme.accentGreen} /><Text style={styles.statusMuted}>Querying {liveLeagues.length} leagues…</Text></>
         ) : resultMode === 'teams' ? (
           conditions.length > 0
             ? <Text style={styles.statusLive}>● {summary.teams} teams · {summary.leagues} leagues · {logic.toUpperCase()} of {conditions.length} rule{conditions.length > 1 ? 's' : ''}</Text>
