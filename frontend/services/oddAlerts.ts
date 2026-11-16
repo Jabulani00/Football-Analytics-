@@ -247,31 +247,120 @@ function abortError(): Error {
   return err;
 }
 
+/* ----------------------------------------------------------------------------
+ * Client-side rate limiter. OddAlerts allows 300 requests/minute per token and
+ * answers 429 past that (per the API docs). A big scan (e.g. the Strategy
+ * Builder calling every league) would blow through that instantly, so every
+ * request passes a token-bucket gate first:
+ *   - at most RATE_MAX_PER_MIN dispatched in any rolling 60s (a margin below 300),
+ *   - at most MAX_CONCURRENT in flight at once,
+ *   - cache HITs refund their token (they never reach the upstream API),
+ *   - a 429 (ours or a shared token's) backs off and retries.
+ * This keeps the app under the cap no matter how many leagues are queried; work
+ * simply streams in a little slower instead of failing.
+ * ------------------------------------------------------------------------- */
+const RATE_MAX_PER_MIN = 240;
+const RATE_WINDOW_MS = 60_000;
+const MAX_CONCURRENT = 8;
+
+let rateInFlight = 0;
+let rateWindow: number[] = [];
+const rateQueue: ((now: number) => void)[] = [];
+let rateTimer: ReturnType<typeof setTimeout> | null = null;
+
+function ratePump(): void {
+  while (rateQueue.length && rateInFlight < MAX_CONCURRENT) {
+    const now = Date.now();
+    rateWindow = rateWindow.filter((t) => now - t < RATE_WINDOW_MS);
+    if (rateWindow.length >= RATE_MAX_PER_MIN) {
+      if (rateTimer == null) {
+        const wait = Math.max(5, RATE_WINDOW_MS - (now - rateWindow[0]) + 5);
+        rateTimer = setTimeout(() => { rateTimer = null; ratePump(); }, wait);
+      }
+      return;
+    }
+    const job = rateQueue.shift()!;
+    rateWindow.push(now);
+    rateInFlight += 1;
+    job(now);
+  }
+}
+
+type RateGrant = { refund: () => void };
+/** Wait for a rate token + concurrency slot. Returns a one-shot refund (for cache hits). */
+function rateAcquire(): Promise<RateGrant> {
+  return new Promise<RateGrant>((resolve) => {
+    rateQueue.push((now: number) => {
+      let done = false;
+      resolve({
+        refund() {
+          if (done) return;
+          done = true;
+          const i = rateWindow.indexOf(now);
+          if (i >= 0) rateWindow.splice(i, 1);
+        },
+      });
+    });
+    ratePump();
+  });
+}
+function rateRelease(): void {
+  rateInFlight -= 1;
+  ratePump();
+}
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
 async function fetchEnvelope(
   path: string,
   params: Record<string, string | number | undefined>,
   signal: AbortSignal,
 ): Promise<SharedPayload> {
-  const res = await fetch(buildUrl(path, params), {
-    headers: { Accept: 'application/json' },
-    signal,
-  });
-  const text = await res.text();
-  if (!res.ok) {
-    const error = new Error(`OddAlerts API ${res.status}: ${path}`) as Error & { status: number; bytes: number };
-    error.status = res.status;
-    error.bytes = text.length;
-    throw error;
-  }
-  try {
-    return {
-      envelope: JSON.parse(text) as ApiEnvelope<unknown>,
-      bytes: text.length,
-      status: res.status,
-      cache: res.headers.get('X-Cache') ?? 'MISS',
-    };
-  } catch {
-    throw new OddAlertsNonJsonError(path, text.slice(0, 120));
+  for (let attempt = 0; ; attempt += 1) {
+    const grant = await rateAcquire();
+    if (signal.aborted) {
+      grant.refund();
+      rateRelease();
+      throw abortError();
+    }
+    let res: Response;
+    let text: string;
+    try {
+      res = await fetch(buildUrl(path, params), { headers: { Accept: 'application/json' }, signal });
+      text = await res.text();
+    } catch (err) {
+      grant.refund(); // network/abort error never reached the upstream — don't spend budget
+      rateRelease();
+      throw err;
+    }
+    rateRelease();
+
+    const cache = res.headers.get('X-Cache') ?? 'MISS';
+    if (/HIT/i.test(cache)) grant.refund(); // served from cache — no upstream API hit
+
+    // Respect the 300/min cap: back off and retry on a 429 (ours or a shared token).
+    if (res.status === 429 && attempt < 3) {
+      const retryAfter = Number(res.headers.get('Retry-After'));
+      await sleep(Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter * 1000, 10_000) : 800 * (attempt + 1));
+      continue;
+    }
+
+    if (!res.ok) {
+      const error = new Error(`OddAlerts API ${res.status}: ${path}`) as Error & { status: number; bytes: number };
+      error.status = res.status;
+      error.bytes = text.length;
+      throw error;
+    }
+    try {
+      return {
+        envelope: JSON.parse(text) as ApiEnvelope<unknown>,
+        bytes: text.length,
+        status: res.status,
+        cache,
+      };
+    } catch {
+      throw new OddAlertsNonJsonError(path, text.slice(0, 120));
+    }
   }
 }
 

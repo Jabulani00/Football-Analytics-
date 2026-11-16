@@ -820,6 +820,7 @@ export type FixturesFetcher = (opts: {
   toUnix: number;
   competitions?: string;
   maxPages?: number;
+  perPage?: number;
   cache?: 'off';
 }) => Promise<RawFixture[]>;
 
@@ -844,6 +845,9 @@ export async function buildLeagueStatsLive(
     toUnix: opts.toUnix,
     competitions: String(opts.competitionId),
     maxPages: opts.maxPages ?? 6,
+    // Pull the max page size (250) so a league's whole season is 1–2 requests,
+    // not 4+ at the default — fewer calls against the 300/min budget.
+    perPage: 250,
     cache: opts.cache,
   });
   return buildStatsTables({
