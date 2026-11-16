@@ -1510,6 +1510,32 @@ function SingleRuleBuilder({ narrow, onAdd, fixedSide, title }: { narrow: boolea
   const [cmp, setCmp] = useState<'gte' | 'lte'>('gte');
   const [value, setValue] = useState('');
 
+  // Optional exact-score / total-goals rule — its own period + ≥ / ≤ % threshold.
+  const [scHalf, setScHalf] = useState<'ft' | 'ht' | '2h'>('ht');
+  const [scMode, setScMode] = useState<'exact' | 'total'>('exact');
+  const [scHome, setScHome] = useState('');
+  const [scAway, setScAway] = useState('');
+  const [scTotal, setScTotal] = useState('');
+  const [scCmp, setScCmp] = useState<'gte' | 'lte'>('gte');
+  const [scValue, setScValue] = useState('');
+  const scoreReady = scMode === 'exact' ? scHome.trim() !== '' && scAway.trim() !== '' : scTotal.trim() !== '';
+  const scoreCanAdd = scoreReady && scValue.trim() !== '' && Number.isFinite(Number(scValue));
+  const addScore = () => {
+    if (!scoreCanAdd) return;
+    const venueSide: FixtureSide = scope === 'home' ? 'home' : scope === 'away' ? 'away' : 'either';
+    onAdd({
+      id: `c${(CONDITION_SEQ += 1)}`,
+      dimensionId: 'scoreline',
+      period: periodFrom(scHalf, scope),
+      methodId: scMode,
+      options: scMode === 'total'
+        ? { total: scTotal, cmp: scCmp, value: scValue }
+        : { home: scHome, away: scAway, cmp: scCmp, value: scValue },
+      side: fixedSide ?? venueSide,
+    });
+    setScValue('');
+  };
+
   const changeFamily = (v: string) => {
     setFamily(v);
     const f = families.find((x) => x.value === v);
@@ -1559,6 +1585,44 @@ function SingleRuleBuilder({ narrow, onAdd, fixedSide, title }: { narrow: boolea
       <Pressable accessibilityRole="button" accessibilityState={{ disabled: !canAdd }} disabled={!canAdd} onPress={add} style={({ pressed }) => [styles.addBtn, !canAdd && styles.addBtnDisabled, pressed && styles.addBtnPressed]}>
         <Text style={styles.addBtnText}>+ Add Single rule{statLabel ? ` · ${statLabel}` : ''}</Text>
       </Pressable>
+
+      {/* Optional exact-score / total-goals rule — e.g. 0–0 at 1st half ≥ 20%. */}
+      <View style={styles.scoreCard}>
+        <Text style={styles.scoreTitle}>⚽ Exact score · optional</Text>
+        <Text style={styles.readNote}>Qualify teams by how often a score comes up — e.g. 0–0 at 1st half ≥ 20%. Two inputs are the team&apos;s goals and the opponent&apos;s, or switch to one total-goals input. Uses the Venue above.</Text>
+        <View style={styles.readRow}>
+          <SegGroup label="When" value={scHalf} options={[['ft', 'Full time'], ['ht', '1st half'], ['2h', '2nd half']]} onChange={setScHalf} />
+          <SegGroup label="Score by" value={scMode} options={[['exact', 'Exact score'], ['total', 'Total goals']]} onChange={setScMode} />
+        </View>
+        <View style={[styles.filterRow, narrow && styles.filterCol]}>
+          {scMode === 'exact' ? (
+            <View style={styles.scoreInputs}>
+              <View style={styles.scoreCell}>
+                <Text style={styles.numLabel}>Team</Text>
+                <TextInput value={scHome} onChangeText={(t) => setScHome(t.replace(/[^0-9]/g, ''))} keyboardType="number-pad" placeholder="0" placeholderTextColor={theme.textFaint} style={styles.numInput} accessibilityLabel="Team goals" />
+              </View>
+              <Text style={styles.scoreDash}>–</Text>
+              <View style={styles.scoreCell}>
+                <Text style={styles.numLabel}>Opp</Text>
+                <TextInput value={scAway} onChangeText={(t) => setScAway(t.replace(/[^0-9]/g, ''))} keyboardType="number-pad" placeholder="0" placeholderTextColor={theme.textFaint} style={styles.numInput} accessibilityLabel="Opponent goals" />
+              </View>
+            </View>
+          ) : (
+            <View style={narrow ? styles.full : styles.flex}>
+              <Text style={styles.numLabel}>Total goals</Text>
+              <TextInput value={scTotal} onChangeText={(t) => setScTotal(t.replace(/[^0-9]/g, ''))} keyboardType="number-pad" placeholder="e.g. 2" placeholderTextColor={theme.textFaint} style={styles.numInput} accessibilityLabel="Total goals" />
+            </View>
+          )}
+          <FilterDropdown label="Threshold" value={scCmp} options={[{ value: 'gte', label: 'At least ≥' }, { value: 'lte', label: 'At most ≤' }]} onChange={(v) => setScCmp(v as 'gte' | 'lte')} style={narrow ? styles.full : styles.flex} />
+          <View style={narrow ? styles.full : styles.flex}>
+            <Text style={styles.numLabel}>Percent (%)</Text>
+            <TextInput value={scValue} onChangeText={(t) => setScValue(t.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="e.g. 20" placeholderTextColor={theme.textFaint} style={styles.numInput} accessibilityLabel="Score percentage" />
+          </View>
+        </View>
+        <Pressable accessibilityRole="button" accessibilityState={{ disabled: !scoreCanAdd }} disabled={!scoreCanAdd} onPress={addScore} style={({ pressed }) => [styles.addBtn, !scoreCanAdd && styles.addBtnDisabled, pressed && styles.addBtnPressed]}>
+          <Text style={styles.addBtnText}>+ Add score rule{scoreReady ? ` · ${scMode === 'total' ? `${scTotal} goals` : `${scHome || '0'}-${scAway || '0'}`}` : ''}</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -2176,6 +2240,12 @@ const styles = StyleSheet.create({
   scopeValue: { fontFamily: fonts.display, fontSize: 18 },
   scopeLabel: { fontFamily: fonts.bodySemiBold, fontSize: 10, color: theme.textPrimary, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 2 },
   scopeSub: { fontFamily: fonts.body, fontSize: 9, color: theme.textMuted, marginTop: 1 },
+
+  scoreCard: { marginTop: spacing.sm, borderWidth: layout.borderWidth, borderColor: theme.border, borderRadius: layout.borderRadius, backgroundColor: theme.surfaceHover, padding: spacing.sm, gap: spacing.sm },
+  scoreTitle: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: theme.textPrimary },
+  scoreInputs: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.xs, flexGrow: 1, flexBasis: 150 },
+  scoreCell: { flex: 1, minWidth: 54 },
+  scoreDash: { fontFamily: fonts.display, fontSize: 20, color: theme.textMuted, paddingBottom: 6 },
 
   filterCard: { marginTop: spacing.md, borderWidth: layout.borderWidth, borderColor: theme.border, borderRadius: layout.borderRadius, backgroundColor: theme.surface, padding: spacing.md },
 

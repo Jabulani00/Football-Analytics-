@@ -892,6 +892,89 @@ const gap: Dimension = {
   },
 };
 
+/* ----------------------------------------------------------------- 7b · Score line (exact score / total goals) */
+
+/** This team's goals for/against in the requested half; null when the half isn't known. */
+function scoreForHalf(r: TeamResult, half: 'ft' | 'ht' | '2h'): { f: number; a: number } | null {
+  if (half === 'ft') return { f: r.gf, a: r.ga };
+  if (r.htGf == null || r.htGa == null) return null;
+  if (half === 'ht') return { f: r.htGf, a: r.htGa };
+  return { f: r.gf - r.htGf, a: r.ga - r.htGa }; // 2nd half = full time − half time
+}
+
+/** Teams whose games hit an exact score (team-for × team-against) or a total-goals
+ *  count, at FT / 1st / 2nd half, often enough (≥ / ≤ a %). Reads season fixtures. */
+const SCORE_MIN_GAMES = 5;
+const scoreline: Dimension = {
+  id: 'scoreline',
+  label: 'Score line',
+  source: 'fixtures',
+  periods: ['overall', 'home', 'away'],
+  methods: () => [
+    { value: 'exact', label: 'Exact score' },
+    { value: 'total', label: 'Total goals' },
+  ],
+  // Only used to label the saved rule (the custom Single-rule UI builds these).
+  options: [
+    { key: 'home', label: 'Team', kind: 'number', options: [], default: '', visible: (o) => !o.total },
+    { key: 'away', label: 'Opp', kind: 'number', options: [], default: '', visible: (o) => !o.total },
+    { key: 'total', label: 'Total', kind: 'number', options: [], default: '', visible: (o) => !!o.total },
+    { key: 'cmp', label: 'Limit', kind: 'select', options: [{ value: 'gte', label: '≥' }, { value: 'lte', label: '≤' }], default: 'gte' },
+    { key: 'value', label: '%', kind: 'number', options: [], default: '' },
+  ],
+  evaluate: (b, sel) => {
+    const fixtures = b.fixtures;
+    if (!fixtures || !fixtures.length) return [];
+    const { half, scope } = splitPeriod(sel.period);
+    const o = sel.options ?? {};
+    const cmp = o.cmp === 'lte' ? 'lte' : 'gte';
+    const threshold = Number(o.value);
+    if (!Number.isFinite(threshold)) return [];
+    const mode = sel.methodId === 'total' ? 'total' : 'exact';
+    const homeN = Number(o.home);
+    const awayN = Number(o.away);
+    const totalN = Number(o.total);
+    if (mode === 'exact' && (!Number.isFinite(homeN) || !Number.isFinite(awayN))) return [];
+    if (mode === 'total' && !Number.isFinite(totalN)) return [];
+    const label = mode === 'total' ? `${totalN} goals` : `${homeN}-${awayN}`;
+    const halfLabel = half === 'ht' ? '1st half' : half === '2h' ? '2nd half' : 'FT';
+    const minGames = scope === 'overall' ? SCORE_MIN_GAMES : 3;
+
+    const teams = new Map<number, string>();
+    for (const f of fixtures) {
+      if (f.home_id != null) teams.set(f.home_id, f.home_name);
+      if (f.away_id != null) teams.set(f.away_id, f.away_name);
+    }
+
+    const out: TeamEval[] = [];
+    for (const [teamId, team] of teams) {
+      const scoped = filterScope(teamResultsFromFixtures(fixtures, teamId, null, {}), scope);
+      const games: { f: number; a: number }[] = [];
+      for (const r of scoped) {
+        const s = scoreForHalf(r, half);
+        if (s) games.push(s);
+      }
+      if (games.length < minGames) continue;
+      const hits = games.filter((s) => (mode === 'total' ? s.f + s.a === totalN : s.f === homeN && s.a === awayN)).length;
+      const pct = (100 * hits) / games.length;
+      const ok = cmp === 'gte' ? pct >= threshold : pct <= threshold;
+      if (!ok) continue;
+      out.push({
+        teamId, team, competition: b.competition, qualifies: true,
+        value: pct, valueText: pctText(pct),
+        grade: `${label} ${halfLabel}`, color: 'green',
+        dimensionId: 'scoreline', dimensionLabel: 'Score line',
+        feature: `${mode === 'total' ? 'Total' : 'Score'} ${label} · ${halfLabel}`,
+        method: `${cmp === 'gte' ? '≥' : '≤'} ${Math.round(threshold)}%`,
+        period: sel.period,
+        reason: `${label} at ${halfLabel} in ${hits}/${games.length} games (${pctText(pct)})`,
+        sample: games.length,
+      });
+    }
+    return out;
+  },
+};
+
 /* ----------------------------------------------------------------- 8 · Stat filter (every family / all 81 tables) */
 
 type StatKind = 'pct' | 'avg' | 'run';
@@ -1164,7 +1247,7 @@ const omit: Dimension = {
 
 /* ----------------------------------------------------------------- registry */
 
-export const DIMENSIONS: Dimension[] = [statFilter, statsCall, characters, grading1, grading2, dominance, opposite, gap, omit];
+export const DIMENSIONS: Dimension[] = [statFilter, statsCall, characters, grading1, grading2, dominance, opposite, gap, scoreline, omit];
 export function getDimension(id: string): Dimension | undefined {
   return DIMENSIONS.find((d) => d.id === id);
 }
