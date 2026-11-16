@@ -7,10 +7,10 @@ import { useQueries, useQuery } from '@tanstack/react-query';
 import DragScroll from '@/components/shared/DragScroll';
 import FilterDropdown from '@/components/shared/FilterDropdown';
 import PageControls, { PAGE_SIZE } from '@/components/shared/PageControls';
-import { useLiveCompetitionFeed, ACTIVE_SCAN_CAP } from '@/hooks/useLiveCompetitions';
+import { useLiveCompetitionFeed, type LiveCompetition } from '@/hooks/useLiveCompetitions';
 import { useLiveFixtures } from '@/hooks/useLiveFixtures';
 import { useSavedBuilderStrategies } from '@/hooks/useSavedBuilderStrategies';
-import { fetchAllCompetitions, fetchAllFixturesBetween, fetchSeasonStandings, seasonWindowUnix, type Fixture, type RawFixture } from '@/services/oddAlerts';
+import { detectKind, fetchAllCompetitions, fetchAllFixturesBetween, fetchSeasonStandings, seasonWindowUnix, type Fixture, type RawFixture } from '@/services/oddAlerts';
 import { TARGET_MARKETS, backtestTeam, targetMarket, type BacktestResult, type BacktestScope, type TargetMarket } from '@/utils/strategyBacktest';
 import { clientStaleTime } from '@/services/oddAlertsCachePolicy';
 import { buildLeagueStatsLive } from '@/services/statsBuilder';
@@ -33,6 +33,14 @@ import { fonts, layout, spacing, theme } from '@/styles/theme';
 
 const ALL = 'all';
 let CONDITION_SEQ = 0;
+
+/**
+ * Safety ceiling on how many leagues the builder scans at once. Not a "top N"
+ * cap — it exists only so an unexpected catalogue size can't spawn a runaway
+ * number of season-stat queries. It sits well above the ~1k active + in-progress
+ * leagues, so in practice every one of them is scanned.
+ */
+const SCAN_HARD_CAP = 1500;
 
 // Remember that the explainer has been shown, so it auto-opens only on a first visit.
 const HELP_SEEN_KEY = 'scoreline.strategy-builder.help-seen.v2';
@@ -188,30 +196,44 @@ export default function StrategyBuilderPanel() {
   const wide = width >= 1024;
 
   const feed = useLiveCompetitionFeed(3);
-  // Every active domestic league, then the bounded scan set (top N by activity) so
-  // building season stats for all ~835 at once can't stall the panel.
-  const liveLeagues = useMemo(
-    () => feed.competitions.filter((c) => c.rank === 0).slice(0, ACTIVE_SCAN_CAP),
-    [feed.competitions],
-  );
-  // League scope for the scan: how many active leagues exist (have upcoming
-  // fixtures) and how many have a season in progress — surfaced so you can see
-  // what the builder is calling. Shares the API Monitor's cached competitions
-  // query, so it adds no extra fetch.
-  const activeLeagueCount = useMemo(() => feed.competitions.filter((c) => c.rank === 0).length, [feed.competitions]);
+  // The catalogue (shared with the API Monitor, so no extra fetch) tells us which
+  // leagues have a season in progress, beyond those with fixtures in the next few days.
   const catalogue = useQuery({
     queryKey: ['api-monitor', 'competitions'],
     queryFn: ({ signal }) => fetchAllCompetitions(signal),
     staleTime: 10 * 60_000,
   });
+
+  const activeLeagueCount = useMemo(() => feed.competitions.filter((c) => c.rank === 0).length, [feed.competitions]);
   const inProgressCount = useMemo(
     () => (catalogue.data ?? []).reduce((n, c) => {
       const cur = c.seasons.find((s) => s.isCurrent);
       const p = cur?.progress ?? null;
-      return p != null && p > 0 && p < 100 ? n + 1 : n;
+      return !c.isCup && p != null && p > 0 && p < 100 ? n + 1 : n;
     }, 0),
     [catalogue.data],
   );
+
+  // The full scan set: every active domestic league (upcoming fixtures, from the
+  // live feed) unioned with every domestic league whose current season is in
+  // progress (from the catalogue). Deduped by id; a high ceiling only guards
+  // against a runaway query count, it is not a "top N" cap.
+  const liveLeagues = useMemo<LiveCompetition[]>(() => {
+    const byId = new Map<number, LiveCompetition>();
+    for (const l of feed.competitions) if (l.rank === 0) byId.set(l.id, l);
+    for (const c of catalogue.data ?? []) {
+      if (c.isCup || byId.has(c.id)) continue;
+      if (detectKind(c.name) !== 'club' || /friendl/i.test(`${c.type} ${c.name}`)) continue;
+      const cur = c.seasons.find((s) => s.isCurrent);
+      const p = cur?.progress ?? null;
+      if (!cur || p == null || p <= 0 || p >= 100) continue;
+      byId.set(c.id, {
+        id: c.id, name: c.name, season: cur.seasonName, seasonId: cur.seasonId,
+        seasonPlayed: cur.played, country: c.country, upcoming: 0, rank: 0,
+      });
+    }
+    return [...byId.values()].slice(0, SCAN_HARD_CAP);
+  }, [feed.competitions, catalogue.data]);
 
   // ---- explainer (auto-opens on a first visit, reopen any time) ----
   const [showHelp, setShowHelp] = useState<boolean>(() => !helpSeen());
@@ -650,8 +672,8 @@ export default function StrategyBuilderPanel() {
         <ScopeStat label="In progress" value={catalogue.isPending ? '…' : inProgressCount.toLocaleString()} sub="season under way" tone={theme.accentOrange} />
         <ScopeStat
           label="Scanning"
-          value={activeLeagueCount > liveLeagues.length ? `${liveLeagues.length} of ${activeLeagueCount}` : String(liveLeagues.length)}
-          sub="top by activity"
+          value={feed.loading && catalogue.isPending ? '…' : liveLeagues.length.toLocaleString()}
+          sub="active + in progress"
           tone={theme.accentBlue}
         />
       </View>
@@ -917,7 +939,7 @@ export default function StrategyBuilderPanel() {
       {callMode === 'single' ? null : (
       <View style={styles.statusRow}>
         {loading || (resultMode === 'fixtures' && up.loading) ? (
-          <><ActivityIndicator size="small" color={theme.accentGreen} /><Text style={styles.statusMuted}>Querying {liveLeagues.length} ongoing leagues…</Text></>
+          <><ActivityIndicator size="small" color={theme.accentGreen} /><Text style={styles.statusMuted}>Querying {liveLeagues.length} active & in-progress leagues…</Text></>
         ) : resultMode === 'teams' ? (
           conditions.length > 0
             ? <Text style={styles.statusLive}>● {summary.teams} teams · {summary.leagues} leagues · {logic.toUpperCase()} of {conditions.length} rule{conditions.length > 1 ? 's' : ''}</Text>
