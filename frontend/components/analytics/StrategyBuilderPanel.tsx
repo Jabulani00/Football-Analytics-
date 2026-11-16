@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } f
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { Platform } from 'react-native';
 import type { StyleProp, ViewStyle } from 'react-native';
-import { useQueries } from '@tanstack/react-query';
+import { useQueries, useQuery } from '@tanstack/react-query';
 
 import DragScroll from '@/components/shared/DragScroll';
 import FilterDropdown from '@/components/shared/FilterDropdown';
@@ -10,7 +10,7 @@ import PageControls, { PAGE_SIZE } from '@/components/shared/PageControls';
 import { useLiveCompetitionFeed, ACTIVE_SCAN_CAP } from '@/hooks/useLiveCompetitions';
 import { useLiveFixtures } from '@/hooks/useLiveFixtures';
 import { useSavedBuilderStrategies } from '@/hooks/useSavedBuilderStrategies';
-import { fetchAllFixturesBetween, fetchSeasonStandings, seasonWindowUnix, type Fixture, type RawFixture } from '@/services/oddAlerts';
+import { fetchAllCompetitions, fetchAllFixturesBetween, fetchSeasonStandings, seasonWindowUnix, type Fixture, type RawFixture } from '@/services/oddAlerts';
 import { TARGET_MARKETS, backtestTeam, targetMarket, type BacktestResult, type BacktestScope, type TargetMarket } from '@/utils/strategyBacktest';
 import { clientStaleTime } from '@/services/oddAlertsCachePolicy';
 import { buildLeagueStatsLive } from '@/services/statsBuilder';
@@ -193,6 +193,24 @@ export default function StrategyBuilderPanel() {
   const liveLeagues = useMemo(
     () => feed.competitions.filter((c) => c.rank === 0).slice(0, ACTIVE_SCAN_CAP),
     [feed.competitions],
+  );
+  // League scope for the scan: how many active leagues exist (have upcoming
+  // fixtures) and how many have a season in progress — surfaced so you can see
+  // what the builder is calling. Shares the API Monitor's cached competitions
+  // query, so it adds no extra fetch.
+  const activeLeagueCount = useMemo(() => feed.competitions.filter((c) => c.rank === 0).length, [feed.competitions]);
+  const catalogue = useQuery({
+    queryKey: ['api-monitor', 'competitions'],
+    queryFn: ({ signal }) => fetchAllCompetitions(signal),
+    staleTime: 10 * 60_000,
+  });
+  const inProgressCount = useMemo(
+    () => (catalogue.data ?? []).reduce((n, c) => {
+      const cur = c.seasons.find((s) => s.isCurrent);
+      const p = cur?.progress ?? null;
+      return p != null && p > 0 && p < 100 ? n + 1 : n;
+    }, 0),
+    [catalogue.data],
   );
 
   // ---- explainer (auto-opens on a first visit, reopen any time) ----
@@ -623,6 +641,19 @@ export default function StrategyBuilderPanel() {
         <Text style={styles.subtitle}>
           Combine any conditions across every stat and grading method, at one global period and venue. View it as the qualifying teams — with an optional historical success rate — or as fixtures, each showing the exact grade every feature qualified with. Save a build to re-run it live anytime.
         </Text>
+      </View>
+
+      {/* League scope — what the builder is calling: active leagues (upcoming
+          fixtures) and how many are in progress, plus the bounded scan set. */}
+      <View style={styles.scopeStrip}>
+        <ScopeStat label="Active now" value={feed.loading ? '…' : activeLeagueCount.toLocaleString()} sub="upcoming fixtures" tone={theme.accentGreen} />
+        <ScopeStat label="In progress" value={catalogue.isPending ? '…' : inProgressCount.toLocaleString()} sub="season under way" tone={theme.accentOrange} />
+        <ScopeStat
+          label="Scanning"
+          value={activeLeagueCount > liveLeagues.length ? `${liveLeagues.length} of ${activeLeagueCount}` : String(liveLeagues.length)}
+          sub="top by activity"
+          tone={theme.accentBlue}
+        />
       </View>
 
       {/* Call type: Peg (graded strategy), Single (one numeric call), or Combo (both) */}
@@ -1270,6 +1301,17 @@ function SummaryTile({ label, value, color }: { label: string; value: number; co
     <View style={styles.summaryTile}>
       <Text style={[styles.summaryValue, { color }]}>{value}</Text>
       <Text style={styles.summaryLabel}>{label}</Text>
+    </View>
+  );
+}
+
+/** Compact league-scope stat (string value, with a sub-label). */
+function ScopeStat({ label, value, sub, tone }: { label: string; value: string; sub: string; tone: string }) {
+  return (
+    <View style={styles.scopeStat}>
+      <Text style={[styles.scopeValue, { color: tone }]} numberOfLines={1}>{value}</Text>
+      <Text style={styles.scopeLabel}>{label}</Text>
+      <Text style={styles.scopeSub} numberOfLines={1}>{sub}</Text>
     </View>
   );
 }
@@ -2104,6 +2146,12 @@ const styles = StyleSheet.create({
   summaryTile: { flexGrow: 1, flexBasis: 90, minWidth: 80, borderWidth: layout.borderWidth, borderColor: theme.border, borderRadius: layout.borderRadius, backgroundColor: theme.surface, paddingVertical: spacing.sm, alignItems: 'center' },
   summaryValue: { fontFamily: fonts.display, fontSize: 22 },
   summaryLabel: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted, marginTop: 2 },
+
+  scopeStrip: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.sm },
+  scopeStat: { flexGrow: 1, flexBasis: 100, minWidth: 90, alignItems: 'center', borderWidth: layout.borderWidth, borderColor: theme.border, borderRadius: layout.borderRadius, backgroundColor: theme.surfaceHover, paddingVertical: spacing.sm, paddingHorizontal: spacing.xs },
+  scopeValue: { fontFamily: fonts.display, fontSize: 18 },
+  scopeLabel: { fontFamily: fonts.bodySemiBold, fontSize: 10, color: theme.textPrimary, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 2 },
+  scopeSub: { fontFamily: fonts.body, fontSize: 9, color: theme.textMuted, marginTop: 1 },
 
   filterCard: { marginTop: spacing.md, borderWidth: layout.borderWidth, borderColor: theme.border, borderRadius: layout.borderRadius, backgroundColor: theme.surface, padding: spacing.md },
 
