@@ -1,5 +1,6 @@
 import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
+import ApiMonitorPanel from '@/components/analytics/ApiMonitorPanel';
 import ComplianceBadge from '@/components/analytics/ComplianceBadge';
 import SectionLabel from '@/components/shared/SectionLabel';
 import {
@@ -38,6 +39,8 @@ export default function OverviewPanel() {
 
   return (
     <View style={styles.container}>
+      <ApiMonitorPanel />
+
       <View style={styles.summaryRow}>
         <SummaryCard label="Tables" value={String(PROJECT_SUMMARY.tableCount)} sub="36 all-games groups + 36 Last-N" />
         <SummaryCard label="Metrics" value={`${PROJECT_SUMMARY.metricsPerTable}+`} sub="per table" />
