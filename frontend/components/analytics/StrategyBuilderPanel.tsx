@@ -1512,25 +1512,32 @@ function SingleRuleBuilder({ narrow, onAdd, fixedSide, title }: { narrow: boolea
 
   // Optional exact-score / total-goals rule — its own period + ≥ / ≤ % threshold.
   const [scHalf, setScHalf] = useState<'ft' | 'ht' | '2h'>('ht');
-  const [scMode, setScMode] = useState<'exact' | 'total'>('exact');
+  const [scMode, setScMode] = useState<'exact' | 'total' | 'scored' | 'conceded'>('exact');
   const [scHome, setScHome] = useState('');
   const [scAway, setScAway] = useState('');
-  const [scTotal, setScTotal] = useState('');
+  const [scTotal, setScTotal] = useState(''); // the single number for total / scored / conceded
   const [scCmp, setScCmp] = useState<'gte' | 'lte'>('gte');
   const [scValue, setScValue] = useState('');
   const scoreReady = scMode === 'exact' ? scHome.trim() !== '' && scAway.trim() !== '' : scTotal.trim() !== '';
   const scoreCanAdd = scoreReady && scValue.trim() !== '' && Number.isFinite(Number(scValue));
+  const scNumLabel = scMode === 'scored' ? 'Goals scored' : scMode === 'conceded' ? 'Goals conceded' : 'Total goals';
+  const scSummary = scMode === 'exact' ? `${scHome || '0'}-${scAway || '0'}`
+    : scMode === 'total' ? `${scTotal} goals`
+    : scMode === 'scored' ? `scored ${scTotal}`
+    : `conceded ${scTotal}`;
   const addScore = () => {
     if (!scoreCanAdd) return;
     const venueSide: FixtureSide = scope === 'home' ? 'home' : scope === 'away' ? 'away' : 'either';
+    const options: Record<string, string> = scMode === 'exact' ? { home: scHome, away: scAway, cmp: scCmp, value: scValue }
+      : scMode === 'total' ? { total: scTotal, cmp: scCmp, value: scValue }
+      : scMode === 'scored' ? { scored: scTotal, cmp: scCmp, value: scValue }
+      : { conceded: scTotal, cmp: scCmp, value: scValue };
     onAdd({
       id: `c${(CONDITION_SEQ += 1)}`,
       dimensionId: 'scoreline',
       period: periodFrom(scHalf, scope),
       methodId: scMode,
-      options: scMode === 'total'
-        ? { total: scTotal, cmp: scCmp, value: scValue }
-        : { home: scHome, away: scAway, cmp: scCmp, value: scValue },
+      options,
       side: fixedSide ?? venueSide,
     });
     setScValue('');
@@ -1589,10 +1596,10 @@ function SingleRuleBuilder({ narrow, onAdd, fixedSide, title }: { narrow: boolea
       {/* Optional exact-score / total-goals rule — e.g. 0–0 at 1st half ≥ 20%. */}
       <View style={styles.scoreCard}>
         <Text style={styles.scoreTitle}>⚽ Exact score · optional</Text>
-        <Text style={styles.readNote}>Qualify teams by how often a score comes up — e.g. 0–0 at 1st half ≥ 20%. Two inputs are the team&apos;s goals and the opponent&apos;s, or switch to one total-goals input. Uses the Venue above.</Text>
+        <Text style={styles.readNote}>Qualify teams by how often a score comes up — e.g. 0–0 at 1st half ≥ 20%, or goals conceded = 0 (clean sheets) ≥ 40%. Exact uses two inputs (team goals vs opponent); Total / Scored / Conceded use one. Uses the Venue above.</Text>
         <View style={styles.readRow}>
           <SegGroup label="When" value={scHalf} options={[['ft', 'Full time'], ['ht', '1st half'], ['2h', '2nd half']]} onChange={setScHalf} />
-          <SegGroup label="Score by" value={scMode} options={[['exact', 'Exact score'], ['total', 'Total goals']]} onChange={setScMode} />
+          <SegGroup label="Score by" value={scMode} options={[['exact', 'Exact score'], ['total', 'Total goals'], ['scored', 'Scored'], ['conceded', 'Conceded']]} onChange={setScMode} />
         </View>
         <View style={[styles.filterRow, narrow && styles.filterCol]}>
           {scMode === 'exact' ? (
@@ -1609,8 +1616,8 @@ function SingleRuleBuilder({ narrow, onAdd, fixedSide, title }: { narrow: boolea
             </View>
           ) : (
             <View style={narrow ? styles.full : styles.flex}>
-              <Text style={styles.numLabel}>Total goals</Text>
-              <TextInput value={scTotal} onChangeText={(t) => setScTotal(t.replace(/[^0-9]/g, ''))} keyboardType="number-pad" placeholder="e.g. 2" placeholderTextColor={theme.textFaint} style={styles.numInput} accessibilityLabel="Total goals" />
+              <Text style={styles.numLabel}>{scNumLabel}</Text>
+              <TextInput value={scTotal} onChangeText={(t) => setScTotal(t.replace(/[^0-9]/g, ''))} keyboardType="number-pad" placeholder="e.g. 0" placeholderTextColor={theme.textFaint} style={styles.numInput} accessibilityLabel={scNumLabel} />
             </View>
           )}
           <FilterDropdown label="Threshold" value={scCmp} options={[{ value: 'gte', label: 'At least ≥' }, { value: 'lte', label: 'At most ≤' }]} onChange={(v) => setScCmp(v as 'gte' | 'lte')} style={narrow ? styles.full : styles.flex} />
@@ -1620,7 +1627,7 @@ function SingleRuleBuilder({ narrow, onAdd, fixedSide, title }: { narrow: boolea
           </View>
         </View>
         <Pressable accessibilityRole="button" accessibilityState={{ disabled: !scoreCanAdd }} disabled={!scoreCanAdd} onPress={addScore} style={({ pressed }) => [styles.addBtn, !scoreCanAdd && styles.addBtnDisabled, pressed && styles.addBtnPressed]}>
-          <Text style={styles.addBtnText}>+ Add score rule{scoreReady ? ` · ${scMode === 'total' ? `${scTotal} goals` : `${scHome || '0'}-${scAway || '0'}`}` : ''}</Text>
+          <Text style={styles.addBtnText}>+ Add score rule{scoreReady ? ` · ${scSummary}` : ''}</Text>
         </Pressable>
       </View>
     </View>

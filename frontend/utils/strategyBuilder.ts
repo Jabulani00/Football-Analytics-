@@ -913,12 +913,16 @@ const scoreline: Dimension = {
   methods: () => [
     { value: 'exact', label: 'Exact score' },
     { value: 'total', label: 'Total goals' },
+    { value: 'scored', label: 'Goals scored' },
+    { value: 'conceded', label: 'Goals conceded' },
   ],
   // Only used to label the saved rule (the custom Single-rule UI builds these).
   options: [
-    { key: 'home', label: 'Team', kind: 'number', options: [], default: '', visible: (o) => !o.total },
-    { key: 'away', label: 'Opp', kind: 'number', options: [], default: '', visible: (o) => !o.total },
-    { key: 'total', label: 'Total', kind: 'number', options: [], default: '', visible: (o) => !!o.total },
+    { key: 'home', label: 'Team', kind: 'number', options: [], default: '' },
+    { key: 'away', label: 'Opp', kind: 'number', options: [], default: '' },
+    { key: 'total', label: 'Total', kind: 'number', options: [], default: '' },
+    { key: 'scored', label: 'Scored', kind: 'number', options: [], default: '' },
+    { key: 'conceded', label: 'Conceded', kind: 'number', options: [], default: '' },
     { key: 'cmp', label: 'Limit', kind: 'select', options: [{ value: 'gte', label: '≥' }, { value: 'lte', label: '≤' }], default: 'gte' },
     { key: 'value', label: '%', kind: 'number', options: [], default: '' },
   ],
@@ -930,13 +934,20 @@ const scoreline: Dimension = {
     const cmp = o.cmp === 'lte' ? 'lte' : 'gte';
     const threshold = Number(o.value);
     if (!Number.isFinite(threshold)) return [];
-    const mode = sel.methodId === 'total' ? 'total' : 'exact';
+    const mode = (['exact', 'total', 'scored', 'conceded'] as const).includes(sel.methodId as never)
+      ? (sel.methodId as 'exact' | 'total' | 'scored' | 'conceded')
+      : 'exact';
     const homeN = Number(o.home);
     const awayN = Number(o.away);
-    const totalN = Number(o.total);
+    // The single-number modes (total / scored / conceded) each carry their count.
+    const n = Number(mode === 'total' ? o.total : mode === 'scored' ? o.scored : o.conceded);
     if (mode === 'exact' && (!Number.isFinite(homeN) || !Number.isFinite(awayN))) return [];
-    if (mode === 'total' && !Number.isFinite(totalN)) return [];
-    const label = mode === 'total' ? `${totalN} goals` : `${homeN}-${awayN}`;
+    if (mode !== 'exact' && !Number.isFinite(n)) return [];
+    const label =
+      mode === 'exact' ? `${homeN}-${awayN}`
+      : mode === 'total' ? `${n} total`
+      : mode === 'scored' ? `scored ${n}`
+      : `conceded ${n}`;
     const halfLabel = half === 'ht' ? '1st half' : half === '2h' ? '2nd half' : 'FT';
     const minGames = scope === 'overall' ? SCORE_MIN_GAMES : 3;
 
@@ -955,7 +966,12 @@ const scoreline: Dimension = {
         if (s) games.push(s);
       }
       if (games.length < minGames) continue;
-      const hits = games.filter((s) => (mode === 'total' ? s.f + s.a === totalN : s.f === homeN && s.a === awayN)).length;
+      const hits = games.filter((s) =>
+        mode === 'exact' ? s.f === homeN && s.a === awayN
+        : mode === 'total' ? s.f + s.a === n
+        : mode === 'scored' ? s.f === n
+        : s.a === n, // conceded
+      ).length;
       const pct = (100 * hits) / games.length;
       const ok = cmp === 'gte' ? pct >= threshold : pct <= threshold;
       if (!ok) continue;
@@ -964,7 +980,7 @@ const scoreline: Dimension = {
         value: pct, valueText: pctText(pct),
         grade: `${label} ${halfLabel}`, color: 'green',
         dimensionId: 'scoreline', dimensionLabel: 'Score line',
-        feature: `${mode === 'total' ? 'Total' : 'Score'} ${label} · ${halfLabel}`,
+        feature: `${label} · ${halfLabel}`,
         method: `${cmp === 'gte' ? '≥' : '≤'} ${Math.round(threshold)}%`,
         period: sel.period,
         reason: `${label} at ${halfLabel} in ${hits}/${games.length} games (${pctText(pct)})`,
