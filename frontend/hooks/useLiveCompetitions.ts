@@ -1,12 +1,25 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
-import { oddAlertsKeys } from '@/services/oddAlertsKeys';
 import { clientStaleTime } from '@/services/oddAlertsCachePolicy';
-import { detectKind, fetchAllCompetitions, fetchUpcomingFixtures, type RawFixture } from '@/services/oddAlerts';
+import { detectKind, fetchAllCompetitions, fetchAllUpcomingFixtures, type RawFixture } from '@/services/oddAlerts';
 
 /** Friendly competitions (e.g. "Club Friendlies") are not gradeable domestic leagues. */
 const FRIENDLY_RE = /friendl/i;
+
+/**
+ * How many pages of the upcoming feed to enumerate for the active-league list.
+ * The whole ~3-day window is ~40 pages (≈9.9k fixtures / ≈835 leagues); this
+ * covers it with headroom so the list is the full active set, not just page 1.
+ */
+const ACTIVE_FEED_MAX_PAGES = 45;
+
+/**
+ * Upper bound on how many active leagues a screen builds stats for at once (the
+ * "scan"). The feed lists every active league, but building season stats for all
+ * ~835 at once would hammer the API — panels take the top N by activity instead.
+ */
+export const ACTIVE_SCAN_CAP = 150;
 
 export type LiveCompetition = {
   id: number;
@@ -73,13 +86,17 @@ export function useLiveCompetitionFeed(days = 3): {
   loading: boolean;
   error: string | null;
 } {
+  // The active-LEAGUE set changes slowly (a league stays "active" for its whole
+  // season), so enumerate every page of the upcoming window under a dedicated key
+  // with a long stale time — kept separate from the 20s live-fixtures feed so we
+  // don't re-page ~40 requests every few seconds.
   const query = useQuery({
-    queryKey: oddAlertsKeys.upcoming({ days }),
-    queryFn: ({ signal }) => fetchUpcomingFixtures({ days }, signal),
-    staleTime: clientStaleTime('fixtures/upcoming'),
+    queryKey: ['active-league-feed', days],
+    queryFn: ({ signal }) => fetchAllUpcomingFixtures({ days, maxPages: ACTIVE_FEED_MAX_PAGES }, signal),
+    staleTime: 10 * 60_000,
   });
 
-  const competitions = useMemo(() => competitionsFrom(query.data?.data), [query.data]);
+  const competitions = useMemo(() => competitionsFrom(query.data), [query.data]);
   const error =
     query.error instanceof Error ? query.error.message : query.error ? String(query.error) : null;
 

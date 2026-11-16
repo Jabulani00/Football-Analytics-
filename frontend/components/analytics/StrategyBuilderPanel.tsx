@@ -7,7 +7,7 @@ import { useQueries } from '@tanstack/react-query';
 import DragScroll from '@/components/shared/DragScroll';
 import FilterDropdown from '@/components/shared/FilterDropdown';
 import PageControls, { PAGE_SIZE } from '@/components/shared/PageControls';
-import { useLiveCompetitionFeed } from '@/hooks/useLiveCompetitions';
+import { useLiveCompetitionFeed, ACTIVE_SCAN_CAP } from '@/hooks/useLiveCompetitions';
 import { useLiveFixtures } from '@/hooks/useLiveFixtures';
 import { useSavedBuilderStrategies } from '@/hooks/useSavedBuilderStrategies';
 import { fetchAllFixturesBetween, fetchSeasonStandings, seasonWindowUnix, type Fixture, type RawFixture } from '@/services/oddAlerts';
@@ -188,7 +188,12 @@ export default function StrategyBuilderPanel() {
   const wide = width >= 1024;
 
   const feed = useLiveCompetitionFeed(3);
-  const liveLeagues = useMemo(() => feed.competitions.filter((c) => c.rank === 0), [feed.competitions]);
+  // Every active domestic league, then the bounded scan set (top N by activity) so
+  // building season stats for all ~835 at once can't stall the panel.
+  const liveLeagues = useMemo(
+    () => feed.competitions.filter((c) => c.rank === 0).slice(0, ACTIVE_SCAN_CAP),
+    [feed.competitions],
+  );
 
   // ---- explainer (auto-opens on a first visit, reopen any time) ----
   const [showHelp, setShowHelp] = useState<boolean>(() => !helpSeen());

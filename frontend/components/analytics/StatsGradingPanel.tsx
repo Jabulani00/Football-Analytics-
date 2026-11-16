@@ -4,7 +4,7 @@ import { useQueries } from '@tanstack/react-query';
 
 import DragScroll from '@/components/shared/DragScroll';
 import FilterDropdown from '@/components/shared/FilterDropdown';
-import { useAllGradingLeagues, useLiveCompetitionFeed } from '@/hooks/useLiveCompetitions';
+import { useAllGradingLeagues, useLiveCompetitionFeed, ACTIVE_SCAN_CAP } from '@/hooks/useLiveCompetitions';
 import { useLiveFixtures } from '@/hooks/useLiveFixtures';
 import { useLiveStatsTables } from '@/hooks/useLiveStatsTables';
 import { fetchAllFixturesBetween, seasonWindowUnix } from '@/services/oddAlerts';
@@ -76,8 +76,11 @@ export default function StatsGradingPanel() {
   const narrow = useWindowDimensions().width < 720;
 
   const feed = useLiveCompetitionFeed(3);
-  // Active leagues (rank 0, have upcoming fixtures) — the set small enough to combine.
-  const liveLeagues = useMemo(() => feed.competitions.filter((c) => c.rank === 0), [feed.competitions]);
+  // Every active domestic league (rank 0, have upcoming fixtures).
+  const activeLeagues = useMemo(() => feed.competitions.filter((c) => c.rank === 0), [feed.competitions]);
+  // The bounded scan set for "all active combined" — top N by activity, so we never
+  // build season stats for all ~835 at once.
+  const liveLeagues = useMemo(() => activeLeagues.slice(0, ACTIVE_SCAN_CAP), [activeLeagues]);
   // The full gradeable league list (1000+) for single-league selection.
   const all = useAllGradingLeagues();
   const pickLeagues = all.leagues;
@@ -211,7 +214,12 @@ export default function StatsGradingPanel() {
   const selectedRow = tableRows.find((r) => rowId(r) === selected) ?? null;
 
   const leagueOptions = [
-    { value: ALL, label: `All active leagues combined (${liveLeagues.length})` },
+    {
+      value: ALL,
+      label: activeLeagues.length > liveLeagues.length
+        ? `All active leagues combined (top ${liveLeagues.length} of ${activeLeagues.length})`
+        : `All active leagues combined (${liveLeagues.length})`,
+    },
     ...pickLeagues.map((l) => ({ value: String(l.id), label: `${l.name} · ${l.country}` })),
   ];
 

@@ -358,14 +358,29 @@ export async function fetchAllUpcomingFixtures(
   signal?: AbortSignal,
 ): Promise<RawFixture[]> {
   const maxPages = opts.maxPages ?? 10;
-  const all: RawFixture[] = [];
-  for (let page = 1; page <= maxPages; page += 1) {
-    const env = await fetchUpcomingFixtures(
-      { days: opts.days, competitions: opts.competitions, page },
-      signal,
+  // Read page 1, learn the page count (the envelope reports `total_pages`), then
+  // fetch the rest in parallel batches — sequential paging of this large feed
+  // (up to ~40 pages for the whole upcoming window) was far too slow.
+  const first = await fetchUpcomingFixtures(
+    { days: opts.days, competitions: opts.competitions, page: 1 },
+    signal,
+  );
+  const all: RawFixture[] = [...first.data];
+  if (!first.info?.next_page_url) return all;
+
+  const reported = Number(first.info?.total_pages ?? 0) || 0;
+  const lastPage = Math.min(reported > 0 ? reported : maxPages, maxPages);
+  if (lastPage <= 1) return all;
+
+  const pages = Array.from({ length: lastPage - 1 }, (_, i) => i + 2);
+  const BATCH = 6; // bound concurrency to respect the API's rate limit.
+  for (let i = 0; i < pages.length; i += BATCH) {
+    const envs = await Promise.all(
+      pages.slice(i, i + BATCH).map((page) =>
+        fetchUpcomingFixtures({ days: opts.days, competitions: opts.competitions, page }, signal),
+      ),
     );
-    all.push(...env.data);
-    if (!env.info?.next_page_url) break;
+    for (const env of envs) all.push(...env.data);
   }
   return all;
 }
@@ -1538,38 +1553,45 @@ function mapCompetition(raw: RawCompetition): Competition {
 /**
  * All competitions with their season history. The API ignores `country_id`
  * filtering, so we fetch every page once and cache the result in-module.
+ *
+ * The envelope reports `total_pages` (verified ~10 for ~2431 competitions), so we
+ * read page 1, learn the count, then fetch the rest in parallel. The ceiling is
+ * generous so the full catalogue is never truncated as the API grows.
  */
 export async function fetchAllCompetitions(signal?: AbortSignal): Promise<Competition[]> {
   if (competitionsCache) return competitionsCache;
   if (competitionsPromise) return competitionsPromise;
 
   competitionsPromise = (async () => {
-    // Fetch page 1, learn the page count, then fetch the rest in parallel
-    // (sequential paging of ~10 pages was the main "countries load slowly" cause).
-    const first = await getJson<RawCompetition>(
-      'competitions',
-      { include: 'seasons', per_page: 250, page: 1 },
-      signal,
-    );
-    const all: Competition[] = first.data.map(mapCompetition);
-
-    const totalPages = Math.min(Number(first.info?.total_pages ?? 1) || 1, 16);
-    if (totalPages > 1) {
-      const rest = await Promise.all(
-        Array.from({ length: totalPages - 1 }, (_, i) =>
-          getJson<RawCompetition>(
-            'competitions',
-            { include: 'seasons', per_page: 250, page: i + 2 },
-            signal,
-          ),
-        ),
+    try {
+      const first = await getJson<RawCompetition>(
+        'competitions',
+        { include: 'seasons', per_page: 250, page: 1 },
+        signal,
       );
-      for (const env of rest) all.push(...env.data.map(mapCompetition));
-    }
+      const all: Competition[] = first.data.map(mapCompetition);
 
-    competitionsCache = all;
-    competitionsPromise = null;
-    return all;
+      const totalPages = Math.min(Number(first.info?.total_pages ?? 1) || 1, 40);
+      if (totalPages > 1) {
+        const rest = await Promise.all(
+          Array.from({ length: totalPages - 1 }, (_, i) =>
+            getJson<RawCompetition>(
+              'competitions',
+              { include: 'seasons', per_page: 250, page: i + 2 },
+              signal,
+            ),
+          ),
+        );
+        for (const env of rest) all.push(...env.data.map(mapCompetition));
+      }
+
+      competitionsCache = all;
+      return all;
+    } finally {
+      // Clear the in-flight marker on success or failure, so a failed load can be
+      // retried instead of forever returning the same rejected promise.
+      competitionsPromise = null;
+    }
   })();
 
   return competitionsPromise;
