@@ -262,15 +262,36 @@ function abortError(): Error {
 const RATE_MAX_PER_MIN = 240;
 const RATE_WINDOW_MS = 60_000;
 const MAX_CONCURRENT = 8;
+/** A single request can't hold a concurrency slot longer than this. */
+const REQUEST_TIMEOUT_MS = 25_000;
+/** Transient failures (timeout / network / 429 / 5xx) retry up to this many times. */
+const MAX_RETRIES = 3;
 
 let rateInFlight = 0;
 let rateWindow: number[] = [];
 const rateQueue: ((now: number) => void)[] = [];
 let rateTimer: ReturnType<typeof setTimeout> | null = null;
+/** After a 429 the whole queue pauses until here, so we don't stampede the cap. */
+let cooldownUntil = 0;
+
+const backoffMs = (attempt: number) => Math.min(8000, 500 * 2 ** attempt) + Math.floor(Math.random() * 200);
+function isTransientStatus(status: number): boolean {
+  return status === 429 || status === 408 || status === 425 || status >= 500;
+}
+function isNetworkError(err: unknown): boolean {
+  return err instanceof TypeError || (err instanceof Error && /network|fetch failed|failed to fetch/i.test(err.message));
+}
 
 function ratePump(): void {
   while (rateQueue.length && rateInFlight < MAX_CONCURRENT) {
     const now = Date.now();
+    // Global cooldown after a 429 — let the (possibly shared) token recover.
+    if (now < cooldownUntil) {
+      if (rateTimer == null) {
+        rateTimer = setTimeout(() => { rateTimer = null; ratePump(); }, Math.max(5, cooldownUntil - now + 5));
+      }
+      return;
+    }
     rateWindow = rateWindow.filter((t) => now - t < RATE_WINDOW_MS);
     if (rateWindow.length >= RATE_MAX_PER_MIN) {
       if (rateTimer == null) {
@@ -311,6 +332,22 @@ function rateRelease(): void {
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+/** Live health snapshot of the client-side API gate (for the API Monitor). */
+export function rateLimiterStats(): {
+  inFlight: number; queued: number; usedInWindow: number; maxPerMin: number; concurrency: number; cooldownMs: number;
+} {
+  const now = Date.now();
+  rateWindow = rateWindow.filter((t) => now - t < RATE_WINDOW_MS);
+  return {
+    inFlight: rateInFlight,
+    queued: rateQueue.length,
+    usedInWindow: rateWindow.length,
+    maxPerMin: RATE_MAX_PER_MIN,
+    concurrency: MAX_CONCURRENT,
+    cooldownMs: Math.max(0, cooldownUntil - now),
+  };
+}
+
 async function fetchEnvelope(
   path: string,
   params: Record<string, string | number | undefined>,
@@ -323,25 +360,56 @@ async function fetchEnvelope(
       rateRelease();
       throw abortError();
     }
+
+    // Per-request timeout combined with the caller's abort, so a hung request
+    // can never hold a concurrency slot forever (keeps the queue flowing).
+    const ctrl = new AbortController();
+    const onCallerAbort = () => ctrl.abort();
+    signal.addEventListener('abort', onCallerAbort, { once: true });
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; ctrl.abort(); }, REQUEST_TIMEOUT_MS);
+    const cleanup = () => { clearTimeout(timer); signal.removeEventListener('abort', onCallerAbort); };
+
     let res: Response;
     let text: string;
     try {
-      res = await fetch(buildUrl(path, params), { headers: { Accept: 'application/json' }, signal });
+      res = await fetch(buildUrl(path, params), { headers: { Accept: 'application/json' }, signal: ctrl.signal });
       text = await res.text();
     } catch (err) {
-      grant.refund(); // network/abort error never reached the upstream — don't spend budget
+      grant.refund(); // never reached the upstream (or timed out) — don't spend budget
       rateRelease();
+      cleanup();
+      if (signal.aborted) throw abortError(); // caller cancelled — stop
+      // A timeout or a network blip is transient: back off and retry.
+      if ((timedOut || isNetworkError(err)) && attempt < MAX_RETRIES) {
+        await sleep(backoffMs(attempt));
+        continue;
+      }
+      if (timedOut) {
+        const e = new Error(`OddAlerts request timed out: ${path}`) as Error & { status: number; bytes: number };
+        e.status = 0;
+        e.bytes = 0;
+        throw e;
+      }
       throw err;
     }
     rateRelease();
+    cleanup();
 
     const cache = res.headers.get('X-Cache') ?? 'MISS';
     if (/HIT/i.test(cache)) grant.refund(); // served from cache — no upstream API hit
 
-    // Respect the 300/min cap: back off and retry on a 429 (ours or a shared token).
-    if (res.status === 429 && attempt < 3) {
-      const retryAfter = Number(res.headers.get('Retry-After'));
-      await sleep(Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter * 1000, 10_000) : 800 * (attempt + 1));
+    // Transient server status (429 / 408 / 425 / 5xx) → back off and retry. A 429
+    // also pauses the whole queue so we don't stampede the (possibly shared) cap.
+    if (isTransientStatus(res.status) && attempt < MAX_RETRIES) {
+      if (res.status === 429) {
+        const retryAfter = Number(res.headers.get('Retry-After'));
+        const pause = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter * 1000, 10_000) : backoffMs(attempt);
+        cooldownUntil = Math.max(cooldownUntil, Date.now() + pause);
+        await sleep(pause);
+      } else {
+        await sleep(backoffMs(attempt));
+      }
       continue;
     }
 

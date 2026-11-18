@@ -3,7 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 
 import { useLiveCompetitionFeed } from '@/hooks/useLiveCompetitions';
-import { fetchAllCompetitions, type Competition } from '@/services/oddAlerts';
+import { fetchAllCompetitions, rateLimiterStats, type Competition } from '@/services/oddAlerts';
 import { trafficHistory, type TrafficRecord } from '@/services/apiTrafficLog';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
@@ -98,7 +98,16 @@ export default function ApiMonitorPanel() {
     return () => clearInterval(id);
   }, []);
   const perf = perfStats(trafficHistory());
+  const gate = rateLimiterStats();
   const cat = useMemo(() => (comp.data ? catalogueStats(comp.data) : null), [comp.data]);
+
+  // Query-health read from the client-side rate gate.
+  const budgetPct = Math.min(100, Math.round((100 * gate.usedInWindow) / gate.maxPerMin));
+  const health = gate.cooldownMs > 0
+    ? { label: 'Cooling down', color: theme.loss }
+    : gate.queued > 0 || budgetPct >= 85
+      ? { label: 'Busy', color: theme.yellow }
+      : { label: 'Healthy', color: theme.accentGreen };
 
   const activeNow = feed.competitions.length; // competitions with upcoming fixtures
   const rating = ratingFor(perf);
@@ -149,9 +158,24 @@ export default function ApiMonitorPanel() {
         </View>
       </View>
 
+      {/* Query health — the client-side rate gate that keeps us under 300/min. */}
+      <View style={styles.gateRow}>
+        <View style={styles.gateLeft}>
+          <View style={[styles.dot, { backgroundColor: health.color }]} />
+          <Text style={[styles.gateLabel, { color: health.color }]}>{health.label}</Text>
+        </View>
+        <View style={styles.gateBarTrack}>
+          <View style={[styles.gateBarFill, { width: `${budgetPct}%`, backgroundColor: health.color }]} />
+        </View>
+        <Text style={styles.gateText}>
+          {gate.usedInWindow}/{gate.maxPerMin} per min · {gate.inFlight} in flight · {gate.queued} queued
+          {gate.cooldownMs > 0 ? ` · cooldown ${Math.ceil(gate.cooldownMs / 1000)}s` : ''}
+        </Text>
+      </View>
+
       <Text style={styles.foot}>
         Catalogue from the OddAlerts competitions feed · performance measured from this session&apos;s live requests
-        {perf.sample ? ` (last ${perf.sample})` : ''}.
+        {perf.sample ? ` (last ${perf.sample})` : ''}. Requests are paced under 300/min with retries and a 429 cooldown.
       </Text>
     </View>
   );
@@ -226,6 +250,13 @@ const styles = StyleSheet.create({
   stat: { alignItems: 'center', minWidth: 54 },
   statValue: { fontFamily: fonts.bodySemiBold, fontSize: 15, color: theme.textPrimary },
   statLabel: { fontFamily: fonts.body, fontSize: 9, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 1 },
+
+  gateRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexWrap: 'wrap', borderTopWidth: layout.borderWidth, borderTopColor: theme.border, paddingTop: spacing.sm },
+  gateLeft: { flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 100 },
+  gateLabel: { fontFamily: fonts.bodySemiBold, fontSize: 12 },
+  gateBarTrack: { flexGrow: 1, flexBasis: 120, height: 6, borderRadius: 999, backgroundColor: theme.surfaceMuted, overflow: 'hidden' },
+  gateBarFill: { height: '100%', borderRadius: 999 },
+  gateText: { fontFamily: fonts.body, fontSize: 10, color: theme.textMuted },
 
   foot: { fontFamily: fonts.body, fontSize: 10, lineHeight: 14, color: theme.textMuted },
 });
