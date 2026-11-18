@@ -16,6 +16,7 @@ import {
   type BttsMix, type CharColour, type CharLevel, type CharMethod, type DominatorMix, type StatsCharacter, type StrategyLetter,
 } from '@/utils/statsCharacters';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
+import { timeSpan } from '@/services/perfLog';
 
 /** Monospace keeps the Sc / Conc crosshair aligned like the hand-drawn notes. */
 const MONO = Platform.select({ ios: 'Courier', android: 'monospace', default: 'monospace' });
@@ -171,7 +172,7 @@ export default function StatsCharactersPanel() {
   const fixtures: RawFixture[] = season.data ?? [];
 
   /** Classify every team in the selected league into its character. */
-  const teamChars = useMemo<TeamChar[]>(() => {
+  const teamChars = useMemo<TeamChar[]>(() => timeSpan('Characters', () => {
     if (!fixtures.length) return [];
     const goals = analyzeTeamGoals(fixtures, period);
 
@@ -202,7 +203,7 @@ export default function StatsCharactersPanel() {
       const character = scLevel && concLevel ? characterFor(scLevel, concLevel) : null;
       return { ...t, scLevel, concLevel, character };
     });
-  }, [fixtures, period, scope, method]);
+  }), [fixtures, period, scope, method]);
 
   const charByKey = useMemo(() => new Map(teamChars.filter((t) => t.character).map((t) => [teamKey(t.teamId, t.team), t])), [teamChars]);
 

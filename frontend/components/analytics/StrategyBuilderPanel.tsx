@@ -16,6 +16,7 @@ import { clientStaleTime } from '@/services/oddAlertsCachePolicy';
 import { buildLeagueStatsLive } from '@/services/statsBuilder';
 import { nextFixtureFor, normaliseTeam, type UpcomingLite } from '@/utils/statsGrading';
 import { charactersFromFixtures, charactersFromStats, colourTint, levelGlyph, type TeamCharacterRead } from '@/utils/statsCharacters';
+import { timeSpan } from '@/services/perfLog';
 import { ordinaryRfsForStat, recentFormForStat, type RecentForm, type StatRfs } from '@/utils/fixtureRfs';
 import { teamResultsFromFixtures, type TeamResult } from '@/utils/teamResults';
 import { RESULT_FILTERS, LAST_RESULT_WINDOWS } from '@/utils/lastResults';
@@ -426,7 +427,7 @@ export default function StrategyBuilderPanel() {
 
   // ---- results (Teams mode) — each condition at its own period ----
   const results = useMemo(
-    () => evaluateStrategy(bundles, conditions, logic).filter((r) => inParent(r.competition, r.teamId, r.team)),
+    () => timeSpan('Strategy Builder', () => evaluateStrategy(bundles, conditions, logic).filter((r) => inParent(r.competition, r.teamId, r.team))),
     [bundles, conditions, logic, inParent],
   );
 

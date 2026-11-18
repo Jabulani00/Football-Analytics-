@@ -32,6 +32,7 @@ import {
 } from '@/utils/statsGrading';
 import { gradingUnity } from '@/utils/unity';
 import { charactersFromStats, colourTint, levelGlyph, type TeamCharacterRead } from '@/utils/statsCharacters';
+import { timeSpan } from '@/services/perfLog';
 import UnityStat from '@/components/analytics/UnityStat';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
@@ -133,7 +134,7 @@ export default function StatsGradingPanel() {
   const allSig = allResults.map((r, i) => (r.data ? `${liveLeagues[i]?.id}:${r.dataUpdatedAt}` : '')).join('|');
   const settled = allResults.filter((r) => r.isSuccess || r.isError).length;
 
-  const allRows = useMemo(() => {
+  const allRows = useMemo(() => timeSpan('Stats grading', () => {
     if (!allLeagues) {
       if (!live.data) return [];
       return sortRows(gradeAllTeamsForStat(live.data, sourceList, statKey, activeComp?.name ?? ''));
@@ -144,8 +145,9 @@ export default function StatsGradingPanel() {
       if (r.data && comp) combined.push(...gradeAllTeamsForStat(r.data, sourceList, statKey, comp.name));
     });
     return sortRows(combined);
+  }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allLeagues, live.data, allSig, sourceList, statKey, activeComp?.name]);
+  [allLeagues, live.data, allSig, sourceList, statKey, activeComp?.name]);
 
   // Each team's canonical character (Overall · Full time · all-games), read from
   // the same live export. Keyed `competition::team` so combined mode never mixes

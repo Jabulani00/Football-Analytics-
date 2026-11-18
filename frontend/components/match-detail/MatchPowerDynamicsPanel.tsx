@@ -52,6 +52,7 @@ import { buildInitialState, findUkulumbana } from '@/utils/last5Analysis';
 import { resultsFromSeasonMatches } from '@/utils/last6Form';
 import type { StandingLike } from '@/utils/motivationEngine';
 import { evaluatePowerDynamics, ftOdds, indlelaLetter, indlelaPath, ppgSwing, streakSide } from '@/utils/powerDynamicsEngine';
+import { timeSpan } from '@/services/perfLog';
 import { evaluateProblemCauser } from '@/utils/problemCauser';
 import { excludeFixture, type TeamResult } from '@/utils/teamResults';
 
@@ -281,7 +282,7 @@ export default function MatchPowerDynamicsPanel({
 
   const pd = useMemo(
     () =>
-      evaluatePowerDynamics({
+      timeSpan('Power Dynamics', () => evaluatePowerDynamics({
         table: like,
         homeId,
         awayId,
@@ -296,7 +297,7 @@ export default function MatchPowerDynamicsPanel({
         probability,
         book1x2: book.prices,
         oddsPending: !oa1x2Ready && book.loading,
-      }),
+      })),
     [
       like,
       homeId,

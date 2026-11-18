@@ -5,7 +5,50 @@ import { useQuery } from '@tanstack/react-query';
 import { useLiveCompetitionFeed } from '@/hooks/useLiveCompetitions';
 import { fetchAllCompetitions, rateLimiterStats, type Competition } from '@/services/oddAlerts';
 import { trafficHistory, type TrafficRecord } from '@/services/apiTrafficLog';
+import { perfByName } from '@/services/perfLog';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
+
+/** Group a request path into a user-facing feature/endpoint name. */
+function endpointLabel(path: string): string {
+  if (path.startsWith('competitions')) return 'Leagues catalogue';
+  if (path.startsWith('countries')) return 'Countries';
+  if (path === 'fixtures/live') return 'Live scores';
+  if (path.startsWith('fixtures/upcoming')) return 'Upcoming fixtures';
+  if (path.startsWith('fixtures/between')) return 'Season fixtures';
+  if (path.startsWith('fixtures')) return 'Fixtures';
+  if (path.startsWith('stats')) return 'Stats';
+  if (path.startsWith('standings')) return 'Standings';
+  if (path.startsWith('players')) return 'Players';
+  if (path.startsWith('odds')) return 'Odds';
+  if (path.startsWith('value')) return 'Value bets';
+  if (path.startsWith('probability')) return 'Probability';
+  if (path.startsWith('predictions')) return 'Predictions';
+  return path.split('/')[0] || 'Other';
+}
+
+type EndpointAgg = { name: string; count: number; avg: number; p95: number };
+function queryByEndpoint(rows: readonly TrafficRecord[]): EndpointAgg[] {
+  const client = rows.filter((r) => r.side === 'client').slice(-200);
+  const by = new Map<string, number[]>();
+  for (const r of client) {
+    if (!Number.isFinite(r.durationMs)) continue;
+    const k = endpointLabel(r.path);
+    const arr = by.get(k) ?? [];
+    arr.push(r.durationMs);
+    by.set(k, arr);
+  }
+  const out: EndpointAgg[] = [];
+  for (const [name, arr] of by) {
+    const sorted = [...arr].sort((a, b) => a - b);
+    out.push({
+      name,
+      count: arr.length,
+      avg: Math.round(arr.reduce((x, y) => x + y, 0) / arr.length),
+      p95: Math.round(sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))]),
+    });
+  }
+  return out.sort((a, b) => b.avg - a.avg);
+}
 
 /** Catalogue counts derived from the full competitions feed. */
 type Catalogue = {
@@ -99,6 +142,8 @@ export default function ApiMonitorPanel() {
   }, []);
   const perf = perfStats(trafficHistory());
   const gate = rateLimiterStats();
+  const calc = perfByName();                       // per-feature calculation time
+  const endpoints = queryByEndpoint(trafficHistory()); // per-endpoint query time
   const cat = useMemo(() => (comp.data ? catalogueStats(comp.data) : null), [comp.data]);
 
   // Query-health read from the client-side rate gate.
@@ -173,9 +218,41 @@ export default function ApiMonitorPanel() {
         </Text>
       </View>
 
+      {/* Per-feature calculation time + per-endpoint query time. */}
+      {calc.length > 0 || endpoints.length > 0 ? (
+        <View style={styles.timingWrap}>
+          <View style={styles.timingCol}>
+            <Text style={styles.timingHead}>Calculation time · per feature</Text>
+            {calc.length === 0 ? (
+              <Text style={styles.timingEmpty}>Open Stats, Strategy Builder or Power Dynamics to measure.</Text>
+            ) : calc.slice(0, 6).map((c) => <TimingRow key={c.name} name={c.name} avg={c.avg} p95={c.p95} count={c.count} />)}
+          </View>
+          <View style={styles.timingCol}>
+            <Text style={styles.timingHead}>Query time · by endpoint</Text>
+            {endpoints.length === 0 ? (
+              <Text style={styles.timingEmpty}>No requests yet this session.</Text>
+            ) : endpoints.slice(0, 6).map((c) => <TimingRow key={c.name} name={c.name} avg={c.avg} p95={c.p95} count={c.count} />)}
+          </View>
+        </View>
+      ) : null}
+
       <Text style={styles.foot}>
         Catalogue from the OddAlerts competitions feed · performance measured from this session&apos;s live requests
-        {perf.sample ? ` (last ${perf.sample})` : ''}. Requests are paced under 300/min with retries and a 429 cooldown.
+        {perf.sample ? ` (last ${perf.sample})` : ''}. Calculation time is how long each feature takes to compute; query
+        time is the API round-trip. Requests are paced under 300/min with retries and a 429 cooldown.
+      </Text>
+    </View>
+  );
+}
+
+function TimingRow({ name, avg, p95, count }: { name: string; avg: number; p95: number; count: number }) {
+  const tone = avg < 150 ? theme.accentGreen : avg < 800 ? theme.yellow : theme.loss;
+  return (
+    <View style={styles.timingRow}>
+      <Text style={styles.timingName} numberOfLines={1}>{name}</Text>
+      <Text style={styles.timingVal}>
+        <Text style={{ color: tone, fontFamily: fonts.bodySemiBold }}>{avg}ms</Text>
+        <Text style={styles.timingSub}> · p95 {p95} · {count}×</Text>
       </Text>
     </View>
   );
@@ -257,6 +334,15 @@ const styles = StyleSheet.create({
   gateBarTrack: { flexGrow: 1, flexBasis: 120, height: 6, borderRadius: 999, backgroundColor: theme.surfaceMuted, overflow: 'hidden' },
   gateBarFill: { height: '100%', borderRadius: 999 },
   gateText: { fontFamily: fonts.body, fontSize: 10, color: theme.textMuted },
+
+  timingWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, borderTopWidth: layout.borderWidth, borderTopColor: theme.border, paddingTop: spacing.sm },
+  timingCol: { flexGrow: 1, flexBasis: 220, minWidth: 180, gap: 3 },
+  timingHead: { fontFamily: fonts.bodySemiBold, fontSize: 10, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 },
+  timingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+  timingName: { flex: 1, fontFamily: fonts.bodyMedium, fontSize: 12, color: theme.textPrimary },
+  timingVal: { fontFamily: fonts.body, fontSize: 11, color: theme.textPrimary },
+  timingSub: { fontFamily: fonts.body, fontSize: 10, color: theme.textMuted },
+  timingEmpty: { fontFamily: fonts.body, fontSize: 11, color: theme.textFaint, fontStyle: 'italic' },
 
   foot: { fontFamily: fonts.body, fontSize: 10, lineHeight: 14, color: theme.textMuted },
 });
