@@ -108,6 +108,7 @@ export type OddsFusionRow = {
 
 export type AnalyticsTab =
   | 'overview'
+  | 'apihealth'
   | 'characters'
   | 'grading'
   | 'grading2'

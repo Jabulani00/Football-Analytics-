@@ -10,6 +10,7 @@ import HollywoodOddsPanel from '@/components/analytics/HollywoodOddsPanel';
 import OddsFusionPanel from '@/components/analytics/OddsFusionPanel';
 import HollywoodFusionBrowser from '@/components/analytics/HollywoodFusionBrowser';
 import OverviewPanel from '@/components/analytics/OverviewPanel';
+import ApiDashboardPanel from '@/components/analytics/ApiDashboardPanel';
 import StatsCharactersPanel from '@/components/analytics/StatsCharactersPanel';
 import PredictionsPanel from '@/components/analytics/PredictionsPanel';
 import SmartFinderPanel from '@/components/analytics/SmartFinderPanel';
@@ -56,6 +57,8 @@ function PanelForTab({
   switch (tab) {
     case 'overview':
       return <OverviewPanel />;
+    case 'apihealth':
+      return <ApiDashboardPanel />;
     case 'characters':
       return <StatsCharactersPanel />;
     case 'grading':
