@@ -155,6 +155,9 @@ export default function PowerDynamicCallSearch({
       hits: scorePowerDynamicLibrary(group.ids, dateKey).filter((hit) => hit.percent > 0),
     }));
   }, [library.phase, library.revision, selectionKey, dateKey, selectionGroups]);
+  const rankedHits = sectorHits
+    .flatMap((group) => group.hits.map((hit) => ({ hit, sectorName: group.sectorName, options: group.options })))
+    .sort((a, b) => b.hit.percent - a.hit.percent || a.hit.name.localeCompare(b.hit.name));
   const needle = query.trim().toLowerCase();
   const visibleGroups = groups
     .map((group) => ({
@@ -400,45 +403,53 @@ export default function PowerDynamicCallSearch({
         <Text style={styles.readyNote}>This selection is kept. Results show when the leagues are ready.</Text>
       ) : null}
 
-      {library.phase === 'ready' && sectorHits.length > 0 ? (
+      {library.phase === 'ready' && selected.length > 0 ? (
         <View style={styles.list}>
-          {sectorHits.map((group) => (
-            <View key={group.sectorId} style={styles.sectorBlock}>
-              <View style={styles.banner}>
-                <Text style={styles.bannerText}>{group.sectorName}</Text>
-                <Text style={styles.bannerCount}>
-                  {group.hits.length} fixture{group.hits.length === 1 ? '' : 's'}
-                </Text>
-              </View>
-              {group.hits.length === 0 ? <Text style={styles.empty}>No fixture matches this sector.</Text> : null}
-              {group.hits.slice(0, 250).map((hit, index) => {
-                const [home, away] = hit.name.split(' vs ');
-                return (
-                  <Pressable
-                    key={`${group.sectorId}-${hit.fixtureId}-${hit.aspectId}`}
-                    onPress={() => setOpenHit(hit)}
-                    style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Open ${hit.name}, ${group.sectorName}, ${hit.aspectLabel}`}
-                  >
-                    <Text style={styles.cardIndex}>{index + 1}</Text>
-                    <View style={styles.cardBody}>
-                      <Text style={styles.belongs} numberOfLines={2}>{group.sectorName} · {hit.aspectLabel}</Text>
-                      <Text style={styles.home} numberOfLines={1}>{home || hit.name}</Text>
-                      {away ? <Text style={styles.away} numberOfLines={1}>{away}</Text> : null}
-                      <Text style={styles.meta} numberOfLines={1}>
-                        {hit.country} · {hit.league} · {hit.when}
-                      </Text>
-                      <Text style={styles.reason} numberOfLines={4}>{hit.reason}</Text>
+          <Text style={styles.count}>
+            {rankedHits.length} fixture{rankedHits.length === 1 ? '' : 's'}
+          </Text>
+          {rankedHits.length === 0 ? <Text style={styles.empty}>No fixture matches this call.</Text> : null}
+          {rankedHits.slice(0, 250).map((row, index) => {
+            const [home, away] = row.hit.name.split(' vs ');
+            return (
+              <Pressable
+                key={`${row.hit.fixtureId}-${row.hit.aspectId}-${index}`}
+                onPress={() => setOpenHit(row.hit)}
+                style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+                accessibilityRole="button"
+                accessibilityLabel={`Open ${row.hit.name}, ${row.hit.percent} percent, ${row.sectorName}`}
+              >
+                <Text style={styles.cardIndex}>{index + 1}</Text>
+                <View style={styles.cardBody}>
+                  <Text style={styles.percent}>{row.hit.percent}%</Text>
+                  <Text style={styles.home} numberOfLines={1}>{home || row.hit.name}</Text>
+                  {away ? <Text style={styles.away} numberOfLines={1}>{away}</Text> : null}
+                  <Text style={styles.meta} numberOfLines={1}>
+                    {row.hit.country} · {row.hit.league} · {row.hit.when}
+                  </Text>
+                  <Text style={styles.reason} numberOfLines={4}>{row.hit.reason}</Text>
+                </View>
+                <View style={styles.resultBanner}>
+                  <Text style={styles.resultSector} numberOfLines={2}>{row.sectorName}</Text>
+                  {row.options.map((option) => (
+                    <View key={option.functionId} style={styles.resultOption}>
+                      <Text style={styles.kindOption}>Option</Text>
+                      <Text style={styles.resultOptionLabel} numberOfLines={2}>{option.label}</Text>
+                      {option.aspects.map((aspect) => (
+                        <View key={aspect.id} style={styles.resultIn}>
+                          <Text style={styles.kindIn}>In-option</Text>
+                          <Text style={styles.resultInLabel} numberOfLines={3}>{aspect.label}</Text>
+                        </View>
+                      ))}
                     </View>
-                  </Pressable>
-                );
-              })}
-              {group.hits.length > 250 ? (
-                <Text style={styles.more}>Showing the first 250 fixtures in {group.sectorName}.</Text>
-              ) : null}
-            </View>
-          ))}
+                  ))}
+                </View>
+              </Pressable>
+            );
+          })}
+          {rankedHits.length > 250 ? (
+            <Text style={styles.more}>Showing the first 250 fixtures.</Text>
+          ) : null}
         </View>
       ) : null}
       {openHit ? <PowerDynamicFixtureModal hit={openHit} onClose={() => setOpenHit(null)} /> : null}
@@ -632,21 +643,23 @@ const styles = StyleSheet.create({
     backgroundColor: theme.surface,
   },
   clearText: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: theme.loss },
-  banner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
-    backgroundColor: 'rgba(5, 150, 105, 0.12)',
+  resultBanner: {
+    width: 168,
+    flexShrink: 0,
+    alignSelf: 'stretch',
+    gap: 4,
+    backgroundColor: 'rgba(5, 150, 105, 0.1)',
     borderLeftWidth: 3,
     borderLeftColor: theme.accentGreen,
     borderRadius: layout.borderRadius,
-    paddingVertical: 8,
-    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    paddingHorizontal: 6,
   },
-  bannerText: { flex: 1, fontFamily: fonts.bodySemiBold, fontSize: 14, color: theme.textPrimary },
-  bannerCount: { fontFamily: fonts.bodyMedium, fontSize: 12, color: theme.textMuted },
-  sectorBlock: { gap: spacing.sm },
+  resultSector: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: theme.textPrimary },
+  resultOption: { gap: 2 },
+  resultOptionLabel: { fontFamily: fonts.bodySemiBold, fontSize: 11, lineHeight: 14, color: theme.accentPurple },
+  resultIn: { gap: 2 },
+  resultInLabel: { fontFamily: fonts.body, fontSize: 11, lineHeight: 14, color: theme.textPrimary },
   stage: { marginTop: spacing.xs },
   progress: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm },
   progressText: { fontFamily: fonts.body, fontSize: 13, color: theme.textMuted, flex: 1 },
@@ -668,7 +681,7 @@ const styles = StyleSheet.create({
   cardPressed: { backgroundColor: theme.surfaceHover },
   cardIndex: { width: 22, fontFamily: fonts.bodySemiBold, fontSize: 13, color: theme.textMuted, paddingTop: 2 },
   cardBody: { flex: 1, minWidth: 0 },
-  belongs: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: theme.accentGreen, marginBottom: 2 },
+  percent: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: theme.accentGreen, marginBottom: 2 },
   home: { fontFamily: fonts.bodySemiBold, fontSize: 15, color: theme.textPrimary },
   away: { fontFamily: fonts.bodyMedium, fontSize: 14, color: theme.textPrimary, marginTop: 1 },
   meta: { fontFamily: fonts.bodyMedium, fontSize: 12, color: theme.textPrimary, opacity: 0.75, marginTop: 4 },
