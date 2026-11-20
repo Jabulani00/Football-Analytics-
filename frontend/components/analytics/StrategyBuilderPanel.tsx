@@ -4,7 +4,9 @@ import { Platform } from 'react-native';
 import type { StyleProp, ViewStyle } from 'react-native';
 import { useQueries, useQuery } from '@tanstack/react-query';
 
+import PowerDynamicCallSearch from '@/components/match-detail/PowerDynamicCallSearch';
 import DragScroll from '@/components/shared/DragScroll';
+import SubTabBar from '@/components/shared/SubTabBar';
 import FilterDropdown from '@/components/shared/FilterDropdown';
 import PageControls, { PAGE_SIZE } from '@/components/shared/PageControls';
 import { useLiveCompetitionFeed, type LiveCompetition } from '@/hooks/useLiveCompetitions';
@@ -191,6 +193,28 @@ function singleFromCondition(c: Condition): Partial<SingleState> {
   };
 }
 
+function PowerDynamicsInBuilder() {
+  const [source, setSource] = useState<'sectors' | 'calculations'>('sectors');
+  return (
+    <View style={styles.powerWrap}>
+      <SubTabBar
+        tabs={[
+          { id: 'sectors', label: 'Sectors' },
+          { id: 'calculations', label: 'Power dynamic calculations' },
+        ]}
+        active={source}
+        onChange={setSource}
+      />
+      <Text style={styles.callHint}>
+        {source === 'calculations'
+          ? 'Calls from the calculations, core sectors, Y sectors, and ticks. A tick means the call holds. A cross means it does not.'
+          : 'Choose a sector, then an option and its in-options. Ticks in other sectors stay on, and each sector lists its own fixtures.'}
+      </Text>
+      <PowerDynamicCallSearch key={source} heading={false} source={source} />
+    </View>
+  );
+}
+
 export default function StrategyBuilderPanel() {
   const { width } = useWindowDimensions();
   const narrow = width < 720;
@@ -250,7 +274,7 @@ export default function StrategyBuilderPanel() {
   const [buildMode, setBuildMode] = useState<'combined' | 'split'>('combined');
   // The call type: a Peg (graded multi-rule strategy), a Single (one numeric call),
   // or a Combo (one strategy mixing graded rules and numeric rules).
-  const [callMode, setCallMode] = useState<'peg' | 'single' | 'combo'>('peg');
+  const [callMode, setCallMode] = useState<'peg' | 'single' | 'combo' | 'power'>('peg');
   const [singleMode, setSingleMode] = useState<'stat' | 'results'>('stat');
   // In Combo, each added rule is either a graded call or a numeric call.
   const [comboKind, setComboKind] = useState<'graded' | 'numeric'>('graded');
@@ -560,7 +584,17 @@ export default function StrategyBuilderPanel() {
 
   const addCondition = (c: Condition) => { setConditions((cur) => [...cur, c]); setActiveId(null); };
   const onSingleConfig = useCallback((s: SingleState) => setSingle(s), []);
-  const switchCall = (m: 'peg' | 'single' | 'combo') => { setCallMode(m); setConditions([]); setActiveId(null); if (m !== 'peg') { setResultMode('teams'); setBuildMode('combined'); } };
+  const switchCall = (m: 'peg' | 'single' | 'combo' | 'power') => {
+    if (m === callMode) return;
+    if (m === 'power' || callMode === 'power') {
+      setCallMode(m);
+      return;
+    }
+    setCallMode(m);
+    setConditions([]);
+    setActiveId(null);
+    if (m !== 'peg') { setResultMode('teams'); setBuildMode('combined'); }
+  };
   const removeCondition = (id: string) => { setConditions((cur) => cur.filter((c) => c.id !== id)); setActiveId(null); };
   const toggleNot = (id: string) => { setConditions((cur) => cur.map((c) => (c.id === id ? { ...c, not: !c.not } : c))); setActiveId(null); };
   const clearAll = () => { setConditions([]); setChildOfId(null); setFLeague(ALL); setFDimension(ALL); setFColor(ALL); setFMinGames(0); setFMinMatch(0); setFGroup(ALL); setFColumn(ALL); setFLetter(ALL); setFSource(ALL); setFDominance(ALL); setActiveId(null); };
@@ -692,8 +726,15 @@ export default function StrategyBuilderPanel() {
           );
         })}
       </View>
+      <View style={styles.callRow}>
+        <Pressable accessibilityRole="button" accessibilityState={{ selected: callMode === 'power' }} onPress={() => switchCall('power')} style={[styles.callBtn, callMode === 'power' && styles.callBtnOn]}>
+          <Text style={[styles.callBtnText, callMode === 'power' && styles.callBtnTextOn]}>Power dynamics</Text>
+        </Pressable>
+      </View>
       <Text style={styles.callHint}>
-        {callMode === 'peg'
+        {callMode === 'power'
+          ? 'Power dynamics — the same calls as the Power dynamics page. Tick in-options in any sector. Each sector keeps its fixtures, and the sector name stays on the results.'
+          : callMode === 'peg'
           ? 'Peg — the graded strategy: combine several rules (AND / OR) on the combined-list grades. Open a qualifying team to see its last 5 · 8 · 10 · 15 · 20 results and how it did on the stat.'
           : callMode === 'combo'
             ? 'Combo — one strategy mixing both: add Peg (graded) rules and Single (numbers) rules, combined with AND / OR. Each rule’s Venue binds its fixture side, so Home and Away rules sync onto the right team.'
@@ -706,7 +747,9 @@ export default function StrategyBuilderPanel() {
         </View>
       ) : null}
 
-      {callMode === 'peg' ? (
+      {callMode === 'power' ? (
+        <PowerDynamicsInBuilder />
+      ) : callMode === 'peg' ? (
         <>
           {/* Quick strategies — one-click presets */}
           <View style={styles.presetCard}>
@@ -858,7 +901,7 @@ export default function StrategyBuilderPanel() {
       )}
 
       {/* B. Conditions + logic */}
-      {callMode === 'single' ? null : conditions.length > 0 ? (
+      {callMode === 'single' || callMode === 'power' ? null : conditions.length > 0 ? (
         <View style={styles.conditionsCard}>
           <View style={styles.conditionsHead}>
             <Text style={styles.sectionLabel}>Rules</Text>
@@ -939,7 +982,7 @@ export default function StrategyBuilderPanel() {
       )}
 
       {/* Status */}
-      {callMode === 'single' ? null : (
+      {callMode === 'single' || callMode === 'power' ? null : (
       <View style={styles.statusRow}>
         {loading || (resultMode === 'fixtures' && up.loading) ? (
           <><ActivityIndicator size="small" color={theme.accentGreen} /><Text style={styles.statusMuted}>Querying {liveLeagues.length} leagues…</Text></>
@@ -954,7 +997,7 @@ export default function StrategyBuilderPanel() {
       )}
 
       {/* ===== Teams mode ===== */}
-      {resultMode === 'teams' && conditions.length > 0 && !loading ? (
+      {callMode !== 'power' && resultMode === 'teams' && conditions.length > 0 && !loading ? (
         <>
           <View style={styles.summaryRow}>
             <SummaryTile label="Teams" value={summary.teams} color={theme.accentBlue} />
@@ -1000,7 +1043,7 @@ export default function StrategyBuilderPanel() {
       ) : null}
 
       {/* ===== Fixtures mode · grade qualification ===== */}
-      {resultMode === 'fixtures' && !loading && !up.loading ? (
+      {callMode !== 'power' && resultMode === 'fixtures' && !loading && !up.loading ? (
         <>
           <View style={styles.filterCard}>
             <View style={[styles.filterRow, narrow && styles.filterCol]}>
@@ -2292,6 +2335,7 @@ const styles = StyleSheet.create({
   callBtnText: { fontFamily: fonts.bodySemiBold, fontSize: 14, color: theme.textMuted },
   callBtnTextOn: { color: theme.accentPurple },
   callHint: { fontFamily: fonts.body, fontSize: 11, lineHeight: 16, color: theme.textMuted, marginBottom: spacing.sm },
+  powerWrap: { gap: spacing.sm, marginBottom: spacing.md },
   // Last-game results explorer
   loadingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: spacing.sm },
   lreRow: { borderWidth: layout.borderWidth, borderColor: theme.border, borderRadius: layout.borderRadius, backgroundColor: theme.surface, padding: spacing.sm, marginTop: spacing.xs, gap: 3 },
