@@ -798,11 +798,32 @@ function rawMeasureAspects(): MeasureAspect[] {
         token: id,
       }),
     ),
+    ...[
+      ['t1-negative-t2-positive', 'T1 negative vs T2 positive', 'Backing. T1 is negative and T2 is positive.'],
+      ['t1-negative-t2-neutral', 'T1 negative vs T2 neutral', 'Backing. T1 is negative and T2 is neutral.'],
+      ['t1-neutral-t2-positive', 'T1 neutral vs T2 positive', 'Backing. T1 is neutral and T2 is positive.'],
+      ['t1-positive-t2-negative', 'T1 positive vs T2 negative', 'Backing. T1 is positive and T2 is negative.'],
+      ['t1-positive-t2-neutral', 'T1 positive vs T2 neutral', 'Backing. T1 is positive and T2 is neutral.'],
+      ['t1-neutral-t2-negative', 'T1 neutral vs T2 negative', 'Backing. T1 is neutral and T2 is negative.'],
+    ].map(([id, label, detail]) =>
+      aspect({
+        id: `overview-${id}`,
+        tabId: 'last5',
+        functionId: 'backing',
+        label,
+        detail,
+        needsFixtures: true,
+        binary: true,
+        pair: true,
+        measure: 'fixture-overview',
+        token: id,
+      }),
+    ),
     ...Array.from({ length: 10 }, (_, spaces) =>
       aspect({
         id: `label-spaces-${spaces}`,
         tabId: 'last5',
-        functionId: 'label_change',
+        functionId: 'spaces',
         label: spaces === 1 ? '1 space between T1 and T2' : `${spaces} spaces between T1 and T2`,
         detail: 'Places between the two sides on the label-change number line. The places they sit on are not counted. The four neutral places count as one space.',
         needsFixtures: true,
@@ -815,7 +836,7 @@ function rawMeasureAspects(): MeasureAspect[] {
     aspect({
       id: 'label-spaces-3-plus',
       tabId: 'last5',
-      functionId: 'label_change',
+      functionId: 'spaces',
       label: '3 or more spaces between T1 and T2',
       detail: 'The places between the two sides add up to 3 or more. The four neutral places count as one space.',
       needsFixtures: true,
@@ -2015,6 +2036,12 @@ export function scoreMeasure(
         : token === 't1-support' ? overview.support === 't1'
         : token === 't2-support' ? overview.support === 't2'
         : token === 'both-support' ? overview.support === 'both'
+        : token === 't1-negative-t2-positive' ? overview.t1Pole === 'negative' && overview.t2Pole === 'positive'
+        : token === 't1-negative-t2-neutral' ? overview.t1Pole === 'negative' && overview.t2Pole === 'neutral'
+        : token === 't1-neutral-t2-positive' ? overview.t1Pole === 'neutral' && overview.t2Pole === 'positive'
+        : token === 't1-positive-t2-negative' ? overview.t1Pole === 'positive' && overview.t2Pole === 'negative'
+        : token === 't1-positive-t2-neutral' ? overview.t1Pole === 'positive' && overview.t2Pole === 'neutral'
+        : token === 't1-neutral-t2-negative' ? overview.t1Pole === 'neutral' && overview.t2Pole === 'negative'
         : false;
       return fit(on ? 100 : 0, overview.detail);
     }

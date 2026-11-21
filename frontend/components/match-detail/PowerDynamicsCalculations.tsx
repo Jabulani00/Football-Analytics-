@@ -369,9 +369,9 @@ function WonSectors({
 function coreWinner(row: CalculationSector): { aside: string; band: MarginBandId } {
   const left = row.t1 ?? 0;
   const right = row.t2 ?? 0;
-  if (left === 0 && right === 0) return { aside: 'Poor · 0', band: 'low' };
-  if (left > right) return { aside: `T1 · ${left >= 3 ? 'Clear' : 'Mediocre'} · ${fmt(left)}`, band: left >= 3 ? 'high' : 'mid' };
-  if (right > left) return { aside: `T2 · ${right >= 3 ? 'Clear' : 'Mediocre'} · ${fmt(right)}`, band: right >= 3 ? 'high' : 'mid' };
+  if (left === 0 && right === 0) return { aside: 'Poor separation · 0', band: 'low' };
+  if (left > right) return { aside: `T1 wins · ${left >= 3 ? 'Clear separation' : 'Mediocre separation'} · ${fmt(left)}`, band: left >= 3 ? 'high' : 'mid' };
+  if (right > left) return { aside: `T2 wins · ${right >= 3 ? 'Clear separation' : 'Mediocre separation'} · ${fmt(right)}`, band: right >= 3 ? 'high' : 'mid' };
   return { aside: 'Level', band: 'low' };
 }
 
@@ -421,15 +421,20 @@ function CoreSectorsButton({
         <Text style={styles.detail}>
           {t1Name} {fmt(calc.calc2.y.t1)} · {t2Name} {fmt(calc.calc2.y.t2)} · {fmt(calc.calc2.y.t1 + calc.calc2.y.t2)} of {fmt(Y_POINTS_CAP)}. {trustSentence(calc.calc2.y.t1, calc.calc2.y.t2, t1Name, t2Name)}
         </Text>
-        {y.map((row) => (
-          <SectorFact
-            key={row.id}
-            label={row.label}
-            aside={(row.t1 ?? 0) > 0 || (row.t2 ?? 0) > 0 ? 'On · 0.5' : 'Off · 0'}
-            note={`${t1Name} ${fmt(row.t1)} · ${t2Name} ${fmt(row.t2)}`}
-            band={(row.t1 ?? 0) > 0 || (row.t2 ?? 0) > 0 ? 'low' : 'low'}
-          />
-        ))}
+        {y.map((row) => {
+          const left = row.t1 ?? 0;
+          const right = row.t2 ?? 0;
+          const aside = left <= 0 && right <= 0 ? 'Off · 0' : left > right ? 'T1 on · 0.5' : right > left ? 'T2 on · 0.5' : 'Both on · 0.5';
+          return (
+            <SectorFact
+              key={row.id}
+              label={row.label}
+              aside={aside}
+              note={`${t1Name} ${fmt(row.t1)} · ${t2Name} ${fmt(row.t2)}`}
+              band={left > 0 || right > 0 ? 'low' : 'low'}
+            />
+          );
+        })}
         <Text style={styles.bandTitle}>Combined</Text>
         <Text style={styles.detail}>
           {t1Name} {fmt(calc.calc2.t1)} · {t2Name} {fmt(calc.calc2.t2)} · {fmt(calc.calc2.t1 + calc.calc2.t2)} of {fmt(MIX_POINTS_CAP)}. {trustSentence(calc.calc2.t1, calc.calc2.t2, t1Name, t2Name)}
@@ -485,6 +490,15 @@ function ValueCell({ value, hit }: { value: number | null; hit: boolean }) {
   );
 }
 
+function yWinner(row: CalculationSector): string {
+  const left = row.t1 ?? 0;
+  const right = row.t2 ?? 0;
+  if (left <= 0 && right <= 0) return 'Off · 0';
+  if (left > right) return 'T1 on · 0.5';
+  if (right > left) return 'T2 on · 0.5';
+  return 'Both on · 0.5';
+}
+
 function SectorRow({ row, picked }: { row: CalculationSector; picked?: boolean }) {
   return (
     <View style={[styles.sector, picked && styles.picked]}>
@@ -506,6 +520,7 @@ function SectorRow({ row, picked }: { row: CalculationSector; picked?: boolean }
           <ValueCell value={row.t2} hit={(row.t2 ?? 0) >= SECTOR_HIT} />
         </View>
       </View>
+      <Text style={styles.detail}>{row.group === 'core' ? coreWinner(row).aside : yWinner(row)}</Text>
       {row.detail ? <Text style={styles.detail}>{row.detail}</Text> : null}
       {row.parts.length > 0 ? (
         <View style={styles.parts}>

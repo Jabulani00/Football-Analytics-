@@ -4,6 +4,7 @@
  */
 import type { ImbangiScheduleMatch } from '@/utils/imbangiEngine';
 import { buildInitialState } from '@/utils/last5Analysis';
+import { changePlaceSpaces, type Last5Overview } from '@/utils/last5Sections';
 import { resultsFromSeasonMatches } from '@/utils/last6Form';
 import type { StandingLike } from '@/utils/motivationEngine';
 import { evaluatePowerDynamics, indlelaPath, ppgSwing, streakSide } from '@/utils/powerDynamicsEngine';
@@ -121,29 +122,79 @@ function overviewReads(): CalculationCallAspect[] {
   return rows.map(([token, label, detail]) => read(`calc-overview-${token}`, 'overview', label, detail));
 }
 
+function backingReads(): CalculationCallAspect[] {
+  return BACKING_PAIRS.map(([token, label, detail]) => read(`calc-overview-${token}`, 'backing', label, detail));
+}
+
+function spacesReads(): CalculationCallAspect[] {
+  const rows: [string, string, string][] = [
+    ...Array.from({ length: 10 }, (_, spaces): [string, string, string] => [
+      `spaces-${spaces}`,
+      spaces === 1 ? '1 space between T1 and T2' : `${spaces} spaces between T1 and T2`,
+      'Places between T1 and T2 on the last-5 number line. The four neutral places count as one space.',
+    ]),
+    ['spaces-3-plus', '3 or more spaces between T1 and T2', 'The places between T1 and T2 add up to 3 or more.'],
+  ];
+  return rows.map(([token, label, detail]) => read(`calc-overview-${token}`, 'spaces', label, detail));
+}
+
 function activityReads(): CalculationCallAspect[] {
   const stages = [
     ['core', 'Core'],
-    ['y', 'Y'],
-    ['mix', 'Combined'],
+    ['y', 'Y application'],
+    ['mix', 'Core + Y application'],
   ] as const;
   return stages.flatMap(([key, name]) => {
     const rows: CalculationCallAspect[] = [];
     for (const sideId of ['t1', 't2'] as const) {
       const who = sideId === 't1' ? 'T1' : 'T2';
+      const other = sideId === 't1' ? 'T2' : 'T1';
       rows.push(
-        read(`activity-${key}-${sideId}-high`, 'activity', `${who} ${name} is high amongst fixtures`, `${who}’s ${name} total is above the other fixtures on this day.`),
-        read(`activity-${key}-${sideId}-low`, 'activity', `${who} ${name} is low amongst fixtures`, `${who}’s ${name} total is below the other fixtures on this day.`),
-        read(`activity-${key}-${sideId}-bigger`, 'activity', `${who} ${name} is bigger`, `${who}’s ${name} total is higher than the other side in this fixture.`),
-        read(`activity-${key}-${sideId}-smaller`, 'activity', `${who} ${name} is smaller`, `${who}’s ${name} total is lower than the other side in this fixture.`),
+        read(`activity-${key}-${sideId}-high`, 'activity', `${who} is high amongst fixtures · ${name}`, `${who}’s ${name} total is above the other fixtures on this day.`),
+        read(`activity-${key}-${sideId}-low`, 'activity', `${who} is low amongst fixtures · ${name}`, `${who}’s ${name} total is below the other fixtures on this day.`),
+        read(`activity-${key}-${sideId}-bigger`, 'activity', `${who} is bigger than ${other} · ${name}`, `${who}’s ${name} total is higher than ${other} in this fixture.`),
+        read(`activity-${key}-${sideId}-smaller`, 'activity', `${who} is smaller than ${other} · ${name}`, `${who}’s ${name} total is lower than ${other} in this fixture.`),
       );
     }
     rows.push(
-      read(`activity-${key}-big`, 'activity', `${name} difference is trusted`, `${name} totals differ by 3 or more, so the higher side can be trusted.`),
-      read(`activity-${key}-small`, 'activity', `${name} difference is not trusted`, `${name} totals differ by 2 or less, so the higher side is not trusted.`),
+      read(`activity-${key}-big`, 'activity', `Difference is trusted · ${name}`, `${name} totals differ by 3 or more, so the higher side can be trusted.`),
+      read(`activity-${key}-small`, 'activity', `Difference is not trusted · ${name}`, `${name} totals differ by 2 or less, so the higher side is not trusted.`),
     );
     return rows;
   });
+}
+
+function separationReads(): CalculationCallAspect[] {
+  return CORE_SECTORS.flatMap(([id, label]) => [
+    read(`sector-${id}-t1-clear`, 'separation', `${label} · T1 wins · clear separation`, `${label}. T1 wins the sector by a clear separation, worth 3.`),
+    read(`sector-${id}-t2-clear`, 'separation', `${label} · T2 wins · clear separation`, `${label}. T2 wins the sector by a clear separation, worth 3.`),
+    read(`sector-${id}-t1-mediocre`, 'separation', `${label} · T1 wins · mediocre separation`, `${label}. T1 wins the sector by a mediocre separation, worth 1.`),
+    read(`sector-${id}-t2-mediocre`, 'separation', `${label} · T2 wins · mediocre separation`, `${label}. T2 wins the sector by a mediocre separation, worth 1.`),
+    read(`sector-${id}-poor`, 'separation', `${label} · poor separation`, `${label}. Neither side wins. Poor separation is 0.`),
+  ]);
+}
+
+const BACKING_PAIRS: [string, string, string][] = [
+  ['t1-negative-t2-positive', 'T1 negative vs T2 positive', 'Backing. T1 is negative and T2 is positive.'],
+  ['t1-negative-t2-neutral', 'T1 negative vs T2 neutral', 'Backing. T1 is negative and T2 is neutral.'],
+  ['t1-neutral-t2-positive', 'T1 neutral vs T2 positive', 'Backing. T1 is neutral and T2 is positive.'],
+  ['t1-positive-t2-negative', 'T1 positive vs T2 negative', 'Backing. T1 is positive and T2 is negative.'],
+  ['t1-positive-t2-neutral', 'T1 positive vs T2 neutral', 'Backing. T1 is positive and T2 is neutral.'],
+  ['t1-neutral-t2-negative', 'T1 neutral vs T2 negative', 'Backing. T1 is neutral and T2 is negative.'],
+];
+
+function backingOn(overview: Last5Overview, token: string): boolean | null {
+  if (token === 't1-negative-t2-positive') return overview.t1Pole === 'negative' && overview.t2Pole === 'positive';
+  if (token === 't1-negative-t2-neutral') return overview.t1Pole === 'negative' && overview.t2Pole === 'neutral';
+  if (token === 't1-neutral-t2-positive') return overview.t1Pole === 'neutral' && overview.t2Pole === 'positive';
+  if (token === 't1-positive-t2-negative') return overview.t1Pole === 'positive' && overview.t2Pole === 'negative';
+  if (token === 't1-positive-t2-neutral') return overview.t1Pole === 'positive' && overview.t2Pole === 'neutral';
+  if (token === 't1-neutral-t2-negative') return overview.t1Pole === 'neutral' && overview.t2Pole === 'negative';
+  if (!token.startsWith('spaces-')) return null;
+  const raw = token.slice('spaces-'.length);
+  const spaces = changePlaceSpaces(overview.t1Place, overview.t2Place);
+  if (raw === '3-plus') return spaces >= 3;
+  return spaces === Number(raw);
 }
 
 function tickReads(): CalculationCallAspect[] {
@@ -264,6 +315,9 @@ const RAW_CALCULATION_ASPECTS: CalculationCallAspect[] = [
   ...totalExtremeReads(),
   ...activityReads(),
   ...overviewReads(),
+  ...backingReads(),
+  ...spacesReads(),
+  ...separationReads(),
   ...sectorReads('core', CORE_SECTORS),
   ...sectorReads('y', Y_SECTORS),
   ...tickReads(),
@@ -281,9 +335,12 @@ export const CALCULATION_CALL: PowerDynamicCallDef = {
   functions: [
     { id: 'calc1', label: 'Calculation 1', detail: 'Sectors of 6 or more.' },
     { id: 'calc2', label: 'Calculation 2', detail: 'Core total out of 24, Y total out of 2.5, then the two added together out of 26.5.' },
-    { id: 'activity', label: 'Fixture activity', detail: 'High or low amongst the day’s fixtures, bigger or smaller than the other side, and whether a difference of 3 or more can be trusted. Core, Y, and the combined total each have their own calls.' },
+    { id: 'activity', label: 'Fixture activity', detail: 'T1 or T2 high amongst fixtures, bigger or smaller than the other side, and whether the difference is trusted. Core, Y application, and Core + Y application each have their own calls.' },
     { id: 'overview', label: 'Last 5 overview', detail: 'T1 or T2 positive, negative, or neutral, who the last 5 supports, and who wins that sector.' },
+    { id: 'backing', label: 'Backing', detail: 'The pair itself: T1 negative vs T2 positive, and the other backing pairs.' },
+    { id: 'spaces', label: 'Spaces', detail: 'How many spaces sit between T1 and T2 on the last-5 number line, including 3 or more.' },
     { id: 'calc3', label: 'Calculation 3', detail: 'Sectors each side won, grouped as clear, mediocre, or a Y application.' },
+    { id: 'separation', label: 'Sector win', detail: 'T1 or T2 wins a named core sector, and whether that win is a clear separation or a mediocre separation.' },
     { id: 'core', label: 'Core sectors', detail: 'Baseline, importance of 3 points, last 5, form, H2H, problem causer, imbangi, and home/away strong.' },
     { id: 'y', label: 'Y sectors', detail: 'Indlela, Bhozoma, child beater, sudden drop, and sudden pick up. Each one is 0.5 when it is on.' },
     { id: 'ticks', label: 'Ticks', detail: 'Lost 6, won 6, never twice, and contested league.' },
@@ -321,8 +378,10 @@ function scoreCalculationBase(id: string, calc: PowerDynamicsCalculation): Calcu
     const token = id.slice('calc-overview-'.length);
     const overview = calc.last5;
     if (!overview) return hit(false, 'No last 5 overview');
-    const on =
-      token === 't1-positive' ? overview.t1Pole === 'positive'
+    const backing = backingOn(overview, token);
+    const on = backing != null
+      ? backing
+      : token === 't1-positive' ? overview.t1Pole === 'positive'
       : token === 't2-positive' ? overview.t2Pole === 'positive'
       : token === 't1-negative' ? overview.t1Pole === 'negative'
       : token === 't2-negative' ? overview.t2Pole === 'negative'
@@ -334,7 +393,9 @@ function scoreCalculationBase(id: string, calc: PowerDynamicsCalculation): Calcu
       : token === 't1-wins' ? overview.winner === 't1'
       : token === 't2-wins' ? overview.winner === 't2'
       : false;
-    return hit(on, overview.detail);
+    const spaces = changePlaceSpaces(overview.t1Place, overview.t2Place);
+    const spaceWord = spaces === 1 ? '1 space' : `${spaces} spaces`;
+    return hit(on, `${overview.detail} ${spaceWord} between T1 and T2.`);
   }
 
   if (id === 'calc1-t1') return hit(c1t1 > c1t2, c1);
@@ -367,12 +428,34 @@ function scoreCalculationBase(id: string, calc: PowerDynamicsCalculation): Calcu
   }
 
   const band = id.match(/^calc3-(t1|t2)-(high|mid|low)$/);
-  if (!band) return scoreSector(id, calc) ?? scoreTick(id, calc);
+  if (!band) return scoreSeparation(id, calc) ?? scoreSector(id, calc) ?? scoreTick(id, calc);
   const sideId = band[1] as 't1' | 't2';
   const bandId = band[2] as MarginBandId;
   const count = bandCount(calc, sideId, bandId);
   const word = bandId === 'high' ? '6 or more' : bandId === 'mid' ? '4 to 5.9' : 'less than 4';
   return hit(count > 0, `${sideId === 't1' ? 'T1' : 'T2'} won ${count} sector${count === 1 ? '' : 's'} by ${word}`);
+}
+
+function scoreSeparation(id: string, calc: PowerDynamicsCalculation): CalculationScore | null {
+  const poor = id.match(/^sector-(.+)-poor$/);
+  if (poor) {
+    const row = calc.sectors.find((sector) => sector.id === poor[1]);
+    if (!row) return hit(false, 'No figure for this sector');
+    const t1 = shown(row.t1 ?? 0);
+    const t2 = shown(row.t2 ?? 0);
+    return hit(t1 === 0 && t2 === 0, `${row.label} · poor separation · T1 ${t1} · T2 ${t2}`);
+  }
+  const win = id.match(/^sector-(.+)-(t1|t2)-(clear|mediocre)$/);
+  if (!win) return null;
+  const row = calc.sectors.find((sector) => sector.id === win[1]);
+  if (!row) return hit(false, 'No figure for this sector');
+  const t1 = shown(row.t1 ?? 0);
+  const t2 = shown(row.t2 ?? 0);
+  const mine = win[2] === 't1' ? t1 : t2;
+  const points = win[3] === 'clear' ? 3 : 1;
+  const word = win[3] === 'clear' ? 'clear separation' : 'mediocre separation';
+  const who = win[2] === 't1' ? 'T1' : 'T2';
+  return hit(mine === points, `${row.label} · ${who} wins · ${word} · T1 ${t1} · T2 ${t2}`);
 }
 
 function scoreSector(id: string, calc: PowerDynamicsCalculation): CalculationScore | null {

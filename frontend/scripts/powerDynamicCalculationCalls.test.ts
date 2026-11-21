@@ -99,6 +99,41 @@ check(
     callAspectById('activity-core-t1-high::tick')?.functionId === 'activity',
 );
 check(
+  'a T2 sector win names the separation',
+  scoreCalculationRead('sector-h2h-t2-clear', {
+    ...calc,
+    sectors: [
+      { id: 'h2h', label: 'H2H', group: 'core', coreFor: [], t1: 0, t2: 3, detail: '', parts: [] },
+      { id: 'last5', label: 'Last 5', group: 'core', coreFor: [], t1: 0, t2: 1, detail: '', parts: [] },
+    ],
+  })?.percent === 100 &&
+    scoreCalculationRead('sector-last5-t2-mediocre', {
+      ...calc,
+      sectors: [{ id: 'last5', label: 'Last 5', group: 'core', coreFor: [], t1: 0, t2: 1, detail: '', parts: [] }],
+    })?.percent === 100 &&
+    scoreCalculationRead('sector-h2h-t2-mediocre', {
+      ...calc,
+      sectors: [{ id: 'h2h', label: 'H2H', group: 'core', coreFor: [], t1: 0, t2: 3, detail: '', parts: [] }],
+    })?.percent === 0 &&
+    callAspectById('sector-h2h-t2-clear::tick')?.functionId === 'separation',
+);
+check(
+  'backing and the spaces between T1 and T2 are callable',
+  scoreCalculationRead('calc-overview-t1-negative-t2-positive', {
+    ...calc,
+    last5: { t1Place: 14, t2Place: 1, t1Pole: 'negative', t2Pole: 'positive', t1Magnitude: -5, t2Magnitude: 5, support: 't2', winner: 't2', letter: 'A', points: 3, detail: 'T2 support' },
+  })?.percent === 100 &&
+    scoreCalculationRead('calc-overview-spaces-9', {
+      ...calc,
+      last5: { t1Place: 1, t2Place: 14, t1Pole: 'positive', t2Pole: 'negative', t1Magnitude: 5, t2Magnitude: -5, support: 't1', winner: 't1', letter: 'A', points: 3, detail: 'T1 support' },
+    })?.percent === 100 &&
+    scoreCalculationRead('calc-overview-spaces-3-plus', {
+      ...calc,
+      last5: { t1Place: 6, t2Place: 6, t1Pole: 'neutral', t2Pole: 'neutral', t1Magnitude: 0, t2Magnitude: 0, support: 'both', winner: 't1', letter: 'C', points: 0, detail: 'Neutral' },
+    })?.percent === 0 &&
+    callAspectById('activity-mix-t2-bigger::tick')?.label === 'T2 is bigger than T1 · Core + Y application',
+);
+check(
   'a sector can be called as highest or lowest',
   scoreCalculationRead('sector-baseline-t1', calc)?.percent === 100 &&
     scoreCalculationRead('sector-h2h-t1-low', calc)?.percent === 0 &&

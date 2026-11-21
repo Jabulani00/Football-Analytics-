@@ -6,7 +6,6 @@ import { useQueries, useQuery } from '@tanstack/react-query';
 
 import PowerDynamicCallSearch from '@/components/match-detail/PowerDynamicCallSearch';
 import DragScroll from '@/components/shared/DragScroll';
-import SubTabBar from '@/components/shared/SubTabBar';
 import FilterDropdown from '@/components/shared/FilterDropdown';
 import PageControls, { PAGE_SIZE } from '@/components/shared/PageControls';
 import { useLiveCompetitionFeed, type LiveCompetition } from '@/hooks/useLiveCompetitions';
@@ -194,23 +193,12 @@ function singleFromCondition(c: Condition): Partial<SingleState> {
 }
 
 function PowerDynamicsInBuilder() {
-  const [source, setSource] = useState<'sectors' | 'calculations'>('sectors');
   return (
     <View style={styles.powerWrap}>
-      <SubTabBar
-        tabs={[
-          { id: 'sectors', label: 'Sectors' },
-          { id: 'calculations', label: 'Power dynamic calculations' },
-        ]}
-        active={source}
-        onChange={setSource}
-      />
       <Text style={styles.callHint}>
-        {source === 'calculations'
-          ? 'Calls from the calculations, core sectors, Y sectors, and ticks. A tick means the call holds. A cross means it does not.'
-          : 'Choose a sector, then an option and its in-options. Ticks in other sectors stay on, and each sector lists its own fixtures.'}
+        The same calls as the Power dynamics page. Tick sectors and calculations together. A fixture has to hold every selected in-option.
       </Text>
-      <PowerDynamicCallSearch key={source} heading={false} source={source} />
+      <PowerDynamicCallSearch heading={false} />
     </View>
   );
 }

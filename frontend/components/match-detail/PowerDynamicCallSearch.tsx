@@ -67,10 +67,7 @@ export default function PowerDynamicCallSearch({
   heading?: boolean;
   source?: 'sectors' | 'calculations';
 }) {
-  const calls = useMemo<PowerDynamicCallDef[]>(
-    () => (source === 'calculations' ? [CALCULATION_CALL] : POWER_DYNAMIC_CALLS),
-    [source],
-  );
+  const calls = useMemo<PowerDynamicCallDef[]>(() => [...POWER_DYNAMIC_CALLS, CALCULATION_CALL], []);
   const [tabId, setTabId] = useState(source === 'calculations' ? 'calculations' : '');
   const [functionId, setFunctionId] = useState('');
   const [aspectIds, setAspectIds] = useState<string[]>([]);
@@ -148,16 +145,10 @@ export default function PowerDynamicCallSearch({
   const clearInOption = (aspectId: string) => {
     setAspectIds((current) => current.filter((id) => id !== aspectId));
   };
-  const sectorHits = useMemo(() => {
-    if (library.phase !== 'ready') return [];
-    return selectionGroups.map((group) => ({
-      ...group,
-      hits: scorePowerDynamicLibrary(group.ids, dateKey).filter((hit) => hit.percent > 0),
-    }));
-  }, [library.phase, library.revision, selectionKey, dateKey, selectionGroups]);
-  const rankedHits = sectorHits
-    .flatMap((group) => group.hits.map((hit) => ({ hit, sectorName: group.sectorName, options: group.options })))
-    .sort((a, b) => b.hit.percent - a.hit.percent || a.hit.name.localeCompare(b.hit.name));
+  const rankedHits = useMemo(() => {
+    if (library.phase !== 'ready' || aspectIds.length === 0) return [];
+    return scorePowerDynamicLibrary(aspectIds, dateKey).filter((hit) => hit.percent > 0);
+  }, [library.phase, library.revision, selectionKey, dateKey, aspectIds]);
   const needle = query.trim().toLowerCase();
   const visibleGroups = groups
     .map((group) => ({
@@ -195,20 +186,29 @@ export default function PowerDynamicCallSearch({
       )}
 
       <View>
-        {source === 'calculations' ? null : (
-          <>
-            <SectorIntro title="Sector" note="Open any sector. In-options you already ticked in other sectors stay selected, and each sector keeps its own fixtures." />
-            <SubTabBar
-              tabs={calls.map((item) => ({ id: item.id, label: `${item.index}. ${item.name}` }))}
-              active={tabId}
-              onChange={(id) => {
-                setTabId(id);
-                setFunctionId('');
-                setQuery('');
-              }}
-            />
-          </>
-        )}
+        <>
+          <SectorIntro title="Sector" note="Open a sector, or open the calculations. Every ticked in-option stays in the one strategy." />
+          <Pressable
+            onPress={() => {
+              setTabId('calculations');
+              setFunctionId('');
+              setQuery('');
+            }}
+            accessibilityRole="button"
+            accessibilityState={{ selected: tabId === 'calculations' }}
+            style={[styles.calcEntry, tabId === 'calculations' && styles.calcEntryOn]}>
+            <Text style={[styles.calcEntryText, tabId === 'calculations' && styles.calcEntryTextOn]}>Power dynamic calculations</Text>
+          </Pressable>
+          <SubTabBar
+            tabs={POWER_DYNAMIC_CALLS.map((item) => ({ id: item.id, label: `${item.index}. ${item.name}` }))}
+            active={tabId}
+            onChange={(id) => {
+              setTabId(id);
+              setFunctionId('');
+              setQuery('');
+            }}
+          />
+        </>
 
         {selectionGroups.length > 0 ? (
           <View style={styles.tracker}>
@@ -302,7 +302,7 @@ export default function PowerDynamicCallSearch({
 
         {call ? (
           <>
-            <SectorIntro title={source === 'calculations' ? 'Calculation' : 'Option'} note={call.detail} />
+            <SectorIntro title={tabId === 'calculations' ? 'Calculation' : 'Option'} note={call.detail} />
             <SubTabBar
               tabs={[{ id: '', label: 'All options' }, ...call.functions.map((item) => ({ id: item.id, label: item.label }))]}
               active={functionId}
@@ -312,8 +312,8 @@ export default function PowerDynamicCallSearch({
               }}
             />
             <SectorIntro
-              title={source === 'calculations' ? `Call · ${inOptionCount}` : `In-option · ${inOptionCount}`}
-              note={`${hasMarks ? 'A tick means the call holds. A cross means the same call does not. ' : ''}Select any number. In one sector, a fixture is called only when every selected in-option holds. Each sector keeps its own fixtures.${aspectIds.length > 0 ? ` ${aspectIds.length} selected.` : ''}`}
+              title={tabId === 'calculations' ? `Call · ${inOptionCount}` : `In-option · ${inOptionCount}`}
+              note={`${hasMarks ? 'A tick means the call holds. A cross means the same call does not. ' : ''}Select any number, from any sector or the calculations. A fixture is called only when every selected in-option holds.${aspectIds.length > 0 ? ` ${aspectIds.length} selected.` : ''}`}
             />
             {inOptionCount > 8 ? (
               <TextInput
@@ -409,36 +409,40 @@ export default function PowerDynamicCallSearch({
             {rankedHits.length} fixture{rankedHits.length === 1 ? '' : 's'}
           </Text>
           {rankedHits.length === 0 ? <Text style={styles.empty}>No fixture matches this call.</Text> : null}
-          {rankedHits.slice(0, 250).map((row, index) => {
-            const [home, away] = row.hit.name.split(' vs ');
+          {rankedHits.slice(0, 250).map((hit, index) => {
+            const [home, away] = hit.name.split(' vs ');
             return (
               <Pressable
-                key={`${row.hit.fixtureId}-${row.hit.aspectId}-${index}`}
-                onPress={() => setOpenHit(row.hit)}
+                key={`${hit.fixtureId}-${hit.aspectId}-${index}`}
+                onPress={() => setOpenHit(hit)}
                 style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
                 accessibilityRole="button"
-                accessibilityLabel={`Open ${row.hit.name}, ${row.hit.percent} percent, ${row.sectorName}`}
+                accessibilityLabel={`Open ${hit.name}, ${hit.percent} percent`}
               >
                 <Text style={styles.cardIndex}>{index + 1}</Text>
                 <View style={styles.cardBody}>
-                  <Text style={styles.percent}>{row.hit.percent}%</Text>
-                  <Text style={styles.home} numberOfLines={1}>{home || row.hit.name}</Text>
+                  <Text style={styles.percent}>{hit.percent}%</Text>
+                  <Text style={styles.home} numberOfLines={1}>{home || hit.name}</Text>
                   {away ? <Text style={styles.away} numberOfLines={1}>{away}</Text> : null}
                   <Text style={styles.meta} numberOfLines={1}>
-                    {row.hit.country} · {row.hit.league} · {row.hit.when}
+                    {hit.country} · {hit.league} · {hit.when}
                   </Text>
-                  <Text style={styles.reason} numberOfLines={4}>{row.hit.reason}</Text>
+                  <Text style={styles.reason} numberOfLines={4}>{hit.reason}</Text>
                 </View>
                 <View style={styles.resultBanner}>
-                  <Text style={styles.resultSector} numberOfLines={2}>{row.sectorName}</Text>
-                  {row.options.map((option) => (
-                    <View key={option.functionId} style={styles.resultOption}>
-                      <Text style={styles.kindOption}>Option</Text>
-                      <Text style={styles.resultOptionLabel} numberOfLines={2}>{option.label}</Text>
-                      {option.aspects.map((aspect) => (
-                        <View key={aspect.id} style={styles.resultIn}>
-                          <Text style={styles.kindIn}>In-option</Text>
-                          <Text style={styles.resultInLabel} numberOfLines={3}>{aspect.label}</Text>
+                  {selectionGroups.map((group) => (
+                    <View key={group.sectorId} style={styles.resultOption}>
+                      <Text style={styles.resultSector} numberOfLines={2}>{group.sectorName}</Text>
+                      {group.options.map((option) => (
+                        <View key={option.functionId}>
+                          <Text style={styles.kindOption}>Option</Text>
+                          <Text style={styles.resultOptionLabel} numberOfLines={2}>{option.label}</Text>
+                          {option.aspects.map((aspect) => (
+                            <View key={aspect.id} style={styles.resultIn}>
+                              <Text style={styles.kindIn}>In-option</Text>
+                              <Text style={styles.resultInLabel} numberOfLines={3}>{aspect.label}</Text>
+                            </View>
+                          ))}
                         </View>
                       ))}
                     </View>
@@ -552,6 +556,21 @@ const styles = StyleSheet.create({
   markGlyphTick: { color: theme.accentGreen },
   markGlyphWrong: { color: theme.loss },
   emptyIn: { fontFamily: fonts.body, fontSize: 13, color: theme.textMuted, padding: spacing.md },
+  calcEntry: {
+    borderWidth: layout.borderWidth,
+    borderColor: theme.border,
+    borderRadius: layout.borderRadius,
+    backgroundColor: theme.surface,
+    paddingVertical: 10,
+    paddingHorizontal: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  calcEntryOn: {
+    borderColor: theme.accentGreen,
+    backgroundColor: 'rgba(5, 150, 105, 0.12)',
+  },
+  calcEntryText: { fontFamily: fonts.bodySemiBold, fontSize: 14, color: theme.textPrimary },
+  calcEntryTextOn: { color: theme.accentGreen },
   tracker: {
     borderWidth: layout.borderWidth,
     borderColor: theme.border,
