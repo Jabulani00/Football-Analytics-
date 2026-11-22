@@ -1,4 +1,4 @@
-﻿import { useMemo, useState, useSyncExternalStore } from 'react';
+﻿import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { SectorIntro } from '@/components/match-detail/PowerDynamicsSectors';
@@ -13,7 +13,8 @@ import {
 } from '@/services/powerDynamicCallLibrary';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 import type { PowerDynamicHit } from '@/utils/powerDynamicLibraryScore';
-import { formatUpcomingDayLabel, todayKey } from '@/utils/dates';
+import { buildUpcomingDayKeys, formatUpcomingDayLabel, todayKey } from '@/utils/dates';
+import { POWER_DYNAMIC_DAY_COUNT } from '@/services/powerDynamicCallLibrary';
 import { POWER_DYNAMIC_CALLS, powerDynamicCall, type PowerDynamicCallDef } from '@/utils/powerDynamicCalls';
 import { CALCULATION_CALL } from '@/utils/powerDynamicCalculationCalls';
 import { callAspectById, callAspectsFor } from '@/utils/powerDynamicCallSearch';
@@ -80,7 +81,10 @@ export default function PowerDynamicCallSearch({
     getPowerDynamicLibrarySnapshot,
     getPowerDynamicLibrarySnapshot,
   );
-  const dates = library.days;
+  const dates = library.days.length > 0 ? library.days : buildUpcomingDayKeys(POWER_DYNAMIC_DAY_COUNT);
+  useEffect(() => {
+    if (!dates.includes(dateKey)) setDateKey(dates[0] ?? todayKey());
+  }, [dates, dateKey]);
 
   const call = tabId ? calls.find((item) => item.id === tabId) ?? powerDynamicCall(tabId) : undefined;
   const groups = useMemo(() => {

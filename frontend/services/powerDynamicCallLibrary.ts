@@ -84,6 +84,14 @@ export function subscribePowerDynamicLibrary(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
+function calendarDays(): string[] {
+  return buildUpcomingDayKeys(POWER_DYNAMIC_DAY_COUNT);
+}
+
+function sameDays(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((day, index) => day === right[index]);
+}
+
 function dayBounds(days: string[]): { fromUnix: number; toUnix: number } {
   const start = parseDateKey(days[0] ?? localDateKey(new Date()));
   const end = parseDateKey(days[days.length - 1] ?? localDateKey(new Date()));
@@ -174,6 +182,7 @@ function savedFromSnapshot(): SavedPowerDynamicLibrary {
 function readyFromSaved(raw: unknown): boolean {
   const saved = parseSavedPowerDynamicLibrary(raw);
   if (!saved) return false;
+  loadedWindow = saved.days;
   publish({
     phase: 'ready',
     hold: 'saved',
@@ -181,7 +190,7 @@ function readyFromSaved(raw: unknown): boolean {
     done: saved.packs.length,
     total: saved.packs.length,
     error: null,
-    days: saved.days,
+    days: calendarDays(),
     revision: snapshot.revision + 1,
     packs: saved.packs,
   });
@@ -263,17 +272,107 @@ async function loadLibrary() {
     revision: snapshot.revision + 1,
     packs,
   });
+  loadedWindow = days;
+}
+
+let refreshTask: Promise<void> | null = null;
+let loadedWindow: string[] = calendarDays();
+
+async function upcomingBySeason(days: string[]) {
+  const [competitions, upcoming] = await Promise.all([
+    fetchAllCompetitions(),
+    fetchAllFixturesBetween({ ...dayBounds(days), maxPages: 40 }),
+  ]);
+  const byId = new Map(competitions.map((competition) => [competition.id, competition]));
+  const grouped = new Map<number, { competitionId: number; fixtures: RawFixture[] }>();
+  const daySet = new Set(days);
+  for (const fixture of upcoming) {
+    if (fixture.home_id == null || fixture.away_id == null) continue;
+    const dateKey = localDateKey(fixture.unix);
+    if (!daySet.has(dateKey)) continue;
+    const competition = byId.get(fixture.competition_id);
+    if (!competition || competition.isCup || detectKind(competition.name) === 'country') continue;
+    const seasonId = fixture.season_id ?? competition.currentSeason;
+    if (seasonId == null) continue;
+    const bucket = grouped.get(seasonId) ?? { competitionId: competition.id, fixtures: [] };
+    bucket.fixtures.push(fixture);
+    grouped.set(seasonId, bucket);
+  }
+  return { byId, grouped };
+}
+
+function listedFixtures(fixtures: RawFixture[]) {
+  return fixtures
+    .filter((fixture) => fixture.home_id != null && fixture.away_id != null)
+    .map((fixture) => ({
+      id: fixture.id,
+      homeId: fixture.home_id as number,
+      awayId: fixture.away_id as number,
+      homeName: fixture.home_name,
+      awayName: fixture.away_name,
+      unix: fixture.unix,
+      dateKey: localDateKey(fixture.unix),
+    }));
+}
+
+/** Moves the saved fixture window onto today and the following calendar days. */
+async function refreshUpcomingWindow(): Promise<void> {
+  if (snapshot.phase !== 'ready') return;
+  const days = calendarDays();
+  if (sameDays(loadedWindow, days)) return;
+  const { byId, grouped } = await upcomingBySeason(days);
+  const packs = snapshot.packs.map((pack) => ({ ...pack, cache: new Map() }));
+  const seen = new Set<number>();
+  for (const [seasonId, bucket] of grouped) {
+    seen.add(seasonId);
+    const existing = packs.find((pack) => pack.seasonId === seasonId);
+    const fixtures = listedFixtures(bucket.fixtures);
+    if (existing) {
+      existing.fixtures = fixtures;
+      continue;
+    }
+    const competition = byId.get(bucket.competitionId);
+    if (!competition) continue;
+    const pack = await loadLeague(seasonId, competition, bucket.fixtures);
+    if (pack) packs.push(pack);
+  }
+  for (const pack of packs) {
+    if (!seen.has(pack.seasonId)) pack.fixtures = [];
+  }
+  publish({
+    ...snapshot,
+    phase: 'ready',
+    days,
+    packs,
+    revision: snapshot.revision + 1,
+  });
+  loadedWindow = days;
+  const stored = await writePowerDynamicLibraryDisk(savedFromSnapshot());
+  if (snapshot.phase === 'ready') publish({ ...snapshot, stored });
+}
+
+function queueCalendarRefresh(): void {
+  if (snapshot.phase !== 'ready' || sameDays(loadedWindow, calendarDays()) || refreshTask) return;
+  refreshTask = refreshUpcomingWindow()
+    .catch(() => undefined)
+    .finally(() => {
+      refreshTask = null;
+    });
 }
 
 /** Opens the browser copy when it exists. The server is used only when this browser has no copy yet. */
 export function startPowerDynamicLibrary(): void {
   if (task) return;
   if (readyFromSaved(readPowerDynamicLibraryDiskSync())) {
+    queueCalendarRefresh();
     task = Promise.resolve();
     return;
   }
   task = (async () => {
-    if (readyFromSaved(await readPowerDynamicLibraryDisk())) return;
+    if (readyFromSaved(await readPowerDynamicLibraryDisk())) {
+      queueCalendarRefresh();
+      return;
+    }
     await loadLibrary();
     if (snapshot.phase !== 'ready' || snapshot.packs.length === 0) return;
     const stored = await writePowerDynamicLibraryDisk(savedFromSnapshot());
@@ -290,7 +389,15 @@ export function startPowerDynamicLibrary(): void {
   });
 }
 
-if (typeof window !== 'undefined') startPowerDynamicLibrary();
+if (typeof window !== 'undefined') {
+  startPowerDynamicLibrary();
+  window.setInterval(() => {
+    if (snapshot.phase === 'ready' && !sameDays(loadedWindow, calendarDays())) {
+      publish({ ...snapshot, days: calendarDays(), revision: snapshot.revision + 1 });
+      queueCalendarRefresh();
+    }
+  }, 60_000);
+}
 
 export function findPowerDynamicFixture(fixtureId: number): {
   record: PowerDynamicLeagueRecord;

@@ -44,8 +44,32 @@ export type PowerDynamicLeaguePack = {
   }[];
 };
 
+const MIN_OVERALL = 8;
+const MIN_VENUE = 4;
+
 function kickoffLabel(unix: number): string {
   return new Date(unix * 1000).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+
+function venuePlayed(matches: PowerDynamicLeaguePack['matches']): Map<number, { home: number; away: number }> {
+  const counts = new Map<number, { home: number; away: number }>();
+  const add = (id: number, venue: 'home' | 'away') => {
+    const row = counts.get(id) ?? { home: 0, away: 0 };
+    row[venue] += 1;
+    counts.set(id, row);
+  };
+  for (const match of matches) {
+    add(match.homeId, 'home');
+    add(match.awayId, 'away');
+  }
+  return counts;
+}
+
+/** Both sides need 8 games overall, and at least 4 at home and 4 away. */
+function playedEnough(row: CallTableRow, counts: Map<number, { home: number; away: number }>): boolean {
+  if (row.played < MIN_OVERALL) return false;
+  const venue = counts.get(row.teamId) ?? { home: 0, away: 0 };
+  return Math.min(venue.home, venue.away) >= MIN_VENUE;
 }
 
 function aspectCaption(id: string): string {
@@ -64,13 +88,15 @@ export function scorePowerDynamicPacks(
   const hits: PowerDynamicHit[] = [];
   if (aspectIds.length === 0) return hits;
   for (const pack of packs) {
+    const counts = venuePlayed(pack.matches);
+    const ready = (home: CallTableRow, away: CallTableRow) => playedEnough(home, counts) && playedEnough(away, counts);
     if (aspectIds.some((id) => id.replace(/::(tick|wrong)$/, '').startsWith('activity-'))) {
       const samples = [];
       for (const fixture of pack.fixtures) {
         if (fixture.dateKey !== dateKey) continue;
         const home = pack.byTeam.get(fixture.homeId);
         const away = pack.byTeam.get(fixture.awayId);
-        if (!home || !away) continue;
+        if (!home || !away || !ready(home, away)) continue;
         const calc = ensureFixtureCalculation(home, away, pack.table, {
           matches: pack.matches,
           schedule: pack.schedule,
@@ -88,7 +114,7 @@ export function scorePowerDynamicPacks(
       if (fixture.dateKey !== dateKey) continue;
       const home = pack.byTeam.get(fixture.homeId);
       const away = pack.byTeam.get(fixture.awayId);
-      if (!home || !away) continue;
+      if (!home || !away || !ready(home, away)) continue;
       const matched: { id: string; percent: number; reason: string; label: string }[] = [];
       for (const id of aspectIds) {
         const score = scoreCallFixture(id, home, away, pack.table, {

@@ -36,7 +36,10 @@ function pack(fixtures: PowerDynamicLeaguePack['fixtures']): PowerDynamicLeagueP
     country: 'ZA',
     table,
     byTeam: new Map(table.map((row) => [row.teamId, row])),
-    matches: [],
+    matches: [
+      ...Array.from({ length: 4 }, (_, index) => ({ homeId: 1, awayId: 3, homeGoals: 1, awayGoals: 0, unix: index + 1 })),
+      ...Array.from({ length: 4 }, (_, index) => ({ homeId: 3, awayId: 1, homeGoals: 0, awayGoals: 1, unix: index + 10 })),
+    ],
     schedule: [],
     cache: new Map(),
     fixtures,
@@ -176,7 +179,7 @@ console.log('\nseparation on a called fixture');
   check('a neutral place is not T1 positive', positiveSide?.percent === 0, positiveSide?.reason ?? 'none');
   const spaces = scoreCallFixture('label-spaces-0::tick', top, low, saved.table, { matches: quiet });
   check('the same label-change place is 0 spaces', spaces?.percent === 100 && (spaces?.reason ?? '').includes('0 spaces'), spaces?.reason ?? 'none');
-  check('3 or more spaces is a label-change call', labels.includes('3 or more spaces between T1 and T2'));
+  check('3 or more spaces is a spaces call', callAspectsFor('last5', 'spaces').some((item) => item.label === '3 or more spaces between T1 and T2'));
   const tight = scoreCallFixture('label-spaces-3-plus::tick', top, low, saved.table, { matches: quiet });
   check('the same place is not 3 or more spaces', tight?.percent === 0, tight?.reason ?? 'none');
   const wide = scoreCallFixture('label-spaces-3-plus::tick', yellow, green, [green, yellow], { matches: losses });

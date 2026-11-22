@@ -155,13 +155,19 @@ const pack: PowerDynamicLeaguePack = {
   country: 'ZA',
   table,
   byTeam: new Map(table.map((row) => [row.teamId, row])),
-  matches: [],
+  matches: [
+    ...Array.from({ length: 4 }, (_, index) => ({ homeId: 1, awayId: 3, homeGoals: 1, awayGoals: 0, unix: index + 1 })),
+    ...Array.from({ length: 4 }, (_, index) => ({ homeId: 3, awayId: 1, homeGoals: 0, awayGoals: 1, unix: index + 10 })),
+  ],
   schedule: [],
   cache: new Map(),
-  fixtures: [{ id: 11, homeId: 1, awayId: 3, homeName: 'Top', awayName: 'Low', unix: 1700000000, dateKey: '2026-10-28' }],
+  fixtures: [
+    { id: 11, homeId: 1, awayId: 3, homeName: 'Top', awayName: 'Low', unix: 1700000000, dateKey: '2026-10-28' },
+    { id: 12, homeId: 2, awayId: 3, homeName: 'Next', awayName: 'Low', unix: 1700001000, dateKey: '2026-10-28' },
+  ],
 };
 const context = {
-  matches: pack.matches,
+  matches: [] as PowerDynamicLeaguePack['matches'],
   schedule: pack.schedule,
   cache: pack.cache,
   fixture: { homeId: 1, awayId: 3, unix: 1700000000 },
@@ -181,6 +187,12 @@ check(
     hits[0].percent > 0 &&
     ['T1 total is higher · true', 'Baseline · T1 highest · true', 'Lost 6 in a row · T1 · opposite'].every((label) => hits[0].aspectLabel.includes(label)),
 );
+const shortSample = scorePowerDynamicPacks(
+  [{ ...pack, matches: pack.matches.slice(0, 3), cache: new Map() }],
+  ['calc2-t1::tick', 'sector-baseline-t1::tick', 'tick-lost_6-t1::wrong'],
+  '2026-10-28',
+);
+check('a side with fewer than 4 home or away games is left out', shortSample.length === 0);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
