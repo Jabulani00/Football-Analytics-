@@ -395,23 +395,11 @@ function SummaryTab({
   pressureHistory: PressureSnapshot[];
   pressureReading: PressureReading | null;
 }) {
-  const prob = detail.probability;
   const scores = scoreBreakdown(detail);
-  const isLive = ['LIVE', 'HT', '1H', '2H', 'ET', 'BT', 'P', 'INT'].includes(detail.status);
 
   return (
     <View>
-      <FixtureRecommendationSection
-        probability={detail.probability}
-        odds={detail.odds}
-        homeName={homeName}
-        awayName={awayName}
-        homePosition={detail.home_position}
-        awayPosition={detail.away_position}
-        isLive={isLive}
-      />
-
-      <MatchInfoCard detail={detail} homeName={homeName} awayName={awayName} />
+      <CallFixtureSummary detail={detail} homeName={homeName} awayName={awayName} />
 
       {scores.ft ? (
         <View style={styles.card}>
@@ -423,26 +411,6 @@ function SummaryTab({
           {scores.secondHalf ? (
             <ScorePeriodRow label="2nd half" home={scores.secondHalf.home} away={scores.secondHalf.away} />
           ) : null}
-        </View>
-      ) : null}
-
-      {prob ? (
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Win probability</Text>
-          <View style={styles.probRow}>
-            <ProbCell label={homeName} value={prob.home_win} />
-            <ProbCell label="Draw" value={prob.draw} />
-            <ProbCell label={awayName} value={prob.away_win} />
-          </View>
-          {(prob.btts != null || prob.o25 != null) && (
-            <View style={styles.quickProb}>
-              {prob.btts != null ? <Text style={styles.quickProbItem}>Both teams score {Math.round(prob.btts)}%</Text> : null}
-              {prob.o25 != null ? <Text style={styles.quickProbItem}>Over 2.5 goals {Math.round(prob.o25)}%</Text> : null}
-              {prob.home_win_ht != null ? (
-                <Text style={styles.quickProbItem}>Home lead at HT {Math.round(prob.home_win_ht)}%</Text>
-              ) : null}
-            </View>
-          )}
         </View>
       ) : null}
 
@@ -515,6 +483,53 @@ function formatPredictability(raw: string): string | null {
   // Non-numeric labels (e.g. "High") pass through.
   if (/^0(\.0+)?$/.test(trimmed)) return null;
   return trimmed;
+}
+
+/** Best bet, match information, and win probability — the summary used from a call. */
+export function CallFixtureSummary({
+  detail,
+  homeName,
+  awayName,
+}: {
+  detail: RawFixtureDetail;
+  homeName: string;
+  awayName: string;
+}) {
+  const prob = detail.probability;
+  const isLive = ['LIVE', 'HT', '1H', '2H', 'ET', 'BT', 'P', 'INT'].includes(detail.status);
+  return (
+    <View>
+      <FixtureRecommendationSection
+        probability={detail.probability}
+        odds={detail.odds}
+        homeName={homeName}
+        awayName={awayName}
+        homePosition={detail.home_position}
+        awayPosition={detail.away_position}
+        isLive={isLive}
+      />
+      <MatchInfoCard detail={detail} homeName={homeName} awayName={awayName} />
+      {prob ? (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Win probability</Text>
+          <View style={styles.probRow}>
+            <ProbCell label={homeName} value={prob.home_win} />
+            <ProbCell label="Draw" value={prob.draw} />
+            <ProbCell label={awayName} value={prob.away_win} />
+          </View>
+          {(prob.btts != null || prob.o25 != null || prob.home_win_ht != null) && (
+            <View style={styles.quickProb}>
+              {prob.btts != null ? <Text style={styles.quickProbItem}>Both teams score {Math.round(prob.btts)}%</Text> : null}
+              {prob.o25 != null ? <Text style={styles.quickProbItem}>Over 2.5 goals {Math.round(prob.o25)}%</Text> : null}
+              {prob.home_win_ht != null ? (
+                <Text style={styles.quickProbItem}>Home lead at HT {Math.round(prob.home_win_ht)}%</Text>
+              ) : null}
+            </View>
+          )}
+        </View>
+      ) : null}
+    </View>
+  );
 }
 
 function MatchInfoCard({
@@ -965,7 +980,7 @@ function LineupsTab({
  * Nothing is lost — it reuses the existing StandingsTab (table + odds-value +
  * bet finder) and OddsTab, and adds the green/yellow/red tiers.
  */
-function TableOddsTab({
+export function TableOddsTab({
   detail,
   standings,
   groupCompetition,
