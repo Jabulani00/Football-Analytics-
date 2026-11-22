@@ -187,12 +187,28 @@ check(
     hits[0].percent > 0 &&
     ['T1 total is higher · true', 'Baseline · T1 highest · true', 'Lost 6 in a row · T1 · opposite'].every((label) => hits[0].aspectLabel.includes(label)),
 );
-const shortSample = scorePowerDynamicPacks(
-  [{ ...pack, matches: pack.matches.slice(0, 3), cache: new Map() }],
-  ['calc2-t1::tick', 'sector-baseline-t1::tick', 'tick-lost_6-t1::wrong'],
+const covered = table.map((row) => ({ ...row, played: 8 }));
+const uneven = scorePowerDynamicPacks(
+  [{
+    ...pack,
+    table: covered,
+    byTeam: new Map(covered.map((row) => [row.teamId, row])),
+    matches: [
+      ...Array.from({ length: 6 }, (_, index) => ({ homeId: 1, awayId: 3, homeGoals: 1, awayGoals: 0, unix: index + 1 })),
+      ...Array.from({ length: 2 }, (_, index) => ({ homeId: 3, awayId: 1, homeGoals: 0, awayGoals: 1, unix: index + 10 })),
+    ],
+    cache: new Map(),
+  }],
+  ['calc2-t1::tick'],
   '2026-10-28',
 );
-check('a side with fewer than 4 home or away games is left out', shortSample.length === 0);
+check('a side with fewer than 4 home or away games is left out', uneven.length === 0);
+const thinFeed = scorePowerDynamicPacks(
+  [{ ...pack, matches: pack.matches.slice(0, 3), cache: new Map() }],
+  ['calc2-t1::tick'],
+  '2026-10-28',
+);
+check('a short season list does not hide a side that has played 8', thinFeed.some((hit) => hit.fixtureId === 11));
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

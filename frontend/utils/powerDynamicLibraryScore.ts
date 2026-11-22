@@ -65,10 +65,17 @@ function venuePlayed(matches: PowerDynamicLeaguePack['matches']): Map<number, { 
   return counts;
 }
 
-/** Both sides need 8 games overall, and at least 4 at home and 4 away. */
+/**
+ * Both sides need 8 games on the table.
+ * Home and away need 4 each, but only once the stored season list covers
+ * that table total. A short list is a missing feed, not a team that has
+ * played no home or away games.
+ */
 function playedEnough(row: CallTableRow, counts: Map<number, { home: number; away: number }>): boolean {
   if (row.played < MIN_OVERALL) return false;
   const venue = counts.get(row.teamId) ?? { home: 0, away: 0 };
+  const seen = venue.home + venue.away;
+  if (seen < row.played) return true;
   return Math.min(venue.home, venue.away) >= MIN_VENUE;
 }
 

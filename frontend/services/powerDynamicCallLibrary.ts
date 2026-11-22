@@ -1,8 +1,10 @@
 /**
  * One copy of the leagues, tables, and season games used by power-dynamics calls.
- * It starts when the app opens. Choosing an in-option scores this copy and does not fetch again.
+ * The saved copy opens straight away. Each time the app opens, that copy is
+ * refreshed from the server. Choosing an in-option scores the copy and does not fetch.
  */
 
+import { AppState } from 'react-native';
 import {
   detectKind,
   fetchAllCompetitions,
@@ -190,7 +192,7 @@ function readyFromSaved(raw: unknown): boolean {
     done: saved.packs.length,
     total: saved.packs.length,
     error: null,
-    days: calendarDays(),
+    days: saved.days,
     revision: snapshot.revision + 1,
     packs: saved.packs,
   });
@@ -276,6 +278,7 @@ async function loadLibrary() {
 }
 
 let refreshTask: Promise<void> | null = null;
+let refreshStartedAt = 0;
 let loadedWindow: string[] = calendarDays();
 
 async function upcomingBySeason(days: string[]) {
@@ -301,44 +304,45 @@ async function upcomingBySeason(days: string[]) {
   return { byId, grouped };
 }
 
-function listedFixtures(fixtures: RawFixture[]) {
-  return fixtures
-    .filter((fixture) => fixture.home_id != null && fixture.away_id != null)
-    .map((fixture) => ({
-      id: fixture.id,
-      homeId: fixture.home_id as number,
-      awayId: fixture.away_id as number,
-      homeName: fixture.home_name,
-      awayName: fixture.away_name,
-      unix: fixture.unix,
-      dateKey: localDateKey(fixture.unix),
-    }));
+function windowHasFixtures(days: string[]): boolean {
+  const wanted = new Set(days);
+  return snapshot.packs.some((pack) => pack.fixtures.some((fixture) => wanted.has(fixture.dateKey)));
 }
 
-/** Moves the saved fixture window onto today and the following calendar days. */
-async function refreshUpcomingWindow(): Promise<void> {
+/**
+ * Reloads today's window: upcoming fixtures, league tables, and season games.
+ * The copy already on screen stays in place until the new one is ready.
+ */
+async function refreshLibrary(): Promise<void> {
   if (snapshot.phase !== 'ready') return;
   const days = calendarDays();
-  if (sameDays(loadedWindow, days)) return;
   const { byId, grouped } = await upcomingBySeason(days);
-  const packs = snapshot.packs.map((pack) => ({ ...pack, cache: new Map() }));
-  const seen = new Set<number>();
-  for (const [seasonId, bucket] of grouped) {
-    seen.add(seasonId);
-    const existing = packs.find((pack) => pack.seasonId === seasonId);
-    const fixtures = listedFixtures(bucket.fixtures);
-    if (existing) {
-      existing.fixtures = fixtures;
-      continue;
+  if (grouped.size === 0) return;
+  const kept = new Map(snapshot.packs.map((pack) => [pack.seasonId, pack]));
+  const jobs = [...grouped.entries()];
+  let cursor = 0;
+
+  async function worker() {
+    while (cursor < jobs.length) {
+      const job = jobs[cursor];
+      cursor += 1;
+      if (!job) continue;
+      const [seasonId, bucket] = job;
+      const competition = byId.get(bucket.competitionId);
+      if (!competition) continue;
+      try {
+        const pack = await loadLeague(seasonId, competition, bucket.fixtures);
+        if (pack) kept.set(seasonId, pack);
+      } catch {
+        // One league can fail and the saved copy of that league stays.
+      }
     }
-    const competition = byId.get(bucket.competitionId);
-    if (!competition) continue;
-    const pack = await loadLeague(seasonId, competition, bucket.fixtures);
-    if (pack) packs.push(pack);
   }
-  for (const pack of packs) {
-    if (!seen.has(pack.seasonId)) pack.fixtures = [];
-  }
+
+  await Promise.all(Array.from({ length: Math.min(LEAGUE_WORKERS, Math.max(jobs.length, 1)) }, () => worker()));
+  const packs = [...kept.values()].map((pack) => (
+    grouped.has(pack.seasonId) ? pack : { ...pack, fixtures: [], cache: new Map() }
+  ));
   publish({
     ...snapshot,
     phase: 'ready',
@@ -351,26 +355,31 @@ async function refreshUpcomingWindow(): Promise<void> {
   if (snapshot.phase === 'ready') publish({ ...snapshot, stored });
 }
 
-function queueCalendarRefresh(): void {
-  if (snapshot.phase !== 'ready' || sameDays(loadedWindow, calendarDays()) || refreshTask) return;
-  refreshTask = refreshUpcomingWindow()
+/** force reloads tables and games. A calendar check only runs when the day window has moved. */
+function queueDataRefresh(force: boolean): void {
+  if (snapshot.phase !== 'ready' || refreshTask) return;
+  const days = calendarDays();
+  if (!force && sameDays(loadedWindow, days) && windowHasFixtures(days)) return;
+  if (force && Date.now() - refreshStartedAt < 15_000) return;
+  refreshStartedAt = Date.now();
+  refreshTask = refreshLibrary()
     .catch(() => undefined)
     .finally(() => {
       refreshTask = null;
     });
 }
 
-/** Opens the browser copy when it exists. The server is used only when this browser has no copy yet. */
+/** Opens the saved copy when it exists, then refreshes it. The server builds the first copy. */
 export function startPowerDynamicLibrary(): void {
   if (task) return;
   if (readyFromSaved(readPowerDynamicLibraryDiskSync())) {
-    queueCalendarRefresh();
+    queueDataRefresh(true);
     task = Promise.resolve();
     return;
   }
   task = (async () => {
     if (readyFromSaved(await readPowerDynamicLibraryDisk())) {
-      queueCalendarRefresh();
+      queueDataRefresh(true);
       return;
     }
     await loadLibrary();
@@ -389,15 +398,13 @@ export function startPowerDynamicLibrary(): void {
   });
 }
 
-if (typeof window !== 'undefined') {
-  startPowerDynamicLibrary();
-  window.setInterval(() => {
-    if (snapshot.phase === 'ready' && !sameDays(loadedWindow, calendarDays())) {
-      publish({ ...snapshot, days: calendarDays(), revision: snapshot.revision + 1 });
-      queueCalendarRefresh();
-    }
-  }, 60_000);
-}
+startPowerDynamicLibrary();
+setInterval(() => {
+  queueDataRefresh(false);
+}, 60_000);
+AppState.addEventListener('change', (next) => {
+  if (next === 'active') queueDataRefresh(true);
+});
 
 export function findPowerDynamicFixture(fixtureId: number): {
   record: PowerDynamicLeagueRecord;
