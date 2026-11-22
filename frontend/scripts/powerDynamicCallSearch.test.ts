@@ -45,6 +45,9 @@ check('top of the green third is the strongest green match', scoreCallAspect('co
 check('a bottom side is not a green match', scoreCallAspect('colour-green', table[3], table)?.percent === 0);
 check('home points share becomes the home-strong percentage', scoreCallAspect('venue-home', table[0], table)?.percent === 80);
 check('baseline grade is measured', scoreCallAspect('baseline-letter-A', table[0], table)?.percent != null);
+check('green at home against red away is G v R', scoreCallFixture('baseline-colour-gr', table[0], table[3], table)?.percent === 100);
+check('that fixture is not red at home against green away', scoreCallFixture('baseline-colour-rg', table[0], table[3], table)?.percent === 0);
+check('baseline lists the nine colour pairs', callAspectsFor('baseline', 'colours').map((item) => item.label).join(', ') === 'G v G, G v Y, G v R, Y v G, Y v Y, Y v R, R v G, R v Y, R v R');
 
 for (const call of POWER_DYNAMIC_CALLS) {
   for (const fn of call.functions) {

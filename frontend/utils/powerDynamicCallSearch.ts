@@ -57,6 +57,20 @@ export type CallScore = {
 
 const LETTERS: BaselineLetter[] = ['A', 'B', 'C', 'D', 'E', 'F'];
 
+const COLOUR_LETTERS = ['g', 'y', 'r'] as const;
+const COLOUR_ZONE = { g: 'top', y: 'mid', r: 'bottom' } as const;
+const COLOUR_NAME = { g: 'green', y: 'yellow', r: 'red' } as const;
+
+const COLOUR_PAIR_ASPECTS: CallAspect[] = COLOUR_LETTERS.flatMap((home) =>
+  COLOUR_LETTERS.map((away) => ({
+    id: `baseline-colour-${home}${away}`,
+    tabId: 'baseline',
+    functionId: 'colours',
+    label: `${home.toUpperCase()} v ${away.toUpperCase()}`,
+    detail: `Home is ${COLOUR_NAME[home]} and away is ${COLOUR_NAME[away]}.`,
+  })),
+);
+
 const LETTER_ASPECTS: CallAspect[] = LETTERS.map((letter) => ({
   id: `baseline-letter-${letter}`,
   tabId: 'baseline',
@@ -67,6 +81,7 @@ const LETTER_ASPECTS: CallAspect[] = LETTERS.map((letter) => ({
 
 export const CALL_ASPECTS: CallAspect[] = [
   ...LETTER_ASPECTS,
+  ...COLOUR_PAIR_ASPECTS,
   {
     id: 'baseline-gap-close',
     tabId: 'baseline',
@@ -306,6 +321,24 @@ export function scoreCallFixture(
 ): CallScore | null {
   const aspect = callAspectById(aspectId);
   if (!aspect) return null;
+  const colourPair = aspectId.match(/^baseline-colour-([gyr])([gyr])$/);
+  if (colourPair) {
+    const homeLetter = colourPair[1] as (typeof COLOUR_LETTERS)[number];
+    const awayLetter = colourPair[2] as (typeof COLOUR_LETTERS)[number];
+    const hit = home.zone === COLOUR_ZONE[homeLetter] && away.zone === COLOUR_ZONE[awayLetter];
+    const shown = (zone: CallTableRow['zone']) => (zone === 'top' ? 'G' : zone === 'mid' ? 'Y' : 'R');
+    return withGapSeparation(
+      aspect,
+      {
+        percent: hit ? 100 : 0,
+        reason: `Home ${shown(home.zone)} v away ${shown(away.zone)}`,
+      },
+      home,
+      away,
+      table,
+      context,
+    );
+  }
   if (aspect.tabId === 'calculations') return scoreCalculationFixture(aspectId, home, away, table, context);
   const fixture = context?.fixture ?? { homeId: home.teamId, awayId: away.teamId, unix: 0 };
   const scoreSide = (side: CallTableRow, opponent: CallTableRow) =>

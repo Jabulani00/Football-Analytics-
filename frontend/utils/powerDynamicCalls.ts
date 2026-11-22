@@ -27,10 +27,11 @@ export const POWER_DYNAMIC_CALLS: PowerDynamicCallDef[] = [
     id: 'baseline',
     index: '1',
     name: 'Baseline',
-    detail: 'Original baseline, the gap board, and each streamline.',
+    detail: 'Original baseline, the gap board, the colour pairs, and each streamline.',
     functions: [
       { id: 'original', label: 'Original', detail: 'The six-type baseline for both sides.' },
       { id: 'gap', label: 'Gap analysis', detail: 'Places between the two sides on the baseline.' },
+      { id: 'colours', label: 'Colours', detail: 'Home colour against away colour. Green is the top third, yellow the middle, red the bottom.' },
       { id: 'bateteme_1', label: 'Bateteme 1', detail: 'First Bateteme stream.' },
       { id: 'bateteme_2', label: 'Bateteme 2', detail: 'Second Bateteme stream.' },
       { id: 'compliant', label: 'Compliant stream', detail: 'Compliant stream membership.' },
