@@ -135,7 +135,7 @@ const PINNACLE_UPCOMING_PER_PAGE = 250;
 type ModelEvidenceBundle = {
   models: Map<number, Probs>;
   strategyContexts: Map<number, StrategyFixtureContext>;
-  oddAlertsFixtureByEvent: Map<number, number>;
+  oddAlertsFixtureByEvent: Map<number, { fixtureId: number; kickoffUnix: number | null }>;
 };
 
 /**
@@ -155,7 +155,10 @@ async function modelProbsForEvents(
 ): Promise<ModelEvidenceBundle> {
   const models = new Map<number, Probs>();
   const strategyContexts = new Map<number, StrategyFixtureContext>();
-  const oddAlertsFixtureByEvent = new Map<number, number>();
+  const oddAlertsFixtureByEvent = new Map<
+    number,
+    { fixtureId: number; kickoffUnix: number | null }
+  >();
 
   const fixtures = await fetchAllUpcomingFixtures({ days: 3, maxPages: 2 }, signal);
   if (fixtures.length === 0) return { models, strategyContexts, oddAlertsFixtureByEvent };
@@ -172,7 +175,12 @@ async function modelProbsForEvents(
 
   const pairs = pairFixturesToEvents(keyed, events).slice(0, MAX_MODEL_LOOKUPS);
   for (const pair of pairs) {
-    oddAlertsFixtureByEvent.set(pair.event.id, pair.fixture.fixtureId);
+    oddAlertsFixtureByEvent.set(pair.event.id, {
+      fixtureId: pair.fixture.fixtureId,
+      kickoffUnix: Number.isFinite(pair.fixture.kickoffUnix)
+        ? pair.fixture.kickoffUnix
+        : null,
+    });
   }
   const details: { eventId: number; detail: RawFixtureDetail }[] = [];
 
@@ -320,12 +328,13 @@ export function useHollywoodPopularOdds(enabled = true): HollywoodPopularOddsSta
         const marketFilters = pinnacleMarketFilters(marketCatalog);
         const matchedFixtures: PinnacleFixtureMatch[] = bundle
           ? events.flatMap((event) => {
-              const oddAlertsFixtureId = bundle.oddAlertsFixtureByEvent.get(event.id);
-              return oddAlertsFixtureId == null ? [] : [{
+              const oddAlertsFixture = bundle.oddAlertsFixtureByEvent.get(event.id);
+              return oddAlertsFixture == null ? [] : [{
                 eventId: event.id,
                 fixture: event.name,
                 kickoff: event.startTime,
-                oddAlertsFixtureId,
+                oddAlertsFixtureId: oddAlertsFixture.fixtureId,
+                oddAlertsKickoffUnix: oddAlertsFixture.kickoffUnix,
               }];
             }).slice(0, MAX_MODEL_LOOKUPS)
           : [];

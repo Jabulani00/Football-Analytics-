@@ -2,6 +2,7 @@ import { isBookmakerSelected } from '@/services/bookmakerSelection';
 import BookmakerFixtures from '@/components/analytics/BookmakerFixtures';
 import { hollywoodFixture } from '@/services/bookmakerFixtures';
 import { fetchEventDetail } from '@/services/hollywoodbets';
+import { matchHollywoodWithPinnacle } from '@/services/bookmakerAdapter';
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
@@ -177,6 +178,19 @@ export default function OddsFusionPanel({
       };
     })
     .filter((fixture) => fixture.markets.length > 0);
+  const hasCurrentPinnaclePrices = live.pinnacleOdds.some((fixture) =>
+    fixture.markets.some((item) => item.selections.some((selection) =>
+      selection.current != null,
+    )),
+  );
+  const pinnacleSelectionMatches = useMemo(
+    () => matchHollywoodWithPinnacle(
+      live.marketRows,
+      live.pinnacleOdds,
+      live.pinnacleCapturedAt,
+    ),
+    [live.marketRows, live.pinnacleOdds, live.pinnacleCapturedAt],
+  );
   const pinnaclePriceFixtureCount = live.pinnacleOdds.filter((fixture) =>
     fixture.markets.some((item) => item.selections.some((selection) =>
       selection.current != null ||
@@ -386,6 +400,45 @@ export default function OddsFusionPanel({
           {live.pinnacleMatchedFixtureCount === 0
             ? 'No selected Hollywood fixture matched an OddAlerts fixture ID in the upcoming window, so Pinnacle markets could not be checked.'
             : `Matched ${live.pinnacleMatchedFixtureCount} fixture(s), but OddAlerts returned no Pinnacle market prices for them.`}
+        </Text>
+      ) : null}
+
+      <SectionLabel style={styles.compareTitle}>Hollywood ? Pinnacle Exact Selection Matches</SectionLabel>
+      <Text style={styles.snapshotNote}>
+        Fixture IDs are associated first; this list includes only the same outcome, market, period,
+        and line when the provider kickoff is within 5 minutes. Pinnacle prices are closing-mode
+        snapshots, not live offers.
+      </Text>
+      {pinnacleSelectionMatches.length > 0 ? (
+        <View style={styles.comparisonList}>
+          {pinnacleSelectionMatches.slice(0, 20).map((match) => (
+            <View key={match.id} style={styles.comparisonCard}>
+              <Text style={styles.comparisonFixture}>{match.fixture}</Text>
+              <Text style={styles.comparisonMarket}>
+                {match.market} ? {match.selection}
+              </Text>
+              <Text style={styles.comparisonPrices}>
+                Hollywoodbets @ {match.hollywoodOdds.toFixed(2)} ? Pinnacle closing-mode @ {match.pinnacleOdds.toFixed(2)}
+              </Text>
+              <Text style={styles.comparisonMarket}>
+                OddAlerts fixture ID {match.oddAlertsFixtureId} ? kickoff difference {match.kickoffDeltaSeconds}s
+              </Text>
+              <Text style={styles.comparisonMarket}>
+                Pinnacle snapshot received {formatCapturedAt(match.capturedAt)}
+                {match.providerUpdatedAt
+                  ? ` ? provider timestamp ${formatCapturedAt(match.providerUpdatedAt)}`
+                  : ''}
+              </Text>
+            </View>
+          ))}
+        </View>
+      ) : live.pinnacleCapturedAt && !live.pinnacleLoading ? (
+        <Text style={styles.noComparison}>
+          {live.pinnacleMatchedFixtureCount === 0
+            ? 'No Hollywood fixture matched an OddAlerts fixture ID in this capture.'
+            : !hasCurrentPinnaclePrices
+              ? 'Fixture IDs matched, but no current Pinnacle snapshot prices were returned.'
+              : 'Pinnacle prices were returned, but none matched the same market, period, line, and outcome within the 5-minute kickoff window.'}
         </Text>
       ) : null}
 

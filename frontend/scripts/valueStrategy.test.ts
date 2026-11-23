@@ -5,6 +5,7 @@ import {
 import { CORE_VALUE_STRATEGY, evaluateStrategy } from '../services/strategyEngine';
 import {
   compareHollywoodWithProvider,
+  matchHollywoodWithPinnacle,
   mergeProviderBookmakers,
   normalizeOddAlertsValueBet,
 } from '../services/bookmakerAdapter';
@@ -135,6 +136,100 @@ const hollywoodRow = {
 const comparisons = compareHollywoodWithProvider([hollywoodRow], offers);
 check('same fixture and market compare across books', comparisons.length === 1);
 check('comparison selects the better price', comparisons[0]?.bestBookmaker === 'Bet365');
+
+const pinnacleKickoff = Math.floor(new Date(base.kickoff).getTime() / 1000);
+const pinnacleFixture = {
+  eventId: hollywoodRow.eventId,
+  fixture: hollywoodRow.fixture,
+  kickoff: hollywoodRow.kickoff,
+  oddAlertsFixtureId: 99,
+  oddAlertsKickoffUnix: pinnacleKickoff + 60,
+  latestPriceAt: '2026-11-21T09:05:00.000Z',
+  historyRowCount: 0,
+  markets: [
+    {
+      marketId: 6,
+      marketKey: 'ft_result',
+      marketName: 'Full Time Result',
+      selections: [
+        { key: 'home|', label: 'home', current: 2.3, opening: null, closing: null, peak: null },
+      ],
+    },
+    {
+      marketId: 21,
+      marketKey: 'total_goals_25',
+      marketName: 'Total Goals 2.5',
+      selections: [
+        { key: 'over|', label: 'over', current: 1.9, opening: null, closing: null, peak: null },
+      ],
+    },
+  ],
+};
+const pinnacleMatches = matchHollywoodWithPinnacle(
+  [hollywoodRow],
+  [pinnacleFixture],
+  '2026-11-21T09:05:30.000Z',
+);
+check('Pinnacle exact selection match requires the mapped fixture and a kickoff within five minutes',
+  pinnacleMatches.length === 1
+    && pinnacleMatches[0]?.pinnacleOdds === 2.3
+    && pinnacleMatches[0]?.oddAlertsFixtureId === 99
+    && pinnacleMatches[0]?.kickoffDeltaSeconds === 60);
+check('Pinnacle match retains provider and app capture timestamps',
+  pinnacleMatches[0]?.providerUpdatedAt === '2026-11-21T09:05:00.000Z'
+    && pinnacleMatches[0]?.capturedAt === '2026-11-21T09:05:30.000Z');
+check('Pinnacle closing history alone is not treated as a current comparison price',
+  matchHollywoodWithPinnacle([hollywoodRow], [{
+    ...pinnacleFixture,
+    markets: [{
+      ...pinnacleFixture.markets[0],
+      selections: [{ ...pinnacleFixture.markets[0].selections[0], current: null, closing: 2.3 }],
+    }],
+  }]).length === 0);
+check('Pinnacle fixture association outside the strict kickoff window is not price-matched',
+  matchHollywoodWithPinnacle([hollywoodRow], [{
+    ...pinnacleFixture,
+    oddAlertsKickoffUnix: pinnacleKickoff + 301,
+  }]).length === 0);
+check('Pinnacle kickoff exactly at the five-minute boundary remains eligible',
+  matchHollywoodWithPinnacle([hollywoodRow], [{
+    ...pinnacleFixture,
+    oddAlertsKickoffUnix: pinnacleKickoff + 5 * 60,
+  }]).length === 1);
+check('Pinnacle home prices do not match a different outcome',
+  matchHollywoodWithPinnacle([hollywoodRow], [{
+    ...pinnacleFixture,
+    markets: [{
+      ...pinnacleFixture.markets[0],
+      selections: [{ ...pinnacleFixture.markets[0].selections[0], label: 'away' }],
+    }],
+  }]).length === 0);
+check('Pinnacle first-half prices do not match a full-time selection',
+  matchHollywoodWithPinnacle([hollywoodRow], [{
+    ...pinnacleFixture,
+    markets: [{
+      ...pinnacleFixture.markets[0],
+      marketName: 'First Half Result',
+    }],
+  }]).length === 0);
+
+const hollywoodTotalsRow = {
+  ...hollywoodRow,
+  marketName: 'Total Goals 2.5',
+  selection: 'OVER 2.5',
+};
+check('Pinnacle totals match when the line is carried by the market name',
+  matchHollywoodWithPinnacle([hollywoodTotalsRow], [pinnacleFixture]).some(
+    (match) => match.market === 'Total Goals 2.5' && match.pinnacleOdds === 1.9,
+  ));
+check('Pinnacle totals with a different line are not matched',
+  matchHollywoodWithPinnacle([hollywoodTotalsRow], [{
+    ...pinnacleFixture,
+    markets: [{
+      ...pinnacleFixture.markets[1],
+      marketName: 'Total Goals 3.5',
+    }],
+  }]).length === 0);
 
 console.log('\nBet-slip sharing');
 const summary = buildBetSlipSummary(

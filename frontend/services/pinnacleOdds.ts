@@ -32,6 +32,7 @@ export type PinnacleFixtureMatch = {
   fixture: string;
   kickoff: string;
   oddAlertsFixtureId: number;
+  oddAlertsKickoffUnix?: number | null;
 };
 
 export type PinnacleSelectionPrice = {

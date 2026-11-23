@@ -5,6 +5,7 @@ import type {
 } from '@/services/oddAlerts';
 import type { MarketRow } from '@/services/hollywoodFusion';
 import { normalizeTeam } from '@/services/hollywoodMatch';
+import type { PinnacleFixtureOdds } from '@/services/pinnacleOdds';
 
 export type BookmakerStatus = 'live' | 'available_via_provider' | 'planned';
 
@@ -141,6 +142,70 @@ function selectionKey(market: string, selection: string): string {
   return text.replace(/[^a-z0-9.]+/g, ':');
 }
 
+export const PRICE_MATCH_KICKOFF_TOLERANCE_SECONDS = 5 * 60;
+
+function normalizeMarketText(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/[^a-z0-9.]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+function periodKey(text: string): string {
+  if (/\b(first half|1st half|half time|ht)\b/.test(text)) return 'h1';
+  if (/\b(second half|2nd half)\b/.test(text)) return 'h2';
+  return 'ft';
+}
+
+function marketSelectionKey(market: string, selection: string): string | null {
+  const normalizedMarket = normalizeMarketText(market);
+  const normalizedSelection = normalizeMarketText(selection);
+  if (!normalizedMarket || !normalizedSelection || /unknown/.test(normalizedMarket + normalizedSelection)) {
+    return null;
+  }
+
+  const text = `${normalizedMarket} ${normalizedSelection}`;
+  const period = periodKey(text);
+  const selectionWord = normalizedSelection;
+
+  const total = /\b(over|under)\s*(\d+(?:\.\d+)?)\b/.exec(text);
+  if (total) return `totals:${period}:${total[2]}:${total[1]}`;
+  const totalSide = /^(over|under)(?:\s|$)/.exec(selectionWord);
+  const marketLine = /\b(?:total goals?|totals?|over under)\s*(\d+(?:\.\d+)?)\b/.exec(normalizedMarket);
+  if (totalSide && marketLine) {
+    return `totals:${period}:${marketLine[1]}:${totalSide[1]}`;
+  }
+
+  if (/\b(btts|both teams to score)\b/.test(text)) {
+    if (/\b(yes|y)\b/.test(selectionWord)) return `btts:${period}:yes`;
+    if (/\b(no|n)\b/.test(selectionWord)) return `btts:${period}:no`;
+    return null;
+  }
+
+  const isResultMarket =
+    /\b(full time|ft result|match result|1x2|home win|away win|half time|first half|1st half|second half|2nd half)\b/.test(normalizedMarket)
+    || /^(home|away|draw) win$/.test(normalizedMarket);
+  if (isResultMarket) {
+    if (/^(home|home win|1)$/.test(selectionWord)) return `result:${period}:home`;
+    if (/^(away|away win|2)$/.test(selectionWord)) return `result:${period}:away`;
+    if (/^(draw|x)$/.test(selectionWord)) return `result:${period}:draw`;
+    return null;
+  }
+
+  return `other:${normalizedMarket}:${normalizedSelection}`;
+}
+
+function kickoffSeconds(value: string | number | null): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value !== 'string' || value.trim() === '') return null;
+  const milliseconds = Date.parse(value);
+  return Number.isFinite(milliseconds) ? Math.floor(milliseconds / 1000) : null;
+}
+
 /** Join Hollywood and OddAlerts offers only when fixture and market both match. */
 export function compareHollywoodWithProvider(
   hollywood: MarketRow[],
@@ -186,6 +251,89 @@ export function compareHollywoodWithProvider(
     });
   }
   return results.sort((a, b) => b.difference - a.difference);
+}
+
+export type PinnacleSelectionMatch = {
+  id: string;
+  eventId: number;
+  fixture: string;
+  market: string;
+  selection: string;
+  hollywoodOdds: number;
+  pinnacleOdds: number;
+  oddAlertsFixtureId: number;
+  kickoffDeltaSeconds: number;
+  providerUpdatedAt: string | null;
+  capturedAt: string | null;
+};
+
+/** Match only current Pinnacle prices to the same Hollywood event and selection. */
+export function matchHollywoodWithPinnacle(
+  hollywood: readonly MarketRow[],
+  pinnacle: readonly PinnacleFixtureOdds[],
+  capturedAt: string | null = null,
+): PinnacleSelectionMatch[] {
+  const byEvent = new Map<
+    number,
+    Map<string, { fixture: PinnacleFixtureOdds; odds: number }>
+  >();
+
+  for (const fixture of pinnacle) {
+    if (
+      fixture.oddAlertsKickoffUnix == null ||
+      !Number.isFinite(fixture.oddAlertsKickoffUnix)
+    ) continue;
+
+    let eventOffers = byEvent.get(fixture.eventId);
+    if (!eventOffers) {
+      eventOffers = new Map();
+      byEvent.set(fixture.eventId, eventOffers);
+    }
+
+    for (const market of fixture.markets) {
+      for (const selection of market.selections) {
+        const key = marketSelectionKey(market.marketName, selection.label);
+        const odds = selection.current;
+        if (!key || odds == null || !Number.isFinite(odds) || odds < 1) continue;
+        if (!eventOffers.has(key)) eventOffers.set(key, { fixture, odds });
+      }
+    }
+  }
+
+  const matches: PinnacleSelectionMatch[] = [];
+  for (const row of hollywood) {
+    const key = marketSelectionKey(row.marketName, row.selection);
+    const kickoff = kickoffSeconds(row.kickoff);
+    if (!key || kickoff == null) continue;
+
+    const candidate = byEvent.get(row.eventId)?.get(key);
+    if (!candidate) continue;
+    const providerKickoff = candidate.fixture.oddAlertsKickoffUnix;
+    if (providerKickoff == null || !Number.isFinite(providerKickoff)) continue;
+    const kickoffDeltaSeconds = Math.abs(providerKickoff - kickoff);
+    if (kickoffDeltaSeconds > PRICE_MATCH_KICKOFF_TOLERANCE_SECONDS) continue;
+
+    matches.push({
+      id: `${row.eventId}-${row.betTypeId}-${row.marketNumber}-${candidate.fixture.oddAlertsFixtureId}`,
+      eventId: row.eventId,
+      fixture: row.fixture,
+      market: row.marketName,
+      selection: row.selection,
+      hollywoodOdds: row.decimal,
+      pinnacleOdds: candidate.odds,
+      oddAlertsFixtureId: candidate.fixture.oddAlertsFixtureId,
+      kickoffDeltaSeconds,
+      providerUpdatedAt: candidate.fixture.latestPriceAt,
+      capturedAt,
+    });
+  }
+
+  return matches.sort(
+    (left, right) =>
+      left.fixture.localeCompare(right.fixture) ||
+      left.market.localeCompare(right.market) ||
+      left.selection.localeCompare(right.selection),
+  );
 }
 
 export function mergeProviderBookmakers(items: OddAlertsBookmaker[]): BookmakerCatalogItem[] {
