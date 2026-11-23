@@ -403,7 +403,7 @@ export default function OddsFusionPanel({
         </Text>
       ) : null}
 
-      <SectionLabel style={styles.compareTitle}>Hollywood ? Pinnacle Exact Selection Matches</SectionLabel>
+      <SectionLabel style={styles.compareTitle}>Hollywood to Pinnacle Exact Selection Matches</SectionLabel>
       <Text style={styles.snapshotNote}>
         Fixture IDs are associated first; this list includes only the same outcome, market, period,
         and line when the provider kickoff is within 5 minutes. Pinnacle prices are closing-mode
@@ -415,18 +415,18 @@ export default function OddsFusionPanel({
             <View key={match.id} style={styles.comparisonCard}>
               <Text style={styles.comparisonFixture}>{match.fixture}</Text>
               <Text style={styles.comparisonMarket}>
-                {match.market} ? {match.selection}
+                {match.market} - {match.selection}
               </Text>
               <Text style={styles.comparisonPrices}>
-                Hollywoodbets @ {match.hollywoodOdds.toFixed(2)} ? Pinnacle closing-mode @ {match.pinnacleOdds.toFixed(2)}
+                Hollywoodbets @ {match.hollywoodOdds.toFixed(2)} | Pinnacle closing-mode @ {match.pinnacleOdds.toFixed(2)}
               </Text>
               <Text style={styles.comparisonMarket}>
-                OddAlerts fixture ID {match.oddAlertsFixtureId} ? kickoff difference {match.kickoffDeltaSeconds}s
+                OddAlerts fixture ID {match.oddAlertsFixtureId} | kickoff difference {match.kickoffDeltaSeconds}s
               </Text>
               <Text style={styles.comparisonMarket}>
                 Pinnacle snapshot received {formatCapturedAt(match.capturedAt)}
                 {match.providerUpdatedAt
-                  ? ` ? provider timestamp ${formatCapturedAt(match.providerUpdatedAt)}`
+                  ? ` | provider timestamp ${formatCapturedAt(match.providerUpdatedAt)}`
                   : ''}
               </Text>
             </View>
