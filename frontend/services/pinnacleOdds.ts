@@ -68,6 +68,30 @@ export type PinnacleUpcomingScan = {
   truncated: boolean;
 };
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const MIN_ODDALERTS_FIXTURE_LOOKAHEAD_DAYS = 3;
+const MAX_ODDALERTS_FIXTURE_LOOKUP_PAGES = 8;
+
+export function oddAlertsFixtureLookupOptions(
+  kickoffs: readonly string[],
+  nowMs = Date.now(),
+): { days: number; maxPages: number } {
+  if (!Number.isFinite(nowMs)) {
+    throw new RangeError('nowMs must be a finite timestamp.');
+  }
+
+  const latestKickoffMs = kickoffs.reduce((latest, kickoff) => {
+    const timestamp = Date.parse(kickoff);
+    return Number.isFinite(timestamp) ? Math.max(latest, timestamp) : latest;
+  }, nowMs);
+  const days = Math.max(
+    MIN_ODDALERTS_FIXTURE_LOOKAHEAD_DAYS,
+    Math.ceil((latestKickoffMs - nowMs) / DAY_MS) + 1,
+  );
+
+  return { days, maxPages: MAX_ODDALERTS_FIXTURE_LOOKUP_PAGES };
+}
+
 function positiveInteger(value: unknown): number | null {
   const parsed = typeof value === 'number' ? value : Number(value);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;

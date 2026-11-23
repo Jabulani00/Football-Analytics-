@@ -1,6 +1,7 @@
 import {
   buildPinnacleFixtureOdds,
   collectPinnacleUpcomingPages,
+  oddAlertsFixtureLookupOptions,
   pinnacleMarketFilters,
   pinnacleOddsWindow,
   type PinnacleOddsEnvelope,
@@ -91,6 +92,18 @@ async function run(): Promise<void> {
       && window.to === Date.parse('2026-11-23T14:00:10Z') / 1000);
   check('invalid fixture kickoffs do not create a request window',
     pinnacleOddsWindow(['not-a-date'], 10) === null);
+
+  const fixtureLookup = oddAlertsFixtureLookupOptions(
+    ['2026-11-24T12:00:00Z', '2026-11-30T12:00:00Z'],
+    Date.parse('2026-11-23T12:00:00Z'),
+  );
+  check('fixture lookup covers the latest selected kickoff and paginates beyond page two',
+    fixtureLookup.days === 8 && fixtureLookup.maxPages > 2);
+  check('fixture lookup retains a bounded baseline for missing or past kickoffs',
+    oddAlertsFixtureLookupOptions(
+      ['not-a-date', '2026-11-22T12:00:00Z'],
+      Date.parse('2026-11-23T12:00:00Z'),
+    ).days === 3);
 
   const fetchedPages: number[] = [];
   const paged = await collectPinnacleUpcomingPages(

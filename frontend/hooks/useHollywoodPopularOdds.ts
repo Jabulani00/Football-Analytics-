@@ -46,6 +46,7 @@ import { KICKOFF_TOLERANCE_S } from '@/services/hollywoodMatch';
 import {
   buildPinnacleFixtureOdds,
   collectPinnacleUpcomingPages,
+  oddAlertsFixtureLookupOptions,
   pinnacleMarketFilters,
   pinnacleOddsWindow,
   type PinnacleFixtureMatch,
@@ -160,7 +161,8 @@ async function modelProbsForEvents(
     { fixtureId: number; kickoffUnix: number | null }
   >();
 
-  const fixtures = await fetchAllUpcomingFixtures({ days: 3, maxPages: 2 }, signal);
+  const fixtureLookup = oddAlertsFixtureLookupOptions(events.map((event) => event.startTime));
+  const fixtures = await fetchAllUpcomingFixtures(fixtureLookup, signal);
   if (fixtures.length === 0) return { models, strategyContexts, oddAlertsFixtureByEvent };
 
   const keyed = fixtures.map((f) => ({
