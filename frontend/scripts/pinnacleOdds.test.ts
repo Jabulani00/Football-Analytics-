@@ -65,6 +65,8 @@ async function run(): Promise<void> {
   check('opening, closing, and peak history maps for non-result markets',
     btts?.selections.find((selection) => selection.label === 'yes')?.opening === 1.7
       && totals?.selections.find((selection) => selection.label === 'over')?.closing === 1.9);
+  check('Pinnacle history rows are counted per matched fixture',
+    alpha.historyRowCount === 4 && result[1].historyRowCount === 0);
   check('latest price timestamp is retained',
     alpha.latestPriceAt === '2026-11-22T10:01:00Z');
   check('fixture with no odds remains identified',

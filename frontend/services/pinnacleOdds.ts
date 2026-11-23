@@ -53,6 +53,7 @@ export type PinnacleMarketOdds = {
 export type PinnacleFixtureOdds = PinnacleFixtureMatch & {
   markets: PinnacleMarketOdds[];
   latestPriceAt: string | null;
+  historyRowCount: number;
 };
 
 export type PinnacleOddsEnvelope = {
@@ -225,7 +226,12 @@ export function buildPinnacleFixtureOdds(
   const fixtures = new Map<number, PinnacleFixtureOdds>();
   for (const match of matchedFixtures) {
     if (!fixtures.has(match.eventId)) {
-      fixtures.set(match.eventId, { ...match, markets: [], latestPriceAt: null });
+      fixtures.set(match.eventId, {
+        ...match,
+        markets: [],
+        latestPriceAt: null,
+        historyRowCount: 0,
+      });
     }
   }
 
@@ -320,6 +326,9 @@ export function buildPinnacleFixtureOdds(
 
   for (const row of historyRows) {
     if (!isPinnacle(row, pinnacleBookmakerId)) continue;
+    const fixture = fixtureByProviderId.get(row.fixture_id);
+    if (!fixture) continue;
+    fixture.historyRowCount += 1;
     const match = getSelection(row);
     if (!match) continue;
     match.selection.opening = finitePrice(row.opening) ?? match.selection.opening;

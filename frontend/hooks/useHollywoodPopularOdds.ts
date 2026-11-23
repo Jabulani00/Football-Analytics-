@@ -82,6 +82,7 @@ export type HollywoodPopularOddsState = {
   pinnacleError: string | null;
   pinnacleWarning: string | null;
   pinnacleCapturedAt: string | null;
+  pinnacleHistoryRowCount: number | null;
   pinnacleMatchedFixtureCount: number;
   pinnacleCatalogMarketCount: number;
   strategyContexts: Map<number, StrategyFixtureContext>;
@@ -112,6 +113,7 @@ const EMPTY: OddsData = {
   pinnacleError: null,
   pinnacleWarning: null,
   pinnacleCapturedAt: null,
+  pinnacleHistoryRowCount: null,
   pinnacleMatchedFixtureCount: 0,
   pinnacleCatalogMarketCount: 0,
   strategyContexts: new Map(),
@@ -330,6 +332,7 @@ export function useHollywoodPopularOdds(enabled = true): HollywoodPopularOddsSta
         const fixtureIds = [...new Set(matchedFixtures.map((fixture) => fixture.oddAlertsFixtureId))];
         let currentRows: PinnacleOddsRow[] = [];
         let historyRows: PinnacleOddsRow[] = [];
+        let historyRowCount: number | null = null;
 
         if (matchedFixtures.length > 0 && oddsMarkets.status === 'fulfilled') {
           const invalidKickoff = matchedFixtures.some(
@@ -392,6 +395,7 @@ export function useHollywoodPopularOdds(enabled = true): HollywoodPopularOddsSta
             errors.push(`Pinnacle price history unavailable: ${String(history.reason)}`);
           } else if (history.value) {
             historyRows = history.value.data;
+            historyRowCount = historyRows.length;
           }
         }
         const pinnacleCapturedAt = new Date().toISOString();
@@ -420,6 +424,7 @@ export function useHollywoodPopularOdds(enabled = true): HollywoodPopularOddsSta
           pinnacleError: errors.length > 0 ? errors.join(' ') : null,
           pinnacleWarning: warnings.length > 0 ? warnings.join(' ') : null,
           pinnacleCapturedAt,
+          pinnacleHistoryRowCount: historyRowCount,
           pinnacleMatchedFixtureCount: matchedFixtures.length,
           pinnacleCatalogMarketCount: marketFilters.upcoming.length,
           warning: evidence.status === 'rejected'

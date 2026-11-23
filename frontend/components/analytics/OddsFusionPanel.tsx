@@ -162,12 +162,20 @@ export default function OddsFusionPanel({
     ? pinnacleMarket
     : '';
   const pinnacleFixtures = live.pinnacleOdds
-    .map((fixture) => ({
-      ...fixture,
-      markets: fixture.markets.filter((item) =>
+    .map((fixture) => {
+      const markets = fixture.markets.filter((item) =>
         !activePinnacleMarket || item.marketKey === activePinnacleMarket,
-      ),
-    }))
+      );
+      const selections = markets.flatMap((item) => item.selections);
+      return {
+        ...fixture,
+        markets,
+        historySelectionCount: selections.filter((selection) =>
+          selection.opening != null || selection.closing != null || selection.peak != null,
+        ).length,
+        displayedSelectionCount: selections.length,
+      };
+    })
     .filter((fixture) => fixture.markets.length > 0);
   const pinnaclePriceFixtureCount = live.pinnacleOdds.filter((fixture) =>
     fixture.markets.some((item) => item.selections.some((selection) =>
@@ -335,6 +343,13 @@ export default function OddsFusionPanel({
               {fixture.latestPriceAt ? (
                 <Text style={styles.comparisonMarket}>
                   Latest snapshot timestamp {formatCapturedAt(fixture.latestPriceAt)}
+                </Text>
+              ) : null}
+              {live.pinnacleHistoryRowCount !== null ? (
+                <Text style={styles.comparisonMarket}>
+                  {fixture.historyRowCount === 0
+                    ? 'OddAlerts returned no historical price rows for this fixture in this capture.'
+                    : `${fixture.historySelectionCount} of ${fixture.displayedSelectionCount} displayed selections have history (${fixture.historyRowCount} rows returned).`}
                 </Text>
               ) : null}
               {fixture.markets.map((item) => (
