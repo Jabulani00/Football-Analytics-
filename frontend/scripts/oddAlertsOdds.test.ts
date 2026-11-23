@@ -22,6 +22,16 @@ check('upcoming odds defaults to closing and deduplicates filters',
     && upcoming.params.odds_type === 'closing');
 check('upcoming odds builds a proxy URL without a token parameter',
   !('api_token' in upcoming.params));
+const catalogMarkets = buildUpcomingOddsRequest({
+  bookmakers: ['pinnacle'],
+  markets: [6, 9, 21],
+  from: 1_800_000_000,
+  to: 1_800_086_400,
+  perPage: 250,
+});
+check('upcoming odds accepts catalog market IDs for multi-market requests',
+  catalogMarkets.params.markets === '6,9,21'
+    && catalogMarkets.params.per_page === 250);
 check('native odds requests require an absolute server proxy',
   (() => {
     try {

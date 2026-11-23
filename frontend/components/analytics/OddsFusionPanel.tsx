@@ -36,12 +36,14 @@ type DisplayRow = {
 
 const PICK_LABEL: Record<FusionRow['pick'], string> = { '1': 'Home', X: 'Draw', '2': 'Away' };
 const OUTCOME_KEY = { '1': 'home', X: 'draw', '2': 'away' } as const;
-const RESULT_OUTCOMES = ['home', 'draw', 'away'] as const;
-
 function formatCapturedAt(value: string | null): string {
   if (!value) return 'capture time unavailable';
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? 'capture time unavailable' : date.toLocaleString();
+}
+
+function formatPrice(value: number | null): string {
+  return value == null ? '—' : value.toFixed(2);
 }
 
 /** Map a per-market row into the table's display shape. */
@@ -137,8 +139,9 @@ export default function OddsFusionPanel({
   const fixtures = useMemo(() => live.events.map((event) => hollywoodFixture(event, live.observedAt, live.tournamentId != null && live.categoryId != null ? { tournamentId: live.tournamentId, tournamentName: live.source?.tournamentName ?? event.tournament, countryId: live.categoryId } : undefined)), [live.events, live.observedAt, live.tournamentId, live.categoryId, live.source?.tournamentName]);
   const [query, setQuery] = useState('');
   const [market, setMarket] = useState('');
+  const [pinnacleMarket, setPinnacleMarket] = useState('');
   const [page, setPage] = useState(0);
-  useEffect(() => { setQuery(''); setMarket(''); setPage(0); }, [live.categoryId, live.tournamentId]);
+  useEffect(() => { setQuery(''); setMarket(''); setPinnacleMarket(''); setPage(0); }, [live.categoryId, live.tournamentId]);
   const allRows = useMemo<DisplayRow[]>(() => live.marketRows.length > 0
     ? live.marketRows.map(fromMarket) : live.rows.map(fromFusion), [live.rows, live.marketRows]);
   const markets = [...new Set(allRows.map((row) => row.marketName))];
@@ -146,6 +149,34 @@ export default function OddsFusionPanel({
   const shown = paginateFusionRows(allRows, query, activeMarket, page);
   const rows = shown.rows;
   const isLive = allRows.length > 0;
+  const pinnacleMarkets = useMemo(() => {
+    const names = new Map<string, string>();
+    for (const fixture of live.pinnacleOdds) {
+      for (const item of fixture.markets) names.set(item.marketKey, item.marketName);
+    }
+    return [...names.entries()]
+      .map(([key, label]) => ({ key, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [live.pinnacleOdds]);
+  const activePinnacleMarket = pinnacleMarkets.some((item) => item.key === pinnacleMarket)
+    ? pinnacleMarket
+    : '';
+  const pinnacleFixtures = live.pinnacleOdds
+    .map((fixture) => ({
+      ...fixture,
+      markets: fixture.markets.filter((item) =>
+        !activePinnacleMarket || item.marketKey === activePinnacleMarket,
+      ),
+    }))
+    .filter((fixture) => fixture.markets.length > 0);
+  const pinnaclePriceFixtureCount = live.pinnacleOdds.filter((fixture) =>
+    fixture.markets.some((item) => item.selections.some((selection) =>
+      selection.current != null ||
+      selection.opening != null ||
+      selection.closing != null ||
+      selection.peak != null,
+    )),
+  ).length;
 
   return (
     <View style={styles.container}>
@@ -253,51 +284,81 @@ export default function OddsFusionPanel({
         </Pressable>
       </View> : null}
 
-      <SectionLabel style={styles.compareTitle}>Pinnacle Odds & Closing History</SectionLabel>
+      <SectionLabel style={styles.compareTitle}>Pinnacle Market Odds & Closing History</SectionLabel>
       <Text style={styles.snapshotNote}>
-        Full-time result only. The filtered OddAlerts upcoming feed is requested in closing-odds
-        mode; opening, closing, and peak are the provider&apos;s recorded history. This panel is
-        informational and does not place or qualify bets.
+        The OddAlerts market catalog is queried for Pinnacle across up to 12 matched fixtures.
+        Only markets with returned Pinnacle prices appear. The upcoming snapshot uses closing-odds
+        mode; opening, closing, and peak are the provider&apos;s recorded history, not live odds.
       </Text>
       {live.pinnacleCapturedAt ? (
         <Text style={styles.sourceNote}>
-          OddAlerts data received {formatCapturedAt(live.pinnacleCapturedAt)} · at most 12
-          securely matched fixtures · Pinnacle
+          OddAlerts data received {formatCapturedAt(live.pinnacleCapturedAt)} ·
+          {live.pinnacleMatchedFixtureCount} fixtures matched ·
+          {pinnaclePriceFixtureCount} with Pinnacle prices ·
+          {pinnacleMarkets.length} markets returned from {live.pinnacleCatalogMarketCount} catalog markets
         </Text>
       ) : null}
       {live.pinnacleLoading ? (
-        <Text style={styles.noComparison}>Loading Pinnacle snapshot and batched closing history…</Text>
+        <Text style={styles.noComparison}>Loading Pinnacle market snapshot and batched history…</Text>
       ) : null}
       {live.pinnacleError ? (
         <Text style={styles.pinnacleError}>{live.pinnacleError}</Text>
       ) : null}
-      {live.pinnacleOdds.length > 0 ? (
+      {live.pinnacleWarning ? (
+        <Text style={styles.snapshotNote}>{live.pinnacleWarning}</Text>
+      ) : null}
+      {pinnacleMarkets.length > 0 ? (
+        <View style={styles.filters}>
+          <FilterDropdown
+            label="Pinnacle market"
+            value={activePinnacleMarket}
+            options={[
+              { value: '', label: 'All returned markets' },
+              ...pinnacleMarkets.map((item) => ({
+                value: item.key,
+                label: `${item.label} (${item.key})`,
+              })),
+            ]}
+            onChange={setPinnacleMarket}
+            style={styles.pinnacleFilter}
+          />
+        </View>
+      ) : null}
+      {pinnacleFixtures.length > 0 ? (
         <View style={styles.comparisonList}>
-          {live.pinnacleOdds.map((fixture) => (
+          {pinnacleFixtures.map((fixture) => (
             <View key={fixture.eventId} style={styles.comparisonCard}>
               <Text style={styles.comparisonFixture}>{fixture.fixture}</Text>
-              <Text style={styles.comparisonMarket}>Full Time · matched via OddAlerts fixture ID</Text>
+              <Text style={styles.comparisonMarket}>
+                Matched via OddAlerts fixture ID {fixture.oddAlertsFixtureId}
+              </Text>
               {fixture.latestPriceAt ? (
                 <Text style={styles.comparisonMarket}>
-                  Latest Pinnacle price timestamp {formatCapturedAt(fixture.latestPriceAt)}
+                  Latest snapshot timestamp {formatCapturedAt(fixture.latestPriceAt)}
                 </Text>
               ) : null}
-              <View style={styles.pinnacleHeader}>
-                <Text style={[styles.pinnacleCell, styles.pinnacleOutcome]}>Outcome</Text>
-                <Text style={styles.pinnacleCell}>Latest quote</Text>
-                <Text style={styles.pinnacleCell}>Opening</Text>
-                <Text style={styles.pinnacleCell}>Closing</Text>
-                <Text style={styles.pinnacleCell}>Peak</Text>
-              </View>
-              {RESULT_OUTCOMES.map((outcome) => (
-                <View key={outcome} style={styles.pinnacleRow}>
-                  <Text style={[styles.pinnacleCell, styles.pinnacleOutcome]}>
-                    {outcome[0].toUpperCase()}{outcome.slice(1)}
+              {fixture.markets.map((item) => (
+                <View key={`${item.marketId ?? item.marketKey}`} style={styles.pinnacleMarketBlock}>
+                  <Text style={styles.pinnacleMarketName}>
+                    {item.marketName} · {item.marketKey}
                   </Text>
-                  {[fixture.current, fixture.opening, fixture.closing, fixture.peak].map((prices, index) => (
-                    <Text key={index} style={styles.pinnacleCell}>
-                      {prices[outcome] == null ? '—' : prices[outcome]!.toFixed(2)}
-                    </Text>
+                  <View style={styles.pinnacleHeader}>
+                    <Text style={[styles.pinnacleCell, styles.pinnacleOutcome]}>Selection</Text>
+                    <Text style={styles.pinnacleCell}>Snapshot</Text>
+                    <Text style={styles.pinnacleCell}>Opening</Text>
+                    <Text style={styles.pinnacleCell}>Closing</Text>
+                    <Text style={styles.pinnacleCell}>Peak</Text>
+                  </View>
+                  {item.selections.map((selection) => (
+                    <View key={selection.key} style={styles.pinnacleRow}>
+                      <Text style={[styles.pinnacleCell, styles.pinnacleOutcome]}>
+                        {selection.label}
+                      </Text>
+                      <Text style={styles.pinnacleCell}>{formatPrice(selection.current)}</Text>
+                      <Text style={styles.pinnacleCell}>{formatPrice(selection.opening)}</Text>
+                      <Text style={styles.pinnacleCell}>{formatPrice(selection.closing)}</Text>
+                      <Text style={styles.pinnacleCell}>{formatPrice(selection.peak)}</Text>
+                    </View>
                   ))}
                 </View>
               ))}
@@ -306,8 +367,9 @@ export default function OddsFusionPanel({
         </View>
       ) : !live.pinnacleLoading && !live.pinnacleError ? (
         <Text style={styles.noComparison}>
-          No Pinnacle prices matched the currently supported full-time selections. Only fixtures
-          matched to OddAlerts IDs by the existing capped fixture matcher can show history.
+          {live.pinnacleMatchedFixtureCount === 0
+            ? 'No selected Hollywood fixture matched an OddAlerts fixture ID in the upcoming window, so Pinnacle markets could not be checked.'
+            : `Matched ${live.pinnacleMatchedFixtureCount} fixture(s), but OddAlerts returned no Pinnacle market prices for them.`}
         </Text>
       ) : null}
 
@@ -525,10 +587,14 @@ const styles = StyleSheet.create({
     textAlign: 'center', maxWidth: 720, marginBottom: spacing.md },
   pinnacleHeader: { width: '100%', flexDirection: 'row', borderBottomWidth: layout.borderWidth,
     borderBottomColor: theme.border, paddingVertical: spacing.xs, marginTop: spacing.sm },
-  pinnacleRow: { width: '100%', flexDirection: 'row', paddingVertical: spacing.xs },
+  pinnacleRow: { width: '100%', flexDirection: 'row', paddingVertical: spacing.xs, alignItems: 'center' },
   pinnacleCell: { flex: 1, textAlign: 'center', fontFamily: fonts.body, fontSize: 10,
     color: theme.textMuted },
-  pinnacleOutcome: { textAlign: 'left', fontFamily: fonts.bodySemiBold, color: theme.textPrimary },
+  pinnacleOutcome: { flex: 1.4, textAlign: 'left', fontFamily: fonts.bodySemiBold, color: theme.textPrimary },
+  pinnacleFilter: { width: '100%', maxWidth: 520, flexBasis: 'auto' },
+  pinnacleMarketBlock: { width: '100%', marginTop: spacing.sm },
+  pinnacleMarketName: { fontFamily: fonts.bodySemiBold, fontSize: 11,
+    color: theme.accentBlue, textAlign: 'left', marginTop: spacing.xs },
   snapshotNote: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted, textAlign: 'center',
     maxWidth: 720, marginBottom: spacing.md, lineHeight: 17 },
   comparisonCard: {

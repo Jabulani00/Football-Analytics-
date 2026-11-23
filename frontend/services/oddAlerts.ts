@@ -241,6 +241,8 @@ export type OddAlertsOddsMarket = {
   key?: string;
   market_key?: string;
   name?: string;
+  title?: string;
+  title_short?: string;
   [key: string]: unknown;
 };
 

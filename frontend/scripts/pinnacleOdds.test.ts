@@ -1,46 +1,122 @@
-import { buildPinnacleFixtureOdds } from '../services/pinnacleOdds';
+import {
+  buildPinnacleFixtureOdds,
+  collectPinnacleUpcomingPages,
+  pinnacleMarketFilters,
+  pinnacleOddsWindow,
+  type PinnacleOddsEnvelope,
+} from '../services/pinnacleOdds';
 
-const rows = [
-  { eventId: 7, fixture: 'Alpha vs Bravo', kickoff: '2026-11-23T12:00:00Z', marketName: 'Full Time', selection: 'Home' },
-  { eventId: 7, fixture: 'Alpha vs Bravo', kickoff: '2026-11-23T12:00:00Z', marketName: 'Full Time', selection: 'Draw' },
-  { eventId: 7, fixture: 'Alpha vs Bravo', kickoff: '2026-11-23T12:00:00Z', marketName: 'Full Time', selection: 'Away' },
-  { eventId: 8, fixture: 'Charlie vs Delta', kickoff: '2026-11-23T14:00:00Z', marketName: 'Full Time', selection: 'Home' },
-];
-const fixtureIds = new Map([[7, 101], [8, 102]]);
-
-const result = buildPinnacleFixtureOdds(
-  rows,
-  fixtureIds,
-  [
-    { fixture_id: 101, market_key: 'ft_result', outcome: 'home', odds: 2.1, unix: 1, bookmaker_id: 47, datetime: '2026-11-22T10:00:00Z' },
-    { fixture_id: 101, market_key: 'ft_result', outcome: '1', odds: 2.2, unix: 2, bookmaker_slug: 'pinnacle', datetime: '2026-11-22T10:01:00Z' },
-    { fixture_id: 101, market_key: 'ft_result', outcome: 'draw', odds: 3.2, unix: 2, bookmaker_id: 47 },
-    { fixture_id: 101, market_key: 'ft_result', outcome: 'away', odds: 3.5, unix: 2, bookmaker_id: 2 },
-    { fixture_id: 101, market_key: 'btts', outcome: 'yes', odds: 1.8, unix: 2, bookmaker_id: 1 },
-  ],
-  [
-    { fixture_id: 101, market_id: 6, outcome: 'home', opening: 2.0, closing: 2.2, peak: 2.4, bookmaker_id: 47 },
-    { fixture_id: 101, market_id: 6, outcome: 'draw', opening: 3.1, closing: 3.2, peak: 3.4, bookmaker_id: 47 },
-    { fixture_id: 101, market_id: 6, outcome: 'away', opening: 3.6, closing: 3.5, peak: 3.8, bookmaker_id: 47 },
-    { fixture_id: 101, market_id: 9, outcome: 'home', opening: 1.9, closing: 2.0, peak: 2.1, bookmaker_id: 47 },
-    { fixture_id: 101, market_id: 6, outcome: 'home', opening: 2.2, closing: 2.3, peak: 2.5, bookmaker_id: 2 },
-  ],
-  6,
-  47,
-);
-
-if (result.length !== 2) throw new Error('Matched fixtures should be emitted even when no Pinnacle price is available.');
-if (result[0].current.home !== 2.2) throw new Error('The latest Pinnacle FT home price was not selected.');
-if (result[0].current.draw !== 3.2) throw new Error('Pinnacle draw price was not normalized.');
-if (result[0].current.away !== null) throw new Error('Non-Pinnacle or non-FT prices must not be used.');
-if (result[0].opening.home !== 2 || result[0].closing.home !== 2.2 || result[0].peak.home !== 2.4) {
-  throw new Error('Pinnacle opening, closing and peak history was not mapped.');
-}
-if (result[0].latestPriceAt !== '2026-11-22T10:01:00Z') {
-  throw new Error('Latest price timestamp was not retained.');
-}
-if (result[1].oddAlertsFixtureId !== 102 || result[1].current.home !== null) {
-  throw new Error('Fixtures without Pinnacle rows should retain their mapping and show no quote.');
+function check(name: string, value: boolean): void {
+  if (!value) throw new Error(`Failed: ${name}`);
+  console.log(`✓ ${name}`);
 }
 
-console.log('Pinnacle full-time prices and historical line mapping passed.');
+async function run(): Promise<void> {
+  const catalog = [
+    { id: 6, market_key: 'ft_result', title: 'Full Time Result' },
+    { id: 9, market_key: 'btts', title: 'Both Teams to Score' },
+    { id: 21, market_key: 'total_goals_25', title: 'Total Goals 2.5' },
+  ];
+  const fixtures = [
+    { eventId: 7, fixture: 'Alpha vs Bravo', kickoff: '2026-11-23T12:00:00Z', oddAlertsFixtureId: 101 },
+    { eventId: 8, fixture: 'Charlie vs Delta', kickoff: '2026-11-23T14:00:00Z', oddAlertsFixtureId: 102 },
+  ];
+  const result = buildPinnacleFixtureOdds(
+    fixtures,
+    [
+      { fixture_id: 101, market_key: 'ft_result', market_id: 6, outcome: 'home', odds: 2.1, unix: 1, bookmaker_id: 47, datetime: '2026-11-22T10:00:00Z' },
+      { fixture_id: 101, market_key: 'btts', market_id: 9, outcome: 'yes', odds: 1.8, unix: 2, bookmaker_slug: 'pinnacle', datetime: '2026-11-22T10:01:00Z' },
+      { fixture_id: 101, market_key: 'ft_result', market_id: 6, outcome: 'draw', odds: 3.2, unix: 2, bookmaker_id: 47 },
+      { fixture_id: 101, market_key: 'btts', market_id: 9, outcome: 'no', odds: 2.1, unix: 2, bookmaker_id: 47 },
+      { fixture_id: 101, market_key: 'total_goals_25', market_id: 21, outcome: 'over', odds: 1.9, unix: 2, bookmaker_id: 47 },
+      { fixture_id: 101, market_key: 'total_goals_25', market_id: 21, outcome: 'under', odds: 1.9, unix: 2, bookmaker_id: 47 },
+      { fixture_id: 101, market_key: 'ft_result', market_id: 6, outcome: 'home', odds: 2.3, unix: 3, bookmaker_slug: 'bet365', bookmaker_id: 47 },
+      { fixture_id: 101, market_key: 'ft_result', market_id: 6, outcome: 'away', odds: 3.5, unix: 3, bookmaker_id: 2 },
+    ],
+    [
+      { fixture_id: 101, market_id: 6, outcome: 'home', opening: 2.0, closing: 2.2, peak: 2.4, bookmaker_id: 47 },
+      { fixture_id: 101, market_id: 6, outcome: 'draw', opening: 3.1, closing: 3.2, peak: 3.4, bookmaker_id: 47 },
+      { fixture_id: 101, market_id: 9, outcome: 'yes', opening: 1.7, closing: 1.8, peak: 1.9, bookmaker_id: 47 },
+      { fixture_id: 101, market_id: 21, outcome: 'over', opening: 1.8, closing: 1.9, peak: 2.0, bookmaker_id: 47 },
+      { fixture_id: 101, market_id: 6, outcome: 'home', opening: 2.2, closing: 2.3, peak: 2.5, bookmaker_id: 2 },
+    ],
+    catalog,
+    47,
+  );
+
+  check('matched fixtures are retained even without Pinnacle prices', result.length === 2);
+  const alpha = result[0];
+  const fullTime = alpha.markets.find((market) => market.marketKey === 'ft_result');
+  const btts = alpha.markets.find((market) => market.marketKey === 'btts');
+  const totals = alpha.markets.find((market) => market.marketKey === 'total_goals_25');
+  check('more than one Pinnacle market is grouped by catalog key',
+    alpha.markets.length === 3 && fullTime != null && btts != null && totals != null);
+  check('market selections remain in their own market group',
+    fullTime != null
+      && btts != null
+      && fullTime.selections.some((selection) => selection.label === 'draw')
+      && btts.selections.some((selection) => selection.label === 'no'));
+  check('latest Pinnacle FT home snapshot is retained',
+    fullTime?.selections.find((selection) => selection.label === 'home')?.current === 2.1);
+  check('Pinnacle market titles are resolved from the catalog',
+    btts?.marketName === 'Both Teams to Score');
+  check('non-Pinnacle prices are ignored even when their bookmaker ID collides',
+    fullTime != null && fullTime.selections.every((selection) => selection.label !== 'away'));
+  check('opening, closing, and peak history maps for non-result markets',
+    btts?.selections.find((selection) => selection.label === 'yes')?.opening === 1.7
+      && totals?.selections.find((selection) => selection.label === 'over')?.closing === 1.9);
+  check('latest price timestamp is retained',
+    alpha.latestPriceAt === '2026-11-22T10:01:00Z');
+  check('fixture with no odds remains identified',
+    result[1].oddAlertsFixtureId === 102 && result[1].markets.length === 0);
+
+  const filters = pinnacleMarketFilters([
+    ...catalog,
+    { id: '9', market_key: 'btts' },
+    { market_key: 'fallback_key' },
+    { title: 'Not filterable' },
+  ]);
+  check('all catalog market IDs become deduplicated upcoming and history filters',
+    filters.upcoming.join(',') === '6,9,21,fallback_key'
+      && filters.history.join(',') === '6,9,21');
+
+  const window = pinnacleOddsWindow(
+    ['2026-11-23T12:00:00Z', '2026-11-23T14:00:00Z'],
+    10,
+  );
+  check('upcoming request window covers matched kickoffs and tolerance',
+    window?.from === Date.parse('2026-11-23T11:59:50Z') / 1000
+      && window.to === Date.parse('2026-11-23T14:00:10Z') / 1000);
+  check('invalid fixture kickoffs do not create a request window',
+    pinnacleOddsWindow(['not-a-date'], 10) === null);
+
+  const fetchedPages: number[] = [];
+  const paged = await collectPinnacleUpcomingPages(
+    async (page): Promise<PinnacleOddsEnvelope> => {
+      fetchedPages.push(page);
+      return page === 1
+        ? { data: [{ fixture_id: 101 }], info: { next_page_url: 'next' } }
+        : { data: [{ fixture_id: 102 }], info: { next_page_url: 'next' } };
+    },
+    new Set([101, 102]),
+    4,
+  );
+  check('board pagination stops after finding every matched fixture',
+    fetchedPages.join(',') === '1,2' && paged.pagesFetched === 2 && !paged.truncated);
+
+  const capped = await collectPinnacleUpcomingPages(
+    async (page) => ({
+      data: [{ fixture_id: 101 }],
+      info: { next_page_url: page < 2 ? 'next' : 'next' },
+    }),
+    new Set([101, 999]),
+    2,
+  );
+  check('board pagination reports when its request cap is reached',
+    capped.pagesFetched === 2 && capped.truncated);
+}
+
+void run().catch((error: unknown) => {
+  console.error(error);
+  process.exitCode = 1;
+});
