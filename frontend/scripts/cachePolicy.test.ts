@@ -8,6 +8,10 @@ const cases: Case[] = [
   { path: 'fixtures/live', name: 'fixtures/live', fresh: 10_000 },
   { path: 'fixtures/upcoming', name: 'fixtures/upcoming', fresh: 20_000 },
   { path: 'value/upcoming', name: 'fixtures/upcoming', fresh: 20_000 },
+  { path: 'odds/upcoming', name: 'odds/upcoming', fresh: 30_000 },
+  { path: 'odds/history/123', name: 'odds/history', fresh: 60_000 },
+  { path: 'odds/history/multiple', name: 'odds/history', fresh: 60_000 },
+  { path: 'odds/markets', name: 'reference', fresh: 5 * 60_000 },
   { path: 'fixtures/between', name: 'fixtures/between', fresh: 60_000 }, // regression: used to hit fixtures/id (15s)
   { path: 'fixtures/123', name: 'fixtures/id', fresh: 15_000 },
   { path: 'stats/season', name: 'stats', fresh: 60_000 }, // bare client label

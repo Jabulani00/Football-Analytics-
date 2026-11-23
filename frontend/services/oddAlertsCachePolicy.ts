@@ -10,6 +10,8 @@ export type TtlName =
   | 'fixtures/upcoming'
   | 'fixtures/id'
   | 'fixtures/between'
+  | 'odds/upcoming'
+  | 'odds/history'
   | 'stats'
   | 'reference';
 
@@ -18,6 +20,8 @@ const DEFAULT_TTLS: Record<TtlName, TtlWindow> = {
   'fixtures/upcoming': { freshMs: 20_000, staleMs: 20_000 },
   'fixtures/id': { freshMs: 15_000, staleMs: 15_000 },
   'fixtures/between': { freshMs: 60_000, staleMs: 60_000 },
+  'odds/upcoming': { freshMs: 30_000, staleMs: 30_000 },
+  'odds/history': { freshMs: 60_000, staleMs: 120_000 },
   stats: { freshMs: 60_000, staleMs: 120_000 },
   reference: { freshMs: 5 * 60_000, staleMs: 10 * 60_000 },
 };
@@ -62,6 +66,8 @@ function ttlOverrides(): Partial<Record<TtlName, TtlWindow>> {
 export function ttlNameFor(path: string): TtlName | null {
   if (path === 'fixtures/live') return 'fixtures/live';
   if (path === 'fixtures/upcoming' || path === 'value/upcoming') return 'fixtures/upcoming';
+  if (path === 'odds/upcoming') return 'odds/upcoming';
+  if (path === 'odds/history' || path.startsWith('odds/history/')) return 'odds/history';
   // `fixtures/between` must be matched before the single-segment id regex below,
   // which it also satisfies — otherwise it falls through to the 15s id TTL
   // instead of its designed 60s window, quadrupling pulls of the results feed.
@@ -77,7 +83,13 @@ export function ttlNameFor(path: string): TtlName | null {
   ) {
     return 'stats';
   }
-  if (path === 'countries' || path === 'competitions' || path === 'bookmakers' || path.startsWith('competitions/')) {
+  if (
+    path === 'countries' ||
+    path === 'competitions' ||
+    path === 'bookmakers' ||
+    path === 'odds/markets' ||
+    path.startsWith('competitions/')
+  ) {
     return 'reference';
   }
   return null;
