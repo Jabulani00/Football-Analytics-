@@ -16,10 +16,44 @@ export type OddsHistoryRequestOptions = {
   markets: readonly number[];
 };
 
+export type OddAlertsOddsMarket = {
+  id?: number | string;
+  market_id?: number | string;
+  key?: string;
+  market_key?: string;
+  name?: string;
+  title?: string;
+  title_short?: string;
+  [key: string]: unknown;
+};
+
 export type OddAlertsOddsRequest = {
   path: string;
   params: Record<string, string | number | undefined>;
 };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** OddAlerts may return the market catalog directly or inside a data envelope. */
+export function normalizeOddsMarketCatalogResponse(payload: unknown): OddAlertsOddsMarket[] {
+  const rows = Array.isArray(payload)
+    ? payload
+    : isRecord(payload) && Array.isArray(payload.data)
+      ? payload.data
+      : null;
+  if (rows === null) {
+    throw new TypeError('OddAlerts odds/markets response must be an array or contain a data array.');
+  }
+
+  return rows.map((row, index) => {
+    if (!isRecord(row)) {
+      throw new TypeError(`OddAlerts odds/markets row ${index} must be an object.`);
+    }
+    return row;
+  });
+}
 
 function filterList(values: readonly OddsFilter[], name: string): string {
   if (!values.length) throw new RangeError(`${name} must include at least one value.`);

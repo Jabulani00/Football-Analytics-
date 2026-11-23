@@ -2,12 +2,28 @@ import {
   assertOddAlertsServerProxy,
   buildOddsHistoryRequest,
   buildUpcomingOddsRequest,
+  normalizeOddsMarketCatalogResponse,
 } from '../services/oddAlertsOddsRequests';
 
 function check(name: string, value: boolean): void {
   if (!value) throw new Error(`Failed: ${name}`);
   console.log(`✓ ${name}`);
 }
+
+const bareCatalog = [{ id: 6, market_key: 'ft_result' }, { id: 9, market_key: 'btts' }];
+const normalizedBareCatalog = normalizeOddsMarketCatalogResponse(bareCatalog);
+check('market catalog accepts the provider bare-array response',
+  normalizedBareCatalog.length === 2 && normalizedBareCatalog[1].market_key === 'btts');
+const normalizedEnvelopeCatalog = normalizeOddsMarketCatalogResponse({ data: bareCatalog });
+check('market catalog also accepts a data envelope',
+  normalizedEnvelopeCatalog.length === 2 && normalizedEnvelopeCatalog[0].id === 6);
+let invalidCatalogRejected = false;
+try {
+  normalizeOddsMarketCatalogResponse({ data: 'not-an-array' });
+} catch (error) {
+  invalidCatalogRejected = error instanceof TypeError && error.message.includes('odds/markets');
+}
+check('invalid market catalog payloads fail with an explicit schema error', invalidCatalogRejected);
 
 const upcoming = buildUpcomingOddsRequest({
   bookmakers: ['pinnacle', 'bet365', 'pinnacle'],

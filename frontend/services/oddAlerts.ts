@@ -6,6 +6,8 @@ import {
   assertOddAlertsServerProxy,
   buildOddsHistoryRequest,
   buildUpcomingOddsRequest,
+  normalizeOddsMarketCatalogResponse,
+  type OddAlertsOddsMarket,
   type OddsHistoryRequestOptions,
   type UpcomingOddsRequestOptions,
 } from '@/services/oddAlertsOddsRequests';
@@ -201,6 +203,7 @@ export type ApiEnvelope<T> = {
 export type {
   OddsFilter,
   OddAlertsOddsType,
+  OddAlertsOddsMarket,
   OddsHistoryRequestOptions,
   UpcomingOddsRequestOptions,
 } from '@/services/oddAlertsOddsRequests';
@@ -232,17 +235,6 @@ export type OddAlertsHistoricalOddsRow = {
   opening?: number | null;
   closing?: number | null;
   peak?: number | null;
-  [key: string]: unknown;
-};
-
-export type OddAlertsOddsMarket = {
-  id?: number;
-  market_id?: number;
-  key?: string;
-  market_key?: string;
-  name?: string;
-  title?: string;
-  title_short?: string;
   [key: string]: unknown;
 };
 
@@ -607,7 +599,8 @@ export async function fetchOddsMarkets(
   signal?: AbortSignal,
 ): Promise<OddAlertsOddsMarket[]> {
   assertOddAlertsServerProxy(Platform.OS, PROXY_URL, 'odds/markets');
-  return (await getJson<OddAlertsOddsMarket>('odds/markets', {}, signal)).data;
+  const response: unknown = await getJson<unknown>('odds/markets', {}, signal);
+  return normalizeOddsMarketCatalogResponse(response);
 }
 
 /**

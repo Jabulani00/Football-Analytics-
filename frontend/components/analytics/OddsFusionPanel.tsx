@@ -365,7 +365,8 @@ export default function OddsFusionPanel({
             </View>
           ))}
         </View>
-      ) : !live.pinnacleLoading && !live.pinnacleError ? (
+      ) : !live.pinnacleLoading && !live.pinnacleError && !live.error
+        && live.tournamentId != null && live.pinnacleCapturedAt ? (
         <Text style={styles.noComparison}>
           {live.pinnacleMatchedFixtureCount === 0
             ? 'No selected Hollywood fixture matched an OddAlerts fixture ID in the upcoming window, so Pinnacle markets could not be checked.'
