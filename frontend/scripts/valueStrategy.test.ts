@@ -13,6 +13,7 @@ import {
 import type { MarketRow } from '../services/hollywoodFusion';
 import { buildBetSlipSummary } from '../services/betSlipShare';
 import { compareReference, findPinnacleReference, parseMachineReference, supportedSelection } from '../services/bookmakerValue';
+import { buildBookmakerValueTable } from '../services/bookmakerValueTable';
 import { reviewBetSlip, ticketGroup, ticketReference } from '../services/betSlipReview';
 import type { BetSlipLeg } from '../types/analytics';
 
@@ -352,6 +353,73 @@ const binary = findPinnacleReference(hollywoodTotalsRow, [binaryPinnacle], captu
 check('matching non-push totals use the complete same-line market',
   binary.status === 'available'
     && Math.abs(binary.reference.probability - (1 / 1.9) / (1 / 1.9 + 1 / 2.1)) < 1e-14);
+console.log('\nReference calculation table');
+const reviewTable = buildBookmakerValueTable({
+  bookmaker: 'Hollywoodbets', bookOdds: 1.9, pinnacle: reference, machine: suppliedModel,
+  counterpart: { bookmaker: 'Betway', decimal: 2.4 },
+});
+const row = (id: string) => reviewTable.steps.find((step) => step.id === id);
+check('table shows each 1X2 input and the actual no-vig denominator',
+  row('book-implied')?.calculation === '(1 / 1.90) x 100'
+    && row('book-implied')?.result === '52.6316%'
+    && row('pinnacle-input-home')?.result === '55.5556%'
+    && row('pinnacle-input-draw')?.result === '30.3030%'
+    && row('pinnacle-input-away')?.result === '25.0000%'
+    && row('pinnacle-input-total')?.calculation === '(1 / 1.80 + 1 / 3.30 + 1 / 4.00) x 100'
+    && row('pinnacle-input-total')?.result === '110.8586%'
+    && row('reference1-probability')?.result === '50.1139%');
+check('table distinguishes signed value, shortfall, EV, odds and units for both references',
+  row('reference1-fair-odds')?.result === '1.9955'
+    && row('reference1-fair-odds')?.calculation === `1 / ${expectedFair}`
+    && row('reference1-value')?.result === '-2.5177 pp'
+    && row('reference1-shortfall')?.result === '-2.5177 pp'
+    && row('reference1-ev')?.result === '-4.7836%'
+    && row('reference1-units')?.result === '0.0478 units per unit staked'
+    && row('reference2-value')?.result === '+2.3684 pp'
+    && row('reference2-shortfall')?.result === '0.0000 pp'
+    && row('reference2-ev')?.result === '+4.5000%'
+    && row('other-gap')?.result === '0.50 (small)');
+const incompleteTable = buildBookmakerValueTable({
+  bookmaker: 'Hollywoodbets', bookOdds: 1.9, pinnacle: incomplete, machine: suppliedModel, counterpart: null,
+});
+check('incomplete no-vig keeps the matched quote and independent MM, with a reason instead of zero',
+  incompleteTable.steps.find((step) => step.id === 'pinnacle-odds')?.result === '2.30'
+    && incompleteTable.steps.find((step) => step.id === 'pinnacle-implied')?.result === '43.4783%'
+    && incompleteTable.steps.find((step) => step.id === 'reference1-unavailable')?.result === 'Unavailable'
+    && incompleteTable.steps.find((step) => step.id === 'reference1-unavailable')?.calculation ===
+      (incomplete.status === 'unavailable' ? incomplete.reason : '')
+    && incompleteTable.steps.find((step) => step.id === 'reference2-value')?.result === '+2.3684 pp');
+const zeroTable = buildBookmakerValueTable({
+  bookmaker: 'Hollywoodbets', bookOdds: 1.9, pinnacle: reference,
+  machine: parseMachineReference({ probabilityPct: '0', source: 'MM', version: 'v1', capturedAt: capture }),
+  counterpart: null,
+});
+check('zero MM probability retains its value and EV without inventing finite fair odds',
+  zeroTable.steps.find((step) => step.id === 'reference2-fair-odds')?.result === 'Unavailable at 0% probability'
+    && zeroTable.steps.find((step) => step.id === 'reference2-odds-difference')?.result === 'Unavailable'
+    && zeroTable.steps.find((step) => step.id === 'reference2-value')?.result === '-52.6316 pp'
+    && zeroTable.steps.find((step) => step.id === 'reference2-ev')?.result === '-100.0000%');
+const tinyTable = buildBookmakerValueTable({
+  bookmaker: 'Hollywoodbets', bookOdds: 1.9, pinnacle: reference,
+  machine: parseMachineReference({ probabilityPct: '0.00000001', source: 'MM', version: 'v1', capturedAt: capture }),
+  counterpart: null,
+});
+check('a tiny positive MM probability is not displayed as zero in the calculation',
+  tinyTable.steps.find((step) => step.id === 'reference2-probability')?.result === '1.000e-8%'
+    && tinyTable.steps.find((step) => step.id === 'reference2-fair-odds')?.calculation === '1 / 1e-10'
+    && tinyTable.steps.find((step) => step.id === 'reference2-fair-odds')?.result === '10000000000.0000');
+const exactGapTable = buildBookmakerValueTable({
+  bookmaker: 'Hollywoodbets', bookOdds: 3.795, pinnacle: incomplete, machine: suppliedModel, counterpart: null,
+});
+check('displayed 1.495 gap is not rounded across the 1.50 classification boundary',
+  exactGapTable.steps.find((step) => step.id === 'pinnacle-gap')?.result === '1.495 (small)');
+const binaryTable = buildBookmakerValueTable({
+  bookmaker: 'Hollywoodbets', bookOdds: 1.9, pinnacle: binary, machine: parseMachineReference(emptyModel), counterpart: null,
+});
+check('binary markets show their own complete two-outcome no-vig inputs',
+  binaryTable.steps.filter((step) => step.id.startsWith('pinnacle-input-') && step.id !== 'pinnacle-input-total').length === 2
+    && binaryTable.steps.find((step) => step.id === 'pinnacle-input-over')?.result === '52.6316%'
+    && binaryTable.steps.find((step) => step.id === 'pinnacle-input-under')?.result === '47.6190%');
 check('push, quarter-line, team-total, and conflicting-line markets are not normalized',
   supportedSelection('Total Goals 2', 'Over 2') === null
     && supportedSelection('Asian Total Goals 2.25', 'Over 2.25') === null

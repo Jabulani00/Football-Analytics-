@@ -3,10 +3,12 @@ import type { BetSlipLeg } from '@/types/analytics';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import FilterDropdown from '@/components/shared/FilterDropdown';
-import { assessPair, assessTeams, filterBookFixtures, opposingPairs, type BookFixture, type FixtureFilters, type Price } from '@/services/bookmakerClassification';
+import { assessPair, assessTeams, filterBookFixtures, opposingPairs, parseFixtureGapSettings,
+  type BookFixture, type FixtureFilters, type FixtureGapInput, type Price } from '@/services/bookmakerClassification';
 import { fonts, spacing, theme } from '@/styles/theme';
 
-const EMPTY: FixtureFilters = { query: '', country: '', competition: '', group: '', orientation: '', category: '', preference: '', side: '' };
+const EMPTY: FixtureFilters = { query: '', country: '', competition: '', group: '', orientation: '', category: '', preference: '', side: '', gapSize: '', gapOrder: '' };
+const DEFAULT_GAP: FixtureGapInput = { boundary: '1.50', min: '', max: '' };
 const price = (value: number | null) => value == null ? 'Unavailable' : String(value);
 const time = (value: string) => Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleString() : value;
 export function BookmakerSelectionButton({ selection, label, selectedLegs, onToggleLeg }: {
@@ -25,8 +27,8 @@ export function BookmakerSelectionButton({ selection, label, selectedLegs, onTog
     {!selection.open ? <Text style={styles.note}>Unavailable</Text> : null}
   </Pressable>;
 }
-export function BookmakerAssessment({ fixture }: { fixture: BookFixture }) {
-  const result = assessTeams(fixture.home, fixture.away);
+export function BookmakerAssessment({ fixture, gapBoundary = 1.5 }: { fixture: BookFixture; gapBoundary?: number }) {
+  const result = assessTeams(fixture.home, fixture.away, gapBoundary);
   return <View style={styles.assessment}>
     <Text style={styles.heading}>HOME / AWAY CLASSIFICATION</Text>
     {result ? <>
@@ -39,9 +41,9 @@ export function BookmakerAssessment({ fixture }: { fixture: BookFixture }) {
     </> : <Text style={styles.text}>Unavailable - both home and away prices must be open and valid.</Text>}
   </View>;
 }
-function FixtureCard({ fixture, loadMarkets, selectedLegs, onToggleLeg }: {
+function FixtureCard({ fixture, loadMarkets, selectedLegs, onToggleLeg, gapBoundary }: {
   fixture: BookFixture; loadMarkets: (id: string) => Promise<BookFixture>;
-  selectedLegs: readonly BetSlipLeg[]; onToggleLeg?: (leg: BetSlipLeg) => void;
+  selectedLegs: readonly BetSlipLeg[]; onToggleLeg?: (leg: BetSlipLeg) => void; gapBoundary: number;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [detail, setDetail] = useState<BookFixture | null>(null);
@@ -68,7 +70,7 @@ function FixtureCard({ fixture, loadMarkets, selectedLegs, onToggleLeg }: {
       <BookmakerSelectionButton key={side} selection={fixture[side]} label={`${side === 'home' ? '1' : side === 'draw' ? 'X' : '2'} - ${fixture[side].name}`}
         selectedLegs={selectedLegs} onToggleLeg={onToggleLeg} />
     )}</View>
-    <BookmakerAssessment fixture={fixture} />
+    <BookmakerAssessment fixture={fixture} gapBoundary={gapBoundary} />
     <Text style={styles.note}>Prices observed: {fixture.observedAt ? time(fixture.observedAt) : 'Time unavailable'}. Draw excluded from classification.</Text>
     <Pressable accessibilityRole="button" accessibilityState={{ expanded }} disabled={loading}
       onPress={() => expanded ? setExpanded(false) : void load()} style={styles.button}>
@@ -99,17 +101,26 @@ export default function BookmakerFixtures({ fixtures, loadMarkets, showLocationF
   selectedLegs?: readonly BetSlipLeg[]; onToggleLeg?: (leg: BetSlipLeg) => void;
 }) {
   const [filters, setFilters] = useState<FixtureFilters>(EMPTY);
+  const [gapInput, setGapInput] = useState<FixtureGapInput>(DEFAULT_GAP);
   const [page, setPage] = useState(0);
-  const filtered = useMemo(() => filterBookFixtures(fixtures, filters), [fixtures, filters]);
+  const gap = useMemo(() => parseFixtureGapSettings(gapInput), [gapInput]);
+  const filtered = useMemo(() => gap.status === 'valid' ? filterBookFixtures(fixtures, filters, gap.settings) : [],
+    [fixtures, filters, gap]);
   const pages = Math.max(1, Math.ceil(filtered.length / 10));
   const current = Math.min(page, pages - 1);
   const change = (key: keyof FixtureFilters, value: string) => { setFilters((state) => ({ ...state, [key]: value })); setPage(0); };
-  const select = (key: keyof FixtureFilters, label: string, values: { value: string; label: string }[]) =>
-    <FilterDropdown key={key} label={label} value={filters[key]} options={[{ value: '', label: 'All' }, ...values]} onChange={(value) => change(key, value)} />;
+  const select = (key: keyof FixtureFilters, label: string, values: { value: string; label: string }[], emptyLabel = 'All') =>
+    <FilterDropdown key={key} label={label} value={filters[key]} options={[{ value: '', label: emptyLabel }, ...values]} onChange={(value) => change(key, value)} />;
+  const gapField = (key: keyof FixtureGapInput, label: string, placeholder: string) => <View key={key} style={styles.gapField}>
+    <Text style={styles.filterLabel}>{label}</Text>
+    <TextInput accessibilityLabel={label} value={gapInput[key]} placeholder={placeholder} placeholderTextColor={theme.textMuted}
+      keyboardType="decimal-pad" onChangeText={(value) => { setGapInput((state) => ({ ...state, [key]: value })); setPage(0); }}
+      style={styles.input} />
+  </View>;
   const options = (values: string[]) => [...new Set(values.filter(Boolean))].map((value) => ({ value, label: value }));
   return <View style={styles.container}>
     <Text style={styles.heading}>BOOKMAKER FIXTURE CLASSIFICATIONS</Text>
-    <Text style={styles.note}>Website decimal prices. Ratio = smaller home/away price divided by bigger; gap = bigger minus smaller. Small means below 1.50; big means 1.50 or more. The existing 0.30 preference rule remains separate. Classification uses unrounded values.</Text>
+    <Text style={styles.note}>Website decimal prices. Ratio = smaller home/away price divided by bigger; team gap = bigger minus smaller. The default small / big boundary is 1.50. The 0.30 preference rule remains separate. Classification uses unrounded values.</Text>
     <TextInput accessibilityLabel="Search bookmaker fixtures" placeholder="Search teams" placeholderTextColor={theme.textMuted}
       value={filters.query} onChangeText={(value) => change('query', value)} style={styles.input} />
     <View style={styles.row}>
@@ -117,14 +128,26 @@ export default function BookmakerFixtures({ fixtures, loadMarkets, showLocationF
       {showLocationFilters ? select('competition', 'Competition', options(fixtures.map((item) => item.competition))) : null}
       {select('group', 'Ratio group', [{ value: '1', label: '1 - Below 0.35' }, { value: '2', label: '2 - 0.35 to 0.65' }, { value: '3', label: '3 - Above 0.65' }])}
       {select('orientation', 'Orientation', [{ value: 'A', label: 'A - Bigger home / smaller away' }, { value: 'B', label: 'B - Smaller home / bigger away' }, { value: 'equal', label: 'Equal odds' }])}
+      {select('gapSize', 'Team gap', [{ value: 'small', label: 'Small - odds closer' }, { value: 'big', label: 'Big - odds apart' }])}
+      {select('gapOrder', 'Team gap order', [{ value: 'asc', label: 'Ascending - smallest first' }, { value: 'desc', label: 'Descending - biggest first' }], 'Original order')}
       {select('category', 'Category', options(['1A', '1B', '2A', '2B', '3A', '3B']))}
       {select('preference', 'Bookmaker choice', [{ value: 'clear', label: 'Clear choice' }, { value: 'none', label: 'No clear choice' }, { value: 'unavailable', label: 'Unavailable prices' }])}
       {select('side', 'Preferred team', [{ value: 'first', label: 'Home' }, { value: 'second', label: 'Away' }])}
     </View>
-    <Pressable accessibilityRole="button" onPress={() => { setFilters(EMPTY); setPage(0); }}><Text style={styles.heading}>Clear filters</Text></Pressable>
+    <View style={styles.row}>
+      {gapField('boundary', 'Small / big gap boundary', '1.50')}
+      {gapField('min', 'Minimum team gap', 'No minimum')}
+      {gapField('max', 'Maximum team gap', 'No maximum')}
+    </View>
+    {gap.status === 'valid' ? <Text style={styles.note}>
+      Small is below {gap.settings.boundary}; big is {gap.settings.boundary} or more. Minimum and maximum are inclusive; enter the same value in both to find an exact gap. Unavailable team prices sort last.
+    </Text> : <Text accessibilityRole="alert" style={styles.error}>{gap.reason}</Text>}
+    <Pressable accessibilityRole="button" onPress={() => { setFilters(EMPTY); setGapInput(DEFAULT_GAP); setPage(0); }}><Text style={styles.heading}>Clear filters</Text></Pressable>
     <Text style={styles.note}>{filtered.length} matching fixtures / {fixtures.length} returned. Page {current + 1} of {pages}</Text>
-    {filtered.length === 0 ? <Text style={styles.text}>No fixtures match these filters.</Text> : null}
-    {filtered.slice(current * 10, (current + 1) * 10).map((fixture) => <FixtureCard key={`${fixture.bookmaker}-${fixture.id}`} fixture={fixture} loadMarkets={loadMarkets} selectedLegs={selectedLegs} onToggleLeg={onToggleLeg} />)}
+    {filtered.length === 0 && gap.status === 'valid' ? <Text style={styles.text}>No fixtures match these filters.</Text> : null}
+    {gap.status === 'valid' ? filtered.slice(current * 10, (current + 1) * 10).map((fixture) =>
+      <FixtureCard key={`${fixture.bookmaker}-${fixture.id}`} fixture={fixture} loadMarkets={loadMarkets}
+        selectedLegs={selectedLegs} onToggleLeg={onToggleLeg} gapBoundary={gap.settings.boundary} />) : null}
     <View style={styles.row}>
       <Pressable accessibilityRole="button" disabled={current === 0} onPress={() => setPage(current - 1)}><Text style={styles.heading}>Previous</Text></Pressable>
       <Pressable accessibilityRole="button" disabled={current + 1 >= pages} onPress={() => setPage(current + 1)}><Text style={styles.heading}>Next</Text></Pressable>
@@ -146,6 +169,10 @@ const styles = StyleSheet.create({
   heading: { color: theme.textPrimary, fontFamily: fonts.bodySemiBold, fontSize: 13 },
   text: { color: theme.textPrimary, fontFamily: fonts.body, fontSize: 12, lineHeight: 20 },
   note: { color: theme.textMuted, fontFamily: fonts.body, fontSize: 12, lineHeight: 20 },
+  error: { color: theme.loss, fontFamily: fonts.body, fontSize: 12, lineHeight: 20 },
+  gapField: { minWidth: 160, flexGrow: 1, flexBasis: 160 },
+  filterLabel: { fontFamily: fonts.bodySemiBold, fontSize: 11, color: theme.textMuted,
+    letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: spacing.xs },
   assessment: { paddingVertical: spacing.sm, gap: spacing.xs, borderTopWidth: 1, borderColor: theme.border },
   button: { paddingVertical: spacing.sm },
   input: { color: theme.textPrimary, fontFamily: fonts.body, padding: spacing.sm, borderWidth: 1, borderColor: theme.border, borderRadius: 8 },

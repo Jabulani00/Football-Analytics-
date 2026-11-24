@@ -1,20 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 
 import SectionLabel from '@/components/shared/SectionLabel';
 import type { HollywoodPopularOddsState } from '@/hooks/useHollywoodPopularOdds';
 import { fetchBetwayHunt } from '@/services/betwayHunt';
 import { fetchBetwayEventMarkets } from '@/services/betwayMarkets';
-import { comparePriceGap } from '@/services/bookmakerClassification';
 import {
   betwayReviewOffers, hollywoodReviewOffers, matchBetwayEvents,
   type BetwayReviewSource, type ReviewOffer,
 } from '@/services/bookmakerReview';
 import { isBookmakerSelected } from '@/services/bookmakerSelection';
 import {
-  compareReference, findPinnacleReference, parseMachineReference, supportedSelection,
-  type MachineReferenceInput, type ReferenceMetrics,
+  findPinnacleReference, parseMachineReference, supportedSelection,
+  type MachineReferenceInput,
 } from '@/services/bookmakerValue';
+import {
+  buildBookmakerValueTable, displayOdds, displayProbability, displaySigned,
+} from '@/services/bookmakerValueTable';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 import type { BetSlipLeg } from '@/types/analytics';
 
@@ -30,52 +32,137 @@ type BetwayState = {
 
 const time = (value: string | null) => value && Number.isFinite(Date.parse(value))
   ? new Date(value).toLocaleString() : 'unavailable';
-const pct = (value: number) => `${(value * 100).toFixed(4)}%`;
-const signed = (value: number, digits = 4) => `${value >= 0 ? '+' : ''}${value.toFixed(digits)}`;
-const odds = (value: number) => Number(value.toFixed(2)) === value ? value.toFixed(2) : String(value);
 
 function modelKey(offer: ReviewOffer): string {
   return `${offer.eventId}:${supportedSelection(offer.marketName, offer.selection)?.key ?? offer.id}`;
 }
 
-function Metrics({ label, metrics }: { label: string; metrics: ReferenceMetrics }) {
-  return <View style={styles.metricBox}>
-    <Text style={styles.emphasis}>{label}: value {signed(metrics.valuePp)} pp · shortfall {metrics.shortfallPp.toFixed(4)} pp</Text>
-    <Text style={styles.text}>
-      Fair odds {metrics.fairOdds == null ? 'unavailable' : metrics.fairOdds.toFixed(4)}
-      {' · '}odds difference {metrics.oddsDifference == null ? 'unavailable' : signed(metrics.oddsDifference)}
-      {' · '}benchmark EV {signed(metrics.benchmarkEvPct, 2)}%
-      {' · '}shortfall {metrics.shortfallUnitsPerUnit.toFixed(4)} units per unit staked
-    </Text>
-  </View>;
-}
-
-function OfferCard({
-  offer, offers, live, input, onInput, selectedLegs, onToggleLeg,
-}: {
+type AnalysedOffer = {
   offer: ReviewOffer;
-  offers: readonly ReviewOffer[];
-  live: HollywoodPopularOddsState;
+  pinnacle: ReturnType<typeof findPinnacleReference>;
+  machine: ReturnType<typeof parseMachineReference>;
+  counterpart: ReviewOffer | null;
+  table: ReturnType<typeof buildBookmakerValueTable>;
   input: MachineReferenceInput;
-  onInput: (input: MachineReferenceInput) => void;
-  selectedLegs: readonly BetSlipLeg[];
-  onToggleLeg: (leg: BetSlipLeg) => void;
-}) {
-  const [showModelInput, setShowModelInput] = useState(false);
+};
+
+function analyseOffer(
+  offer: ReviewOffer, offers: readonly ReviewOffer[], live: HollywoodPopularOddsState, input: MachineReferenceInput,
+): AnalysedOffer {
   const pinnacle = findPinnacleReference(offer, live.pinnacleOdds, live.pinnacleCapturedAt);
-  const quote = pinnacle.status === 'available' ? pinnacle.reference : pinnacle.quote;
-  const ref1 = pinnacle.status === 'available'
-    ? compareReference(offer.decimal, pinnacle.reference.probability) : null;
   const machine = parseMachineReference(input);
-  const ref2 = machine.status === 'available' ? compareReference(offer.decimal, machine.reference.probability) : null;
   const key = supportedSelection(offer.marketName, offer.selection)?.key;
   const counterparts = offers.filter((other) => other.bookmaker !== offer.bookmaker &&
     other.eventId === offer.eventId && supportedSelection(other.marketName, other.selection)?.key === key &&
     Number.isFinite(Date.parse(other.kickoff)) && Number.isFinite(Date.parse(offer.kickoff)) &&
     Math.abs(Date.parse(other.kickoff) - Date.parse(offer.kickoff)) <= 5 * 60_000);
   const counterpart = counterparts.length === 1 ? counterparts[0] : null;
-  const pinnacleGap = quote ? comparePriceGap(offer.decimal, quote.odds) : null;
-  const otherGap = counterpart ? comparePriceGap(offer.decimal, counterpart.decimal) : null;
+  return {
+    offer, pinnacle, machine, counterpart, input,
+    table: buildBookmakerValueTable({
+      bookmaker: offer.bookmaker, bookOdds: offer.decimal, pinnacle, machine, counterpart,
+    }),
+  };
+}
+
+const SUMMARY_COLUMNS = [
+  { label: 'Fixture / selection', width: 230 },
+  { label: 'Bookmaker odds', width: 135 },
+  { label: 'Implied / net', width: 130 },
+  { label: 'Pinnacle / implied', width: 150 },
+  { label: 'Bookmaker gaps', width: 155 },
+  { label: 'No-vig inputs', width: 200 },
+  { label: 'Reference 1', width: 165 },
+  { label: 'Reference 2 (MM)', width: 165 },
+];
+const SUMMARY_WIDTH = SUMMARY_COLUMNS.reduce((sum, column) => sum + column.width, 0);
+const DETAIL_COLUMNS = [
+  { label: 'Step', flex: 1.2 },
+  { label: 'Input / calculation', flex: 2 },
+  { label: 'Result', flex: 1 },
+];
+const COMPACT_DETAIL_COLUMNS = [
+  { label: 'Step / calculation', flex: 2.5 },
+  { label: 'Result', flex: 1.2 },
+];
+
+function ComparisonTable({
+  rows, selectedId, onSelect,
+}: {
+  rows: AnalysedOffer[];
+  selectedId: string;
+  onSelect: (id: string) => void;
+}) {
+  return <ScrollView horizontal style={styles.tableScroll} accessibilityLabel="Scroll reference comparisons horizontally">
+    <View role="table" accessibilityLabel="Reference comparisons" style={[styles.table, { width: SUMMARY_WIDTH }]}>
+      <View role="row" style={styles.tableHeader}>
+        {SUMMARY_COLUMNS.map((column) => <Text key={column.label} role="columnheader"
+          style={[styles.headerCell, { width: column.width }]}>{column.label}</Text>)}
+      </View>
+      {rows.map(({ offer, pinnacle, counterpart, table }, index) => <View key={offer.id} role="row"
+        style={[styles.tableRow, index % 2 === 1 && styles.alternateRow, offer.id === selectedId && styles.selectedRow]}>
+        <View role="cell" style={[styles.tableCell, { width: SUMMARY_COLUMNS[0].width }]}>
+          <Pressable accessibilityRole="button" accessibilityLabel={`View calculations for ${offer.fixture}, ${offer.selection}, ${offer.bookmaker}`}
+            accessibilityState={{ selected: offer.id === selectedId }} onPress={() => onSelect(offer.id)}>
+            <Text style={styles.title}>{offer.fixture}</Text>
+            <Text style={styles.text}>{offer.marketName} · {offer.selection}</Text>
+            <Text style={styles.action}>{offer.id === selectedId ? 'SELECTED' : 'VIEW STEPS'}</Text>
+          </Pressable>
+        </View>
+        <View role="cell" style={[styles.tableCell, { width: SUMMARY_COLUMNS[1].width }]}>
+          <Text style={styles.title}>{offer.bookmaker}</Text>
+          <Text style={styles.emphasis}>{displayOdds(offer.decimal)}</Text>
+        </View>
+        <View role="cell" style={[styles.tableCell, { width: SUMMARY_COLUMNS[2].width }]}>
+          <Text style={styles.text}>{displayProbability(table.bookImplied)}</Text>
+          <Text style={styles.note}>Net {(offer.decimal - 1).toFixed(4)}</Text>
+        </View>
+        <View role="cell" style={[styles.tableCell, { width: SUMMARY_COLUMNS[3].width }]}>
+          {table.quote ? <>
+            <Text style={styles.text}>{displayOdds(table.quote.odds)}</Text>
+            <Text style={styles.note}>{displayProbability(1 / table.quote.odds)} implied</Text>
+          </> : <Text style={styles.note}>Unavailable</Text>}
+        </View>
+        <View role="cell" style={[styles.tableCell, { width: SUMMARY_COLUMNS[4].width }]}>
+          <Text style={styles.text}>{table.pinnacleGap
+            ? `Pinnacle ${displayOdds(table.pinnacleGap.gap)} (${table.pinnacleGap.size})` : 'Pinnacle unavailable'}</Text>
+          <Text style={styles.note}>{table.otherGap && counterpart
+            ? `${counterpart.bookmaker} ${displayOdds(table.otherGap.gap)} (${table.otherGap.size})`
+            : 'Other book unavailable'}</Text>
+        </View>
+        <View role="cell" style={[styles.tableCell, { width: SUMMARY_COLUMNS[5].width }]}>
+          <Text style={styles.text}>{pinnacle.status === 'available'
+            ? pinnacle.reference.outcomes.map((item) => `${item.outcome} ${displayOdds(item.odds)}`).join(' / ')
+            : 'Unavailable'}</Text>
+        </View>
+        {[table.ref1, table.ref2].map((metrics, offset) => <View key={offset} role="cell"
+          style={[styles.tableCell, { width: SUMMARY_COLUMNS[6 + offset].width }]}>
+          {metrics ? <>
+            <Text style={styles.text}>Fair {displayProbability(metrics.probability)}</Text>
+            <Text style={[styles.emphasis, metrics.valuePp < 0 && styles.negative, metrics.valuePp > 0 && styles.positive]}>
+              {displaySigned(metrics.valuePp)} pp
+            </Text>
+            <Text style={styles.note}>Shortfall {metrics.shortfallPp.toFixed(4)} pp</Text>
+          </> : <Text style={styles.note}>Unavailable</Text>}
+        </View>)}
+      </View>)}
+    </View>
+  </ScrollView>;
+}
+
+function OfferDetail({
+  analysis, onInput, selectedLegs, onToggleLeg,
+}: {
+  analysis: AnalysedOffer;
+  onInput: (input: MachineReferenceInput) => void;
+  selectedLegs: readonly BetSlipLeg[];
+  onToggleLeg: (leg: BetSlipLeg) => void;
+}) {
+  const [showModelInput, setShowModelInput] = useState(false);
+  const { width } = useWindowDimensions();
+  const compact = width < 500;
+  const columns = compact ? COMPACT_DETAIL_COLUMNS : DETAIL_COLUMNS;
+  const { offer, pinnacle, machine, table, input } = analysis;
   const hasReferences = pinnacle.status === 'available' || machine.status === 'available';
   const leg = offer.betSlipLeg ? {
     ...offer.betSlipLeg,
@@ -90,41 +177,40 @@ function OfferCard({
   const selected = leg != null && isBookmakerSelected(selectedLegs, leg);
 
   return <View style={styles.card}>
-    <Text style={styles.title}>{offer.fixture}</Text>
-    <Text style={styles.text}>{offer.marketName} — {offer.selection}</Text>
-    <Text style={styles.emphasis}>
-      {offer.bookmaker} @ {odds(offer.decimal)} · implied {pct(1 / offer.decimal)}
-      {' · '}net odds {(offer.decimal - 1).toFixed(4)}
-    </Text>
+    <Text style={styles.title}>Calculation steps: {offer.fixture}</Text>
+    <Text style={styles.text}>{offer.bookmaker} · {offer.marketName} · {offer.selection}</Text>
     <Text style={styles.note}>{offer.bookmaker} data received/observed {time(offer.capturedAt)}; quote time may differ.</Text>
-    {quote ? <Text style={styles.text}>
-      Pinnacle closing-mode @ {odds(quote.odds)} · implied {pct(1 / quote.odds)}
-      {pinnacleGap ? ` · bookmaker gap ${pinnacleGap.gap} (${pinnacleGap.size})` : ''}
-    </Text> : <Text style={styles.note}>Pinnacle selection price unavailable.</Text>}
-    {otherGap && counterpart ? <Text style={styles.text}>
-      {offer.bookmaker} / {counterpart.bookmaker} same-selection gap {otherGap.gap} ({otherGap.size})
-      {' · '}{counterpart.bookmaker} @ {odds(counterpart.decimal)}
+    {table.quote ? <Text style={styles.note}>
+      Pinnacle fixture {table.quote.fixtureId} · market {table.quote.marketKey} · received {time(table.quote.capturedAt)}.
     </Text> : null}
-    {pinnacle.status === 'available' && ref1 ? <>
-      <Text style={styles.text}>
-        Reference 1: {pct(pinnacle.reference.probability)} · Pinnacle fixture {pinnacle.reference.fixtureId}
-        {' · '}market {pinnacle.reference.marketKey} · received {time(pinnacle.reference.capturedAt)}
-      </Text>
-      <Text style={styles.note}>
-        No-vig inputs: {pinnacle.reference.outcomes.map((item) => `${item.outcome} ${odds(item.odds)}`).join(' / ')}.
-      </Text>
-      <Metrics label="Pinnacle reference" metrics={ref1} />
-    </> : <Text style={styles.note}>Reference 1 unavailable: {pinnacle.status === 'unavailable' ? pinnacle.reason : 'Invalid inputs.'}</Text>}
-
-    {machine.status === 'available' && ref2 ? <>
-      <Text style={styles.text}>
-        Reference 2 (MM): {pct(machine.reference.probability)} · {machine.reference.source}
-        {' · '}version {machine.reference.version} · captured {time(machine.reference.capturedAt)}
-      </Text>
-      <Metrics label="MM reference (unvalidated)" metrics={ref2} />
-    </> : <Text style={styles.note}>
-      Reference 2 (MM): {machine.status === 'invalid' ? machine.reason : 'unavailable until you supply your model probability and provenance.'}
-    </Text>}
+    {machine.status === 'available' ? <Text style={styles.note}>
+      MM (unvalidated): {machine.reference.source} · version {machine.reference.version}
+      {' · '}captured {time(machine.reference.capturedAt)}.
+    </Text> : null}
+    <Text style={styles.note}>
+      Calculations use full precision; displayed results are rounded. Value and shortfall are in
+      percentage points (pp); benchmark EV is a percentage. Units are hypothetical per unit staked.
+    </Text>
+    <View role="table" accessibilityLabel="Calculation steps" style={[styles.table, styles.detailTable]}>
+      <View role="row" style={styles.tableHeader}>
+        {columns.map((column) => <Text key={column.label} role="columnheader"
+          style={[styles.headerCell, styles.flexCell, { flex: column.flex }]}>{column.label}</Text>)}
+      </View>
+      {table.steps.map((step, index) => <View key={step.id} role="row"
+        style={[styles.tableRow, index % 2 === 1 && styles.alternateRow]}>
+        <View role="rowheader" style={[styles.tableCell, styles.flexCell, { flex: columns[0].flex }]}>
+          <Text style={styles.title}>{step.label}</Text>
+          {compact ? <Text style={styles.text}>{step.calculation}</Text> : null}
+        </View>
+        {!compact ? <View role="cell" style={[styles.tableCell, styles.flexCell, { flex: DETAIL_COLUMNS[1].flex }]}>
+          <Text style={styles.text}>{step.calculation}</Text>
+        </View> : null}
+        <View role="cell" style={[styles.tableCell, styles.flexCell, { flex: columns[columns.length - 1].flex }]}>
+          <Text style={[styles.emphasis, step.tone === 'negative' && styles.negative,
+            step.tone === 'positive' && styles.positive]}>{step.result}</Text>
+        </View>
+      </View>)}
+    </View>
     <Pressable accessibilityRole="button" accessibilityState={{ expanded: showModelInput }}
       onPress={() => setShowModelInput((value) => !value)}>
       <Text style={styles.action}>{showModelInput ? 'Hide MM input' : 'Enter / edit MM probability'}</Text>
@@ -161,12 +247,14 @@ export default function BookmakerValueReview({
   const [query, setQuery] = useState('');
   const [book, setBook] = useState<'all' | 'Hollywoodbets' | 'Betway'>('all');
   const [page, setPage] = useState(0);
+  const [selectedOfferId, setSelectedOfferId] = useState<string | null>(null);
   const generation = useRef(0);
   useEffect(() => {
     generation.current += 1;
     setBetway({ status: 'idle', sources: [], message: null });
     setModels({});
     setPage(0);
+    setSelectedOfferId(null);
     return () => { generation.current += 1; };
   }, [live.categoryId, live.tournamentId, live.observedAt]);
 
@@ -216,6 +304,8 @@ export default function BookmakerValueReview({
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, pages - 1);
   const shown = filtered.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
+  const rows = shown.map((offer) => analyseOffer(offer, offers, live, models[modelKey(offer)] ?? EMPTY_MODEL));
+  const selectedOffer = rows.find(({ offer }) => offer.id === selectedOfferId) ?? rows[0];
 
   return <View style={styles.container}>
     <SectionLabel>Reference Value &amp; Relative Shortfall</SectionLabel>
@@ -250,12 +340,13 @@ export default function BookmakerValueReview({
     {shown.length === 0 ? <Text style={styles.note}>
       {live.tournamentId == null ? 'Select a country and competition to review prices.' : 'No open supported selections match these filters.'}
     </Text> : null}
-    {shown.map((offer) => {
-      const key = modelKey(offer);
-      return <OfferCard key={offer.id} offer={offer} offers={offers} live={live}
-        input={models[key] ?? EMPTY_MODEL} onInput={(value) => setModels((previous) => ({ ...previous, [key]: value }))}
-        selectedLegs={selectedLegs} onToggleLeg={onToggleLeg} />;
-    })}
+    {selectedOffer ? <>
+      <Text style={styles.note}>Scroll the comparison table sideways. Select VIEW STEPS for a calculation breakdown and MM input.</Text>
+      <ComparisonTable rows={rows} selectedId={selectedOffer.offer.id} onSelect={setSelectedOfferId} />
+      <OfferDetail key={selectedOffer.offer.id} analysis={selectedOffer}
+        onInput={(value) => setModels((previous) => ({ ...previous, [modelKey(selectedOffer.offer)]: value }))}
+        selectedLegs={selectedLegs} onToggleLeg={onToggleLeg} />
+    </> : null}
     {pages > 1 ? <View style={styles.filters}>
       <Pressable accessibilityRole="button" disabled={currentPage === 0} onPress={() => setPage(currentPage - 1)}>
         <Text style={styles.action}>Previous</Text>
@@ -276,7 +367,20 @@ const styles = StyleSheet.create({
   text: { color: theme.textPrimary, fontFamily: fonts.body, fontSize: 12, lineHeight: 19 },
   emphasis: { color: theme.accentBlue, fontFamily: fonts.bodySemiBold, fontSize: 12, lineHeight: 19 },
   note: { color: theme.textMuted, fontFamily: fonts.body, fontSize: 11, lineHeight: 18 },
-  metricBox: { borderLeftWidth: 2, borderLeftColor: theme.accentBlue, paddingLeft: spacing.sm, gap: spacing.xs },
+  tableScroll: { width: '100%', flexGrow: 0 },
+  table: { borderWidth: layout.borderWidth, borderColor: theme.borderStrong, backgroundColor: theme.surface },
+  detailTable: { width: '100%' },
+  flexCell: { minWidth: 0 },
+  tableHeader: { flexDirection: 'row', backgroundColor: theme.surfaceMuted },
+  headerCell: { padding: spacing.sm, color: theme.textPrimary, fontFamily: fonts.bodySemiBold, fontSize: 11,
+    borderRightWidth: layout.borderWidth, borderRightColor: theme.borderStrong },
+  tableRow: { flexDirection: 'row', borderTopWidth: layout.borderWidth, borderTopColor: theme.border },
+  alternateRow: { backgroundColor: theme.surfaceHover },
+  selectedRow: { backgroundColor: '#EFF6FF' },
+  tableCell: { padding: spacing.sm, borderRightWidth: layout.borderWidth, borderRightColor: theme.border,
+    justifyContent: 'center', gap: spacing.xs },
+  negative: { color: theme.loss },
+  positive: { color: theme.win },
   filters: { width: '100%', flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, alignItems: 'center' },
   inputs: { width: '100%', flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   input: { flexGrow: 1, minWidth: 150, color: theme.textPrimary, fontFamily: fonts.body, fontSize: 12,

@@ -172,6 +172,13 @@ export type PinnacleReferenceResult =
   | { status: 'available'; reference: PinnacleReference; kickoffDeltaSeconds: number }
   | { status: 'unavailable'; reason: string; quote?: PinnacleQuote };
 
+export function pinnacleImpliedTotal(outcomes: readonly { odds: number }[]): number {
+  if (!outcomes.length || outcomes.some(({ odds }) => !Number.isFinite(odds) || odds < 1)) {
+    throw new RangeError('At least one valid decimal price is required.');
+  }
+  return outcomes.reduce((sum, item) => sum + 1 / item.odds, 0);
+}
+
 function fairMarket(
   market: PinnacleMarketOdds,
   target: SupportedSelection,
@@ -197,7 +204,7 @@ function fairMarket(
   }
   if (prices.size !== expected.length || expected.some((outcome) => !prices.has(outcome))) return null;
   const outcomes = expected.map((outcome) => ({ outcome, odds: prices.get(outcome)! }));
-  const totalImplied = outcomes.reduce((sum, item) => sum + 1 / item.odds, 0);
+  const totalImplied = pinnacleImpliedTotal(outcomes);
   const odds = prices.get(target.outcome);
   if (odds == null || !Number.isFinite(totalImplied) || totalImplied <= 0) return null;
   return { probability: (1 / odds) / totalImplied, odds, outcomes };
