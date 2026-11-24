@@ -28,6 +28,8 @@ import { COMPETITION_ZONES, type ZoneKind, type ZoneRule } from '@/utils/competi
 import {
   buildImbangiRows,
   imbangiGradeScore,
+  imbangiRankAfterWin,
+  isImbangiTeam,
   IMBANGI_TIGHT_PTS,
   type ImbangiGrade,
   type ImbangiScheduleMatch,
@@ -119,7 +121,7 @@ export function pullRow(index: PullRowIndex) {
 
 /**
  * First matching kind on the sheet.
- * A checked wide gap is non Imbangi. No neighbour to check, with fewer games, is kind 3.
+ * Imbangi attached means a win puts this side in 2nd or 3rd. No neighbour to check, with fewer games, is kind 3.
  */
 /** Push factors count once about 10 games remain, or the season is at least 75% complete. */
 export function pushFactorsActive(remaining: number, seasonProgress: number | null | undefined): boolean {
@@ -147,8 +149,10 @@ export type RelegationRead = 'escaping' | 'safety' | 'clear' | 'unknown';
 export type ImbangiFit = {
   opponentName: string;
   pointsDiff: number;
-  /** ΔP is inside the Imbangi range (4 or less). */
+  /** A win puts this side in 2nd or 3rd. That is Imbangi attached. */
   fits: boolean;
+  /** Where this side sits after a win. */
+  landed: number | null;
   grade: ImbangiGrade | null;
   score: number | null;
   reason: string | null;
@@ -346,18 +350,22 @@ function positionRelated(
 }
 
 function fitFromRow(
+  team: StandingLike,
+  table: StandingLike[],
   opponent: StandingLike,
   pointsDiff: number,
   formReady: boolean,
   grade: ImbangiGrade | null,
   reason: string | null,
 ): ImbangiFit {
-  const fits = pointsDiff <= IMBANGI_TIGHT_PTS;
+  const landed = imbangiRankAfterWin(table, team.teamId);
+  const fits = isImbangiTeam(table, team.teamId);
   if (!formReady) {
     return {
       opponentName: opponent.name,
       pointsDiff,
       fits,
+      landed,
       grade: null,
       score: null,
       reason: null,
@@ -368,6 +376,7 @@ function fitFromRow(
     opponentName: opponent.name,
     pointsDiff,
     fits,
+    landed,
     grade: fits ? grade : null,
     score: fits ? imbangiGradeScore(grade) : null,
     reason: fits ? reason : null,
@@ -442,7 +451,7 @@ function imbangiPoint(fit: ImbangiFit | null): PullPoint {
     return {
       id: 'imbangi',
       point: 'Imbangi',
-      numberText: `ΔP ${fit.pointsDiff}`,
+      numberText: '—',
       reading: 'Non Imbangi',
       equalsText: '—',
       equalsValue: null,
@@ -452,8 +461,8 @@ function imbangiPoint(fit: ImbangiFit | null): PullPoint {
   return {
     id: 'imbangi',
     point: 'Imbangi',
-    numberText: `ΔP ${fit.pointsDiff}`,
-    reading: fit.pending ? 'Imbangi effect' : `Imbangi effect${fit.grade ? ` · ${fit.grade}` : ''}`,
+      numberText: fit.landed == null ? '—' : `#${fit.landed}`,
+      reading: `Imbangi · a win lands at #${fit.landed}`,
     equalsText: gradeEquals == null ? '—' : String(gradeEquals),
     equalsValue: gradeEquals,
   };
@@ -562,6 +571,8 @@ function readSingaye(
   const tailRow = imbangiRows.find((row) => row.teamId === team.teamId && row.relation === 'below');
   const imbangiAhead = ahead
     ? fitFromRow(
+        team,
+        table,
         ahead,
         aheadRow?.pointsDiff ?? Math.abs(team.points - ahead.points),
         formReady,
@@ -571,6 +582,8 @@ function readSingaye(
     : null;
   const imbangiTail = tail
     ? fitFromRow(
+        team,
+        table,
         tail,
         tailRow?.pointsDiff ?? Math.abs(team.points - tail.points),
         formReady,

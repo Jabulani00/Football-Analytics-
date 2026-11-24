@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
+import CallReasonBlocks from '@/components/match-detail/CallReasonBlocks';
 import CountryFlag from '@/components/shared/CountryFlag';
 import TeamLogo from '@/components/shared/TeamLogo';
 import H2HPanel from '@/components/match-detail/H2HPanel';
@@ -197,7 +198,12 @@ export default function PowerDynamicFixtureModal({
                   {sector ? `${sector.index}. ${sector.name}${option ? ` · ${option.label}` : ''}` : 'Power dynamics'}
                 </Text>
                 <Text style={styles.aspect}>{hit.aspectLabel}</Text>
-                <Text style={styles.reason}>{hit.reason}</Text>
+                <CallReasonBlocks
+                  reason={hit.reason}
+                  t1Name={hit.t1Name}
+                  t2Name={hit.t2Name}
+                  homeIsT1={hit.homeIsT1}
+                />
               </View>
               <MatchPowerDynamicsPanel
                 key={`${hit.fixtureId}-${hit.aspectId}`}
@@ -306,7 +312,6 @@ const styles = StyleSheet.create({
   closeText: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: theme.textPrimary },
   scroll: { flex: 1 },
   scrollContent: { paddingBottom: spacing.xl },
-  reason: { fontFamily: fonts.body, fontSize: 14, lineHeight: 20, color: theme.textPrimary },
   note: { fontFamily: fonts.body, fontSize: 12, lineHeight: 16, color: theme.textMuted },
   missing: { fontFamily: fonts.body, fontSize: 14, color: theme.textMuted, paddingVertical: spacing.md },
 });

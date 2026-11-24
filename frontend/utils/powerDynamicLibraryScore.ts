@@ -7,6 +7,7 @@ import type { StandingLike } from '@/utils/motivationEngine';
 import type { ImbangiScheduleMatch } from '@/utils/imbangiEngine';
 import { ACTIVITY_BOARD_KEY, activitySample, ensureFixtureCalculation } from '@/utils/powerDynamicCalculationCalls';
 import { callAspectById, scoreCallFixture, type CallTableRow } from '@/utils/powerDynamicCallSearch';
+import { t1IsHomeSide } from '@/utils/powerDynamicsEngine';
 
 export type PowerDynamicHit = {
   fixtureId: number;
@@ -18,7 +19,100 @@ export type PowerDynamicHit = {
   reason: string;
   aspectId: string;
   aspectLabel: string;
+  /** Table side with the higher standing. */
+  t1Name?: string;
+  t2Name?: string;
+  homeIsT1?: boolean;
 };
+
+export type CallSideNotes = {
+  t1: string[];
+  t2: string[];
+  shared: string[];
+};
+
+function tidy(text: string): string {
+  return text.replace(/\s+/g, ' ').replace(/[.\s]+$/, '').trim();
+}
+
+function remember(list: string[], text: string) {
+  const clean = tidy(text);
+  if (clean && !list.includes(clean)) list.push(clean);
+}
+
+function groupByTeam(reason: string, t1Name?: string, t2Name?: string): CallSideNotes {
+  const notes: CallSideNotes = { t1: [], t2: [], shared: [] };
+  const teams = [
+    t1Name ? { id: 't1' as const, name: t1Name } : null,
+    t2Name ? { id: 't2' as const, name: t2Name } : null,
+  ].filter((team): team is { id: 't1' | 't2'; name: string } => team != null && team.name.length > 0);
+  if (teams.length === 0) return notes;
+  let current: 't1' | 't2' | null = null;
+  let sawTeam = false;
+  for (const part of reason.split(' · ').map(tidy).filter(Boolean)) {
+    const team = teams.find((item) => tidy(item.name) === part);
+    if (team) {
+      current = team.id;
+      sawTeam = true;
+      continue;
+    }
+    if (/^target position$/i.test(part) || part === 'No target position') continue;
+    if (current) remember(notes[current], part);
+    else remember(notes.shared, part);
+  }
+  return sawTeam ? notes : { t1: [], t2: [], shared: [] };
+}
+
+/** Pulls each side out of a joined call reason so the two teams can be read apart. */
+export function splitCallReason(
+  reason: string,
+  homeIsT1 = true,
+  names?: { t1?: string; t2?: string },
+): CallSideNotes {
+  const notes: CallSideNotes = { t1: [], t2: [], shared: [] };
+  let topic = '';
+  const give = (side: 't1' | 't2', text: string) => {
+    remember(notes[side], topic ? `${topic} · ${tidy(text)}` : text);
+  };
+  const take = (part: string) => {
+    const colour = part.match(/^Home\s+(\S+)\s+v\s+away\s+(\S+)/i);
+    if (colour) {
+      const kept = topic;
+      topic = 'Colour';
+      give(homeIsT1 ? 't1' : 't2', colour[1]);
+      give(homeIsT1 ? 't2' : 't1', colour[2]);
+      topic = kept;
+      return;
+    }
+    const versus = part.match(/^T1\s+(.+?)\s+vs\s+T2\s+(.+)$/i);
+    if (versus) {
+      give('t1', versus[1]);
+      give('t2', versus[2]);
+      return;
+    }
+    if (/^T1\b/i.test(part) && !/\bT2\b/i.test(part)) {
+      give('t1', part.replace(/^T1\s*/i, ''));
+      return;
+    }
+    if (/^T2\b/i.test(part) && !/\bT1\b/i.test(part)) {
+      give('t2', part.replace(/^T2\s*/i, ''));
+      return;
+    }
+    if (!/[.!]|T1|T2|separation|space|between/i.test(part) && part.length <= 48) {
+      topic = tidy(part);
+      return;
+    }
+    remember(notes.shared, part);
+  };
+  for (const chunk of reason.split(' · ')) {
+    for (const sentence of chunk.split(/\.\s+/)) take(sentence);
+  }
+  if (notes.t1.length === 0 && notes.t2.length === 0) {
+    const grouped = groupByTeam(reason, names?.t1, names?.t2);
+    if (grouped.t1.length > 0 || grouped.t2.length > 0) return grouped;
+  }
+  return notes;
+}
 
 export type PowerDynamicLeaguePack = {
   seasonId: number;
@@ -136,6 +230,7 @@ export function scorePowerDynamicPacks(
         matched.push({ id, percent: score.percent, reason: score.reason, label: aspectCaption(id) });
       }
       if (matched.length !== aspectIds.length) continue;
+      const homeIsT1 = t1IsHomeSide(home, away);
       hits.push({
         fixtureId: fixture.id,
         name: `${fixture.homeName} vs ${fixture.awayName}`,
@@ -146,6 +241,9 @@ export function scorePowerDynamicPacks(
         reason: matched.map((item) => item.reason).join(' · '),
         aspectId: matched[0].id,
         aspectLabel: matched.map((item) => item.label).join(' · '),
+        t1Name: homeIsT1 ? fixture.homeName : fixture.awayName,
+        t2Name: homeIsT1 ? fixture.awayName : fixture.homeName,
+        homeIsT1,
       });
     }
   }

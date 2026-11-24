@@ -4,12 +4,30 @@
 
 import {
   estimateRemainingMatches,
+  rankAfterWin,
   LATE_SEASON_PROGRESS,
   type StandingLike,
 } from '@/utils/motivationEngine';
 import type { SeasonMatch } from '@/utils/bhozomaEngine';
 
-/** ΔP at or below this = tight Imbangi fight + grade band. */
+/** A team is Imbangi when a win puts them in 2nd or 3rd. */
+export function imbangiRankAfterWin(
+  table: StandingLike[],
+  teamId: number | null | undefined,
+): number | null {
+  if (teamId == null) return null;
+  return rankAfterWin(table, teamId);
+}
+
+export function isImbangiTeam(
+  table: StandingLike[],
+  teamId: number | null | undefined,
+): boolean {
+  const landed = imbangiRankAfterWin(table, teamId);
+  return landed === 2 || landed === 3;
+}
+
+/** ΔP at or below this = tight neighbour fight + grade band. */
 export const IMBANGI_TIGHT_PTS = 4;
 /** Same threshold as tight — C / B / A only fire at this gap or closer. */
 export const IMBANGI_GRADE_PTS = 4;

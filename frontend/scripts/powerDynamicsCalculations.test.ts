@@ -195,7 +195,7 @@ console.log('\nlive sector values');
   const value = (id: string, side: 't1' | 't2') => calc.sectors.find((sector) => sector.id === id)?.[side];
   const tick = (id: string) => calc.ticks.find((row) => row.id === id);
 
-  check('1st place wins imbangi as a clear 3', value('imbangi', 't1') === 3);
+  check('1st place is not imbangi', value('imbangi', 't1') === 0);
   check('6th place is not imbangi', value('imbangi', 't2') === 0);
   check('next game intense is 0.5', value('indlela', 't1') === 0.5);
   check('next game quiet is 0', value('indlela', 't2') === 0);
@@ -219,7 +219,7 @@ console.log('\nlive sector values');
   check('totals include the numbered sectors', calc.calc2.t1 > calc.calc2.t2);
 }
 
-console.log('\nimbangi is 1st or 2nd only');
+console.log('\nimbangi is a win into 2nd or 3rd');
 {
   const table: StandingLike[] = [
     { rank: 1, teamId: 1, name: 'Alpha', points: 40, played: 10, zone: 'top' },

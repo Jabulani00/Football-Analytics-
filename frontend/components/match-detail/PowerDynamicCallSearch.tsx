@@ -1,6 +1,7 @@
 ﻿import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import CallReasonBlocks from '@/components/match-detail/CallReasonBlocks';
 import { SectorIntro } from '@/components/match-detail/PowerDynamicsSectors';
 import PowerDynamicFixtureModal from '@/components/match-detail/PowerDynamicFixtureModal';
 import SubTabBar from '@/components/shared/SubTabBar';
@@ -431,7 +432,12 @@ export default function PowerDynamicCallSearch({
                   <Text style={styles.meta} numberOfLines={1}>
                     {hit.country} · {hit.league} · {hit.when}
                   </Text>
-                  <Text style={styles.reason} numberOfLines={4}>{hit.reason}</Text>
+                  <CallReasonBlocks
+                    reason={hit.reason}
+                    t1Name={hit.t1Name}
+                    t2Name={hit.t2Name}
+                    homeIsT1={hit.homeIsT1}
+                  />
                 </View>
                 <View style={styles.resultBanner}>
                   {selectionGroups.map((group) => (
@@ -708,6 +714,5 @@ const styles = StyleSheet.create({
   home: { fontFamily: fonts.bodySemiBold, fontSize: 15, color: theme.textPrimary },
   away: { fontFamily: fonts.bodyMedium, fontSize: 14, color: theme.textPrimary, marginTop: 1 },
   meta: { fontFamily: fonts.bodyMedium, fontSize: 12, color: theme.textPrimary, opacity: 0.75, marginTop: 4 },
-  reason: { fontFamily: fonts.bodyMedium, fontSize: 13, lineHeight: 18, color: theme.textPrimary, marginTop: 4 },
   more: { fontFamily: fonts.body, fontSize: 12, lineHeight: 16, color: theme.textMuted },
 });

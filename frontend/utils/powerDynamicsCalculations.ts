@@ -10,7 +10,7 @@ import type { H2HMatch } from '@/services/oddAlerts';
 import { buildBhozomaTable, type SeasonMatch } from '@/utils/bhozomaEngine';
 import { evaluateH2HOptions, h2hGradeScore } from '@/utils/h2hOptions';
 import { evaluateImportanceOf3 } from '@/utils/importanceOf3Engine';
-import type { ImbangiScheduleMatch } from '@/utils/imbangiEngine';
+import { imbangiRankAfterWin, isImbangiTeam, type ImbangiScheduleMatch } from '@/utils/imbangiEngine';
 import type { FixtureInitialState } from '@/utils/last5Analysis';
 import { changeScalePlace, last5LabelChanges, last5Overview, type Last5Overview } from '@/utils/last5Sections';
 import {
@@ -25,7 +25,7 @@ import {
   problemSeparationLabel,
   sectorSeparationLabel,
 } from '@/utils/importanceOf3Engine';
-import { rankAfterWin, type StandingLike } from '@/utils/motivationEngine';
+import type { StandingLike } from '@/utils/motivationEngine';
 import {
   baselineGapFor,
   evaluatePositionGap,
@@ -321,25 +321,22 @@ function h2hGradeValues(
   };
 }
 
-/** Imbangi is the side sitting 1st or 2nd. */
+/** Imbangi is a side a win puts in 2nd or 3rd. */
 function imbangiValue(
   table: StandingLike[],
   teamId: number | null,
   rank: number | null,
   label: string,
 ): { value: number; detail: string } {
-  if (rank === 1 || rank === 2) {
-    return { value: IMBANGI_TRUE_VALUE, detail: `${label} is #${rank}` };
-  }
-  const landed = teamId != null ? rankAfterWin(table, teamId) : null;
-  if (landed === 1 || landed === 2) {
+  const landed = imbangiRankAfterWin(table, teamId);
+  if (isImbangiTeam(table, teamId)) {
     return {
       value: IMBANGI_TRUE_VALUE,
       detail: `${label} is #${rank ?? '—'}. A win lands them at #${landed}`,
     };
   }
   if (rank == null) return { value: 0, detail: `${label} is not on this table` };
-  return { value: 0, detail: `${label} is #${rank}. A win leaves them outside #1 and #2` };
+  return { value: 0, detail: `${label} is #${rank}. A win leaves them outside #2 and #3` };
 }
 
 function bhozomaValue(

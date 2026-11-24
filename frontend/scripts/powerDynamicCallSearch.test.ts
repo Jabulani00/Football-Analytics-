@@ -3,6 +3,7 @@
  * Run: npx tsx scripts/powerDynamicCallSearch.test.ts
  */
 import { POWER_DYNAMIC_CALLS } from '../utils/powerDynamicCalls';
+import { splitCallReason } from '../utils/powerDynamicLibraryScore';
 import { nearestPointsGap, callAspectsFor, scoreCallAspect, scoreCallFixture, type CallTableRow } from '../utils/powerDynamicCallSearch';
 import type { SeasonMatch } from '../utils/bhozomaEngine';
 
@@ -48,6 +49,19 @@ check('baseline grade is measured', scoreCallAspect('baseline-letter-A', table[0
 check('green at home against red away is G v R', scoreCallFixture('baseline-colour-gr', table[0], table[3], table)?.percent === 100);
 check('that fixture is not red at home against green away', scoreCallFixture('baseline-colour-rg', table[0], table[3], table)?.percent === 0);
 check('baseline lists the nine colour pairs', callAspectsFor('baseline', 'colours').map((item) => item.label).join(', ') === 'G v G, G v Y, G v R, Y v G, Y v Y, Y v R, R v G, R v Y, R v R');
+const sides = splitCallReason('Last 5 · T1 positive +5 · T2 negative −1. T1 support. Clear separation. 3 spaces between the places.');
+check('T1 details stay on T1', sides.t1.includes('Last 5 · positive +5') && sides.t1.includes('Last 5 · support'));
+check('T2 details stay on T2', sides.t2.length === 1 && sides.t2[0] === 'Last 5 · negative −1');
+check('the gap stays shared', sides.shared.includes('Clear separation') && sides.shared.some((line) => line.includes('spaces')));
+const colours = splitCallReason('Home G v away R', false);
+check('home colour follows the home side when that side is T2', colours.t2.includes('Colour · G') && colours.t1.includes('Colour · R'));
+const takeover = 'Alajuelense · Take over 1 · Target attached + Imbangi + fewer games · Target position · Alajuelense · Top 3 · Cartaginés · Top 3, Number 1 · Alajuelense · Take over 1 · Target attached + Imbangi + fewer games · Target position · Alajuelense · Top 3 · Cartaginés · Top 3, Number 1';
+const teams = splitCallReason(takeover, true, { t1: 'Alajuelense', t2: 'Cartaginés' });
+check(
+  'a take-over read keeps each team’s targets apart',
+  teams.t1.join(' | ') === 'Take over 1 | Target attached + Imbangi + fewer games | Top 3' &&
+    teams.t2.join(' | ') === 'Top 3, Number 1',
+);
 
 for (const call of POWER_DYNAMIC_CALLS) {
   for (const fn of call.functions) {

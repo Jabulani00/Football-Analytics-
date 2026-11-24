@@ -56,7 +56,7 @@ export const POWER_DYNAMIC_CALLS: PowerDynamicCallDef[] = [
       { id: 'tail', label: 'Tail', detail: 'The call against the side directly behind.' },
       { id: 'escape', label: 'Escape', detail: 'Escape element and the relegation read.' },
       { id: 'separator', label: 'Separator', detail: 'Escape element and pull factor averaged, then compared.' },
-      { id: 'imbangi', label: 'Imbangi', detail: 'Imbangi against the side ahead and the side behind.' },
+      { id: 'imbangi', label: 'Imbangi', detail: 'A win that puts this side in 2nd or 3rd.' },
     ],
   },
   {
@@ -162,8 +162,8 @@ export const POWER_DYNAMIC_CALLS: PowerDynamicCallDef[] = [
     id: 'imbangi',
     index: '12',
     name: 'Imbangi',
-    detail: 'Level on the table and what is still left to play.',
-    functions: read('Imbangi for the sides still in range.'),
+    detail: 'A win that puts the side in 2nd or 3rd.',
+    functions: read('Imbangi when a win lands the side in 2nd or 3rd.'),
   },
   {
     id: 'indlela',

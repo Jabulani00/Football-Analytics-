@@ -3,6 +3,7 @@
  * close fixtures. Pure helpers; UI decides how to present them.
  */
 
+import { isImbangiTeam, imbangiRankAfterWin } from '@/utils/imbangiEngine';
 import { evaluateTeamMotivation, type StandingLike } from '@/utils/motivationEngine';
 import {
   filterScope,
@@ -245,28 +246,27 @@ function childBeaterFlags(results: TeamResult[], side: 'home' | 'away', zone?: s
   return flags;
 }
 
-/** Imbangi — rivals close on points (ΔP ≤ 3). */
-function imbangiFlag(homePts: number | null, awayPts: number | null): SeparatorFlag {
-  if (homePts == null || awayPts == null) {
-    return {
-      id: 'imbangi',
-      label: 'Close on the table',
-      active: false,
-      grade: 'info',
-      detail: 'Need both sides’ points',
-      side: 'fixture',
-    };
-  }
-  const d = Math.abs(homePts - awayPts);
-  const active = d <= 3;
+/** Imbangi — a win puts that side in 2nd or 3rd. */
+function imbangiFlag(
+  table: StandingLike[],
+  homeId: number | null | undefined,
+  awayId: number | null | undefined,
+): SeparatorFlag {
+  const homeLanded = imbangiRankAfterWin(table, homeId);
+  const awayLanded = imbangiRankAfterWin(table, awayId);
+  const homeOn = isImbangiTeam(table, homeId);
+  const awayOn = isImbangiTeam(table, awayId);
+  const notes = [
+    homeOn ? `Home win lands at #${homeLanded}` : null,
+    awayOn ? `Away win lands at #${awayLanded}` : null,
+  ].filter((line): line is string => line != null);
+  const active = notes.length > 0;
   return {
     id: 'imbangi',
-    label: 'Close on the table',
+    label: 'Imbangi',
     active,
     grade: active ? 'warn' : 'info',
-    detail: active
-      ? `Only ${d} pts apart — a real local rivalry`
-      : `${d} pts apart — not a tight table fight`,
+    detail: active ? notes.join(' · ') : 'A win leaves both sides outside 2nd and 3rd',
     side: 'fixture',
   };
 }
@@ -432,7 +432,7 @@ export function evaluateFixtureSeparators(opts: {
   }
 
   flags.push(contestedLeagueTop(table));
-  flags.push(imbangiFlag(homeRow?.points ?? null, awayRow?.points ?? null));
+  flags.push(imbangiFlag(table, homeId, awayId));
   flags.push(indlelaFlag(homeResults, awayResults));
 
   flags.push(

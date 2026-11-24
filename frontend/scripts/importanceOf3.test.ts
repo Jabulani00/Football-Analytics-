@@ -104,26 +104,26 @@ console.log('\npull factor kinds');
   check('no target + more than 10 games = 0', matchPullRow({ targetAttached: false, imbangi: true, fewerGames: false }) === 7);
 
   const close = evaluateImportanceOf3({
-    table: league([40, 37, 30]),
-    t1Id: 2,
+    table: league([40, 37, 34]),
+    t1Id: 3,
     t2Id: null,
     seasonProgress: 50,
     formReady: true,
   }).singaye1;
   check(
-    'close take over with many games is Take over 2 and equals 8',
+    'taking over 2nd with many games is Take over 2 and equals 8',
     close?.pull.type === 'Take over 2' && close.pull.equals === 8 && close.pull.detail.startsWith('Target attached + Imbangi'),
-    `${close?.pull.type} ${close?.pull.equals}`,
+    `${close?.pull.type} ${close?.pull.equals} ahead=${close?.ahead?.rank}`,
   );
 
   const late = evaluateImportanceOf3({
-    table: league([40, 37, 30]),
-    t1Id: 2,
+    table: league([40, 37, 34]),
+    t1Id: 3,
     t2Id: null,
     seasonProgress: 95,
     formReady: true,
   }).singaye1;
-  check('same take over with fewer games equals 10', late?.pull.index === 1 && late.pull.equals === 10, `${late?.pull.type} ${late?.pull.equals}`);
+  check('taking over 2nd with fewer games equals 10', late?.pull.index === 1 && late.pull.equals === 10, `${late?.pull.type} ${late?.pull.equals}`);
 
   const chasing = evaluateImportanceOf3({
     table: league([40, 30, 20]),
@@ -132,7 +132,11 @@ console.log('\npull factor kinds');
     seasonProgress: 40,
     formReady: true,
   }).singaye1;
-  check('wide chaser on a target equals 4', chasing?.pull.type === 'Chaser 5' && chasing.pull.equals === 4, `${chasing?.pull.type} ${chasing?.pull.equals}`);
+  check(
+    '2nd whose win stays 2nd is Imbangi, so the chaser equals 8',
+    chasing?.pull.type === 'Chaser 2' && chasing.pull.equals === 8 && chasing.pull.detail.includes('Imbangi'),
+    `${chasing?.pull.type} ${chasing?.pull.equals} landed=${chasing?.imbangiAhead?.landed}`,
+  );
 
   const plain = evaluateImportanceOf3({
     table: league([40, 37, 34, 30, 28, 22, 20, 10, 16, 12]),
@@ -176,19 +180,19 @@ console.log('\npush factor kinds');
     rank: i + 1,
     teamId: i + 1,
     name: `P${i + 1}`,
-    points: 100 - i,
+    points: i === 0 ? 80 : i === 1 ? 65 : 50 - i,
     played: 32,
   }));
   const late = evaluateImportanceOf3({
     table: lateTable,
-    t1Id: 18,
+    t1Id: 3,
     t2Id: null,
     competitionId: 423,
     seasonProgress: 90,
     formReady: true,
   }).singaye1;
   check(
-    'late dethrone with a target and Imbangi equals 10',
+    'late dethrone of a side a win leaves in 3rd equals 10',
     late?.push.active === true && late.push.kind === 'dethrone' && late.push.index === 1 && late.push.equals === 10,
     `${late?.push.type} active=${late?.push.active} equals ${late?.push.equals}`,
   );
@@ -206,11 +210,20 @@ console.log('\npush factor kinds');
 
 console.log('\nimbangi fit');
 {
-  const close = side(league([40, 37, 30]), 2);
-  check('ΔP 3 fits Imbangi', close.imbangiAhead?.fits === true && close.imbangiAhead.grade === 'C' && close.imbangiAhead.score === 6, `grade=${close.imbangiAhead?.grade}`);
+  const ontoSecond = side(league([40, 37, 34]), 3);
+  check('a win into 2nd is Imbangi', ontoSecond.imbangiAhead?.fits === true && ontoSecond.imbangiAhead.landed === 2);
 
-  const far = side(league([40, 30, 20]), 2);
-  check('ΔP 10 does not fit Imbangi', far.imbangiAhead?.fits === false && far.imbangiAhead.grade == null);
+  const staysThird = side(league([50, 40, 30]), 3);
+  check('a win that stays 3rd is Imbangi', staysThird.imbangiAhead?.fits === true && staysThird.imbangiAhead.landed === 3);
+
+  const intoThird = side(league([50, 40, 30, 28]), 4);
+  check('a win into 3rd is Imbangi', intoThird.imbangiAhead?.fits === true && intoThird.imbangiAhead.landed === 3);
+
+  const ontoFirst = side(league([40, 37, 30]), 2);
+  check('a win into 1st is not Imbangi', ontoFirst.imbangiAhead?.fits === false && ontoFirst.imbangiAhead.landed === 1);
+
+  const staysFourth = side(league([50, 40, 30, 20]), 4);
+  check('a win that stays 4th is not Imbangi', staysFourth.imbangiAhead?.fits === false && staysFourth.imbangiAhead.landed === 4);
 }
 
 console.log('\nboth singayes');

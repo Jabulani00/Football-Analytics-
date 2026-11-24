@@ -152,9 +152,11 @@ function motivationLabel(read: SingayeRead, bands: TargetBand[]): string {
 
 function imbangiLabel(fit: ImbangiFit | null): string {
   if (!fit) return '—';
-  if (fit.pending) return `ΔP ${fit.pointsDiff}${fit.fits ? ' · in range' : ''}`;
-  if (!fit.fits || fit.grade == null) return `ΔP ${fit.pointsDiff}`;
-  return `${fit.grade} · ${fit.score ?? '—'} · ΔP ${fit.pointsDiff}`;
+  if (fit.fits) {
+    const place = `Imbangi · a win lands at #${fit.landed}`;
+    return fit.grade ? `${place} · ${fit.grade}` : place;
+  }
+  return fit.landed == null ? 'Non Imbangi' : `Non Imbangi · a win lands at #${fit.landed}`;
 }
 
 function reachLabel(read: SingayeRead): string {
@@ -731,7 +733,7 @@ const RULES: { rule: string; line: string }[] = [
   { rule: 'Escaping relegation', line: 'Singaye is in a relegation spot' },
   { rule: 'Escape relegation', line: 'One place above the drop. 17th when 20 teams and the bottom three go down.' },
   { rule: 'Gebe widening', line: 'Gap to Tail, then the same gap after +3' },
-  { rule: 'Imbangi', line: 'ΔP ≤ 4 · A 10 · B 8 · C 6' },
+  { rule: 'Imbangi', line: 'A win puts the side in 2nd or 3rd' },
 ];
 
 function ledgerSection(rows: LedgerRow[], title: string): LedgerRow[] {

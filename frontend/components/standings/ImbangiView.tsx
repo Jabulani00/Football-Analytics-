@@ -3,6 +3,8 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-nat
 import type { SeasonMatch } from '@/utils/bhozomaEngine';
 import {
   buildImbangiTable,
+  imbangiRankAfterWin,
+  isImbangiTeam,
   IMBANGI_GRADE_PTS,
   IMBANGI_TIGHT_PTS,
   imbangiGradeScore,
@@ -172,6 +174,7 @@ export default function ImbangiView({
   const gradeB = table.closest.filter((r) => r.grade === 'B').length;
   const gradeC = table.closest.filter((r) => r.grade === 'C').length;
   const sortedTable = [...standings].sort((a, b) => a.rank - b.rank);
+  const imbangiSides = sortedTable.filter((row) => isImbangiTeam(standings, row.teamId));
   const first = sortedTable.find((r) => r.rank === 1) ?? sortedTable[0] ?? null;
   const second = sortedTable.find((r) => r.rank === 2) ?? sortedTable[1] ?? null;
   const titleGap =
@@ -198,10 +201,18 @@ export default function ImbangiView({
   return (
     <View>
       <Text style={styles.blurb}>
-        Imbangi compares each team to the neighbour one place above and one place below.
+        Imbangi is a team a win puts in 2nd or 3rd.
+        The rows below still compare each team with the neighbour one place above and one place below.
         Smaller ΔP means a tighter fight — {IMBANGI_TIGHT_PTS} pts or less is Tight.
         Grades: C (6) when ΔP ≤ {IMBANGI_GRADE_PTS}; B (8) names the side that lost their last game;
         A (10) if both play the same day, the first side already won, and this side still has to play.
+      </Text>
+      <Text style={styles.blurb}>
+        {imbangiSides.length === 0
+          ? 'No side is Imbangi. A win leaves everyone outside 2nd and 3rd.'
+          : `Imbangi: ${imbangiSides
+              .map((row) => `${row.name} (a win lands at #${imbangiRankAfterWin(standings, row.teamId)})`)
+              .join(', ')}.`}
       </Text>
 
       <View style={[styles.progressCard, progress.lateStretch && styles.progressLate]}>

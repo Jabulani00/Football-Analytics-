@@ -1742,7 +1742,9 @@ function scoreImportance(row: MeasureRow, table: MeasureRow[], token: string, co
     const grade = parts[2];
     if (!side) return noted(fit(0, 'No neighbour'));
     const on = grade ? side.grade === grade : side.fits;
-    const word = side.grade ? `${side.grade} · ΔP ${side.pointsDiff}` : `ΔP ${side.pointsDiff}`;
+    const word = side.fits
+      ? `Imbangi · a win lands at #${side.landed}${side.grade ? ` · ${side.grade}` : ''}`
+      : `Non Imbangi · a win lands at #${side.landed ?? '—'}`;
     return noted(fit(on ? 100 : 0, word));
   }
   return null;
