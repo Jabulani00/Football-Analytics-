@@ -274,6 +274,7 @@ export function buildPinnacleFixtureOdds(
 
   const marketMaps = new Map<number, Map<string, Map<string, PinnacleSelectionPrice>>>();
   const latestUnixBySelection = new Map<string, number>();
+  const conflictingSelections = new Set<string>();
   const latestUnixByFixture = new Map<number, number>();
 
   const getSelection = (
@@ -339,7 +340,18 @@ export function buildPinnacleFixtureOdds(
 
     const unix = Number.isFinite(row.unix) ? Number(row.unix) : 0;
     const key = `${match.fixture.eventId}:${marketIdentityFromMarket(match.market)}:${match.selection.key}`;
-    if (unix < (latestUnixBySelection.get(key) ?? -Infinity)) continue;
+    const previousUnix = latestUnixBySelection.get(key);
+    if (previousUnix != null && unix < previousUnix) continue;
+    if (previousUnix === unix) {
+      if (conflictingSelections.has(key)) continue;
+      if (match.selection.current != null && match.selection.current !== price) {
+        match.selection.current = null;
+        conflictingSelections.add(key);
+        continue;
+      }
+    } else {
+      conflictingSelections.delete(key);
+    }
     latestUnixBySelection.set(key, unix);
     match.selection.current = price;
 

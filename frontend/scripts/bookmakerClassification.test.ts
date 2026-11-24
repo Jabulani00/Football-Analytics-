@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { assessTeams, assessPair, opposingPairs, filterBookFixtures, websitePriceFromNet, type Price, type FixtureFilters } from '../services/bookmakerClassification';
+import { assessTeams, assessPair, comparePriceGap, opposingPairs, filterBookFixtures, websitePriceFromNet, type Price, type FixtureFilters } from '../services/bookmakerClassification';
 import { hollywoodFixture, betwayFixture } from '../services/bookmakerFixtures';
 import type { HbEvent } from '../services/hollywoodTypes';
 import type { BetwayEvent } from '../services/betwayHunt';
@@ -51,6 +51,11 @@ assert.equal(assessPair(p(1.1), p(1.4))?.preference, 'first', 'Exact 0.30 gap is
 assert.equal(assessPair(p(1.4), p(1.1))?.preference, 'second');
 assert.equal(assessPair(p(1.1), p(1.399999))?.preference, 'none');
 assert.equal(assessPair(p(1.1), p(1.39))?.preference, 'none');
+assert.deepEqual(comparePriceGap(2, 3.49), { gap: 1.49, size: 'small' });
+assert.deepEqual(comparePriceGap(3.495, 2), { gap: 1.495, size: 'small' });
+assert.deepEqual(comparePriceGap(2, 3.5), { gap: 1.5, size: 'big' });
+assert.equal(comparePriceGap(NaN, 2), null);
+assert.equal(assessTeams(p(2), p(3.5))?.size, 'big');
 for (const odds of [1.8, 2.6, 3]) {
   const equal = assessTeams(p(odds), p(odds))!;
   assert.equal(equal.group, 3); assert.equal(equal.ratio, 1); assert.equal(equal.gap, 0);

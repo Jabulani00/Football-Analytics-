@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react';
+import { hasRepeatedEvent } from '@/services/bookmakerSelection';
 import { Linking, Platform, Share } from 'react-native';
 
 import {
@@ -19,6 +20,10 @@ export function useBetwayExport() {
   const [state, setState] = useState<BetwayExportState>({ status: 'idle' });
 
   const exportSlip = useCallback(async (legs: BetwaySlipLeg[]) => {
+    if (hasRepeatedEvent(legs, (leg) => leg.eventId)) {
+      setState({ status: 'error', message: 'Same-match combinations require Betway Build A Bet: 2–10 pre-match soccer selections, placed as a single bet. Obtain the accepted combination and price on Betway.' });
+      return;
+    }
     if (legs.length === 0) {
       setState({ status: 'error', message: 'Add at least one live Betway selection.' });
       return;

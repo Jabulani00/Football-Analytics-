@@ -288,8 +288,8 @@ export function useHollywoodPopularOdds(enabled = true): HollywoodPopularOddsSta
         const initial = await fetchEvents(category.id, tournament.id, BET_TYPE.FULL_TIME, signal);
         if (signal.aborted) return;
         const initialRows = buildFusionRows(initial, ctx);
-        const observedAt = new Date().toISOString();
-        setState({ ...EMPTY, source, events: initial, observedAt, rows: initialRows,
+        const initialObservedAt = new Date().toISOString();
+        setState({ ...EMPTY, source, events: initial, observedAt: initialObservedAt, rows: initialRows,
           marketRows: initial.flatMap((event) => buildMarketRows(event, null, ctx)),
           fixtureCount: initial.length, pricedFixtureCount: initialRows.length,
           loading: true });
@@ -298,6 +298,7 @@ export function useHollywoodPopularOdds(enabled = true): HollywoodPopularOddsSta
         const widened = await fetchEventsAllMarkets(category.id, tournament.id, CORE_BET_TYPE_IDS, signal);
         if (signal.aborted) return;
         const events = mergeCompetitionEvents(initial, widened);
+        const observedAt = new Date().toISOString();
         const rows = buildFusionRows(events, ctx);
         const marketRows = events.flatMap((event) => buildMarketRows(event, null, ctx));
         const pricedFixtureCount = new Set(marketRows.map((row) => row.eventId)).size;
@@ -310,13 +311,19 @@ export function useHollywoodPopularOdds(enabled = true): HollywoodPopularOddsSta
         const [evidence, books, offers, oddsMarkets] = await Promise.allSettled([
           modelProbsForEvents(events, signal),
           fetchBookmakers(signal),
-          fetchAllUpcomingValue({ maxPages: 5 }, signal),
+          fetchAllUpcomingValue({ maxPages: 5 }, signal).then((value) => ({
+            value,
+            capturedAt: new Date().toISOString(),
+          })),
           fetchOddsMarkets(signal),
         ]);
         if (signal.aborted) return;
         const bundle = evidence.status === 'fulfilled' ? evidence.value : null;
         const extraOffers = offers.status === 'fulfilled'
-          ? offers.value.flatMap(normalizeOddAlertsValueBet) : [];
+          ? offers.value.value.flatMap((offer) =>
+              normalizeOddAlertsValueBet(offer, offers.value.capturedAt),
+            )
+          : [];
         const lookup = (event: HbEvent) => bundle?.models.get(event.id) ?? null;
         const enrichedRows = events.flatMap((event) => buildMarketRows(event, lookup(event), ctx));
         const errors: string[] = [];
@@ -429,7 +436,7 @@ export function useHollywoodPopularOdds(enabled = true): HollywoodPopularOddsSta
           strategyContexts: bundle?.strategyContexts ?? new Map(),
           bookmakers: books.status === 'fulfilled' ? mergeProviderBookmakers(books.value) : PRIORITY_BOOKMAKERS,
           extraOffers,
-          comparisons: compareHollywoodWithProvider(enrichedRows, extraOffers),
+          comparisons: compareHollywoodWithProvider(enrichedRows, extraOffers, observedAt),
           pinnacleOdds,
           pinnacleLoading: false,
           pinnacleError: errors.length > 0 ? errors.join(' ') : null,

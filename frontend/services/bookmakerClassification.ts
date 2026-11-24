@@ -7,7 +7,8 @@ export type BookFixture = {
   competition: string; kickoff: string; observedAt: string | null;
   home: Price; draw: Price; away: Price; markets: BookMarket[];
 };
-export type PairAssessment = { gap: number; preference: 'first' | 'second' | 'none'; };
+export type PriceGap = { gap: number; size: 'small' | 'big' };
+export type PairAssessment = PriceGap & { preference: 'first' | 'second' | 'none'; };
 export type TeamAssessment = PairAssessment & {
   ratio: number; group: 1 | 2 | 3; band: 'Below range' | 'Within range' | 'Above range';
   orientation: 'A' | 'B' | 'equal'; category: string | null;
@@ -35,12 +36,25 @@ export function websitePriceFromNet(net: number): number | null {
   const scale = 10n ** BigInt(places);
   return Number(digits + scale) / Number(scale);
 }
+function gapParts(first: number, second: number) {
+  const [a, b, scale] = aligned(first, second);
+  const difference = a > b ? a - b : b - a;
+  return {
+    difference, scale,
+    gap: Number(difference) / Number(scale),
+    size: difference * 2n < 3n * scale ? 'small' as const : 'big' as const,
+  };
+}
+export function comparePriceGap(first: number, second: number): PriceGap | null {
+  if (!Number.isFinite(first) || first < 1 || !Number.isFinite(second) || second < 1) return null;
+  const { gap, size } = gapParts(first, second);
+  return { gap, size };
+}
 export function assessPair(first: Price, second: Price): PairAssessment | null {
   if (!usable(first) || !usable(second)) return null;
-  const [a, b, scale] = aligned(first.odds!, second.odds!);
-  const gap = a > b ? a - b : b - a;
-  return { gap: Number(gap) / Number(scale),
-    preference: gap * 100n < 30n * scale ? 'none' : a < b ? 'first' : 'second' };
+  const { gap, size, difference, scale } = gapParts(first.odds!, second.odds!);
+  return { gap, size,
+    preference: difference * 100n < 30n * scale ? 'none' : first.odds! < second.odds! ? 'first' : 'second' };
 }
 export function assessTeams(home: Price, away: Price): TeamAssessment | null {
   const pair = assessPair(home, away);

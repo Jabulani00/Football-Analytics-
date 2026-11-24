@@ -1,8 +1,13 @@
 import { isBookmakerSelected } from '@/services/bookmakerSelection';
 import BookmakerFixtures from '@/components/analytics/BookmakerFixtures';
+import BookmakerValueReview from '@/components/analytics/BookmakerValueReview';
 import { hollywoodFixture } from '@/services/bookmakerFixtures';
 import { fetchEventDetail } from '@/services/hollywoodbets';
-import { matchHollywoodWithPinnacle } from '@/services/bookmakerAdapter';
+import {
+  diagnoseHollywoodWithProvider,
+  matchHollywoodWithPinnacle,
+  PRICE_MATCH_KICKOFF_TOLERANCE_SECONDS,
+} from '@/services/bookmakerAdapter';
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
@@ -37,6 +42,7 @@ type DisplayRow = {
 
 const PICK_LABEL: Record<FusionRow['pick'], string> = { '1': 'Home', X: 'Draw', '2': 'Away' };
 const OUTCOME_KEY = { '1': 'home', X: 'draw', '2': 'away' } as const;
+
 function formatCapturedAt(value: string | null): string {
   if (!value) return 'capture time unavailable';
   const date = new Date(value);
@@ -142,7 +148,12 @@ export default function OddsFusionPanel({
   const [market, setMarket] = useState('');
   const [pinnacleMarket, setPinnacleMarket] = useState('');
   const [page, setPage] = useState(0);
-  useEffect(() => { setQuery(''); setMarket(''); setPinnacleMarket(''); setPage(0); }, [live.categoryId, live.tournamentId]);
+  useEffect(() => {
+    setQuery('');
+    setMarket('');
+    setPinnacleMarket('');
+    setPage(0);
+  }, [live.categoryId, live.tournamentId]);
   const allRows = useMemo<DisplayRow[]>(() => live.marketRows.length > 0
     ? live.marketRows.map(fromMarket) : live.rows.map(fromFusion), [live.rows, live.marketRows]);
   const markets = [...new Set(allRows.map((row) => row.marketName))];
@@ -168,9 +179,16 @@ export default function OddsFusionPanel({
         !activePinnacleMarket || item.marketKey === activePinnacleMarket,
       );
       const selections = markets.flatMap((item) => item.selections);
+      const hollywoodKickoff = Date.parse(fixture.kickoff);
       return {
         ...fixture,
         markets,
+        providerKickoffDeltaSeconds: fixture.oddAlertsKickoffUnix == null
+          || !Number.isFinite(hollywoodKickoff)
+          ? null
+          : Math.abs(
+              Math.floor(hollywoodKickoff / 1_000) - fixture.oddAlertsKickoffUnix,
+            ),
         historySelectionCount: selections.filter((selection) =>
           selection.opening != null || selection.closing != null || selection.peak != null,
         ).length,
@@ -178,6 +196,14 @@ export default function OddsFusionPanel({
       };
     })
     .filter((fixture) => fixture.markets.length > 0);
+  const pinnaclePriceFixtureCount = live.pinnacleOdds.filter((fixture) =>
+    fixture.markets.some((item) => item.selections.some((selection) =>
+      selection.current != null ||
+      selection.opening != null ||
+      selection.closing != null ||
+      selection.peak != null,
+    )),
+  ).length;
   const hasCurrentPinnaclePrices = live.pinnacleOdds.some((fixture) =>
     fixture.markets.some((item) => item.selections.some((selection) =>
       selection.current != null,
@@ -191,14 +217,10 @@ export default function OddsFusionPanel({
     ),
     [live.marketRows, live.pinnacleOdds, live.pinnacleCapturedAt],
   );
-  const pinnaclePriceFixtureCount = live.pinnacleOdds.filter((fixture) =>
-    fixture.markets.some((item) => item.selections.some((selection) =>
-      selection.current != null ||
-      selection.opening != null ||
-      selection.closing != null ||
-      selection.peak != null,
-    )),
-  ).length;
+  const comparisonDiagnostics = useMemo(
+    () => diagnoseHollywoodWithProvider(live.marketRows, live.extraOffers),
+    [live.marketRows, live.extraOffers],
+  );
 
   return (
     <View style={styles.container}>
@@ -306,6 +328,8 @@ export default function OddsFusionPanel({
         </Pressable>
       </View> : null}
 
+      <BookmakerValueReview live={live} selectedLegs={selectedLegs} onToggleLeg={onAddLeg} />
+
       <SectionLabel style={styles.compareTitle}>Pinnacle Market Odds & Closing History</SectionLabel>
       <Text style={styles.snapshotNote}>
         The OddAlerts market catalog is queried for Pinnacle across up to 12 matched fixtures.
@@ -354,9 +378,18 @@ export default function OddsFusionPanel({
               <Text style={styles.comparisonMarket}>
                 Matched via OddAlerts fixture ID {fixture.oddAlertsFixtureId}
               </Text>
+              <Text style={styles.comparisonMarket}>
+                {fixture.providerKickoffDeltaSeconds == null
+                  ? 'OddAlerts kickoff unavailable; price matching is skipped.'
+                  : `OddAlerts kickoff difference ${fixture.providerKickoffDeltaSeconds}s · ${
+                      fixture.providerKickoffDeltaSeconds <= PRICE_MATCH_KICKOFF_TOLERANCE_SECONDS
+                        ? 'within the price-match window'
+                        : 'outside the 5-minute price-match window'
+                    }`}
+              </Text>
               {fixture.latestPriceAt ? (
                 <Text style={styles.comparisonMarket}>
-                  Latest snapshot timestamp {formatCapturedAt(fixture.latestPriceAt)}
+                  Provider timestamp {formatCapturedAt(fixture.latestPriceAt)} (quote time not verified)
                 </Text>
               ) : null}
               {live.pinnacleHistoryRowCount !== null ? (
@@ -442,7 +475,12 @@ export default function OddsFusionPanel({
         </Text>
       ) : null}
 
-      <SectionLabel style={styles.compareTitle}>Same-fixture Bookmaker Comparison</SectionLabel>
+      <SectionLabel style={styles.compareTitle}>Same-selection Bookmaker Comparison</SectionLabel>
+      <Text style={styles.snapshotNote}>
+        Prices are compared only for matched fixtures, kickoffs, markets, periods, lines, and selections.
+        Capture times show when feeds reached this app, not the bookmaker&apos;s original quote time.
+        Verify availability and price with the bookmaker before using a selection.
+      </Text>
       {live.comparisons.length > 0 ? (
         <View style={styles.comparisonList}>
           {live.comparisons.slice(0, 12).map((comparison) => (
@@ -450,9 +488,15 @@ export default function OddsFusionPanel({
               <Text style={styles.comparisonFixture}>{comparison.fixture}</Text>
               <Text style={styles.comparisonMarket}>{comparison.market} — {comparison.selection}</Text>
               <Text style={styles.comparisonPrices}>
-                Hollywoodbets {comparison.hollywoodOdds.toFixed(2)} · {comparison.bookmaker} {comparison.bookmakerOdds.toFixed(2)}
+                Hollywoodbets @ {comparison.hollywoodOdds.toFixed(2)} · captured {formatCapturedAt(comparison.hollywoodCapturedAt)}
               </Text>
+              {comparison.providerPrices.map((price) => (
+                <Text key={price.bookmakerSlug} style={styles.comparisonPrices}>
+                  {price.bookmaker} @ {price.decimal.toFixed(2)} · OddAlerts snapshot captured {formatCapturedAt(price.capturedAt)}
+                </Text>
+              ))}
               <Text style={styles.bestPrice}>Best: {comparison.bestBookmaker} @ {comparison.bestOdds.toFixed(2)}</Text>
+              <Text style={styles.comparisonMarket}>Bookmaker price spread: {comparison.difference.toFixed(2)}</Text>
               <Pressable
                 onPress={() => onAddLeg({
                   id: `best-${comparison.id}`,
@@ -471,10 +515,18 @@ export default function OddsFusionPanel({
       ) : (
         <Text style={styles.noComparison}>
           {live.extraOffers.length > 0
-            ? 'Extra-bookmaker feed is live, but no fixture + market pair matches the selected Hollywood league yet.'
+            ? 'Extra-bookmaker offers were received, but no exact fixture, kickoff, market, period, line, and selection match was found.'
             : 'No extra-bookmaker value feed is available for comparison right now.'}
         </Text>
       )}
+      {live.comparisons.length === 0 && live.extraOffers.length > 0 ? (
+        <Text style={styles.sourceNote}>
+          Match checks: {comparisonDiagnostics.usableProviderOffers} usable offers; fixture match for
+          {' '}{comparisonDiagnostics.fixtureMatchedSelections}/{comparisonDiagnostics.comparableHollywoodSelections}
+          {' '}Hollywood selections; kickoff within 5 min for {comparisonDiagnostics.kickoffMatchedSelections};
+          {' '}exact market and selection matches {comparisonDiagnostics.exactMarketSelectionMatches}.
+        </Text>
+      ) : null}
 
       <View style={styles.sources}>
         {live.bookmakers

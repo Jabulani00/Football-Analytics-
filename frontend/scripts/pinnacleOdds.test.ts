@@ -73,6 +73,18 @@ async function run(): Promise<void> {
   check('fixture with no odds remains identified',
     result[1].oddAlertsFixtureId === 102 && result[1].markets.length === 0);
 
+  const repeatedRow = { fixture_id: 101, market_id: 6, outcome: 'home', odds: 2.1, unix: 1, bookmaker_id: 47 };
+  const ambiguous = buildPinnacleFixtureOdds(fixtures, [
+    repeatedRow, { ...repeatedRow, odds: 2.3 },
+  ], [], catalog, 47);
+  check('conflicting prices with the same provider timestamp are unavailable',
+    ambiguous[0].markets[0].selections[0].current === null);
+  const resolved = buildPinnacleFixtureOdds(fixtures, [
+    repeatedRow, { ...repeatedRow, odds: 2.3 }, { ...repeatedRow, unix: 2, odds: 2.4 },
+  ], [], catalog, 47);
+  check('a later unambiguous price can replace an earlier conflict',
+    resolved[0].markets[0].selections[0].current === 2.4);
+
   const filters = pinnacleMarketFilters([
     ...catalog,
     { id: '9', market_key: 'btts' },

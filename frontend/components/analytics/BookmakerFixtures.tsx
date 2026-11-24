@@ -34,7 +34,7 @@ export function BookmakerAssessment({ fixture }: { fixture: BookFixture }) {
       <Text style={styles.heading}>Group {result.group} - {result.band}{result.category ? ` / ${result.category}` : ''}</Text>
       <Text style={styles.text}>{result.orientation === 'equal' ? 'Equal odds - neither A nor B' : result.orientation === 'A'
         ? 'A: Bigger home price / smaller away price' : 'B: Smaller home price / bigger away price'}</Text>
-      <Text style={styles.text}>Gap: {price(Math.max(fixture.home.odds!, fixture.away.odds!))} - {price(Math.min(fixture.home.odds!, fixture.away.odds!))} = {result.gap}</Text>
+      <Text style={styles.text}>Team gap: {price(Math.max(fixture.home.odds!, fixture.away.odds!))} - {price(Math.min(fixture.home.odds!, fixture.away.odds!))} = {result.gap} ({result.size})</Text>
       <Text style={styles.heading}>{result.preference === 'none' ? 'No clear choice' : `${fixture.bookmaker} Expected To Win: ${result.preference === 'first' ? fixture.home.name : fixture.away.name}`}</Text>
     </> : <Text style={styles.text}>Unavailable - both home and away prices must be open and valid.</Text>}
   </View>;
@@ -86,7 +86,7 @@ function FixtureCard({ fixture, loadMarkets, selectedLegs, onToggleLeg }: {
         {opposingPairs(market).map((pair) => {
           const assessment = pair.second ? assessPair(pair.first, pair.second) : null;
           return <Text key={pair.label} style={styles.note}>{pair.label}: {assessment
-            ? `Gap ${Math.max(pair.first.odds!, pair.second!.odds!)} - ${Math.min(pair.first.odds!, pair.second!.odds!)} = ${assessment.gap} - ${assessment.preference === 'none' ? 'No clear choice'
+            ? `Gap ${Math.max(pair.first.odds!, pair.second!.odds!)} - ${Math.min(pair.first.odds!, pair.second!.odds!)} = ${assessment.gap} (${assessment.size}) - ${assessment.preference === 'none' ? 'No clear choice'
               : `Bookmaker preference: ${assessment.preference === 'first' ? pair.first.name : pair.second!.name}`}`
             : 'Unavailable - opposing prices must both be open and valid'}</Text>;
         })}
@@ -109,7 +109,7 @@ export default function BookmakerFixtures({ fixtures, loadMarkets, showLocationF
   const options = (values: string[]) => [...new Set(values.filter(Boolean))].map((value) => ({ value, label: value }));
   return <View style={styles.container}>
     <Text style={styles.heading}>BOOKMAKER FIXTURE CLASSIFICATIONS</Text>
-    <Text style={styles.note}>Website decimal prices. Ratio = smaller home/away price divided by bigger; gap = bigger minus smaller. Classification uses unrounded values.</Text>
+    <Text style={styles.note}>Website decimal prices. Ratio = smaller home/away price divided by bigger; gap = bigger minus smaller. Small means below 1.50; big means 1.50 or more. The existing 0.30 preference rule remains separate. Classification uses unrounded values.</Text>
     <TextInput accessibilityLabel="Search bookmaker fixtures" placeholder="Search teams" placeholderTextColor={theme.textMuted}
       value={filters.query} onChangeText={(value) => change('query', value)} style={styles.input} />
     <View style={styles.row}>
