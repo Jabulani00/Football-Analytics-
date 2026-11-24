@@ -23,7 +23,11 @@ import {
   fetchAllFixturesBetween,
   fetchBookmakers,
   fetchFixtureDetail,
+  fetchOddsHistory,
+  fetchOddsMarkets,
   fetchSeasonStandings,
+  fetchUpcomingOdds,
+  type OddAlertsOddsMarket,
   type RawFixtureDetail,
   type StandingRow,
 } from '@/services/oddAlerts';
@@ -38,6 +42,17 @@ import {
 } from '@/services/bookmakerAdapter';
 import { predictionFromApiProbability } from '@/utils/apiRecommendationAdapter';
 import type { StrategyFixtureContext } from '@/services/strategyEngine';
+import { KICKOFF_TOLERANCE_S } from '@/services/hollywoodMatch';
+import {
+  buildPinnacleFixtureOdds,
+  collectPinnacleUpcomingPages,
+  oddAlertsFixtureLookupOptions,
+  pinnacleMarketFilters,
+  pinnacleOddsWindow,
+  type PinnacleFixtureMatch,
+  type PinnacleFixtureOdds,
+  type PinnacleOddsRow,
+} from '@/services/pinnacleOdds';
 
 type Probs = ModelProbs;
 
@@ -63,6 +78,14 @@ export type HollywoodPopularOddsState = {
   bookmakers: BookmakerCatalogItem[];
   extraOffers: NormalizedBookmakerOffer[];
   comparisons: CrossBookComparison[];
+  pinnacleOdds: PinnacleFixtureOdds[];
+  pinnacleLoading: boolean;
+  pinnacleError: string | null;
+  pinnacleWarning: string | null;
+  pinnacleCapturedAt: string | null;
+  pinnacleHistoryRowCount: number | null;
+  pinnacleMatchedFixtureCount: number;
+  pinnacleCatalogMarketCount: number;
   strategyContexts: Map<number, StrategyFixtureContext>;
   loading: boolean;
   error: string | null;
@@ -86,6 +109,14 @@ const EMPTY: OddsData = {
   bookmakers: PRIORITY_BOOKMAKERS,
   extraOffers: [],
   comparisons: [],
+  pinnacleOdds: [],
+  pinnacleLoading: false,
+  pinnacleError: null,
+  pinnacleWarning: null,
+  pinnacleCapturedAt: null,
+  pinnacleHistoryRowCount: null,
+  pinnacleMatchedFixtureCount: 0,
+  pinnacleCatalogMarketCount: 0,
   strategyContexts: new Map(),
   loading: false,
   error: null,
@@ -99,10 +130,13 @@ const EMPTY: OddsData = {
  */
 const MAX_MODEL_LOOKUPS = 12;
 const MAX_STRATEGY_CONTEXTS = 6;
+const MAX_PINNACLE_UPCOMING_PAGES = 4;
+const PINNACLE_UPCOMING_PER_PAGE = 250;
 
 type ModelEvidenceBundle = {
   models: Map<number, Probs>;
   strategyContexts: Map<number, StrategyFixtureContext>;
+  oddAlertsFixtureByEvent: Map<number, { fixtureId: number; kickoffUnix: number | null }>;
 };
 
 /**
@@ -122,9 +156,14 @@ async function modelProbsForEvents(
 ): Promise<ModelEvidenceBundle> {
   const models = new Map<number, Probs>();
   const strategyContexts = new Map<number, StrategyFixtureContext>();
+  const oddAlertsFixtureByEvent = new Map<
+    number,
+    { fixtureId: number; kickoffUnix: number | null }
+  >();
 
-  const fixtures = await fetchAllUpcomingFixtures({ days: 3, maxPages: 2 }, signal);
-  if (fixtures.length === 0) return { models, strategyContexts };
+  const fixtureLookup = oddAlertsFixtureLookupOptions(events.map((event) => event.startTime));
+  const fixtures = await fetchAllUpcomingFixtures(fixtureLookup, signal);
+  if (fixtures.length === 0) return { models, strategyContexts, oddAlertsFixtureByEvent };
 
   const keyed = fixtures.map((f) => ({
     homeName: f.home_name,
@@ -137,10 +176,18 @@ async function modelProbsForEvents(
   }));
 
   const pairs = pairFixturesToEvents(keyed, events).slice(0, MAX_MODEL_LOOKUPS);
+  for (const pair of pairs) {
+    oddAlertsFixtureByEvent.set(pair.event.id, {
+      fixtureId: pair.fixture.fixtureId,
+      kickoffUnix: Number.isFinite(pair.fixture.kickoffUnix)
+        ? pair.fixture.kickoffUnix
+        : null,
+    });
+  }
   const details: { eventId: number; detail: RawFixtureDetail }[] = [];
 
   for (const pair of pairs) {
-    if (signal.aborted) return { models, strategyContexts };
+    if (signal.aborted) return { models, strategyContexts, oddAlertsFixtureByEvent };
     let detail;
     try {
       detail = await fetchFixtureDetail(pair.fixture.fixtureId, signal);
@@ -167,7 +214,7 @@ async function modelProbsForEvents(
 
   const standingsCache = new Map<string, Promise<StandingRow[]>>();
   for (const item of details.slice(0, MAX_STRATEGY_CONTEXTS)) {
-    if (signal.aborted) return { models, strategyContexts };
+    if (signal.aborted) return { models, strategyContexts, oddAlertsFixtureByEvent };
     const detail = item.detail;
     let standings: StandingRow[] = [];
     let recentFixtures = [] as Awaited<ReturnType<typeof fetchAllFixturesBetween>>;
@@ -200,7 +247,7 @@ async function modelProbsForEvents(
     strategyContexts.set(item.eventId, { detail, standings, recentFixtures });
   }
 
-  return { models, strategyContexts };
+  return { models, strategyContexts, oddAlertsFixtureByEvent };
 }
 
 /** Browse the same country/competition tree as Hollywood; never silently pick a league. */
@@ -241,8 +288,8 @@ export function useHollywoodPopularOdds(enabled = true): HollywoodPopularOddsSta
         const initial = await fetchEvents(category.id, tournament.id, BET_TYPE.FULL_TIME, signal);
         if (signal.aborted) return;
         const initialRows = buildFusionRows(initial, ctx);
-        const observedAt = new Date().toISOString();
-        setState({ ...EMPTY, source, events: initial, observedAt, rows: initialRows,
+        const initialObservedAt = new Date().toISOString();
+        setState({ ...EMPTY, source, events: initial, observedAt: initialObservedAt, rows: initialRows,
           marketRows: initial.flatMap((event) => buildMarketRows(event, null, ctx)),
           fixtureCount: initial.length, pricedFixtureCount: initialRows.length,
           loading: true });
@@ -251,25 +298,135 @@ export function useHollywoodPopularOdds(enabled = true): HollywoodPopularOddsSta
         const widened = await fetchEventsAllMarkets(category.id, tournament.id, CORE_BET_TYPE_IDS, signal);
         if (signal.aborted) return;
         const events = mergeCompetitionEvents(initial, widened);
+        const observedAt = new Date().toISOString();
         const rows = buildFusionRows(events, ctx);
         const marketRows = events.flatMap((event) => buildMarketRows(event, null, ctx));
         const pricedFixtureCount = new Set(marketRows.map((row) => row.eventId)).size;
         setState({ ...EMPTY, source, events, observedAt, rows, marketRows,
-          fixtureCount: events.length, pricedFixtureCount, enriching: events.length > 0 });
+          fixtureCount: events.length, pricedFixtureCount, enriching: events.length > 0,
+          pinnacleLoading: events.length > 0 });
         if (events.length === 0) return;
 
         // Optional evidence must not delay the display of Hollywood's own prices.
-        const [evidence, books, offers] = await Promise.allSettled([
+        const [evidence, books, offers, oddsMarkets] = await Promise.allSettled([
           modelProbsForEvents(events, signal),
           fetchBookmakers(signal),
-          fetchAllUpcomingValue({ maxPages: 5 }, signal),
+          fetchAllUpcomingValue({ maxPages: 5 }, signal).then((value) => ({
+            value,
+            capturedAt: new Date().toISOString(),
+          })),
+          fetchOddsMarkets(signal),
         ]);
         if (signal.aborted) return;
         const bundle = evidence.status === 'fulfilled' ? evidence.value : null;
         const extraOffers = offers.status === 'fulfilled'
-          ? offers.value.flatMap(normalizeOddAlertsValueBet) : [];
+          ? offers.value.value.flatMap((offer) =>
+              normalizeOddAlertsValueBet(offer, offers.value.capturedAt),
+            )
+          : [];
         const lookup = (event: HbEvent) => bundle?.models.get(event.id) ?? null;
         const enrichedRows = events.flatMap((event) => buildMarketRows(event, lookup(event), ctx));
+        const errors: string[] = [];
+        const warnings: string[] = [];
+        const marketCatalog: OddAlertsOddsMarket[] = oddsMarkets.status === 'fulfilled'
+          ? oddsMarkets.value
+          : [];
+        if (oddsMarkets.status === 'rejected') {
+          errors.push(`Odds market catalog unavailable: ${String(oddsMarkets.reason)}`);
+        }
+        const marketFilters = pinnacleMarketFilters(marketCatalog);
+        const matchedFixtures: PinnacleFixtureMatch[] = bundle
+          ? events.flatMap((event) => {
+              const oddAlertsFixture = bundle.oddAlertsFixtureByEvent.get(event.id);
+              return oddAlertsFixture == null ? [] : [{
+                eventId: event.id,
+                fixture: event.name,
+                kickoff: event.startTime,
+                oddAlertsFixtureId: oddAlertsFixture.fixtureId,
+                oddAlertsKickoffUnix: oddAlertsFixture.kickoffUnix,
+              }];
+            }).slice(0, MAX_MODEL_LOOKUPS)
+          : [];
+        const fixtureIds = [...new Set(matchedFixtures.map((fixture) => fixture.oddAlertsFixtureId))];
+        let currentRows: PinnacleOddsRow[] = [];
+        let historyRows: PinnacleOddsRow[] = [];
+        let historyRowCount: number | null = null;
+
+        if (matchedFixtures.length > 0 && oddsMarkets.status === 'fulfilled') {
+          const invalidKickoff = matchedFixtures.some(
+            (fixture) => !Number.isFinite(Date.parse(fixture.kickoff)),
+          );
+          const window = invalidKickoff
+            ? null
+            : pinnacleOddsWindow(
+                matchedFixtures.map((fixture) => fixture.kickoff),
+                KICKOFF_TOLERANCE_S,
+              );
+          const shouldFetchBoard = marketFilters.upcoming.length > 0 && window != null;
+          const shouldFetchHistory = marketFilters.history.length > 0;
+
+          if (!marketFilters.upcoming.length) {
+            errors.push('Pinnacle odds snapshot unavailable: the OddAlerts market catalog has no usable market filters.');
+          } else if (!window) {
+            errors.push('Pinnacle odds snapshot unavailable: matched fixtures have invalid kickoff times.');
+          }
+          if (!shouldFetchHistory) {
+            errors.push('Pinnacle price history unavailable: the OddAlerts market catalog has no integer market IDs.');
+          }
+
+          const boardTask = shouldFetchBoard
+            ? collectPinnacleUpcomingPages(
+                (page) => fetchUpcomingOdds({
+                  bookmakers: ['pinnacle'],
+                  markets: marketFilters.upcoming,
+                  oddsType: 'closing',
+                  from: window.from,
+                  to: window.to,
+                  page,
+                  perPage: PINNACLE_UPCOMING_PER_PAGE,
+                }, signal),
+                new Set(fixtureIds),
+                MAX_PINNACLE_UPCOMING_PAGES,
+              )
+            : Promise.resolve({ rows: [], pagesFetched: 0, truncated: false });
+          const historyTask = shouldFetchHistory
+            ? fetchOddsHistory(fixtureIds, {
+                bookmakers: ['pinnacle'],
+                markets: marketFilters.history,
+              }, signal)
+            : Promise.resolve(null);
+          const [board, history] = await Promise.allSettled([boardTask, historyTask]);
+          if (signal.aborted) return;
+
+          if (board.status === 'rejected') {
+            errors.push(`Pinnacle odds snapshot unavailable: ${String(board.reason)}`);
+          } else if (shouldFetchBoard) {
+            currentRows = board.value.rows;
+            if (board.value.truncated) {
+              warnings.push(
+                `Pinnacle snapshot scan stopped after ${board.value.pagesFetched} pages; some fixtures may not be included.`,
+              );
+            }
+          }
+
+          if (history.status === 'rejected') {
+            errors.push(`Pinnacle price history unavailable: ${String(history.reason)}`);
+          } else if (history.value) {
+            historyRows = history.value.data;
+            historyRowCount = historyRows.length;
+          }
+        }
+        const pinnacleCapturedAt = new Date().toISOString();
+        const pinnacleBookmakerId = books.status === 'fulfilled'
+          ? books.value.find((bookmaker) => bookmaker.slug.toLowerCase() === 'pinnacle')?.id
+          : undefined;
+        const pinnacleOdds = buildPinnacleFixtureOdds(
+          matchedFixtures,
+          currentRows,
+          historyRows,
+          marketCatalog,
+          pinnacleBookmakerId,
+        );
         setState({
           ...EMPTY, source, events, observedAt,
           rows: buildFusionRows(events, ctx, lookup), marketRows: enrichedRows,
@@ -279,7 +436,15 @@ export function useHollywoodPopularOdds(enabled = true): HollywoodPopularOddsSta
           strategyContexts: bundle?.strategyContexts ?? new Map(),
           bookmakers: books.status === 'fulfilled' ? mergeProviderBookmakers(books.value) : PRIORITY_BOOKMAKERS,
           extraOffers,
-          comparisons: compareHollywoodWithProvider(enrichedRows, extraOffers),
+          comparisons: compareHollywoodWithProvider(enrichedRows, extraOffers, observedAt),
+          pinnacleOdds,
+          pinnacleLoading: false,
+          pinnacleError: errors.length > 0 ? errors.join(' ') : null,
+          pinnacleWarning: warnings.length > 0 ? warnings.join(' ') : null,
+          pinnacleCapturedAt,
+          pinnacleHistoryRowCount: historyRowCount,
+          pinnacleMatchedFixtureCount: matchedFixtures.length,
+          pinnacleCatalogMarketCount: marketFilters.upcoming.length,
           warning: evidence.status === 'rejected'
             ? 'Model evidence could not be loaded. Hollywood prices are still available.' : null,
         });

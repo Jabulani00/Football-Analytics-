@@ -93,6 +93,13 @@ export type BetSlipLeg = {
   hbLeg?: import('@/services/hollywoodbets').ShareLeg;
   /** Exact Betway provider identifiers used to refresh this outcome before hand-off. */
   betwayLeg?: import('@/services/betwayBetSlip').BetwaySlipLeg;
+  /** References captured for review; they are not current bookmaker offers or qualification. */
+  references?: {
+    version: 'reference-comparison-v1';
+    bookmakerCapturedAt: string | null;
+    pinnacle?: import('@/services/bookmakerValue').PinnacleReference;
+    machine?: import('@/services/bookmakerValue').MachineReference;
+  };
 };
 
 export type OddsFusionRow = {

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { assessTeams, assessPair, opposingPairs, filterBookFixtures, websitePriceFromNet, type Price, type FixtureFilters } from '../services/bookmakerClassification';
+import { assessTeams, assessPair, comparePriceGap, opposingPairs, filterBookFixtures, parseFixtureGapSettings, websitePriceFromNet, type Price, type FixtureFilters } from '../services/bookmakerClassification';
 import { hollywoodFixture, betwayFixture } from '../services/bookmakerFixtures';
 import type { HbEvent } from '../services/hollywoodTypes';
 import type { BetwayEvent } from '../services/betwayHunt';
@@ -51,6 +51,11 @@ assert.equal(assessPair(p(1.1), p(1.4))?.preference, 'first', 'Exact 0.30 gap is
 assert.equal(assessPair(p(1.4), p(1.1))?.preference, 'second');
 assert.equal(assessPair(p(1.1), p(1.399999))?.preference, 'none');
 assert.equal(assessPair(p(1.1), p(1.39))?.preference, 'none');
+assert.deepEqual(comparePriceGap(2, 3.49), { gap: 1.49, size: 'small' });
+assert.deepEqual(comparePriceGap(3.495, 2), { gap: 1.495, size: 'small' });
+assert.deepEqual(comparePriceGap(2, 3.5), { gap: 1.5, size: 'big' });
+assert.equal(comparePriceGap(NaN, 2), null);
+assert.equal(assessTeams(p(2), p(3.5))?.size, 'big');
 for (const odds of [1.8, 2.6, 3]) {
   const equal = assessTeams(p(odds), p(odds))!;
   assert.equal(equal.group, 3); assert.equal(equal.ratio, 1); assert.equal(equal.gap, 0);
@@ -83,12 +88,36 @@ const bw = betwayFixture({ provider_event_id: '2', home_team: 'Alpha', away_team
   fixture_status: 'active', lifecycle_state: 'active', market_open: true, market_suspended: false,
   odds_home: 4, odds_draw: 1.1, odds_away: 2, last_seen_at: '2030-01-01T10:00:00Z', markets: [] } as unknown as BetwayEvent);
 assert.equal(assessTeams(bw.home, bw.away)?.category, '2A', 'Both sources use the same website decimal rules');
-const filters: FixtureFilters = { query: '', country: '', competition: '', group: '', orientation: '', category: '', preference: '', side: '' };
+const filters: FixtureFilters = { query: '', country: '', competition: '', group: '', orientation: '', category: '', preference: '', side: '', gapSize: '', gapOrder: '' };
 assert.equal(filterBookFixtures([hb, closed], { ...filters, category: '2A' }).length, 1);
 assert.equal(filterBookFixtures([hb, closed], { ...filters, preference: 'unavailable' }).length, 1);
 assert.equal(filterBookFixtures([hb], { ...filters, side: 'second', preference: 'clear' }).length, 1);
 assert.equal(filterBookFixtures([hb], { ...filters, orientation: 'B' }).length, 0);
 assert.equal(filterBookFixtures([hb], { ...filters, query: ' alpha ', country: 'Country', competition: 'League' }).length, 1);
+const gapFixtures = [
+  { ...hb, id: 'apart', name: 'Apart', home: p(1.4), away: p(8.2) },
+  { ...hb, id: 'close', name: 'Close', home: p(2.3), away: p(3.7) },
+  { ...hb, id: 'edge', name: 'Edge', home: p(2), away: p(3.5) },
+  { ...hb, id: 'missing', name: 'Missing', home: p(null), away: p(2) },
+];
+const ids = (items: typeof gapFixtures) => items.map((item) => item.id);
+assert.deepEqual(ids(filterBookFixtures(gapFixtures, { ...filters, gapSize: 'small' })), ['close']);
+assert.deepEqual(ids(filterBookFixtures(gapFixtures, { ...filters, gapSize: 'big' })), ['apart', 'edge']);
+assert.deepEqual(ids(filterBookFixtures(gapFixtures, { ...filters, gapOrder: 'asc' })), ['close', 'edge', 'apart', 'missing']);
+assert.deepEqual(ids(filterBookFixtures(gapFixtures, { ...filters, gapOrder: 'desc' })), ['apart', 'edge', 'close', 'missing']);
+assert.deepEqual(ids(filterBookFixtures(gapFixtures, { ...filters, gapSize: 'small' }, { boundary: 7, min: null, max: null })),
+  ['apart', 'close', 'edge'], 'Custom boundary changes both classification and filtering');
+assert.equal(assessTeams(p(2), p(3.495), 1.495)?.size, 'big', 'Custom boundary uses the exact gap');
+assert.equal(assessTeams(p(2), p(3.495), 1.496)?.size, 'small');
+assert.deepEqual(ids(filterBookFixtures(gapFixtures, filters, { boundary: 1.5, min: 1.4, max: 1.4 })), ['close'],
+  'Custom inclusive limits find an exact gap');
+assert.deepEqual(ids(filterBookFixtures(gapFixtures, filters, { boundary: 1.5, min: 1.5, max: 6.8 })), ['apart', 'edge']);
+assert.deepEqual(parseFixtureGapSettings({ boundary: '1.50', min: '.3', max: '6.8' }),
+  { status: 'valid', settings: { boundary: 1.5, min: 0.3, max: 6.8 } });
+for (const input of [
+  { boundary: '', min: '', max: '' }, { boundary: '-1', min: '', max: '' },
+  { boundary: '1.5', min: 'x', max: '' }, { boundary: '1.5', min: '2', max: '1' },
+]) assert.equal(parseFixtureGapSettings(input).status, 'invalid');
 // Independent oracle: integer-cent subtraction/cross-multiplication, not production helpers.
 let verified = 0;
 for (let homeCents = 100; homeCents <= 1500; homeCents += 7) {

@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react';
+import { hasRepeatedEvent } from '@/services/bookmakerSelection';
 import { Linking, Platform } from 'react-native';
 
 import { bookingUrl, createShareABet, type ShareLeg } from '@/services/hollywoodbets';
@@ -28,6 +29,10 @@ export function useHollywoodExport(punterId = 0) {
 
   const exportSlip = useCallback(
     async (legs: ShareLeg[]) => {
+      if (hasRepeatedEvent(legs, (leg) => leg.eventID)) {
+        setState({ status: 'error', message: 'Same-match selections require separate singles or an accepted Hollywoodbets Same Match BetBuilder quote. This export supports ordinary selections only.' });
+        return;
+      }
       if (legs.length === 0) {
         setState({ status: 'error', message: 'Add at least one selection.' });
         return;

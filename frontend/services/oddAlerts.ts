@@ -2,6 +2,15 @@ import { Platform } from 'react-native';
 
 import { publicParams, trackRequest } from '@/services/apiTrafficLog';
 import { cacheKey } from '@/services/oddAlertsCachePolicy';
+import {
+  assertOddAlertsServerProxy,
+  buildOddsHistoryRequest,
+  buildUpcomingOddsRequest,
+  normalizeOddsMarketCatalogResponse,
+  type OddAlertsOddsMarket,
+  type OddsHistoryRequestOptions,
+  type UpcomingOddsRequestOptions,
+} from '@/services/oddAlertsOddsRequests';
 import { bandOf, type SeasonResult } from '@/utils/leagueTables';
 import {
   buildTieredTables,
@@ -186,9 +195,47 @@ export type RawFixtureDetail = RawFixture & {
   referee?: RefereeInfo | null;
 };
 
-type ApiEnvelope<T> = {
+export type ApiEnvelope<T> = {
   info: Record<string, unknown>;
   data: T[];
+};
+
+export type {
+  OddsFilter,
+  OddAlertsOddsType,
+  OddAlertsOddsMarket,
+  OddsHistoryRequestOptions,
+  UpcomingOddsRequestOptions,
+} from '@/services/oddAlertsOddsRequests';
+
+export type OddAlertsUpcomingOddsRow = {
+  fixture_id: number;
+  market_key: string;
+  market_id: number;
+  outcome: string;
+  odds: number;
+  unix: number;
+  datetime: string;
+  bookmaker_id: number;
+  bookmaker_name: string;
+  bookmaker_slug?: string;
+  [key: string]: unknown;
+};
+
+export type OddAlertsHistoricalOddsRow = {
+  fixture_id: number;
+  market_key?: string;
+  market_id?: number;
+  outcome?: string;
+  bet?: string;
+  selection?: string;
+  bookmaker_id: number;
+  bookmaker_name: string;
+  bookmaker_slug?: string;
+  opening?: number | null;
+  closing?: number | null;
+  peak?: number | null;
+  [key: string]: unknown;
 };
 
 function buildUrl(path: string, params: Record<string, string | number | undefined>): string {
@@ -545,6 +592,44 @@ export async function fetchAllUpcomingFixtures(
 /** Bookmakers exposed by the account's OddAlerts plan. */
 export async function fetchBookmakers(signal?: AbortSignal): Promise<OddAlertsBookmaker[]> {
   return (await getJson<OddAlertsBookmaker>('bookmakers', {}, signal)).data;
+}
+
+/** Market catalog used to resolve integer IDs required by odds/history. */
+export async function fetchOddsMarkets(
+  signal?: AbortSignal,
+): Promise<OddAlertsOddsMarket[]> {
+  assertOddAlertsServerProxy(Platform.OS, PROXY_URL, 'odds/markets');
+  const response: unknown = await getJson<unknown>('odds/markets', {}, signal);
+  return normalizeOddsMarketCatalogResponse(response);
+}
+
+/**
+ * One page of the pre-match odds board. Filters are required to avoid pulling
+ * every market and bookmaker by accident; callers can follow next_page_url
+ * explicitly when they need more fixtures.
+ */
+export async function fetchUpcomingOdds(
+  opts: UpcomingOddsRequestOptions,
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<OddAlertsUpcomingOddsRow>> {
+  const request = buildUpcomingOddsRequest(opts);
+  assertOddAlertsServerProxy(Platform.OS, PROXY_URL, request.path);
+  return getJson<OddAlertsUpcomingOddsRow>(request.path, request.params, signal);
+}
+
+/**
+ * Fetch opening/closing/peak prices for one fixture or a batch of up to 50.
+ * History market filters are OddAlerts integer market IDs, unlike the market
+ * keys accepted by odds/upcoming.
+ */
+export async function fetchOddsHistory(
+  fixtureIds: readonly number[],
+  opts: OddsHistoryRequestOptions,
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<OddAlertsHistoricalOddsRow>> {
+  const request = buildOddsHistoryRequest(fixtureIds, opts);
+  assertOddAlertsServerProxy(Platform.OS, PROXY_URL, request.path);
+  return getJson<OddAlertsHistoricalOddsRow>(request.path, request.params, signal);
 }
 
 /** Multi-bookmaker upcoming value feed (Bet365/Pinnacle/etc. when available). */

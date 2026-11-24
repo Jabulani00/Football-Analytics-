@@ -10,7 +10,7 @@ export function isBookmakerSelected(legs: readonly BetSlipLeg[], leg: BetSlipLeg
   const key = bookmakerSelectionKey(leg);
   return legs.some((item) => bookmakerSelectionKey(item) === key);
 }
-/** Preserve the existing one-selection-per-fixture rule; a second click removes the selection. */
+/** Ordinary accumulator selections remain limited to one outcome per event. */
 export function toggleBookmakerSelection(legs: readonly BetSlipLeg[], leg: BetSlipLeg): BetSlipLeg[] {
   if (isBookmakerSelected(legs, leg)) {
     const key = bookmakerSelectionKey(leg);
@@ -20,4 +20,9 @@ export function toggleBookmakerSelection(legs: readonly BetSlipLeg[], leg: BetSl
   return [...legs.filter((item) => item.fixture !== leg.fixture &&
     !(item.hbLeg && leg.hbLeg && item.hbLeg.eventID === leg.hbLeg.eventID) &&
     !(item.betwayLeg && leg.betwayLeg && item.betwayLeg.eventId === leg.betwayLeg.eventId)), leg];
+}
+
+/** Same-match combinations require a bookmaker builder quote, not multiplied prices. */
+export function hasRepeatedEvent<T>(legs: readonly T[], key: (leg: T) => string | number): boolean {
+  return new Set(legs.map(key)).size !== legs.length;
 }

@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Platform, Pressable, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import SectionLabel from '@/components/shared/SectionLabel';
 import { useBetwayExport } from '@/hooks/useBetwayExport';
 import { useHollywoodExport } from '@/hooks/useHollywoodExport';
 import { buildBetSlipSummary } from '@/services/betSlipShare';
+import { reviewBetSlip, ticketReference, type TicketReview } from '@/services/betSlipReview';
 import type { BetSlipLeg } from '@/types/analytics';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
@@ -19,6 +20,7 @@ export default function BetSlipPanel({
 }) {
   const [stakeInput, setStakeInput] = useState('50');
   const [mode, setMode] = useState<'accumulator' | 'singles'>('accumulator');
+  const [assumeIndependence, setAssumeIndependence] = useState(false);
   const [shareMessage, setShareMessage] = useState<string | null>(null);
   const { state: exportState, exportSlip } = useHollywoodExport();
   const { state: betwayExportState, exportSlip: exportBetwaySlip } = useBetwayExport();
@@ -26,26 +28,25 @@ export default function BetSlipPanel({
   // Only Hollywoodbets-sourced legs carry the metadata a booking code needs.
   const hbLegs = useMemo(() => legs.map((l) => l.hbLeg).filter((l): l is NonNullable<typeof l> => l != null), [legs]);
   const betwayLegs = useMemo(() => legs.map((l) => l.betwayLeg).filter((l): l is NonNullable<typeof l> => l != null), [legs]);
-  const mixedBookmakers = hbLegs.length > 0 && betwayLegs.length > 0;
-  const canExport = mode === 'accumulator' && hbLegs.length > 0;
-  const canExportBetway = mode === 'accumulator' && betwayLegs.length > 0;
+  const stake = stakeInput.trim() ? Number(stakeInput) : NaN;
+  const review = useMemo(() => reviewBetSlip(legs, mode, stake), [legs, mode, stake]);
+  const mixedBookmakers = mode === 'accumulator' && review.tickets.length > 1;
+  const hollywoodTicket = review.tickets.find((ticket) => ticket.id === 'hollywoodbets');
+  const betwayTicket = review.tickets.find((ticket) => ticket.id === 'betway');
+  const canExport = mode === 'accumulator' && hbLegs.length > 0 &&
+    hollywoodTicket?.issue == null && hollywoodTicket?.legs.length === hbLegs.length;
+  const canExportBetway = mode === 'accumulator' && betwayLegs.length > 0 &&
+    betwayTicket?.issue == null && betwayTicket?.legs.length === betwayLegs.length;
 
-  const combinedOdds = useMemo(
-    () => legs.reduce((acc, leg) => acc * leg.odds, 1),
-    [legs],
-  );
-
-  const stake = Math.max(0, parseFloat(stakeInput) || 0);
-  const totalStake = legs.length === 0 ? 0 : mode === 'accumulator' ? stake : stake * legs.length;
-
-  const potentialReturn =
-    mode === 'accumulator'
-      ? legs.length > 0 ? stake * combinedOdds : 0
-      : legs.reduce((sum, leg) => sum + stake * leg.odds, 0);
+  useEffect(() => setAssumeIndependence(false), [legs]);
 
   const shareSlip = async () => {
     if (legs.length === 0) return;
-    const message = buildBetSlipSummary(legs, { mode, stake });
+    if (review.issue) {
+      setShareMessage(review.issue);
+      return;
+    }
+    const message = buildBetSlipSummary(legs, { mode, stake, assumeIndependence });
     try {
       if (Platform.OS === 'web' && typeof navigator !== 'undefined') {
         if (typeof navigator.share === 'function') {
@@ -73,6 +74,13 @@ export default function BetSlipPanel({
         this device. Review the slip, share a bookmaker-aware text summary, or hand each
         bookmaker its own compatible selections. Mixed-bookmaker accumulators are split because
         neither bookmaker can accept the other bookmaker&apos;s selections.
+      </Text>
+
+      <Text style={styles.intro}>
+        Ordinary slips allow one selection per fixture; choosing another replaces it.
+        Same-match combinations must be built and priced by Hollywoodbets Same Match BetBuilder
+        or Betway Build A Bet. Betway allows 2–10 pre-match soccer selections as one single bet,
+        without combining other matches. This app does not currently import builder quotes.
       </Text>
 
       <View style={styles.slip}>
@@ -108,7 +116,7 @@ export default function BetSlipPanel({
         </View>
 
         <View style={styles.stakeRow}>
-          <Text style={styles.stakeLabel}>{mode === 'accumulator' ? 'Accumulator stake (R)' : 'Stake per single (R)'}</Text>
+          <Text style={styles.stakeLabel}>{mode === 'accumulator' ? 'Stake per bookmaker ticket (R)' : 'Stake per single (R)'}</Text>
           <TextInput
             style={styles.stakeInput}
             value={stakeInput}
@@ -120,12 +128,27 @@ export default function BetSlipPanel({
 
         <View style={styles.totals}>
           <TotalRow label="Legs" value={String(legs.length)} />
-          {mode === 'accumulator' ? (
-            <TotalRow label="Combined odds" value={legs.length > 0 ? combinedOdds.toFixed(2) : '—'} highlight />
-          ) : null}
-          <TotalRow label="Total stake" value={`R ${totalStake.toFixed(2)}`} />
-          <TotalRow label="Potential return" value={`R ${potentialReturn.toFixed(2)}`} highlight />
+          {review.tickets.map((ticket) => (
+            <TicketSummary key={ticket.id} ticket={ticket} assumeIndependence={assumeIndependence} />
+          ))}
+          <TotalRow label="Total stake" value={review.totalStake == null ? '—' : `R ${review.totalStake.toFixed(2)}`} />
+          <TotalRow label="Potential return if all win" value={review.potentialReturn == null ? '—' : `R ${review.potentialReturn.toFixed(2)}`} highlight />
+          {review.issue ? <Text accessibilityRole="alert" style={styles.splitNotice}>{review.issue}</Text> : null}
         </View>
+
+        {mode === 'accumulator' && review.tickets.some((ticket) => ticket.legs.length > 1) ? (
+          <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: assumeIndependence }}
+            onPress={() => setAssumeIndependence((value) => !value)} style={styles.independence}>
+            <Text style={styles.exportHint}>
+              {assumeIndependence ? '[x]' : '[ ]'} Assume outcomes on each ticket are independent for reference calculations.
+              Different fixtures can still be related; use only when this assumption is defensible.
+            </Text>
+          </Pressable>
+        ) : null}
+        <Text style={styles.exportHint}>
+          Reference shortfalls are hypothetical per unit staked, not realized losses. Sizing mixes,
+          approval caps, and automatic ticket generation are not yet approved.
+        </Text>
 
         {legs.length > 0 ? (
           <View style={styles.slipActions}>
@@ -141,8 +164,8 @@ export default function BetSlipPanel({
 
         {mixedBookmakers ? (
           <Text style={styles.splitNotice}>
-            MIXED SLIP: one cross-bookmaker accumulator is impossible. The actions below split it
-            into a Hollywoodbets booking code and a separate verified Betway hand-off.
+            MIXED SLIP: separate bookmaker tickets use separate stakes; no cross-bookmaker
+            accumulator is calculated. Unassigned selections must be assigned before totals.
           </Text>
         ) : null}
 
@@ -165,7 +188,9 @@ export default function BetSlipPanel({
           <Text style={styles.exportHint}>
             {mode === 'singles'
               ? 'Switch to Accumulator to generate one Hollywoodbets booking code.'
-              : 'Add at least one selection from live Hollywoodbets odds to generate a booking code.'}
+              : !hollywoodTicket && hbLegs.length === 0
+                ? 'Add at least one selection from live Hollywoodbets odds to generate a booking code.'
+              : 'Every Hollywoodbets selection in its ticket needs valid booking metadata and distinct fixtures.'}
           </Text>
         ) : null}
         {exportState.status === 'done' ? (
@@ -195,7 +220,9 @@ export default function BetSlipPanel({
           <Text style={styles.exportHint}>
             {mode === 'singles'
               ? 'Switch to Accumulator to prepare a Betway Multi Bet.'
-              : 'Add at least one selection from live Betway markets to prepare a Betway hand-off.'}
+              : !betwayTicket && betwayLegs.length === 0
+                ? 'Add at least one selection from live Betway markets to prepare a Betway hand-off.'
+              : 'Every Betway selection in its ticket needs valid hand-off metadata and distinct fixtures.'}
           </Text>
         ) : null}
         {betwayExportState.status === 'done' ? (
@@ -225,6 +252,27 @@ export default function BetSlipPanel({
       </View>
     </View>
   );
+}
+
+function TicketSummary({ ticket, assumeIndependence }: { ticket: TicketReview; assumeIndependence: boolean }) {
+  const references = (['pinnacle', 'machine'] as const).map((source) => ({
+    source,
+    result: ticketReference(ticket, source, assumeIndependence),
+  }));
+  return <View style={styles.ticketSummary}>
+    <Text style={styles.legFixture}>
+      {ticket.bookmaker ?? 'Unassigned'} · {ticket.legs.length} leg{ticket.legs.length === 1 ? '' : 's'}
+      {ticket.group ? ` · Group ${ticket.group}` : ' · Outside requested ticket groups'}
+    </Text>
+    <TotalRow label="Ticket odds" value={ticket.combinedOdds == null ? '—' : ticket.combinedOdds.toFixed(2)} />
+    <TotalRow label="Potential ticket return" value={ticket.potentialReturn == null ? '—' : `R ${ticket.potentialReturn.toFixed(2)}`} />
+    {ticket.issue ? <Text accessibilityRole="alert" style={styles.splitNotice}>{ticket.issue}</Text> : null}
+    {references.map(({ source, result }) => <Text key={source} style={styles.exportHint}>
+      {source === 'pinnacle' ? 'Pinnacle' : 'MM'}: {result.status === 'available'
+        ? `value ${result.metrics.valuePp >= 0 ? '+' : ''}${result.metrics.valuePp.toFixed(4)} pp · shortfall ${result.metrics.shortfallPp.toFixed(4)} pp · benchmark EV ${result.metrics.benchmarkEvPct >= 0 ? '+' : ''}${result.metrics.benchmarkEvPct.toFixed(2)}% · ${result.metrics.shortfallUnitsPerUnit.toFixed(4)} units per unit staked`
+        : result.reason}
+    </Text>)}
+  </View>;
 }
 
 function TotalRow({
@@ -398,6 +446,9 @@ const styles = StyleSheet.create({
     borderTopWidth: layout.borderWidth,
     borderTopColor: theme.border,
   },
+  ticketSummary: { width: '100%', paddingVertical: spacing.sm, borderBottomWidth: layout.borderWidth,
+    borderBottomColor: theme.border, gap: spacing.xs, marginBottom: spacing.sm },
+  independence: { paddingVertical: spacing.sm },
   clearBtn: { marginTop: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.xs },
   clearText: { fontFamily: fonts.bodySemiBold, fontSize: 10, color: theme.textMuted, letterSpacing: 0.5 },
   slipActions: {
