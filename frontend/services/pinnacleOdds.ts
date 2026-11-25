@@ -17,6 +17,11 @@ export type PinnacleOddsRow = {
   [key: string]: unknown;
 };
 
+export type FixtureOddsSource = {
+  id: number;
+  odds?: unknown;
+};
+
 export type PinnacleMarketCatalogEntry = {
   id?: number | string;
   market_id?: number | string;
@@ -138,7 +143,6 @@ export async function collectPinnacleUpcomingPages(
 
   const rows: PinnacleOddsRow[] = [];
   const foundFixtureIds = new Set<number>();
-
   for (let page = 1; page <= maxPages; page += 1) {
     const response = await fetchPage(page);
     rows.push(...response.data);
@@ -149,7 +153,6 @@ export async function collectPinnacleUpcomingPages(
     if (foundFixtureIds.size === targetFixtureIds.size) {
       return { rows, pagesFetched: page, truncated: false };
     }
-
     const nextPageUrl = response.info?.next_page_url;
     if (typeof nextPageUrl !== 'string' || nextPageUrl.length === 0) {
       return { rows, pagesFetched: page, truncated: false };
@@ -184,6 +187,56 @@ export function pinnacleOddsWindow(
 function finitePrice(value: unknown): number | null {
   const parsed = typeof value === 'string' ? Number(value) : value;
   return typeof parsed === 'number' && Number.isFinite(parsed) && parsed >= 1 ? parsed : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** Convert competition-scoped fixture odds into the common Pinnacle row shape. */
+export function pinnacleRowsFromFixtureOdds(
+  fixtures: readonly FixtureOddsSource[],
+): PinnacleOddsRow[] {
+  const rows: PinnacleOddsRow[] = [];
+  for (const fixture of fixtures) {
+    if (!isRecord(fixture.odds)) continue;
+    const root = fixture.odds;
+    const explicitBookmaker = Object.entries(root).find(([key, value]) =>
+      key.toLowerCase() === 'pinnacle' && isRecord(value));
+    const markets = explicitBookmaker
+      ? explicitBookmaker[1] as Record<string, unknown>
+      : root;
+    const nestedMarkets = isRecord(markets.markets)
+      ? markets.markets
+      : isRecord(markets.odds) ? markets.odds : markets;
+
+    for (const [marketKey, value] of Object.entries(nestedMarkets)) {
+      if (!isRecord(value)) continue;
+      const marketPinnacle = Object.entries(value).find(([key, child]) =>
+        key.toLowerCase() === 'pinnacle' && isRecord(child));
+      const outcomes = marketPinnacle ? marketPinnacle[1] as Record<string, unknown> : value;
+      const selections = isRecord(outcomes.outcomes)
+        ? outcomes.outcomes
+        : isRecord(outcomes.odds) ? outcomes.odds : outcomes;
+      if (!explicitBookmaker && Object.keys(value).some((key) =>
+        /^(?:pinnacle|bet365|betway|hollywoodbets)$/i.test(key))) {
+        if (!marketPinnacle) continue;
+      }
+      for (const [outcome, odds] of Object.entries(selections)) {
+        const price = finitePrice(odds);
+        if (price == null) continue;
+        rows.push({
+          fixture_id: fixture.id,
+          market_key: marketKey,
+          outcome,
+          odds: price,
+          bookmaker_slug: 'pinnacle',
+          bookmaker_name: 'Pinnacle',
+        });
+      }
+    }
+  }
+  return rows;
 }
 
 function isPinnacle(row: PinnacleOddsRow, pinnacleBookmakerId?: number): boolean {

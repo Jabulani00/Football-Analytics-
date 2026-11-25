@@ -4,8 +4,11 @@ import {
   oddAlertsFixtureLookupOptions,
   pinnacleMarketFilters,
   pinnacleOddsWindow,
+  pinnacleRowsFromFixtureOdds,
   type PinnacleOddsEnvelope,
 } from '../services/pinnacleOdds';
+import { supportedSelection } from '../services/bookmakerValue';
+import { normalizeTeam } from '../services/hollywoodMatch';
 
 function check(name: string, value: boolean): void {
   if (!value) throw new Error(`Failed: ${name}`);
@@ -72,6 +75,31 @@ async function run(): Promise<void> {
     alpha.latestPriceAt === '2026-11-22T10:01:00Z');
   check('fixture with no odds remains identified',
     result[1].oddAlertsFixtureId === 102 && result[1].markets.length === 0);
+
+  const fixtureOdds = pinnacleRowsFromFixtureOdds([
+    {
+      id: 201,
+      odds: {
+        Pinnacle: {
+          markets: {
+            ft_result: { home: '2.1', draw: 3.2, away: 3.7 },
+            total_goals_25: { over_25: '1.9', under_25: 2 },
+          },
+        },
+      },
+    },
+    { id: 202, odds: { ft_result: { home: 2.2, draw: 3.1, away: 3.5 } } },
+  ]);
+  check('fixture-scoped odds normalize Pinnacle and filtered market payloads',
+    fixtureOdds.length === 8
+      && fixtureOdds.every((row) => row.bookmaker_slug === 'pinnacle')
+      && fixtureOdds.some((row) => row.fixture_id === 201 && row.outcome === 'over_25'));
+  check('encoded total selections and half-time market names normalize',
+    supportedSelection('Total Goals 2.5', 'over_25')?.key === 'totals:ft:2.5:over'
+      && supportedSelection('1H Goals', 'under_25')?.period === 'h1'
+      && supportedSelection('1h_goals_25', 'over_25')?.period === 'h1');
+  check('Brighton short name resolves to its full provider name',
+    normalizeTeam('Brighton') === normalizeTeam('Brighton & Hove Albion'));
 
   const repeatedRow = { fixture_id: 101, market_id: 6, outcome: 'home', odds: 2.1, unix: 1, bookmaker_id: 47 };
   const ambiguous = buildPinnacleFixtureOdds(fixtures, [

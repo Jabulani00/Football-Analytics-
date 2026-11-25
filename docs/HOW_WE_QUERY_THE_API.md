@@ -465,8 +465,8 @@ Set these in `frontend/.env`. Do not commit the file. Do not print the token val
 
 | Variable | Where it is read | Purpose |
 | --- | --- | --- |
-| `ODDALERTS_TOKEN` | `oddalerts+api.ts` only | Server token sent to OddAlerts. Preferred. |
-| `EXPO_PUBLIC_ODDALERTS_TOKEN` | Server route if `ODDALERTS_TOKEN` is empty, and native direct calls | Fallback. Anything `EXPO_PUBLIC_` can be inlined into the native app. |
+| `ODDALERTS_TOKEN` | `oddalerts+api.ts` and the server warmer | Preferred server-only token; takes precedence. |
+| `EXPO_PUBLIC_ODDALERTS_TOKEN` | Server fallback and native direct calls | Legacy fallback only. `EXPO_PUBLIC_` values may be inlined into client builds; rotate exposed values and prefer `ODDALERTS_TOKEN`. |
 | `EXPO_PUBLIC_ODDALERTS_PROXY` | `oddAlerts.ts` | Default `/oddalerts`. Web ignores an absolute value and stays on `/oddalerts`. Native uses it when it is `https://…`. |
 | `EXPO_PUBLIC_ODDALERTS_BASE_URL` | `oddAlerts.ts` | Direct base URL. Default `https://data.oddalerts.com/api`. |
 | `CACHE_ENABLED` | cache policy | `false` or `0` disables the server cache. |

@@ -102,6 +102,7 @@ export type RawFixture = {
   referee_id?: number | null;
   unix: number;
   has_odds: boolean;
+  odds?: unknown;
   is_friendly: boolean;
   is_cup: boolean;
   date: string;
@@ -543,12 +544,34 @@ export function fetchLiveFixtures(signal?: AbortSignal): Promise<ApiEnvelope<Raw
 
 /** Upcoming (not-started) fixtures. `days` limits the look-ahead window. */
 export function fetchUpcomingFixtures(
-  opts: { days?: number; page?: number; competitions?: string } = {},
+  opts: {
+    days?: number;
+    page?: number;
+    competitions?: string;
+    from?: number;
+    to?: number;
+    include?: string;
+    bookmakers?: string;
+    markets?: string;
+    oddsType?: 'opening' | 'closing' | 'peak';
+    perPage?: number;
+  } = {},
   signal?: AbortSignal,
 ): Promise<ApiEnvelope<RawFixture>> {
   return getJson<RawFixture>(
     'fixtures/upcoming',
-    { days: opts.days, page: opts.page, competitions: opts.competitions },
+    {
+      days: opts.days,
+      page: opts.page,
+      competitions: opts.competitions,
+      from: opts.from,
+      to: opts.to,
+      include: opts.include,
+      bookmakers: opts.bookmakers,
+      markets: opts.markets,
+      odds_type: opts.oddsType,
+      per_page: opts.perPage,
+    },
     signal,
   );
 }
@@ -558,7 +581,18 @@ export function fetchUpcomingFixtures(
  * Optionally scope to comma-separated competition ids.
  */
 export async function fetchAllUpcomingFixtures(
-  opts: { days?: number; competitions?: string; maxPages?: number } = {},
+  opts: {
+    days?: number;
+    competitions?: string;
+    from?: number;
+    to?: number;
+    include?: string;
+    bookmakers?: string;
+    markets?: string;
+    oddsType?: 'opening' | 'closing' | 'peak';
+    perPage?: number;
+    maxPages?: number;
+  } = {},
   signal?: AbortSignal,
 ): Promise<RawFixture[]> {
   const maxPages = opts.maxPages ?? 10;
@@ -566,7 +600,7 @@ export async function fetchAllUpcomingFixtures(
   // fetch the rest in parallel batches — sequential paging of this large feed
   // (up to ~40 pages for the whole upcoming window) was far too slow.
   const first = await fetchUpcomingFixtures(
-    { days: opts.days, competitions: opts.competitions, page: 1 },
+    { ...opts, page: 1 },
     signal,
   );
   const all: RawFixture[] = [...first.data];
@@ -581,7 +615,7 @@ export async function fetchAllUpcomingFixtures(
   for (let i = 0; i < pages.length; i += BATCH) {
     const envs = await Promise.all(
       pages.slice(i, i + BATCH).map((page) =>
-        fetchUpcomingFixtures({ days: opts.days, competitions: opts.competitions, page }, signal),
+        fetchUpcomingFixtures({ ...opts, page }, signal),
       ),
     );
     for (const env of envs) all.push(...env.data);
@@ -1790,6 +1824,21 @@ function mapCompetition(raw: RawCompetition): Competition {
     currentSeason: raw.current_season,
     seasons,
   };
+}
+
+/** Search only the selected league instead of scanning the global fixture feed. */
+export async function searchCompetitions(
+  query: string,
+  signal?: AbortSignal,
+): Promise<Competition[]> {
+  const normalizedQuery = query.trim();
+  if (!normalizedQuery) return [];
+  const response = await getJson<RawCompetition>(
+    'competitions/search',
+    { query: normalizedQuery },
+    signal,
+  );
+  return response.data.map(mapCompetition);
 }
 
 /**
