@@ -343,19 +343,23 @@ export function scoreCallFixture(
   const fixture = context?.fixture ?? { homeId: home.teamId, awayId: away.teamId, unix: 0 };
   const scoreSide = (side: CallTableRow, opponent: CallTableRow) =>
     scoreCallAspect(aspectId, side, table, { ...context, opponentId: opponent.teamId, fixture });
+  const homeScore = scoreSide(home, away);
+  const awayScore = scoreSide(away, home);
+  const t1 = t1IsHomeSide(home, away) ? home : away;
+  const t1Score = t1.teamId === home.teamId ? homeScore : awayScore;
+  const t2Score = t1.teamId === home.teamId ? awayScore : homeScore;
+  const reason = [
+    t1Score ? `T1 · ${t1Score.reason}` : null,
+    t2Score ? `T2 · ${t2Score.reason}` : null,
+  ].filter((line): line is string => line != null).join(' · ');
   let scored: CallScore | null;
   if (aspect.pair) {
-    const t1 = t1IsHomeSide(home, away) ? home : away;
-    const t2 = t1.teamId === home.teamId ? away : home;
-    scored = scoreSide(t1, t2);
-  } else {
-    const homeScore = scoreSide(home, away);
-    const awayScore = scoreSide(away, home);
-    if (!homeScore) scored = awayScore;
-    else if (!awayScore) scored = homeScore;
-    else if (awayScore.percent > homeScore.percent) {
-      scored = { percent: awayScore.percent, reason: `${away.name} · ${awayScore.reason}` };
-    } else scored = { percent: homeScore.percent, reason: `${home.name} · ${homeScore.reason}` };
+    scored = t1Score ? { percent: t1Score.percent, reason: reason || t1Score.reason } : null;
+  } else if (!homeScore) scored = awayScore ? { percent: awayScore.percent, reason: reason || awayScore.reason } : null;
+  else if (!awayScore) scored = { percent: homeScore.percent, reason: reason || homeScore.reason };
+  else {
+    const lead = awayScore.percent > homeScore.percent ? awayScore : homeScore;
+    scored = { percent: lead.percent, reason: reason || lead.reason };
   }
   return withGapSeparation(aspect, scored, home, away, table, context);
 }

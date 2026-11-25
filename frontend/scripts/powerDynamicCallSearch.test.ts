@@ -56,6 +56,16 @@ check('the gap stays shared', sides.shared.includes('Clear separation') && sides
 const colours = splitCallReason('Home G v away R', false);
 check('home colour follows the home side when that side is T2', colours.t2.includes('Colour · G') && colours.t1.includes('Colour · R'));
 const takeover = 'Alajuelense · Take over 1 · Target attached + Imbangi + fewer games · Target position · Alajuelense · Top 3 · Cartaginés · Top 3, Number 1 · Alajuelense · Take over 1 · Target attached + Imbangi + fewer games · Target position · Alajuelense · Top 3 · Cartaginés · Top 3, Number 1';
+const both = 'T1 · Take over 1 · Target attached + Imbangi + fewer games · Top 3 · T2 · Chaser 4 · Target attached + non Imbangi · No target position';
+const bothSides = splitCallReason(both, true, { t1: 'Home', t2: 'Away' });
+check(
+  'T1 keeps its option and what is attached',
+  bothSides.t1.join(' | ') === 'Take over 1 | Target attached + Imbangi + fewer games | Top 3',
+);
+check(
+  'T2 keeps its option and what is attached',
+  bothSides.t2.join(' | ') === 'Chaser 4 | Target attached + non Imbangi | No target position',
+);
 const teams = splitCallReason(takeover, true, { t1: 'Alajuelense', t2: 'Cartaginés' });
 check(
   'a take-over read keeps each team’s targets apart',

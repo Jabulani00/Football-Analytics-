@@ -800,6 +800,17 @@ export function involvedTargetLabels(read: SingayeRead): string[] {
   return labels;
 }
 
+/** This side's option, what is attached, and the target places on that side. */
+export function sideAttachedNote(read: SingayeRead | null): string {
+  if (!read) return 'No read';
+  const labels = involvedTargetLabels(read);
+  const target = labels.length > 0 ? labels.join(', ') : 'No target position';
+  const parts = [read.pull.type, read.pull.detail];
+  if (read.push.active) parts.push(read.push.type, read.push.detail);
+  parts.push(target);
+  return parts.join(' · ');
+}
+
 /** Names a target place on either side of the fixture, or says there is none. */
 export function fixtureTargetNote(a: SingayeRead | null, b: SingayeRead | null): string {
   const lines = [a, b].flatMap((read) => {

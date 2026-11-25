@@ -64,7 +64,7 @@ import {
 } from '@/utils/last6Form';
 import {
   evaluateImportanceOf3,
-  fixtureTargetNote,
+  sideAttachedNote,
   importancePairSeparation,
   problemSeparationLabel,
   IMPORTANCE_SEPARATION_LABEL,
@@ -1681,9 +1681,10 @@ function scoreImportance(row: MeasureRow, table: MeasureRow[], token: string, co
   const report = importanceReport(row, table, context);
   const read = report.singaye1;
   if (!read) return null;
+  const attached = sideAttachedNote(read);
   const noted = (score: MeasureScore): MeasureScore => ({
     ...score,
-    reason: `${score.reason} · ${fixtureTargetNote(report.singaye1, report.singaye2)}`,
+    reason: attached.includes(score.reason) ? attached : `${score.reason} · ${attached}`,
   });
   const parts = token.split(':');
   const head = parts[0];

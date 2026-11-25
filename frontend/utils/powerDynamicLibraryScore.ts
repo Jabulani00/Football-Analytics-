@@ -56,7 +56,7 @@ function groupByTeam(reason: string, t1Name?: string, t2Name?: string): CallSide
       sawTeam = true;
       continue;
     }
-    if (/^target position$/i.test(part) || part === 'No target position') continue;
+    if (/^target position$/i.test(part)) continue;
     if (current) remember(notes[current], part);
     else remember(notes.shared, part);
   }
@@ -71,8 +71,13 @@ export function splitCallReason(
 ): CallSideNotes {
   const notes: CallSideNotes = { t1: [], t2: [], shared: [] };
   let topic = '';
-  const give = (side: 't1' | 't2', text: string) => {
-    remember(notes[side], topic ? `${topic} · ${tidy(text)}` : text);
+  let side: 't1' | 't2' | null = null;
+  const teams = [
+    names?.t1 ? { id: 't1' as const, name: tidy(names.t1) } : null,
+    names?.t2 ? { id: 't2' as const, name: tidy(names.t2) } : null,
+  ].filter((team): team is { id: 't1' | 't2'; name: string } => team != null && team.name.length > 0);
+  const give = (which: 't1' | 't2', text: string) => {
+    remember(notes[which], topic ? `${topic} · ${tidy(text)}` : text);
   };
   const take = (part: string) => {
     const colour = part.match(/^Home\s+(\S+)\s+v\s+away\s+(\S+)/i);
@@ -86,26 +91,45 @@ export function splitCallReason(
     }
     const versus = part.match(/^T1\s+(.+?)\s+vs\s+T2\s+(.+)$/i);
     if (versus) {
+      side = 't2';
       give('t1', versus[1]);
       give('t2', versus[2]);
       return;
     }
     if (/^T1\b/i.test(part) && !/\bT2\b/i.test(part)) {
-      give('t1', part.replace(/^T1\s*/i, ''));
+      side = 't1';
+      const rest = tidy(part.replace(/^T1\b/i, ''));
+      if (rest) give('t1', rest);
       return;
     }
     if (/^T2\b/i.test(part) && !/\bT1\b/i.test(part)) {
-      give('t2', part.replace(/^T2\s*/i, ''));
+      side = 't2';
+      const rest = tidy(part.replace(/^T2\b/i, ''));
+      if (rest) give('t2', rest);
       return;
     }
-    if (!/[.!]|T1|T2|separation|space|between/i.test(part) && part.length <= 48) {
+    const named = teams.find((team) => team.name === tidy(part));
+    if (named) {
+      side = named.id;
+      return;
+    }
+    if (/^target position$/i.test(part)) return;
+    if (/separation|\bspaces?\b|between/i.test(part)) {
+      remember(notes.shared, part);
+      return;
+    }
+    if (side) {
+      give(side, part);
+      return;
+    }
+    if (!/[.]/.test(part) && part.length <= 48) {
       topic = tidy(part);
       return;
     }
     remember(notes.shared, part);
   };
   for (const chunk of reason.split(' · ')) {
-    for (const sentence of chunk.split(/\.\s+/)) take(sentence);
+    for (const sentence of chunk.split(/\.\s+/)) take(tidy(sentence));
   }
   if (notes.t1.length === 0 && notes.t2.length === 0) {
     const grouped = groupByTeam(reason, names?.t1, names?.t2);
