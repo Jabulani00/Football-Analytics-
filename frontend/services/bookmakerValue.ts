@@ -17,17 +17,33 @@ function normalizedText(value: string): string {
     .replace(/[_/]+/g, ' ').replace(/[^a-z0-9.]+/g, ' ').trim().replace(/\s+/g, ' ');
 }
 
+function normalizedSelection(value: string): string {
+  const encodedTotal = /^(over|under)_(\d{2,3})$/i.exec(value.trim());
+  if (!encodedTotal) return normalizedText(value);
+  const digits = encodedTotal[2];
+  return `${encodedTotal[1].toLowerCase()} ${digits.slice(0, -1)}.${digits.slice(-1)}`;
+}
+
+function normalizedMarket(value: string): string {
+  const encodedTotal = /^(.*?)(?:total_)?goals?_(\d{2,3})$/i.exec(value.trim());
+  if (!encodedTotal) return normalizedText(value);
+  const digits = encodedTotal[2];
+  const prefix = normalizedText(encodedTotal[1].replace(/_+$/, ''));
+  const totalLabel = prefix === 'total' ? 'total goals' : `${prefix ? `${prefix} ` : ''}total goals`;
+  return normalizedText(`${totalLabel} ${digits.slice(0, -1)}.${digits.slice(-1)}`);
+}
+
 /** Only markets with known, mutually exclusive and exhaustive outcomes are supported. */
 export function supportedSelection(market: string, selection: string): SupportedSelection | null {
   if (/[+-]\s*\d/.test(market) || /[+-]\s*\d/.test(selection)) return null;
-  let title = normalizedText(market);
-  const choice = normalizedText(selection);
+  let title = normalizedMarket(market);
+  const choice = normalizedSelection(selection);
   if (!title || !choice) return null;
 
-  const periodPattern = '(first half|1st half|half time|ht|second half|2nd half|full time|ft)';
+  const periodPattern = '(first half|1st half|half time|ht|1h|second half|2nd half|2h|full time|ft)';
   const periodOf = (value: string): MarketPeriod =>
-    /^(first half|1st half|half time|ht)$/.test(value) ? 'h1'
-      : /^(second half|2nd half)$/.test(value) ? 'h2' : 'ft';
+    /^(first half|1st half|half time|ht|1h)$/.test(value) ? 'h1'
+      : /^(second half|2nd half|2h)$/.test(value) ? 'h2' : 'ft';
   let period: MarketPeriod = 'ft';
   if (new RegExp(`^${periodPattern}$`).test(title)) {
     period = periodOf(title);

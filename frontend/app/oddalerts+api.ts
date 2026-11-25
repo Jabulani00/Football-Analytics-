@@ -9,6 +9,7 @@
 
 import { fetchThroughCache } from '../services/oddAlertsServerCache';
 import { startOddAlertsWarmer } from '../services/oddAlertsWarmer';
+import { sanitizeOddAlertsResponseBody } from '../services/oddAlertsProxyResponse';
 
 startOddAlertsWarmer();
 
@@ -29,8 +30,8 @@ const ALLOWED_PREFIXES = [
   'meta',
 ];
 
-// Server-side only — never shipped to the browser. Set ODDALERTS_TOKEN in
-// frontend/.env locally and in the Vercel project environment variables.
+// Prefer the server-only ODDALERTS_TOKEN. EXPO_PUBLIC_ODDALERTS_TOKEN is kept
+// as a legacy fallback, but may be inlined into client builds.
 const TOKEN = process.env.ODDALERTS_TOKEN || process.env.EXPO_PUBLIC_ODDALERTS_TOKEN || '';
 
 const CORS = {
@@ -88,7 +89,7 @@ export async function GET(request: Request): Promise<Response> {
     });
 
     const cacheHeader = result.cache === 'BYPASS' ? 'MISS' : result.cache;
-    return new Response(result.body, {
+    return new Response(sanitizeOddAlertsResponseBody(result.body, TOKEN), {
       status: result.status,
       headers: {
         ...CORS,
@@ -100,7 +101,10 @@ export async function GET(request: Request): Promise<Response> {
     });
   } catch (err) {
     return Response.json(
-      { error: 'Upstream request failed', detail: String(err) },
+      {
+        error: 'Upstream request failed',
+        detail: sanitizeOddAlertsResponseBody(String(err), TOKEN),
+      },
       { status: 502, headers: CORS },
     );
   }

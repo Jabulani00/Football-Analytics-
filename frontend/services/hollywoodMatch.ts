@@ -32,6 +32,11 @@ const SYNONYMS: Record<string, string> = {
   amp: 'and',
 };
 
+const TEAM_NAME_ALIASES: Record<string, string> = {
+  brighton: 'brighton and hove albion',
+  'brighton and hove': 'brighton and hove albion',
+};
+
 /** Lowercase, strip punctuation/diacritics and noise tokens → a comparable key. */
 export function normalizeTeam(name: string): string {
   const base = name
@@ -43,7 +48,8 @@ export function normalizeTeam(name: string): string {
     .split(/\s+/)
     .map((t) => (t in SYNONYMS ? SYNONYMS[t] : t))
     .filter(Boolean);
-  return base.join(' ').trim();
+  const normalized = base.join(' ').trim();
+  return TEAM_NAME_ALIASES[normalized] ?? normalized;
 }
 
 // ---- Country ----------------------------------------------------------------

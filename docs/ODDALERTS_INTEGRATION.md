@@ -104,16 +104,20 @@ server bundle via `@expo/server/adapter/vercel`.
 
 | Variable                          | Where           | Purpose                                          |
 | --------------------------------- | --------------- | ------------------------------------------------ |
-| `ODDALERTS_TOKEN`                 | server (Vercel) | Token used by the `/oddalerts` route. Set in prod. |
-| `EXPO_PUBLIC_ODDALERTS_TOKEN`     | client          | Token for direct native calls (optional override) |
+| `ODDALERTS_TOKEN`                 | server (Vercel) | Preferred token for the `/oddalerts` route and cache warmer. |
+| `EXPO_PUBLIC_ODDALERTS_TOKEN`     | server fallback and client | Legacy fallback; `EXPO_PUBLIC_` values can be embedded in client bundles. Prefer `ODDALERTS_TOKEN`. |
 | `EXPO_PUBLIC_ODDALERTS_PROXY`     | client          | Proxy URL override (default `/oddalerts`)          |
 | `EXPO_PUBLIC_ODDALERTS_BASE_URL`  | client          | Direct base URL override                           |
 | `THESPORTSDB_KEY`                 | server (Vercel) | TheSportsDB key for the `/teamlogo` route (default `123`) |
 | `EXPO_PUBLIC_THESPORTSDB_KEY`     | client          | TheSportsDB key for direct native logo lookups     |
 
 There is **no hardcoded token fallback** — copy `frontend/.env.example` →
-`frontend/.env` and set `ODDALERTS_TOKEN` (and `EXPO_PUBLIC_ODDALERTS_TOKEN` for
-native) before running. The logo key defaults to the public test key `123`.
+`frontend/.env` and set `ODDALERTS_TOKEN` before running the server proxy.
+The proxy accepts `EXPO_PUBLIC_ODDALERTS_TOKEN` only as a legacy fallback when
+`ODDALERTS_TOKEN` is absent, but values with the `EXPO_PUBLIC_` prefix may be
+embedded in client bundles. Use the server-only variable for production and
+rotate any exposed token. Production native builds should use an absolute
+`EXPO_PUBLIC_ODDALERTS_PROXY`. The logo key defaults to the public test key `123`.
 
 ### Setup walkthrough
 
