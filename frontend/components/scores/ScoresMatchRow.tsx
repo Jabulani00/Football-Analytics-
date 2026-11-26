@@ -5,7 +5,7 @@ import LivePulse from '@/components/shared/LivePulse';
 import TeamLogo from '@/components/shared/TeamLogo';
 import StreamlineChip from '@/components/scores/StreamlineChip';
 import { firstGoalSide } from '@/utils/firstGoal';
-import type { Fixture, FixtureKind } from '@/services/oddAlerts';
+import type { Fixture, FixtureKind, MatchStats } from '@/services/oddAlerts';
 import type { StreamName } from '@/utils/powerDynamicsEngine';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
@@ -15,6 +15,8 @@ type ScoresMatchRowProps = {
   /** Streamline(s) for upcoming rows (far right). */
   stream?: StreamName | StreamName[] | null;
   showStreamline?: boolean;
+  /** OddAlerts match xG values, rendered within the fixture card. */
+  xgStats?: MatchStats;
 };
 
 function StatusColumn({ fixture }: { fixture: Fixture }) {
@@ -47,6 +49,7 @@ export default function ScoresMatchRow({
   onPress,
   stream,
   showStreamline,
+  xgStats,
 }: ScoresMatchRowProps) {
   const started = fixture.status === 'LIVE' || fixture.status === 'HT' || fixture.status === 'FT';
   const home = fixture.home.goals ?? 0;
@@ -110,8 +113,22 @@ export default function ScoresMatchRow({
           <Marker label={`NG ${home + away === 0 ? 'YES' : 'NO'}`} state={home + away === 0 ? 'yes' : 'no'} />
         </View>
       ) : null}
+      {xgStats?.home_xg != null || xgStats?.away_xg != null ? (
+        <View style={styles.xgRow}>
+          <Text style={styles.xgText} numberOfLines={1}>
+            {fixture.home.name} · xG {formatXg(xgStats.home_xg)} · xGA {formatXg(xgStats.away_xg)}
+          </Text>
+          <Text style={styles.xgText} numberOfLines={1}>
+            {fixture.away.name} · xG {formatXg(xgStats.away_xg)} · xGA {formatXg(xgStats.home_xg)}
+          </Text>
+        </View>
+      ) : null}
     </Pressable>
   );
+}
+
+function formatXg(value: number | null | undefined): string {
+  return value == null ? '—' : value.toFixed(2);
 }
 
 function Marker({ label, state }: { label: string; state: 'yes' | 'no' | 'neutral' | 'unknown' }) {
@@ -141,6 +158,8 @@ const styles = StyleSheet.create({
   },
   mainRow: { flexDirection: 'row', alignItems: 'center', minHeight: 36 },
   markers: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', gap: 4, paddingTop: 3 },
+  xgRow: { alignSelf: 'center', flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 12, paddingTop: 4, maxWidth: '100%' },
+  xgText: { fontFamily: fonts.body, fontSize: 10, color: theme.textMuted },
   marker: { overflow: 'hidden', borderRadius: 5, borderWidth: 1, paddingHorizontal: 5, paddingVertical: 1, fontFamily: fonts.bodySemiBold, fontSize: 8 },
   markerYes: { color: '#047857', borderColor: 'rgba(4,120,87,0.28)', backgroundColor: 'rgba(16,185,129,0.10)' },
   markerNo: { color: '#b91c1c', borderColor: 'rgba(185,28,28,0.24)', backgroundColor: 'rgba(239,68,68,0.08)' },
