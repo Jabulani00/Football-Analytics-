@@ -85,7 +85,7 @@ export default function FeedFixtureRow({ fixture, module, onOpen, stream }: Prop
 
   return (
     <View style={styles.wrap}>
-      <ScoresMatchRow fixture={fixture} onPress={onOpen} stream={stream} xgStats={matchStats} />
+      <ScoresMatchRow fixture={fixture} onPress={onOpen} stream={stream} xgStats={matchStats} loadXg={false} />
 
       {recommendable || canSeries ? (
         <View style={styles.toggleRow}>

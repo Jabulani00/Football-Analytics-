@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import CountryFlag from '@/components/shared/CountryFlag';
@@ -5,7 +6,7 @@ import LivePulse from '@/components/shared/LivePulse';
 import TeamLogo from '@/components/shared/TeamLogo';
 import StreamlineChip from '@/components/scores/StreamlineChip';
 import { firstGoalSide } from '@/utils/firstGoal';
-import type { Fixture, FixtureKind, MatchStats } from '@/services/oddAlerts';
+import { fetchFixtureDetail, type Fixture, type FixtureKind, type MatchStats } from '@/services/oddAlerts';
 import type { StreamName } from '@/utils/powerDynamicsEngine';
 import { fonts, layout, spacing, theme } from '@/styles/theme';
 
@@ -17,6 +18,8 @@ type ScoresMatchRowProps = {
   showStreamline?: boolean;
   /** OddAlerts match xG values, rendered within the fixture card. */
   xgStats?: MatchStats;
+  /** The parent already loads this fixture's detail stats. */
+  loadXg?: boolean;
 };
 
 function StatusColumn({ fixture }: { fixture: Fixture }) {
@@ -50,7 +53,23 @@ export default function ScoresMatchRow({
   stream,
   showStreamline,
   xgStats,
+  loadXg = true,
 }: ScoresMatchRowProps) {
+  const [loadedXgStats, setLoadedXgStats] = useState<MatchStats>();
+  const stats = xgStats ?? loadedXgStats;
+  const hasStarted = fixture.status === 'LIVE' || fixture.status === 'HT' || fixture.status === 'FT';
+
+  useEffect(() => {
+    if (!loadXg || xgStats || !hasStarted) return;
+    let active = true;
+    fetchFixtureDetail(fixture.id)
+      .then((detail) => {
+        if (active) setLoadedXgStats(detail?.stats);
+      })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [fixture.id, hasStarted, loadXg, xgStats]);
+
   const started = fixture.status === 'LIVE' || fixture.status === 'HT' || fixture.status === 'FT';
   const home = fixture.home.goals ?? 0;
   const away = fixture.away.goals ?? 0;
@@ -113,16 +132,14 @@ export default function ScoresMatchRow({
           <Marker label={`NG ${home + away === 0 ? 'YES' : 'NO'}`} state={home + away === 0 ? 'yes' : 'no'} />
         </View>
       ) : null}
-      {xgStats?.home_xg != null || xgStats?.away_xg != null ? (
-        <View style={styles.xgRow}>
+      <View style={styles.xgRow}>
           <Text style={styles.xgText} numberOfLines={1}>
-            {fixture.home.name} · xG {formatXg(xgStats.home_xg)} · xGA {formatXg(xgStats.away_xg)}
+            {fixture.home.name} · xG {formatXg(stats?.home_xg)} · xGA {formatXg(stats?.away_xg)}
           </Text>
           <Text style={styles.xgText} numberOfLines={1}>
-            {fixture.away.name} · xG {formatXg(xgStats.away_xg)} · xGA {formatXg(xgStats.home_xg)}
+            {fixture.away.name} · xG {formatXg(stats?.away_xg)} · xGA {formatXg(stats?.home_xg)}
           </Text>
-        </View>
-      ) : null}
+      </View>
     </Pressable>
   );
 }
