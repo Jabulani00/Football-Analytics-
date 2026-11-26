@@ -32,9 +32,10 @@ export default function FeedFixtureRow({ fixture, module, onOpen, stream }: Prop
   const [detail, setDetail] = useState<RawFixtureDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
-  // Fetch the detail once, the first time the row is opened. Kept in a ref so the
-  // effect only depends on `expanded` — depending on the loading/detail state
-  // would let a state update cancel the in-flight fetch via cleanup.
+  const [matchStats, setMatchStats] = useState<RawFixtureDetail['stats']>();
+  const [statsLoaded, setStatsLoaded] = useState(false);
+  // One detail request per fixture supplies both the row xG and the expanded
+  // recommendation, so the feed does not issue duplicate requests.
   const startedRef = useRef(false);
 
   const recommendable = CAN_RECOMMEND.has(fixture.status);
@@ -43,7 +44,7 @@ export default function FeedFixtureRow({ fixture, module, onOpen, stream }: Prop
     fixture.home.id != null && fixture.away.id != null && !fixture.competition.isFriendly;
 
   useEffect(() => {
-    if (!expanded || startedRef.current) return;
+    if (startedRef.current) return;
     startedRef.current = true;
     let active = true;
     setLoading(true);
@@ -51,10 +52,15 @@ export default function FeedFixtureRow({ fixture, module, onOpen, stream }: Prop
       .then((d) => {
         if (!active) return;
         setDetail(d);
+        setMatchStats(d?.stats);
+        setStatsLoaded(true);
         setFailed(!d);
       })
       .catch(() => {
-        if (active) setFailed(true);
+        if (active) {
+          setFailed(true);
+          setStatsLoaded(true);
+        }
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -62,7 +68,7 @@ export default function FeedFixtureRow({ fixture, module, onOpen, stream }: Prop
     return () => {
       active = false;
     };
-  }, [expanded, fixture.id]);
+  }, [fixture.id]);
 
   const prob = detail?.probability;
   const rec =
@@ -83,6 +89,19 @@ export default function FeedFixtureRow({ fixture, module, onOpen, stream }: Prop
   return (
     <View style={styles.wrap}>
       <ScoresMatchRow fixture={fixture} onPress={onOpen} stream={stream} />
+
+      {matchStats?.home_xg != null || matchStats?.away_xg != null ? (
+        <View style={styles.xgRow}>
+          <Text style={styles.xgText}>
+            {fixture.home.name} · xG {formatXg(matchStats.home_xg)} · xGA {formatXg(matchStats.away_xg)}
+          </Text>
+          <Text style={styles.xgText}>
+            {fixture.away.name} · xG {formatXg(matchStats.away_xg)} · xGA {formatXg(matchStats.home_xg)}
+          </Text>
+        </View>
+      ) : statsLoaded && (fixture.status === 'FT' || isLive) ? (
+        <Text style={styles.xgUnavailable}>xG / xGA unavailable from Odds Alert</Text>
+      ) : null}
 
       {recommendable || canSeries ? (
         <View style={styles.toggleRow}>
@@ -160,6 +179,10 @@ export default function FeedFixtureRow({ fixture, module, onOpen, stream }: Prop
   );
 }
 
+function formatXg(value: number | null | undefined): string {
+  return value == null ? '—' : value.toFixed(2);
+}
+
 const styles = StyleSheet.create({
   wrap: { width: '100%' },
   toggleRow: { flexDirection: 'row', alignItems: 'center' },
@@ -191,4 +214,7 @@ const styles = StyleSheet.create({
   peek: { flex: 1, fontFamily: fonts.body, fontSize: 11, color: theme.textMuted },
   body: { paddingHorizontal: spacing.sm, paddingBottom: spacing.sm },
   muted: { fontFamily: fonts.body, fontSize: 12, color: theme.textMuted, paddingVertical: spacing.sm },
+  xgRow: { paddingHorizontal: spacing.sm, paddingBottom: 6, gap: 2 },
+  xgText: { fontFamily: fonts.body, fontSize: 11, color: theme.textMuted },
+  xgUnavailable: { paddingHorizontal: spacing.sm, paddingBottom: 6, fontFamily: fonts.body, fontSize: 10, color: theme.textMuted },
 });
