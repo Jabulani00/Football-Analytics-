@@ -15,7 +15,7 @@ function normalizedName(value: string): string {
 
 function southAfricanLeagueAlias(name: string, country: string): boolean {
   if (normalizeCountry(country) !== 'south africa') return false;
-  const aliases = new Set(['psl', 'premier league', 'premier soccer league']);
+  const aliases = new Set(['psl', 'sa psl', 'premier league', 'premier soccer league']);
   return aliases.has(name);
 }
 
@@ -24,7 +24,7 @@ export function oddAlertsCompetitionSearchTerm(
   hollywoodCountry: string,
 ): string {
   const name = normalizedName(hollywoodCompetition);
-  if (normalizeCountry(hollywoodCountry) === 'south africa' && name === 'psl') {
+  if (normalizeCountry(hollywoodCountry) === 'south africa' && (name === 'psl' || name === 'sa psl')) {
     return 'Premier League';
   }
   return hollywoodCompetition
