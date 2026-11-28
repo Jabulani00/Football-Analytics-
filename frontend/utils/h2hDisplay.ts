@@ -7,6 +7,99 @@ export type H2HOutcome = 'W' | 'D' | 'L';
 /** How many past meetings to show in the H2H list / summary. */
 export const H2H_MEETINGS_LIMIT = 5;
 
+function meetingKey(match: H2HMatch): string {
+  return `${(match.date || '').slice(0, 10)}|${match.home_goals}|${match.away_goals}`;
+}
+
+function dayFromUnix(unix: number): string {
+  if (!unix) return '';
+  return new Date(unix * 1000).toISOString().slice(0, 10);
+}
+
+/** The fixture payload sometimes nests H2H, or leaves the field empty. */
+export function h2hListFrom(value: unknown): H2HMatch[] {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is H2HMatch => {
+      if (!item || typeof item !== 'object') return false;
+      const row = item as H2HMatch;
+      return typeof row.home_name === 'string' && typeof row.away_name === 'string';
+    });
+  }
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    for (const key of ['data', 'matches', 'fixtures', 'h2h']) {
+      const nested = h2hListFrom(record[key]);
+      if (nested.length > 0) return nested;
+    }
+  }
+  return [];
+}
+
+/**
+ * Finished season games between these two sides.
+ * The call already scored these, so the opened result can show them when the
+ * fixture H2H field comes back empty.
+ */
+export function h2hFromSeasonMatches(
+  matches: {
+    homeId: number;
+    awayId: number;
+    homeGoals: number;
+    awayGoals: number;
+    unix: number;
+    homeGoalsHt?: number | null;
+    awayGoalsHt?: number | null;
+  }[],
+  homeId: number,
+  awayId: number,
+  names: { home: string; away: string },
+  league: string,
+  kickoffUnix = 0,
+): H2HMatch[] {
+  const nameOf = (id: number) => (id === homeId ? names.home : names.away);
+  return matches
+    .filter((match) => {
+      const pair =
+        (match.homeId === homeId && match.awayId === awayId) ||
+        (match.homeId === awayId && match.awayId === homeId);
+      if (!pair) return false;
+      if (kickoffUnix > 0 && match.unix >= kickoffUnix) return false;
+      return match.homeGoals != null && match.awayGoals != null;
+    })
+    .map((match) => {
+      const homeGoals = match.homeGoals;
+      const awayGoals = match.awayGoals;
+      const ht =
+        match.homeGoalsHt != null && match.awayGoalsHt != null
+          ? `${match.homeGoalsHt}-${match.awayGoalsHt}`
+          : null;
+      return {
+        id: match.unix,
+        home_name: nameOf(match.homeId),
+        away_name: nameOf(match.awayId),
+        home_goals: homeGoals,
+        away_goals: awayGoals,
+        ht_score: ht,
+        total_goals: homeGoals + awayGoals,
+        btts: homeGoals > 0 && awayGoals > 0,
+        date: dayFromUnix(match.unix),
+        league,
+      };
+    });
+}
+
+/** Keep the fixture H2H, then add season meetings that are not already listed. */
+export function mergeH2hMeetings(primary: H2HMatch[], extra: H2HMatch[]): H2HMatch[] {
+  const seen = new Set(primary.map(meetingKey));
+  const added = extra.filter((match) => {
+    const key = meetingKey(match);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return [...primary, ...added];
+}
+
 /** Newest-first, capped to the display window. */
 export function recentH2hMeetings(
   matches: H2HMatch[],

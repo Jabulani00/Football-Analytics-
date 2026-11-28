@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
@@ -16,6 +16,7 @@ import type { PowerDynamicHit } from '@/utils/powerDynamicLibraryScore';
 import { CALCULATION_CALL } from '@/utils/powerDynamicCalculationCalls';
 import { powerDynamicCall } from '@/utils/powerDynamicCalls';
 import { callAspectById } from '@/utils/powerDynamicCallSearch';
+import { h2hFromSeasonMatches, h2hListFrom, mergeH2hMeetings } from '@/utils/h2hDisplay';
 
 type Peek = 'summary' | 'h2h' | 'table';
 
@@ -63,6 +64,18 @@ export default function PowerDynamicFixtureModal({
     enabled: found != null,
   });
 
+  const meetings = useMemo(() => {
+    if (!found) return [];
+    const season = h2hFromSeasonMatches(
+      found.record.matches,
+      found.fixture.homeId,
+      found.fixture.awayId,
+      { home: found.fixture.homeName, away: found.fixture.awayName },
+      found.record.name,
+      found.fixture.unix,
+    );
+    return mergeH2hMeetings(h2hListFrom(detail.data?.h2h), season);
+  }, [found, detail.data?.h2h]);
   const homeRank = detail.data?.home_position ?? (found ? tableRank(found.record.standings, found.fixture.homeId) : null);
   const awayRank = detail.data?.away_position ?? (found ? tableRank(found.record.standings, found.fixture.awayId) : null);
   const status = detail.data?.status ?? 'NS';
@@ -164,15 +177,17 @@ export default function PowerDynamicFixtureModal({
                 )
               ) : null}
               {peek === 'h2h' ? (
-                detail.data ? (
+                detail.isPending && meetings.length === 0 ? (
+                  <Text style={styles.note}>Loading head to head.</Text>
+                ) : detail.isError && meetings.length === 0 ? (
+                  <Text style={styles.note}>Head to head could not be loaded.</Text>
+                ) : (
                   <H2HPanel
-                    matches={detail.data.h2h ?? []}
+                    matches={meetings}
                     homeName={found.fixture.homeName}
                     awayName={found.fixture.awayName}
                     competitionName={found.record.name}
                   />
-                ) : (
-                  <Text style={styles.note}>{detail.isError ? 'Head to head could not be loaded.' : 'Loading head to head.'}</Text>
                 )
               ) : null}
               {peek === 'table' ? (
@@ -219,7 +234,7 @@ export default function PowerDynamicFixtureModal({
                 awayId={found.fixture.awayId}
                 homeName={found.fixture.homeName}
                 awayName={found.fixture.awayName}
-                h2hMatches={detail.data?.h2h ?? []}
+                h2hMatches={meetings}
                 odds={detail.data?.odds}
                 probability={detail.data?.probability}
                 kickoffUnix={found.fixture.unix}

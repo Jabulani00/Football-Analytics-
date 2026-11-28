@@ -3,7 +3,7 @@
  * Run: npx tsx scripts/hiddenH2h.test.ts
  */
 import type { H2HMatch } from '../services/oddAlerts';
-import { h2hOutcomeForTeam } from '../utils/h2hDisplay';
+import { h2hFromSeasonMatches, h2hListFrom, h2hOutcomeForTeam, mergeH2hMeetings } from '../utils/h2hDisplay';
 import { evaluateH2HOptions, formatNeverBeatenSequence, h2hGradeGuide, h2hGradeScore, hasBeenBeaten, isNikaNikaRecord, matchPolarSequences, neverBeatGrade, outcomeForSide, polarEdgeGrade } from '../utils/h2hOptions';
 import { evaluateHiddenLayers, polarityCounts, problemPatternFor } from '../utils/hiddenLayers';
 import type { StandingLike } from '../utils/motivationEngine';
@@ -361,6 +361,31 @@ console.log('\nSection 7 — numbered H2H says + never-beat grades');
   });
   check('3W 2L is polar Grade B', both.says[1]?.title.includes('edge (polar)') === true && both.says[1]?.grade === 'B');
   check('3W 2L is also nika nika', both.says[3]?.title.includes('Nika nika') === true);
+}
+
+console.log('\ncall result H2H');
+{
+  const season = h2hFromSeasonMatches(
+    [
+      { homeId: 1, awayId: 2, homeGoals: 2, awayGoals: 1, unix: 1_700_000_000 },
+      { homeId: 2, awayId: 1, homeGoals: 0, awayGoals: 0, unix: 1_710_000_000 },
+      { homeId: 1, awayId: 9, homeGoals: 3, awayGoals: 0, unix: 1_720_000_000 },
+      { homeId: 1, awayId: 2, homeGoals: 1, awayGoals: 1, unix: 1_800_000_000 },
+    ],
+    1,
+    2,
+    { home: 'Alpha', away: 'Beta' },
+    'League',
+    1_800_000_000,
+  );
+  check('season meetings between the two sides are kept', season.length === 2);
+  check('the fixture being opened is left out', season.every((match) => match.id !== 1_800_000_000));
+  check('home and away names follow who hosted', season.some((match) => match.home_name === 'Beta' && match.away_name === 'Alpha' && match.home_goals === 0));
+  const wrapped = h2hListFrom({ matches: [{ id: 9, home_name: 'Alpha', away_name: 'Beta', home_goals: 4, away_goals: 0, date: '2024-08-01', ht_score: null, total_goals: 4, btts: false, league: 'Cup' }] });
+  const merged = mergeH2hMeetings(wrapped, season);
+  check('a wrapped fixture H2H list is read', wrapped.length === 1);
+  check('season meetings fill in beside the fixture H2H', merged.length === 3);
+  check('the same score on the same day is not repeated', mergeH2hMeetings(season, season).length === season.length);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
