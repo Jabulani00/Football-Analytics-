@@ -32,9 +32,9 @@ export default function FeedFixtureRow({ fixture, module, onOpen, stream }: Prop
   const [detail, setDetail] = useState<RawFixtureDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
-  // Fetch the detail once, the first time the row is opened. Kept in a ref so the
-  // effect only depends on `expanded` — depending on the loading/detail state
-  // would let a state update cancel the in-flight fetch via cleanup.
+  const [matchStats, setMatchStats] = useState<RawFixtureDetail['stats']>();
+  // One detail request per fixture supplies both the row xG and the expanded
+  // recommendation, so the feed does not issue duplicate requests.
   const startedRef = useRef(false);
 
   const recommendable = CAN_RECOMMEND.has(fixture.status);
@@ -43,7 +43,7 @@ export default function FeedFixtureRow({ fixture, module, onOpen, stream }: Prop
     fixture.home.id != null && fixture.away.id != null && !fixture.competition.isFriendly;
 
   useEffect(() => {
-    if (!expanded || startedRef.current) return;
+    if (startedRef.current) return;
     startedRef.current = true;
     let active = true;
     setLoading(true);
@@ -51,10 +51,13 @@ export default function FeedFixtureRow({ fixture, module, onOpen, stream }: Prop
       .then((d) => {
         if (!active) return;
         setDetail(d);
+        setMatchStats(d?.stats);
         setFailed(!d);
       })
       .catch(() => {
-        if (active) setFailed(true);
+        if (active) {
+          setFailed(true);
+        }
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -62,7 +65,7 @@ export default function FeedFixtureRow({ fixture, module, onOpen, stream }: Prop
     return () => {
       active = false;
     };
-  }, [expanded, fixture.id]);
+  }, [fixture.id]);
 
   const prob = detail?.probability;
   const rec =
@@ -82,7 +85,7 @@ export default function FeedFixtureRow({ fixture, module, onOpen, stream }: Prop
 
   return (
     <View style={styles.wrap}>
-      <ScoresMatchRow fixture={fixture} onPress={onOpen} stream={stream} />
+      <ScoresMatchRow fixture={fixture} onPress={onOpen} stream={stream} xgStats={matchStats} loadXg={false} />
 
       {recommendable || canSeries ? (
         <View style={styles.toggleRow}>
